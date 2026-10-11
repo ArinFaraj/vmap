@@ -159,6 +159,9 @@ class _LabelState {
   double iconOpacity = 1;
   bool showIcon = false;
   bool showText = true;
+
+  /// In the list of labels that are showing or fading.
+  bool live = false;
 }
 
 /// Chooses which labels show, fades them, and draws them. Text is laid out by
@@ -226,12 +229,14 @@ class LabelEngine {
   static const int _zoomingIntervalMs = 350;
   static const double _roadRepeatDistance = 260;
 
-  static const int _maxSprites = 500;
+  static const int _maxSprites = 1400;
 
   final Map<String, _LabelState> _states = {};
   final Map<String, _Sprite> _sprites = {};
   final List<_LabelState> _frameStates = [];
-  final List<String> _dead = [];
+
+  /// The labels that are showing or fading, which is all a frame draws.
+  final List<_LabelState> _live = [];
   Float32List _boxes = Float32List(1024);
   int _boxCount = 0;
   final List<_LabelState> _placedRoads = [];
@@ -266,7 +271,15 @@ class LabelEngine {
   }
 
   double _lastZoom = 0;
+
+  /// While the zoom is changing a label's image is stretched further before
+  /// it is drawn again, and sharpened once the zoom rests.
+  bool _zooming = false;
   int lastRasterMicros = 0;
+  int rasterizedTotal = 0;
+  int resizedTotal = 0;
+  int evictedTotal = 0;
+  int statesWalked = 0;
 
   int get stateCount => _states.length;
   int get spriteCount => _sprites.length;
@@ -280,6 +293,7 @@ class LabelEngine {
     _sprites.clear();
     _states.clear();
     _frameStates.clear();
+    _live.clear();
     _placeAgain = true;
   }
 
@@ -300,6 +314,8 @@ class LabelEngine {
     required bool zooming,
   }) {
     lastPlaceMicros = 0;
+    if (_zooming && !zooming) _placeAgain = true;
+    _zooming = zooming;
     final world = 256.0 * math.pow(2, zoom);
     final nowMs = _clock.elapsedMilliseconds;
     final moved =
@@ -342,6 +358,7 @@ class LabelEngine {
         pending = true;
         break;
       }
+      if (cached == null && st.sprite != null) resizedTotal++;
       st
         ..sprite =
             cached ??
@@ -353,13 +370,15 @@ class LabelEngine {
     }
 
     lastRasterMicros = _clock.elapsedMicroseconds - rasterStart;
+    rasterizedTotal += rasterized;
     _lastZoom = zoom;
     final styleZoom = zoom - 1 + zoomOffset;
     var animating = pending;
     final step = dt / _fadeSeconds;
-    _dead.clear();
-    for (final entry in _states.entries) {
-      final st = entry.value;
+    statesWalked += _live.length;
+    var kept = 0;
+    for (var i = 0; i < _live.length; i++) {
+      final st = _live[i];
       final seen = st.seenPass == _pass;
       if (st.sprite?.dropped ?? false) {
         st.sprite = _sprites[st.candidate.spriteKey];
@@ -380,10 +399,12 @@ class LabelEngine {
         );
       }
       if (st.opacity != target) animating = true;
-      if (st.opacity == 0) {
-        if (!seen) _dead.add(entry.key);
+      if (st.opacity == 0 && target == 0) {
+        st.live = false;
         continue;
       }
+      _live[kept++] = st;
+      if (st.opacity == 0) continue;
       final icon = st.icon;
       final sheet = _sheet;
       if (icon != null && st.showIcon && sheet != null) {
@@ -465,9 +486,7 @@ class LabelEngine {
           ..restore();
       }
     }
-    for (final key in _dead) {
-      _states.remove(key);
-    }
+    _live.length = kept;
     return animating;
   }
 
@@ -527,7 +546,9 @@ class LabelEngine {
       if (st.sprite?.dropped ?? false) st.sprite = null;
       final sprite = st.sprite ??= _sprites[c.spriteKey];
       st.scale = sprite == null ? 1 : fontSize / sprite.fontSize;
-      if (st.scale < 0.87 || st.scale > 1.15) st.resize = true;
+      st.resize = _zooming
+          ? st.scale < 0.7 || st.scale > 1.4
+          : st.scale < 0.87 || st.scale > 1.15;
       final textW = sprite == null
           ? c.source.text.length * fontSize * 0.55
           : sprite.textWidth * st.scale;
@@ -560,6 +581,10 @@ class LabelEngine {
           ..dx = 0
           ..dy = 0
           ..placed = true;
+        if (!st.live) {
+          st.live = true;
+          _live.add(st);
+        }
         sprite?.usedPass = _pass;
         _placedRoads.add(st);
         continue;
@@ -680,8 +705,13 @@ class LabelEngine {
         ..showIcon = showIcon;
       if (c.source.spaced && c.hasText) _placedRoads.add(st);
       st.placed = true;
+      if (!st.live) {
+        st.live = true;
+        _live.add(st);
+      }
       sprite?.usedPass = _pass;
     }
+    _states.removeWhere((_, st) => st.seenPass != _pass && !st.live);
     if (_sprites.length > _maxSprites) {
       final unused = [
         for (final e in _sprites.entries)
@@ -689,6 +719,7 @@ class LabelEngine {
       ];
       for (final key in unused) {
         if (_sprites.length <= _maxSprites * 3 ~/ 4) break;
+        evictedTotal++;
         _sprites.remove(key)!
           ..dropped = true
           ..image.dispose();

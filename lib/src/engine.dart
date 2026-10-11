@@ -258,6 +258,11 @@ class VmapStats {
   int maxDrawMicros = 0;
   int placeMicros = 0;
   int labelStates = 0;
+  int labelRasterMicros = 0;
+  int labelsRasterized = 0;
+  int labelStatesWalked = 0;
+  int labelsResized = 0;
+  int labelsEvicted = 0;
   int maxUnpackMicros = 0;
 
   /// One line per paint that took over 5 ms, newest last.
@@ -709,6 +714,12 @@ class VmapEngine extends ChangeNotifier {
       stats.maxLabelRasterMicros = _labels.lastRasterMicros;
     }
     stats.placeMicros += _labels.lastPlaceMicros;
+    stats
+      ..labelRasterMicros += _labels.lastRasterMicros
+      ..labelsRasterized = _labels.rasterizedTotal
+      ..labelStatesWalked = _labels.statesWalked
+      ..labelsResized = _labels.resizedTotal
+      ..labelsEvicted = _labels.evictedTotal;
     if (labelsStarted - now - _prepSpent > stats.maxDrawMicros) {
       stats.maxDrawMicros = labelsStarted - now - _prepSpent;
     }

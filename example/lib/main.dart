@@ -208,6 +208,11 @@ class _BenchAppState extends State<BenchApp>
         'prep_max_us': engine.stats.maxPrepMicros,
         'place_max_us': engine.stats.maxPlaceMicros,
         'place_total_ms': engine.stats.placeMicros ~/ 1000,
+        'label_raster_total_ms': engine.stats.labelRasterMicros ~/ 1000,
+        'labels_rasterized': engine.stats.labelsRasterized,
+        'labels_resized': engine.stats.labelsResized,
+        'labels_evicted': engine.stats.labelsEvicted,
+        'label_states_walked': engine.stats.labelStatesWalked,
         'label_raster_max_us': engine.stats.maxLabelRasterMicros,
         'draw_max_us': engine.stats.maxDrawMicros,
         'unpack_max_us': engine.stats.maxUnpackMicros,
@@ -286,12 +291,14 @@ class _BenchAppState extends State<BenchApp>
         'lap$i': _summarize(laps[i], tourKeys.last.t),
       if (mode == 'ours') 'engine': engineLaps,
     };
-    getExternalStorageDirectory().then((dir) {
-      if (dir != null)
-        File('${dir.path}/bench.json').writeAsStringSync(jsonEncode(out));
-    });
     // ignore: avoid_print
     print('VMAP_BENCH ${jsonEncode(out)}');
+    if (!Platform.isAndroid) exit(0);
+    getExternalStorageDirectory().then((dir) {
+      if (dir != null) {
+        File('${dir.path}/bench.json').writeAsStringSync(jsonEncode(out));
+      }
+    });
     setState(() => result = const JsonEncoder.withIndent(' ').convert(out));
   }
 

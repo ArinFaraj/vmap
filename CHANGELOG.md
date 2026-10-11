@@ -1,3 +1,9 @@
+## 0.3.1
+
+- Label images are kept for 1400 labels instead of 500, so coming back to a
+  place does not draw its names again.
+- A frame walks only the labels that are showing or fading.
+
 ## 0.3.0
 
 - Icons: `icon-image` from the style's sprite sheet, with text placed by
