@@ -1,152 +1,19 @@
 <h1 align="center">vmap</h1>
 
 <p align="center">
-  Vector tiles for <a href="https://pub.dev/packages/flutter_map">flutter_map</a>,
-  drawn with the plain Flutter canvas.<br>
-  Any MapLibre style. No GPU package, no minimum Android version of its own.
+  Vector maps for Flutter, drawn with the plain Flutter canvas.<br>
+  Works with <a href="https://pub.dev/packages/flutter_map">flutter_map</a>
+  and any MapLibre style.
 </p>
 
 ![vmap showing three styles](doc/images/hero.png)
 
-## From raster to vector in one line
-
-vmap is a flutter_map layer. Keep your `FlutterMap`, your `MapController`,
-your `MarkerLayer` and your gestures, and swap the tile layer:
-
-```diff
- FlutterMap(
-   options: MapOptions(initialCenter: LatLng(36.19, 44.01), initialZoom: 14),
-   children: [
--    TileLayer(
--      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
--      userAgentPackageName: 'com.example.app',
--    ),
-+    VmapLayer(
-+      style: VmapStyle.url('https://tiles.openfreemap.org/styles/liberty'),
-+      userAgentPackageName: 'com.example.app',
-+    ),
-     MarkerLayer(markers: markers),
-   ],
- )
-```
-
-## Any MapLibre style
-
-Point it at a style JSON, yours or a tile server's. The style decides the
-colours, the widths, the text, the icons and where the tiles come from.
-
-![The same place in six styles](doc/images/styles.png)
-
-```dart
-VmapLayer(style: VmapStyle.url('https://tiles.openfreemap.org/styles/bright'))
-VmapLayer(style: VmapStyle.json(jsonDecode(myStyle)))
-VmapLayer(style: VmapStyle.light) // the built in style, and VmapStyle.dark
-```
-
-A style is drawn as MapLibre draws it for the same view. Two styles that
-differ only in colour, like a light and a dark version, switch without
-reloading a tile.
-
-![One style from a country down to a street](doc/images/zooms.png)
-
-Shaded relief from a raster source, dashed borders and park edges, road
-shields, icons from the style's sprite sheet, patterned fills and one way
-arrows all come from the style. Nothing here is drawn by the app.
-
-## Why another vector layer
-
-- **It runs wherever Flutter runs.** It draws with `Canvas.drawVertices`, on
-  Skia or Impeller, on the stable channel. No `flutter_gpu`, so no Impeller
-  requirement and no Android version floor beyond Flutter's own.
-- **The UI thread only draws.** Tiles are downloaded, decoded, filtered by the
-  style and turned into triangles on background isolates.
-- **Sharp at every zoom.** The map is redrawn from vectors every frame, so
-  roads and names never go soft between zoom levels.
-- **Text in any script.** Labels are laid out by Flutter's own text engine, in
-  your app's fonts, so Arabic, Kurdish and other joined or right to left
-  scripts come out right.
-- **Labels that know about your markers.** Hand the layer the same markers you
-  give `MarkerLayer`: map labels keep clear of them, and a marker can have its
-  name written beside it.
-
-## Compared with vector_map_tiles
-
-[vector_map_tiles](https://pub.dev/packages/vector_map_tiles) is the
-established vector layer for flutter_map. Both read MapLibre styles. They
-differ in how they draw.
-
-| | vmap | vector_map_tiles |
-| --- | --- | --- |
-| Drawing | vectors, redrawn every frame with `Canvas` | 8.x and 9.x: tiles rendered to images, then drawn. 10.x beta: `flutter_gpu` |
-| Flutter channel | stable | 8.x and 9.x: stable. 10.x beta: main channel with Flutter GPU enabled |
-| Renderer | Skia or Impeller | 10.x beta needs Impeller, which Flutter enables on Android API 29 and up |
-| Icons, sprites and patterns | yes | yes |
-| Raster layers | yes | yes |
-| Hillshade layers | no | yes |
-| Marker aware labels | yes | no |
-
-The 10.x requirements are taken from that version's own README, and the
-Impeller availability from
-[Flutter's Impeller page](https://docs.flutter.dev/perf/impeller).
-
-![vmap and vector_map_tiles drawing the same style](doc/images/compare.png)
-
-The same style, camera and tiles. vector_map_tiles reads a style one zoom
-level deeper than MapLibre does for the same view, so for this picture vmap
-was given `zoomOffset: 1` to match. vector_map_tiles shows more shops in
-this view than vmap does. The style holds those layers back until zoom 16 and
-17, and vmap follows that. Why vector_map_tiles shows them earlier has not
-been traced.
-
-### Measured
-
-![Frames lost during the tour](doc/images/bench.png)
-
-Both renderers drew the Liberty style on the same phone (Vivo V2514, Android,
-profile build) and flew the same scripted tour twice per start: once straight
-after a clean install with nothing cached, then again after a restart with the
-cache that run left behind. A lost frame is a display refresh that passed
-without a new frame. The table and the chart are from vmap 0.3.0 and
-vector_map_tiles 9.0.0-beta.13.
-
-| | vmap lost | vmap worst gap | vector_map_tiles lost | vector_map_tiles worst gap |
-| --- | --- | --- | --- | --- |
-| Tour, clean install | 0 of 2778 | 17 ms | 196 of 2779 | 132 ms |
-| Tour, cached | 0 of 2775 | 17 ms | 10 of 2779 | 132 ms |
-| Fast zooms, clean install | 0 of 1328 | 17 ms | 164 of 1325 | 166 ms |
-| Fast zooms, cached | 0 of 1327 | 18 ms | 140 of 1321 | 166 ms |
-
-What this does and does not show:
-
-- The phone ran both apps at 60 Hz, so a frame had 16.6 ms. It was one run
-  per row on one phone.
-- vmap does more work per frame, because it redraws the vectors every frame:
-  about 3 ms on the UI thread and 4 ms on the raster thread at the median,
-  against 1 to 2 ms each for vector_map_tiles, which mostly draws finished
-  images. The slowest 1 percent of vmap's frames took 6.6 to 7.2 ms on the UI
-  thread and 6.4 to 8.2 ms on the raster thread in later single lap runs of
-  version 0.3.2, against the 8.3 ms a frame has at 120 Hz. 120 Hz itself has
-  not been measured: the phone held both apps at 60 Hz.
-- vector_map_tiles lost its frames in long gaps while waiting for tiles to be
-  rendered, not in slow frames of its own.
-- vmap's process used about 440 to 490 MB. vector_map_tiles' memory was not
-  recorded.
-
-Run it yourself:
-
-```bash
-tool/bench_device.sh <adb-serial> ours --dart-define=STYLE=liberty --dart-define=ZOFF=1
-tool/bench_device.sh <adb-serial> vmt --dart-define=STYLE=liberty
-```
-
-`STYLE` gives both the same style, and `ZOFF=1` makes vmap read it at the
-zoom vector_map_tiles does, so both draw the same roads and names. Add
-`--dart-define=STRESS=true` for the tour of fast zooms.
-
-Once a build is installed, `tool/quick_bench.sh <adb-serial>` flies one lap
-again in about half a minute without rebuilding, which is the quick way to
-check a change. `tool/quick_bench.sh <adb-serial> labels=off` does the same
-with labels off.
+- Reads any MapLibre style: colours, roads, labels, icons, dashes, patterns.
+- Runs on the stable channel, on Skia or Impeller. No GPU package.
+- Redraws from vectors every frame, so nothing goes soft between zoom levels.
+- Tiles are loaded and built on background isolates.
+- Labels in any script, in your app's own fonts.
+- Its own gestures, and optional round pins for places.
 
 ## Install
 
@@ -162,53 +29,150 @@ dependencies:
       ref: v0.4.0
 ```
 
-## Use
-
-### Markers
-
-Draw markers the way you already do. Pass the same list to the layer and map
-labels step out of their way. A `NamedMarker` is a flutter_map `Marker` with a
-name, which the map writes beside it wherever there is room.
+## Quick start
 
 ```dart
-final markers = [
-  NamedMarker(
-    name: 'Machko Chaikhana',
-    point: const LatLng(36.18946, 44.00970),
-    width: 34,
-    height: 34,
-    child: const CafePin(),
-  ),
-  Marker(point: somewhereElse, child: const Pin()),
-];
+import 'package:latlong2/latlong.dart';
+import 'package:vmap/vmap.dart';
 
-FlutterMap(
-  children: [
-    VmapLayer(markers: markers),
-    MarkerLayer(markers: markers),
+VmapMap(
+  initialCenter: const LatLng(36.19, 44.01),
+  initialZoom: 14,
+)
+```
+
+That is a full map: the built in style, tiles from
+[OpenFreeMap](https://openfreemap.org) (no API key), and gestures.
+
+### Already using flutter_map?
+
+Keep your `FlutterMap` and swap the tile layer:
+
+```diff
+ FlutterMap(
+   options: MapOptions(initialCenter: LatLng(36.19, 44.01), initialZoom: 14),
+   children: [
+-    TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
++    VmapLayer(),
+     MarkerLayer(markers: markers),
+   ],
+ )
+```
+
+`VmapMap` and `VmapLayer` take the same options below. The snippets leave out
+`initialCenter` to stay short.
+
+## Styles
+
+![The same place in six styles](doc/images/styles.png)
+
+```dart
+VmapMap(style: VmapStyle.light)  // built in, the default
+VmapMap(style: VmapStyle.dark)   // built in
+VmapMap(style: VmapStyle.url('https://tiles.openfreemap.org/styles/liberty'))
+VmapMap(style: VmapStyle.json(jsonDecode(myStyle)))
+```
+
+The style decides the look and where the tiles come from. Light and dark
+versions of one style switch without reloading a tile.
+
+![One style from a country down to a street](doc/images/zooms.png)
+
+## Pins
+
+Styles draw places with small sprite icons. Pass `pins` to draw them as round
+pins instead:
+
+```dart
+VmapMap(pins: VmapPins.standard)
+```
+
+![Places drawn as pins on two styles](doc/images/pins.png)
+
+The standard set covers the usual kinds of place: food, cafes, hotels, shops,
+parks, sights, health, transport. It uses Material icons, so the app needs
+`uses-material-design: true` in its pubspec.
+
+To change it:
+
+```dart
+const pins = VmapPins(
+  size: 26,
+  byIcon: {
+    ...standardPins,
+    'cafe': VmapPin(Icons.coffee_rounded, Color(0xFF6F4E37)),
+  },
+);
+```
+
+A pin is looked up by the icon name the style gives a place. For OpenMapTiles
+styles that is the place's class, such as `cafe` or `lodging`. Places with no
+pin of their own get `other`, a grey pin; set `other: null` to leave them
+with the style's icon.
+
+These pins are part of the map and do not take taps. For places the user can
+tap, use markers.
+
+## Markers
+
+Markers are flutter_map `Marker`s. Map labels keep out of their way. A
+`NamedMarker` also gets its name written beside it, wherever there is room.
+
+```dart
+VmapMap(
+  markers: [
+    NamedMarker(
+      name: 'Machko Chaikhana',
+      point: const LatLng(36.18946, 44.00970),
+      width: 34,
+      height: 34,
+      child: const CafePin(),
+    ),
   ],
 )
 ```
 
-### Fonts
-
-Labels use the fonts your app bundles. Sizes, weights and colours come from
-the style.
+With `VmapLayer`, pass the same list to both layers:
 
 ```dart
-VmapLayer(
+VmapLayer(markers: markers),
+MarkerLayer(markers: markers),
+```
+
+## Gestures
+
+`VmapMap` comes with its own gestures: drag with a glide, pinch around the
+fingers, double tap, two finger tap, and double tap then drag. It does not
+rotate the map.
+
+Move the map from code with a flutter_map `MapController`:
+
+```dart
+final controller = MapController();
+
+VmapMap(controller: controller, onTap: (point) {})
+
+controller.move(const LatLng(36.19, 44.01), 15);
+```
+
+To get the same gestures on your own `FlutterMap`, wrap it in `VmapGestures`
+and set `InteractionOptions(flags: InteractiveFlag.none)`. flutter_map's own
+gestures also work with `VmapLayer`.
+
+## Fonts and language
+
+Labels use the fonts your app bundles. Sizes and colours come from the style.
+
+```dart
+VmapMap(
   textStyle: const TextStyle(
     fontFamily: 'Inter',
     fontFamilyFallback: ['Vazirmatn'],
   ),
-  markerTextStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
 )
 ```
 
-### Label language
-
-A style names the properties its labels read. `nameKeys` replaces them, tried
-in order:
+`nameKeys` picks the label language, tried in order:
 
 ```dart
 VmapStyle.url(styleUrl, nameKeys: ['name:en', 'name'])
@@ -216,141 +180,53 @@ VmapStyle.url(styleUrl, nameKeys: ['name:en', 'name'])
 
 ![Local names and English names](doc/images/labels.png)
 
-### Cache
+## Cache
 
-Give the layer a directory and it keeps tiles and the style between runs. On
-the next start the map draws from disk at once and checks the server in the
-background.
-
-```dart
-VmapLayer(cacheDirectory: '${cacheDir.path}/vmap')
-```
-
-### Pins
-
-A style draws places of interest with the small icons of its sprite sheet.
-Pass `pins` and they are drawn as round pins instead, in the same place, with
-the name below:
+Give it a directory and tiles and the style are kept between runs. The next
+start draws from disk at once and checks the server in the background.
 
 ```dart
-VmapLayer(pins: VmapPins.standard)
+VmapMap(cacheDirectory: '${cacheDir.path}/vmap')
 ```
 
-![Places drawn as pins on two styles](doc/images/pins.png)
+## Compared with vector_map_tiles
 
-`VmapPins.standard` covers the place classes of OpenMapTiles styles:
-restaurants, cafes, hotels, shops, parks, museums, hospitals, bus stops and
-so on. The icons are Material icons, so the app needs
-`uses-material-design: true` in its pubspec. Road shields, arrows and town
-dots stay as the style draws them.
+[vector_map_tiles](https://pub.dev/packages/vector_map_tiles) is the
+established vector layer for flutter_map.
 
-A style names an icon per place, and the pin is looked up by that name. Change
-the set, the size, or the pin of everything else:
+| | vmap | vector_map_tiles |
+| --- | --- | --- |
+| Drawing | vectors, every frame, with `Canvas` | 9.x: tiles rendered to images. 10.x beta: `flutter_gpu` |
+| Flutter channel | stable | 9.x: stable. 10.x beta: main, with Flutter GPU on |
+| Renderer | Skia or Impeller | 10.x beta needs Impeller |
+| Hillshade layers | no | yes |
+| Labels that avoid your markers | yes | no |
+| Pins for places | yes | no |
 
-```dart
-VmapLayer(
-  pins: VmapPins(
-    size: 26,
-    byIcon: {
-      ...standardPins,
-      'cafe': VmapPin(Icons.coffee_rounded, Color(0xFF6F4E37)),
-    },
-    other: null, // places with no pin keep the style's icon
-  ),
-)
-```
+The 10.x rows are taken from that version's own README.
 
-Create a `VmapPins` once and keep it, rather than building a new one in every
-`build`. The built in style has no icons of its own, so without pins it shows
-the names of places and nothing beside them.
+On one Android phone at 60 Hz, flying the same tour over the same style, vmap
+lost 0 frames in each of four runs and vector_map_tiles 9.0.0-beta.13 lost
+between 10 and 196. vmap does more work per frame to get there. The full
+table, the caveats and how to run it are in
+[doc/benchmark.md](doc/benchmark.md).
 
-These pins are part of the map and do not take taps. For places of your own
-that the user can tap, use markers.
+## Limits
 
-### Gestures
+- One vector source per style.
+- No hillshade or heatmap layers, no `line-pattern`, no SDF icons.
+- Road names are written straight, not bent along curves.
+- No 3D: buildings are flat and the map does not pitch or rotate by gesture.
+- Run so far on one Android phone and on macOS. iOS, web and low end devices
+  are untested.
 
-`VmapMap` is the whole map in one widget, with vmap's own gestures: the map
-follows the finger from the first frame, glides after a drag, zooms around
-the fingers and carries the zoom on after a pinch, and has double tap, two
-finger tap, and double tap then drag.
+The full list of what is read from a style, and how the renderer works, is in
+[doc/style-support.md](doc/style-support.md).
 
-```dart
-VmapMap(
-  initialCenter: const LatLng(36.19, 44.01),
-  initialZoom: 14,
-  style: VmapStyle.url('https://tiles.openfreemap.org/styles/liberty'),
-  pins: VmapPins.standard,
-  markers: markers,
-  onTap: (point) {},
-)
-```
+## Attribution
 
-It takes a `controller` (a flutter_map `MapController`) and more layers as
-`children`. It does not rotate the map.
-
-To keep your own `FlutterMap`, wrap it in `VmapGestures` and switch
-flutter_map's gestures off with
-`InteractionOptions(flags: InteractiveFlag.none)`. flutter_map's own gestures
-also work with `VmapLayer` as they are.
-
-### Sharing an engine
-
-`VmapLayer` owns what it needs. To keep loaded tiles across pages or read the
-frame counters, create a `VmapEngine` yourself and use
-`VmapLayer.engine(engine)`.
-
-## What it reads from a style
-
-| | |
-| --- | --- |
-| Layers | `background`, `fill`, `line`, `circle`, `symbol`, `raster`. `fill-extrusion` is drawn flat |
-| Sources | one vector source and any number of raster sources, by TileJSON `url` or `tiles` template |
-| Fills | colour, opacity, `fill-outline-color`, `fill-pattern` |
-| Lines | colour, opacity, width, gap width, round caps, `line-dasharray` |
-| Circles | radius, colour, opacity, and the stroke's width, colour and opacity |
-| Text | field, size, font weight and slant, colour, halo, letter spacing, max width, transform, anchor, offset, `text-optional`, `text-allow-overlap` |
-| Icons | `icon-image` from the style's sprite sheet (the `@2x` sheet when there is one), size, rotation, opacity, `icon-optional`, `icon-allow-overlap`, `icon-text-fit` |
-| Placement | `symbol-placement` point and line, `symbol-spacing`, text along a road, shields and arrows repeated along a line, `minzoom`, `maxzoom`, `visibility` |
-| Expressions | `interpolate` (linear and exponential), `step`, `match`, `case`, `coalesce`, `get`, `has`, `zoom`, `geometry-type`, comparisons, `all`, `any`, `!`, `concat`, `to-string`, maths, and the legacy `stops` functions and filters |
-
-Colours, opacities, widths and radii may read a feature's properties, for
-example a road coloured by its class. Features are grouped by the values the
-paint reads, up to 64 groups per layer in a tile.
-
-## What it does not do
-
-- More than one vector source. The one most layers use is drawn.
-- Hillshade and heatmap layers, `line-pattern`, and icons that take a colour
-  (SDF icons).
-- Text bent along a curve. A road's name is written straight on the
-  straightest stretch that fits it, and left out where none does.
-- Labels for polygons. Points and lines are labelled.
-- Raster layers are drawn under every vector layer, wherever the style puts
-  them.
-- 3D: buildings are flat and the map does not pitch.
-- It has been run on one Android phone and on macOS. iOS, web and low end
-  devices are untested.
-
-## Tiles and attribution
-
-The built in style reads [OpenFreeMap](https://openfreemap.org), which needs
-no API key. Show the credit your tile source asks for wherever the map is
-shown. For OpenFreeMap that is `© OpenFreeMap © OpenMapTiles © OpenStreetMap`.
-
-## How it works
-
-1. Worker isolates download each tile, decode it, run the style's filters,
-   triangulate polygons with earcut and turn roads into strips that can be
-   widened to any width. Layers that select the same features share one mesh.
-   The result crosses to the UI isolate without a copy.
-2. Every frame the engine evaluates the style for the zoom and draws the
-   visible tiles with `Canvas.drawVertices`, falling back to parent tiles
-   while a tile loads. Dashes and patterns are a small repeating image the
-   same triangles are drawn through.
-3. Labels are collected across tiles and placed on the screen as a whole, so
-   they never collide or get cut at a tile edge. Each text is drawn once into
-   a small image, icons come straight from the sprite sheet, and both fade in
-   and out.
+Show the credit your tile source asks for. For OpenFreeMap that is
+`© OpenFreeMap © OpenMapTiles © OpenStreetMap`.
 
 ## Example
 
@@ -359,12 +235,11 @@ cd example
 flutter run
 ```
 
-A small map of Erbil's old town with a few places on it and a button that
-walks through the styles. [example/README.md](example/README.md) lists the
-switches for the benchmark.
+A map of Erbil's old town with a few places and a button that walks through
+the styles. [example/README.md](example/README.md) lists its switches.
 
 ## License
 
-MIT. The example bundles Google Sans Flex and Vazirmatn, both under the SIL
-Open Font License; their license texts sit next to the font files. Place names
-in the example and the pictures are from OpenStreetMap.
+MIT. The example bundles Google Sans Flex and Vazirmatn under the SIL Open
+Font License. Place names in the example and the pictures are from
+OpenStreetMap.
