@@ -6,12 +6,17 @@ import 'dart:ui' as ui;
 import 'package:web/web.dart' as web;
 
 import 'types.dart';
+import 'web_codec.dart';
 
 export 'types.dart';
 
 /// Whether this platform has a file system to keep tiles in. A browser keeps
 /// what it downloads in its own cache.
 const bool hasFiles = false;
+
+/// The page's or the worker's own `fetch`: a worker has no window.
+@JS('fetch')
+external JSPromise<web.Response> _fetch(JSAny url, web.RequestInit init);
 
 class Net {
   Net({String userAgent = 'vmap', int? perHost});
@@ -28,9 +33,10 @@ class Net {
     headers.forEach((name, value) {
       if (!_refused.contains(name.toLowerCase())) sent.append(name, value);
     });
-    final response = await web.window
-        .fetch(url.toJS, web.RequestInit(headers: sent))
-        .toDart;
+    final response = await _fetch(
+      url.toJS,
+      web.RequestInit(headers: sent),
+    ).toDart;
     final body = await response.arrayBuffer().toDart;
     return Reply(response.status, body.toDart.asUint8List());
   }().timeout(timeout);
@@ -88,36 +94,84 @@ Float32List unpackFloats(Object packed) => packed as Float32List;
 
 Uint16List unpackShorts(Object packed) => packed as Uint16List;
 
-class Worker {
-  Worker._(this._inbox);
+/// The address of the script that builds tiles off the page's thread, or
+/// null to build them on it.
+String? workerScript;
 
-  final StreamController<Object?> _inbox;
+class Worker {
+  void Function(Object? message)? _send;
+  void Function()? _stop;
   bool _closed = false;
 
   void send(Object? message) {
-    if (!_closed) _inbox.add(message);
+    if (!_closed) _send?.call(message);
   }
 
   void close() {
     _closed = true;
-    _inbox.close();
+    _stop?.call();
   }
 }
 
-/// Runs [body] on the page's own thread, between frames.
+/// Runs [body] in a worker when [workerScript] names one, which then has to
+/// be the tile worker's script, and otherwise on the page's own thread
+/// between frames. A script that does not load is replaced by the page's
+/// thread, with what it was sent so far.
 Future<Worker> startWorker(
   WorkerBody body,
   List<Object?> init,
   void Function(Object? message) onMessage, {
   String? debugName,
 }) async {
-  final worker = Worker._(StreamController<Object?>());
+  final worker = Worker();
+  final script = workerScript;
+  if (script == null) {
+    _onPage(worker, body, init, onMessage);
+    return worker;
+  }
+  final real = web.Worker(script.toJS);
+  var answered = false;
+  final unanswered = <Object?>[];
+  real.onmessage = ((web.MessageEvent event) {
+    answered = true;
+    unanswered.clear();
+    final message = decodeMessage(event.data);
+    if (message != null && !worker._closed) onMessage(message);
+  }).toJS;
+  real.onerror = ((web.Event event) {
+    if (answered || worker._closed) return;
+    real.terminate();
+    _onPage(worker, body, init, onMessage);
+    for (final message in unanswered) {
+      worker.send(message);
+    }
+    unanswered.clear();
+  }).toJS;
+  worker
+    .._send = (message) {
+      if (!answered) unanswered.add(message);
+      real.postMessage(encodeMessage(message));
+    }
+    .._stop = () => real.terminate();
+  real.postMessage(encodeMessage(init));
+  return worker;
+}
+
+void _onPage(
+  Worker worker,
+  WorkerBody body,
+  List<Object?> init,
+  void Function(Object? message) onMessage,
+) {
+  final inbox = StreamController<Object?>();
+  worker
+    .._send = inbox.add
+    .._stop = inbox.close;
   unawaited(
     body(init, (message) {
       Timer.run(() {
         if (!worker._closed) onMessage(message);
       });
-    }, worker._inbox.stream),
+    }, inbox.stream),
   );
-  return worker;
 }

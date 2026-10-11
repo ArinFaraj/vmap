@@ -74,6 +74,15 @@ class VmapStats {
 
 /// Owns the tiles and labels and draws one frame of the map for a camera.
 class VmapEngine extends ChangeNotifier {
+  /// In a browser, the address of the script that builds tiles off the
+  /// page's thread: `'vmap_worker.js'` once `dart run vmap:build_web_worker`
+  /// has written it into the app's `web` folder. Set it before the first
+  /// map is shown. Null, or a script that does not load, builds tiles on
+  /// the page's own thread, which costs frames while new tiles come in.
+  /// Other platforms build tiles on isolates and ignore it.
+  static String? get webWorker => workerScript;
+  static set webWorker(String? script) => workerScript = script;
+
   VmapEngine({
     this._style = VmapStyle.light,
     this.source = const TileSourceConfig(),
@@ -648,8 +657,8 @@ class VmapEngine extends ChangeNotifier {
   static List<VmapClusterMember> _members(List<Object?>? found) => [
     for (final member in found ?? const <Object?>[])
       if (member case [
-        final double x,
-        final double y,
+        final num x,
+        final num y,
         final Map<Object?, Object?> props,
       ])
         VmapClusterMember(

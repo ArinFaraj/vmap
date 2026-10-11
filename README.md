@@ -27,7 +27,7 @@ dependencies:
   vmap:
     git:
       url: https://github.com/ArinFaraj/vmap.git
-      ref: v0.20.0
+      ref: v0.21.0
 ```
 
 ## Quick start
@@ -442,16 +442,38 @@ table, the caveats and how to run it are in
 
 - No 3D: buildings are flat and the map does not pitch.
 - Fonts come from the app, not from the style's glyph server.
-- On the web there is no disk cache, tiles are built on the page's thread
-  instead of on workers, and a PMTiles archive has to be at an `https://`
-  address. It has been run in Chrome only, as the default JavaScript build
-  and as `--wasm`. Label halos in the JavaScript build are the text's
-  outline, so they look slightly sharper than on a phone.
+- On the web there is no disk cache and a PMTiles archive has to be at an
+  `https://` address. Tiles are built on the page's thread unless the app
+  sets up a worker (below). It has been run in Chrome only. Use the default
+  JavaScript build: the `--wasm` build froze its tab in three of about a
+  dozen runs and showed labels with letters missing for a moment. Label
+  halos in the JavaScript build are the text's outline, so they look
+  slightly sharper than on a phone.
 - Run so far on one Android phone, on macOS and in Chrome. iOS and low end
   devices are untested.
 
 The full list of what is read from a style, and how the renderer works, is in
 [doc/style-support.md](doc/style-support.md).
+
+## Tiles off the page's thread in a browser
+
+A browser gives Dart one thread. To build tiles on another, compile the
+worker script into the app's `web` folder and name it before the first map
+is shown:
+
+```bash
+dart run vmap:build_web_worker
+```
+
+```dart
+VmapEngine.webWorker = 'vmap_worker.js';
+```
+
+Run the command again after updating vmap. Without the script, or if it
+does not load, tiles are built on the page as before. On a fast computer
+this made no difference that could be measured; see
+[the benchmark](doc/benchmark.md). It is there for slow devices and has
+not been measured on one.
 
 ## Attribution
 

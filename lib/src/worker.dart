@@ -220,7 +220,7 @@ class TilePool {
   Future<_Worker> _spawnWorker(int index, String template) async {
     final worker = _Worker();
     worker.link = await startWorker(
-      _workerMain,
+      tileWorkerMain,
       [
         template,
         config.cacheDirectory,
@@ -413,7 +413,9 @@ List<Object?> _members(List<ClusterPoint>? points) => [
 String _tileCachePath(String directory, String template, int z, int x, int y) =>
     '$directory/${template.hashCode.toRadixString(36)}/$z/$x/$y.pbf';
 
-Future<void> _workerMain(
+/// What a tile worker runs: it builds the tiles it is asked for and answers
+/// lookups in them.
+Future<void> tileWorkerMain(
   List<Object?> init,
   void Function(Object? message) send,
   Stream<Object?> inbox,

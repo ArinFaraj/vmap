@@ -1,3 +1,13 @@
+## 0.21.0
+
+- `VmapEngine.webWorker` and `dart run vmap:build_web_worker`: in a browser
+  tiles can be built in a web worker instead of on the page's thread. It is
+  off unless the app sets it, and a script that does not load falls back to
+  the page. Measured on a fast computer it changes nothing; it is meant for
+  slow devices and has not been measured on one.
+- The frames a browser still skips come from drawing label text, not from
+  building tiles as the notes for 0.17.2 guessed.
+
 ## 0.20.0
 
 - `line-gradient`: a line of a GeoJSON source coloured by how far along it

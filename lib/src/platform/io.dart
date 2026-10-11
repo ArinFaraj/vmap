@@ -114,6 +114,9 @@ class Worker {
   }
 }
 
+/// Only a browser needs a script to build tiles off its one thread.
+String? workerScript;
+
 /// Starts [body] on an isolate of its own. It must be a top level function.
 Future<Worker> startWorker(
   WorkerBody body,

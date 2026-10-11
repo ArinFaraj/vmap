@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:vmap/vmap.dart';
+
 import 'main.dart';
 import 'showcase.dart';
 
@@ -9,6 +11,7 @@ import 'showcase.dart';
 /// phone reads from `flags.txt`, for example `?labels=off`.
 void main() {
   flags.addAll(Uri.base.queryParameters);
+  if (flags['worker'] != 'off') VmapEngine.webWorker = 'vmap_worker.js';
   runApp(
     tour
         ? const BenchApp(cacheDirectory: '')

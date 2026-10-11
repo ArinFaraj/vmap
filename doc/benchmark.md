@@ -75,7 +75,26 @@ Both of its laps drew the same number of frames, about 2700 in 30 seconds,
 so the 68 is more likely the browser's frame times than the map. 0.17.1
 measured this build at 18 to 30, and why it differs has not been traced.
 
-The frames still skipped are mostly tiles being built on the page's thread.
+The frames still skipped are the label text, not the tiles. With labels
+off the same lap skipped 16 to 31 frames and ran at 119 frames a second.
+
+### A worker for the tiles
+
+`VmapEngine.webWorker` moves tile building off the page's thread. One lap
+each, JavaScript build, tiles already in the browser's cache:
+
+| | frames a second | frames skipped | longest gap |
+|---|---|---|---|
+| on the page | 105 and 106 | 348 and 322 | 97 and 103 ms |
+| in a worker | 106 and 106 | 324 and 340 | 107 and 93 ms |
+| on the page, labels off, processor slowed four times | 65 | 489 | 246 ms |
+| in a worker, labels off, processor slowed four times | 70 | 452 | 236 ms |
+
+So on a fast machine it changes nothing that can be measured, and on a
+slowed one it was worth about 8 percent in one run of each. Chrome's
+slowdown may not slow a worker as much as the page, which would flatter
+the worker. It has not been measured on a real slow device or with tiles
+coming from the network for the first time.
 
 ## The comparison picture
 
