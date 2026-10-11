@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Layers | `background`, `fill`, `line`, `circle`, `symbol`, `raster`, `hillshade`, `heatmap`. `fill-extrusion` is drawn flat |
-| Sources | any number of `vector`, `geojson`, `raster` and `raster-dem` sources. Tiles by TileJSON `url` or `tiles` template, GeoJSON inline or by address |
+| Sources | any number of `vector`, `geojson`, `raster` and `raster-dem` sources. Tiles by TileJSON `url` or `tiles` template, GeoJSON inline or by address, with `cluster`, `clusterRadius`, `clusterMaxZoom` and `clusterMinPoints` |
 | Order | layers are drawn in the style's order, across sources and with raster layers where the style puts them |
 | Fills | colour, opacity, `fill-outline-color`, `fill-pattern` |
 | Lines | colour, opacity, width, gap width, round caps, `line-dasharray`, `line-pattern` |
@@ -13,7 +13,7 @@
 | Text | field, size, font weight and slant, colour, halo, letter spacing, max width, transform, anchor, offset, `text-optional`, `text-allow-overlap` |
 | Icons | `icon-image` from the style's sprite sheet (the `@2x` sheet when there is one), size, rotation, opacity, `icon-color` for SDF icons, `icon-optional`, `icon-allow-overlap`, `icon-text-fit` |
 | Placement | `symbol-placement` point and line, `symbol-spacing`, text along a road and bent along its curves, labels for polygons, shields and arrows repeated along a line, `minzoom`, `maxzoom`, `visibility` |
-| Expressions | `interpolate` (linear, exponential and cubic-bezier), `step`, `match`, `case`, `coalesce`, `let`, `var`, `get`, `has`, `id`, `zoom`, `geometry-type`, `typeof`, comparisons, `all`, `any`, `!`, `concat`, `slice`, `index-of`, `to-string`, `to-rgba`, maths and trigonometry, and the legacy `stops` functions and filters |
+| Expressions | `interpolate` (linear, exponential and cubic-bezier), `step`, `match`, `case`, `coalesce`, `let`, `var`, `get`, `has`, `id`, `feature-state` in paint, `zoom`, `geometry-type`, `typeof`, comparisons, `all`, `any`, `!`, `concat`, `slice`, `index-of`, `to-string`, `to-rgba`, maths and trigonometry, and the legacy `stops` functions and filters |
 
 Colours, opacities, widths and radii may read a feature's properties, for
 example a road coloured by its class. Features are grouped by the values the
@@ -27,7 +27,8 @@ paint reads, up to 64 groups per layer in a tile.
   colour and build up to its top colour.
 - Halos on SDF icons, `hillshade-accent-color`, and line patterns on round
   caps.
-- `cluster` on a GeoJSON source, `feature-state`, `within` and `distance`.
+- `clusterProperties` on a clustered source, `feature-state` in a symbol
+  layer, `within` and `distance`.
 - The style's `glyphs`. Text is drawn in the app's fonts.
 - A road name on a bend sharper than about 24 degrees between one slice of
   the text and the next. It is left out there.

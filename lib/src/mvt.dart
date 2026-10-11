@@ -122,6 +122,7 @@ class MvtFeature implements TileFeature {
   MvtFeature._(
     this._bytes,
     this.type,
+    this.id,
     this._tagsStart,
     this._tagsEnd,
     this._geomStart,
@@ -131,6 +132,9 @@ class MvtFeature implements TileFeature {
   final Uint8List _bytes;
   @override
   final int type;
+
+  /// The feature's id in the tile, or null when it has none.
+  final int? id;
   final int _tagsStart;
   final int _tagsEnd;
   final int _geomStart;
@@ -138,6 +142,7 @@ class MvtFeature implements TileFeature {
 
   static MvtFeature _decode(Uint8List bytes, int start, int end) {
     var type = 0;
+    int? id;
     var tagsStart = 0;
     var tagsEnd = 0;
     var geomStart = 0;
@@ -146,6 +151,8 @@ class MvtFeature implements TileFeature {
     while (r.hasMore) {
       final tag = r.varint();
       switch (tag) {
+        case 8:
+          id = r.varint();
         case 18:
           final len = r.varint();
           tagsStart = r.pos;
@@ -162,7 +169,15 @@ class MvtFeature implements TileFeature {
           r.skip(tag & 7);
       }
     }
-    return MvtFeature._(bytes, type, tagsStart, tagsEnd, geomStart, geomEnd);
+    return MvtFeature._(
+      bytes,
+      type,
+      id,
+      tagsStart,
+      tagsEnd,
+      geomStart,
+      geomEnd,
+    );
   }
 
   /// The value stored under the key at [keyIndex] in [layer], or null.
@@ -180,7 +195,7 @@ class MvtFeature implements TileFeature {
   @override
   Map<String, Object?> allTags(TileLayer layer) {
     layer as MvtLayer;
-    final out = <String, Object?>{};
+    final out = <String, Object?>{r'$id': ?id};
     final r = _Reader(_bytes, _tagsStart, _tagsEnd);
     while (r.hasMore) {
       final k = r.varint();

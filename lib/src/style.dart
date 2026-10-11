@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'builtin_style.dart';
+import 'cluster.dart';
 import 'expr.dart';
 
 /// Which map style to draw: a MapLibre style document, or the style that
@@ -320,6 +321,11 @@ class PaintLayer {
   /// The paint reads feature properties, so it is worked out per mesh.
   final bool perFeature;
 
+  /// Circles and glows reach past the edge of their tile, so they are drawn
+  /// unclipped and in a run of their own, after everything under them in
+  /// every tile.
+  bool get spills => kind == BucketKind.circle;
+
   bool get isLine => kind == BucketKind.line;
 }
 
@@ -447,6 +453,7 @@ class VectorSource {
     required this.maxZoom,
     required this.data,
     required this.signature,
+    this.cluster,
   });
 
   final String name;
@@ -459,6 +466,9 @@ class VectorSource {
 
   /// A GeoJSON document, or the address of one.
   final Object? data;
+
+  /// Set when a GeoJSON source asks for its points to be clustered.
+  final ClusterOptions? cluster;
 
   /// Equal for two sources that give the same tiles.
   final String signature;
@@ -533,16 +543,29 @@ class StyleSheet {
           ? tiles.first as String?
           : null;
       final data = from['data'];
+      final maxZoom = asNumber(from['maxzoom'])?.toInt();
+      final cluster = geoJson && from['cluster'] == true
+          ? ClusterOptions(
+              radius: asNumber(from['clusterRadius'])?.toDouble() ?? 50,
+              maxZoom:
+                  (asNumber(from['clusterMaxZoom'])?.toInt() ??
+                          (maxZoom ?? 18) - 1)
+                      .clamp(0, 24),
+              minPoints: asNumber(from['clusterMinPoints'])?.toInt() ?? 2,
+            )
+          : null;
       vectorSources.add(
         VectorSource(
           name: '$name',
           geoJson: geoJson,
           tileJsonUrl: geoJson ? null : from['url'] as String?,
           tiles: direct,
-          maxZoom: asNumber(from['maxzoom'])?.toInt(),
+          maxZoom: maxZoom,
           data: data,
+          cluster: cluster,
           signature: geoJson
               ? 'g|${data is String ? data : identityHashCode(data)}'
+                    '|${cluster?.signature}'
               : 'v|${from['url']}|$direct',
         ),
       );
@@ -936,8 +959,9 @@ class StyleSheet {
       }
       if (i == layers.length ||
           (i > runStart &&
-              buckets[layers[i].bucket].source !=
-                  buckets[layers[runStart].bucket].source)) {
+              (buckets[layers[i].bucket].source !=
+                      buckets[layers[runStart].bucket].source ||
+                  layers[i].spills != layers[runStart].spills))) {
         closeRun(i);
       }
     }
@@ -968,6 +992,9 @@ class StyleSheet {
           (json[0] == 'get' || json[0] == 'has') &&
           json[1] is String) {
         into.add(json[1] as String);
+      }
+      if (json.isNotEmpty && (json[0] == 'feature-state' || json[0] == 'id')) {
+        into.add(r'$id');
       }
       for (final e in json) {
         _reads(e, into);

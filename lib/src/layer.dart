@@ -37,6 +37,7 @@ class VmapLayer extends StatefulWidget {
     this.markers = const [],
     this.pins,
     this.overlay,
+    this.featureStates = const [],
     this.curvedLabels = true,
     this.textStyle,
     this.markerTextStyle,
@@ -52,6 +53,7 @@ class VmapLayer extends StatefulWidget {
       markers = const [],
       pins = null,
       overlay = null,
+      featureStates = const [],
       curvedLabels = true,
       textStyle = null,
       markerTextStyle = null,
@@ -74,6 +76,10 @@ class VmapLayer extends StatefulWidget {
 
   /// Sources and layers of your own, drawn with the style.
   final VmapOverlay? overlay;
+
+  /// State for single features, which the style reads with
+  /// `['feature-state', name]`.
+  final List<VmapFeatureState> featureStates;
 
   /// Road names follow bends. Off, a name is written only where its road is
   /// straight enough.
@@ -119,17 +125,20 @@ class VmapLayerState extends State<VmapLayer> {
   void initState() {
     super.initState();
     if (widget.engine == null) {
-      _owned = VmapEngine(
-        style: widget.style,
-        text: _text,
-        pins: widget.pins,
-        overlay: widget.overlay,
-        curvedLabels: widget.curvedLabels,
-        source: TileSourceConfig(
-          cacheDirectory: widget.cacheDirectory,
-          userAgent: widget.userAgentPackageName,
-        ),
-      )..markers = widget.markers;
+      _owned =
+          VmapEngine(
+              style: widget.style,
+              text: _text,
+              pins: widget.pins,
+              overlay: widget.overlay,
+              curvedLabels: widget.curvedLabels,
+              source: TileSourceConfig(
+                cacheDirectory: widget.cacheDirectory,
+                userAgent: widget.userAgentPackageName,
+              ),
+            )
+            ..markers = widget.markers
+            ..featureStates = widget.featureStates;
     }
   }
 
@@ -146,6 +155,9 @@ class VmapLayerState extends State<VmapLayer> {
       ..text = _text;
     if (!_sameMarkers(oldWidget.markers, widget.markers)) {
       owned.markers = widget.markers;
+    }
+    if (!identical(oldWidget.featureStates, widget.featureStates)) {
+      owned.featureStates = widget.featureStates;
     }
   }
 

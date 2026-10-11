@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -131,6 +132,112 @@ VmapOverlay _walking(int step) {
   );
 }
 
+/// A few hundred made up points around the city, gathered into clusters, to
+/// show a clustered source.
+VmapOverlay _crowd() {
+  final random = math.Random(7);
+  double spread() => (random.nextDouble() + random.nextDouble() - 1) * 0.035;
+  return VmapOverlay(
+    sources: {
+      'crowd': {
+        'type': 'geojson',
+        'cluster': true,
+        'clusterRadius': 45,
+        'clusterMaxZoom': 14,
+        'data': {
+          'type': 'FeatureCollection',
+          'features': [
+            for (var i = 0; i < 400; i++)
+              {
+                'type': 'Feature',
+                'id': i,
+                'properties': <String, Object?>{},
+                'geometry': {
+                  'type': 'Point',
+                  'coordinates': [
+                    _centre.longitude + spread() * 1.2,
+                    _centre.latitude + spread(),
+                  ],
+                },
+              },
+          ],
+        },
+      },
+    },
+    layers: const [
+      {
+        'id': 'crowd-clusters',
+        'type': 'circle',
+        'source': 'crowd',
+        'filter': ['has', 'point_count'],
+        'paint': {
+          'circle-color': [
+            'step',
+            ['get', 'point_count'],
+            '#1A73E8',
+            20,
+            '#7B61FF',
+            80,
+            '#E5484D',
+          ],
+          'circle-radius': [
+            'step',
+            ['get', 'point_count'],
+            14,
+            20,
+            19,
+            80,
+            25,
+          ],
+          'circle-stroke-color': '#FFFFFF',
+          'circle-stroke-width': 3,
+        },
+      },
+      {
+        'id': 'crowd-count',
+        'type': 'symbol',
+        'source': 'crowd',
+        'filter': ['has', 'point_count'],
+        'layout': {
+          'text-field': ['get', 'point_count_abbreviated'],
+          'text-size': 13,
+          'text-allow-overlap': true,
+        },
+        'paint': {'text-color': '#FFFFFF'},
+      },
+      {
+        'id': 'crowd-single',
+        'type': 'circle',
+        'source': 'crowd',
+        'filter': [
+          '!',
+          ['has', 'point_count'],
+        ],
+        'paint': {
+          'circle-color': '#1A73E8',
+          'circle-radius': 5,
+          'circle-stroke-color': '#FFFFFF',
+          'circle-stroke-width': 2,
+        },
+      },
+    ],
+  );
+}
+
+final _crowdOverlay = _crowd();
+
+/// Red for the feature that was tapped, blue for the rest.
+const _picked = [
+  'case',
+  [
+    '==',
+    ['feature-state', 'picked'],
+    true,
+  ],
+  '#E5484D',
+  '#1A73E8',
+];
+
 /// A walk through the old town and the square in front of the citadel, to
 /// show an overlay of the app's own data.
 const _overlay = VmapOverlay(
@@ -142,6 +249,7 @@ const _overlay = VmapOverlay(
         'features': [
           {
             'type': 'Feature',
+            'id': 1,
             'properties': {'name': 'Evening walk'},
             'geometry': {
               'type': 'LineString',
@@ -158,6 +266,7 @@ const _overlay = VmapOverlay(
           },
           {
             'type': 'Feature',
+            'id': 2,
             'properties': {'name': 'Meeting point'},
             'geometry': {
               'type': 'Polygon',
@@ -182,7 +291,19 @@ const _overlay = VmapOverlay(
       'type': 'fill',
       'source': 'walk',
       'filter': ['==', r'$type', 'Polygon'],
-      'paint': {'fill-color': '#1A73E8', 'fill-opacity': 0.18},
+      'paint': {
+        'fill-color': _picked,
+        'fill-opacity': [
+          'case',
+          [
+            '==',
+            ['feature-state', 'picked'],
+            true,
+          ],
+          0.45,
+          0.18,
+        ],
+      },
     },
     {
       'id': 'walk-casing',
@@ -198,7 +319,7 @@ const _overlay = VmapOverlay(
       'source': 'walk',
       'filter': ['==', r'$type', 'LineString'],
       'layout': {'line-cap': 'round'},
-      'paint': {'line-color': '#1A73E8', 'line-width': 5},
+      'paint': {'line-color': _picked, 'line-width': 5},
     },
   ],
 );
@@ -278,6 +399,14 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
 
   Timer? _walker;
   int _step = 0;
+  List<VmapFeatureState> _featureStates = const [
+    if (int.fromEnvironment('PICK') != 0)
+      VmapFeatureState(
+        source: 'walk',
+        id: int.fromEnvironment('PICK'),
+        state: {'picked': true},
+      ),
+  ];
 
   @override
   void dispose() {
@@ -365,12 +494,22 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
               style: look.style,
               markers: markers,
               pins: _pins ? VmapPins.standard : null,
-              overlay: _live
+              overlay: const bool.fromEnvironment('CLUSTER')
+                  ? _crowdOverlay
+                  : _live
                   ? _walking(_step)
                   : const bool.fromEnvironment('OVERLAY')
                   ? _overlay
                   : null,
+              featureStates: _featureStates,
               onFeatureTap: (_, features) {
+                final own = features.where((f) => f.source == 'walk');
+                setState(
+                  () => _featureStates = [
+                    if (own.isNotEmpty)
+                      VmapFeatureState.of(own.first, const {'picked': true}),
+                  ],
+                );
                 if (features.isEmpty) return;
                 final top = features.first;
                 final name =

@@ -27,7 +27,7 @@ dependencies:
   vmap:
     git:
       url: https://github.com/ArinFaraj/vmap.git
-      ref: v0.5.1
+      ref: v0.6.0
 ```
 
 ## Quick start
@@ -201,8 +201,59 @@ style instead of on top. `data` may also be the address of a GeoJSON file.
 
 To change what is shown, build a new overlay with a new `data` object. Only
 that source is read again, and what it drew stays up until the new data is
-ready, so a dot that moves a few times a second does not blink. Keep the overlay between builds: a new one in
-every `build` is treated as a change every time.
+ready, so a dot that moves a few times a second does not blink. Keep the
+overlay between builds: a new one in every `build` is treated as a change
+every time.
+
+### Many points
+
+A GeoJSON source with `'cluster': true` gathers its points into clusters
+that split apart as the map zooms in, with MapLibre's options and
+properties:
+
+```dart
+VmapOverlay(
+  sources: {
+    'shops': {
+      'type': 'geojson',
+      'data': shops,
+      'cluster': true,
+      'clusterRadius': 45,
+      'clusterMaxZoom': 14,
+    },
+  },
+  layers: [
+    {
+      'id': 'clusters',
+      'type': 'circle',
+      'source': 'shops',
+      'filter': ['has', 'point_count'],
+      'paint': {
+        'circle-color': '#1A73E8',
+        'circle-radius': ['step', ['get', 'point_count'], 14, 20, 19, 80, 25],
+      },
+    },
+    {
+      'id': 'counts',
+      'type': 'symbol',
+      'source': 'shops',
+      'filter': ['has', 'point_count'],
+      'layout': {
+        'text-field': ['get', 'point_count_abbreviated'],
+        'text-allow-overlap': true,
+      },
+      'paint': {'text-color': '#FFFFFF'},
+    },
+    {
+      'id': 'shop',
+      'type': 'circle',
+      'source': 'shops',
+      'filter': ['!', ['has', 'point_count']],
+      'paint': {'circle-color': '#1A73E8', 'circle-radius': 5},
+    },
+  ],
+)
+```
 
 ## What is under a tap
 
@@ -223,6 +274,36 @@ comes from the tiles off the UI thread, so it arrives a moment after the tap.
 
 With your own `FlutterMap`, give the layer a `GlobalKey<VmapLayerState>` and
 call `key.currentState!.featuresAt(point)`.
+
+### Highlighting it
+
+A paint property can read state you give a feature, with
+`['feature-state', 'picked']`. Changing the state repaints and rebuilds
+nothing:
+
+```dart
+'paint': {
+  'fill-color': [
+    'case',
+    ['==', ['feature-state', 'picked'], true], '#E5484D',
+    '#1A73E8',
+  ],
+},
+```
+
+```dart
+VmapMap(
+  featureStates: [
+    if (picked != null) VmapFeatureState.of(picked, const {'picked': true}),
+  ],
+  onFeatureTap: (_, features) =>
+      setState(() => picked = features.firstOrNull),
+)
+```
+
+The feature needs an id: the `id` of a GeoJSON feature, or the id its vector
+tile carries. A layer painted this way is drawn one feature at a time, so
+keep it for layers with hundreds of features in view, not tens of thousands.
 
 ## Fonts and language
 
@@ -281,7 +362,6 @@ table, the caveats and how to run it are in
 
 - No 3D: buildings are flat and the map does not pitch.
 - A heatmap is drawn in two colours of its ramp, not through every stop.
-- GeoJSON sources are not clustered.
 - Fonts come from the app, not from the style's glyph server.
 - Run so far on one Android phone and on macOS. iOS, web and low end devices
   are untested.

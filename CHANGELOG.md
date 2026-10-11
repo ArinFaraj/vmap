@@ -1,3 +1,15 @@
+## 0.6.0
+
+- GeoJSON sources cluster their points: `cluster`, `clusterRadius`,
+  `clusterMaxZoom` and `clusterMinPoints`, with `point_count` and the other
+  cluster properties for the style to read.
+- `featureStates` and the `feature-state` expression: paint a feature by
+  state the app gives it, such as the one that was tapped, without
+  rebuilding tiles. `VmapFeature` carries the feature's `id`.
+- Circles are no longer cut where two tiles meet.
+- Two points of an app's own data a few pixels apart can carry the same
+  text. Only one of them was labelled.
+
 ## 0.5.1
 
 - A road name on a bend is laid along the road every frame, so its letters

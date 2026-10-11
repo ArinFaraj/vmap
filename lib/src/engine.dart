@@ -369,6 +369,22 @@ class VmapEngine extends ChangeNotifier {
 
   final List<LabelCandidate> _markerLabels = [];
 
+  final Map<String, Map<Object, Map<String, Object?>>> _states = {};
+
+  /// State given to single features, read by the style's paint properties
+  /// with `['feature-state', name]`. Changing it repaints and rebuilds
+  /// nothing.
+  set featureStates(List<VmapFeatureState> value) {
+    if (value.isEmpty && _states.isEmpty) return;
+    _states.clear();
+    for (final s in value) {
+      final id = s.id;
+      if (id == null) continue;
+      (_states[s.source] ??= {})[id] = s.state;
+    }
+    notifyListeners();
+  }
+
   /// Pins drawn in place of the style's icons for places of interest. Null
   /// draws the style's own icons.
   VmapPins? get pins => _labels.pins;
@@ -446,7 +462,11 @@ class VmapEngine extends ChangeNotifier {
                 sourceLayer: h[1]! as String,
                 geometryType: h[2]! as String,
                 layers: (h[3]! as List).cast<String>(),
-                properties: (h[4]! as Map).cast<String, Object?>(),
+                id: (h[4]! as Map)[r'$id'],
+                properties: {
+                  for (final e in (h[4]! as Map).entries)
+                    if (e.key != r'$id') e.key as String: e.value,
+                },
               ),
             ));
           }
@@ -536,11 +556,12 @@ class VmapEngine extends ChangeNotifier {
         continue;
       }
       final s = _sources[run.source];
+      final states = _states[s.def.name];
       for (final d in s.fallback) {
-        draws += _drawTile(canvas, sheet, d, run.first, run.end);
+        draws += _drawTile(canvas, sheet, d, run.first, run.end, states);
       }
       for (final d in s.ideal) {
-        draws += _drawTile(canvas, sheet, d, run.first, run.end);
+        draws += _drawTile(canvas, sheet, d, run.first, run.end, states);
       }
     }
 
@@ -655,6 +676,7 @@ class VmapEngine extends ChangeNotifier {
     TileDraw d,
     int first,
     int end,
+    Map<Object, Map<String, Object?>>? states,
   ) {
     final scale = d.size / tileExtent;
     void enter({bool clip = true}) {
@@ -680,9 +702,15 @@ class VmapEngine extends ChangeNotifier {
         ..scale(scale);
     }
 
-    enter();
-    final groups = d.tile.groups;
     final layers = sheet.layers;
+    // A tile standing in for part of another keeps its clip, or its circles
+    // would show beside those of the tiles around it.
+    enter(
+      clip:
+          !layers[first].spills ||
+          (d.clips != null && layers[first].heat == null),
+    );
+    final groups = d.tile.groups;
     var draws = 0;
     for (var p = first; p < end; p++) {
       if (_colors[p] >>> 24 == 0) continue;
@@ -694,12 +722,7 @@ class VmapEngine extends ChangeNotifier {
       final heat = layer.heat;
       if (heat != null) {
         if (width <= 0) continue;
-        // Glows reach past the tile's edge, so they are drawn unclipped.
-        canvas.restore();
-        enter(clip: false);
         _heat.draw(canvas, _context, heat, meshes, color, width / scale);
-        canvas.restore();
-        enter();
         draws++;
         continue;
       }
@@ -710,7 +733,9 @@ class VmapEngine extends ChangeNotifier {
       }
       for (final m in meshes) {
         if (layer.perFeature) {
-          _context.props = m.props ?? const {};
+          _context
+            ..props = m.props ?? const {}
+            ..state = states?[m.props?[r'$id']] ?? const {};
           final own = Rgba.of(layer.color(_context));
           if (own == null) continue;
           color = own.toArgb(asNumber(layer.opacity(_context)) ?? 1);
@@ -783,7 +808,11 @@ class VmapEngine extends ChangeNotifier {
             ..colorFilter = null;
         }
       }
-      if (layer.perFeature) _context.props = const {};
+      if (layer.perFeature) {
+        _context
+          ..props = const {}
+          ..state = const {};
+      }
     }
     canvas.restore();
     return draws;

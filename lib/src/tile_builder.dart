@@ -63,7 +63,7 @@ class BuiltLabel {
   final bool spaced;
 
   /// What makes this label the same label in another tile: its layer, text
-  /// and rough place for a point, its tile and number otherwise.
+  /// and place for a point, its tile and number otherwise.
   String key = '';
 }
 
@@ -73,8 +73,11 @@ class BuiltTile {
   final List<BuiltMesh> meshes;
   final List<BuiltLabel> labels;
 
-  /// Names every label for the tile at [z], [x], [y].
-  void keyLabels(int z, int x, int y) {
+  /// Names every label for the tile at [z], [x], [y]. A point's place is
+  /// taken to [grid] steps across the world: coarse for vector tiles, where
+  /// a place sits a little differently from zoom to zoom, fine for an app's
+  /// own points, where two a few pixels apart can carry the same text.
+  void keyLabels(int z, int x, int y, {int grid = 1024}) {
     final span = 1 / (1 << z);
     final tx = x * span;
     final ty = y * span;
@@ -82,7 +85,7 @@ class BuiltTile {
       final l = labels[i];
       l.key = l.line != null || l.spaced || l.text.isEmpty
           ? 'r|$z/$x/$y|${l.layer}|$i'
-          : 'p|${l.layer}|${l.text}|${((tx + l.x / tileExtent * span) * 1024).floor()}|${((ty + l.y / tileExtent * span) * 1024).floor()}';
+          : 'p|${l.layer}|${l.text}|${((tx + l.x / tileExtent * span) * grid).floor()}|${((ty + l.y / tileExtent * span) * grid).floor()}';
     }
   }
 
@@ -202,6 +205,10 @@ class TileBuilder {
   /// with the paint of the last combination.
   static const int _maxVariants = 64;
 
+  /// The same for a bucket painted by feature id or state, where every
+  /// feature is its own combination.
+  static const int _maxFeatures = 4096;
+
   /// Symbols placed along one line at most.
   static const int _maxRepeats = 24;
 
@@ -240,7 +247,8 @@ class TileBuilder {
       final key = '$b|${values.join('\u0001')}';
       var group = varied[key];
       if (group != null) return group;
-      if (variantCount[b] >= _maxVariants) return lastVariant[b]!;
+      final most = keys.contains(r'$id') ? _maxFeatures : _maxVariants;
+      if (variantCount[b] >= most) return lastVariant[b]!;
       variantCount[b]++;
       group = varied[key] = lastVariant[b] = _Group(b, {
         for (var i = 0; i < keys.length; i++)

@@ -11,6 +11,9 @@ class EvalContext {
 
   /// What `heatmap-density` and `line-progress` read.
   double progress = 0;
+
+  /// What `feature-state` reads: the state the app gave the feature.
+  Map<String, Object?> state = const {};
 }
 
 typedef Expr = Object? Function(EvalContext c);
@@ -353,6 +356,9 @@ Expr _op(String op, List<Object?> args) {
       return (c) => c.props;
     case 'id':
       return (c) => c.props[r'$id'];
+    case 'feature-state':
+      final name = args.isEmpty ? null : args.first;
+      return (c) => c.state[name];
     case 'let':
       final scope = <String, Expr>{};
       for (var i = 0; i + 2 < args.length; i += 2) {

@@ -10,6 +10,7 @@ class VmapFeature {
     required this.layers,
     required this.geometryType,
     required this.properties,
+    this.id,
   });
 
   /// The name of the style source it comes from.
@@ -23,8 +24,37 @@ class VmapFeature {
   final String geometryType;
   final Map<String, Object?> properties;
 
+  /// The feature's id in its source, or null when it has none. It is what a
+  /// [VmapFeatureState] names the feature by.
+  final Object? id;
+
   @override
-  String toString() => 'VmapFeature($source/$sourceLayer $layers $properties)';
+  String toString() =>
+      'VmapFeature($source/$sourceLayer $id $layers $properties)';
+}
+
+/// State an app gives one feature, which the style reads with
+/// `['feature-state', name]` in a paint property: the way to highlight what
+/// was tapped without rebuilding anything.
+class VmapFeatureState {
+  const VmapFeatureState({
+    required this.source,
+    required this.id,
+    required this.state,
+  });
+
+  /// State for a feature found by a tap.
+  VmapFeatureState.of(VmapFeature feature, this.state)
+    : source = feature.source,
+      id = feature.id;
+
+  /// The name of the style source the feature is in.
+  final String source;
+
+  /// The feature's id: the `id` of a GeoJSON feature, or the id the tiles
+  /// carry.
+  final Object? id;
+  final Map<String, Object?> state;
 }
 
 /// The features of [layers] within [radius] tile units of ([px], [py]) that a

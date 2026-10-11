@@ -382,14 +382,18 @@ Future<void> _workerMain(List<Object?> init) async {
   Future<GeoJsonTiles>? geoJson;
   if (sheet.sources[source].geoJson) {
     final data = sheet.sources[source].data;
+    final cluster = sheet.sources[source].cluster;
     geoJson = () async {
-      if (data is! String) return GeoJsonTiles(data);
+      if (data is! String) return GeoJsonTiles(data, cluster: cluster);
       try {
         final request = await client.getUrl(Uri.parse(data));
         final response = await request.close().timeout(
           const Duration(seconds: 20),
         );
-        return GeoJsonTiles(jsonDecode(await utf8.decodeStream(response)));
+        return GeoJsonTiles(
+          jsonDecode(await utf8.decodeStream(response)),
+          cluster: cluster,
+        );
       } catch (_) {
         return GeoJsonTiles(null);
       }
@@ -491,7 +495,7 @@ Future<void> _workerMain(List<Object?> init) async {
         final tile = layers.isEmpty
             ? BuiltTile(const [], const [])
             : (builder.buildLayers(layers, z, maxZoom: m[4]! as int)
-                ..keyLabels(z, x, y));
+                ..keyLabels(z, x, y, grid: geoJson == null ? 1024 : 1 << 24));
         out.send([job, tile.toMessage()]);
       } catch (e) {
         out.send([job, null, '$e']);

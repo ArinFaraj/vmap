@@ -1,16 +1,24 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'cluster.dart';
 import 'mvt.dart';
 import 'tile_builder.dart' show tileExtent;
 
 /// GeoJSON cut into tiles on demand, in the shape vector tiles arrive in.
 class GeoJsonTiles {
-  GeoJsonTiles(Object? data) {
+  /// With [cluster], the points of [data] are gathered into clusters and
+  /// only its lines and polygons are kept as they are.
+  GeoJsonTiles(Object? data, {ClusterOptions? cluster})
+    : _clustering = cluster != null {
     _read(data);
+    if (cluster != null) _clusters = PointClusters(_loose, cluster);
   }
 
   final List<_Feature> _features = [];
+  final bool _clustering;
+  final List<ClusterPoint> _loose = [];
+  PointClusters? _clusters;
 
   /// Kept around a tile so lines and outlines do not end at its edge.
   static const double _buffer = 128;
@@ -128,6 +136,14 @@ class GeoJsonTiles {
   }
 
   void _add(int type, Map<String, Object?> props, List<Float64List> rings) {
+    if (_clustering && type == mvtPoint) {
+      for (final r in rings) {
+        for (var i = 0; i < r.length; i += 2) {
+          _loose.add(ClusterPoint(r[i], r[i + 1], 1, props));
+        }
+      }
+      return;
+    }
     var minX = double.infinity, minY = double.infinity;
     var maxX = -double.infinity, maxY = -double.infinity;
     for (final r in rings) {
@@ -175,6 +191,21 @@ class GeoJsonTiles {
         }
       }
       if (rings.isNotEmpty) out.add(_Clipped(f.type, f.props, rings));
+    }
+    for (final p in _clusters?.at(z) ?? const <ClusterPoint>[]) {
+      if (p.x < left - pad ||
+          p.x > right + pad ||
+          p.y < top - pad ||
+          p.y > bottom + pad) {
+        continue;
+      }
+      out.add(
+        _Clipped(mvtPoint, p.props, [
+          Float64List(2)
+            ..[0] = (p.x * n - x) * tileExtent
+            ..[1] = (p.y * n - y) * tileExtent,
+        ]),
+      );
     }
     return out.isEmpty ? const [] : [_Layer(out)];
   }
