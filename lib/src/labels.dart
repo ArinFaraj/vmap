@@ -175,6 +175,13 @@ class _LabelState {
   double iconW = 0;
   double iconH = 0;
   double iconOpacity = 1;
+
+  /// How far the icon's middle is drawn from the point.
+  double iconDx = 0;
+  double iconDy = 0;
+
+  /// Which of the layer's variable anchors the text took last.
+  int side = 0;
   bool showIcon = false;
   bool showText = true;
 
@@ -549,8 +556,8 @@ class LabelEngine {
             st.candidate.source.layer >= 0 &&
             symbols[st.candidate.source.layer].textFit;
         _project(st.worldX, st.worldY, world, origin);
-        final ix = _px + (fit ? st.dx : 0);
-        final iy = _py + (fit ? st.dy : 0);
+        final ix = _px + (fit ? st.dx : st.iconDx);
+        final iy = _py + (fit ? st.dy : st.iconDy);
         final from = st.candidate.source;
         final turn = from.turns ? from.angle + rotation : from.angle;
         final area = ui.Rect.fromLTWH(
@@ -813,8 +820,17 @@ class LabelEngine {
       if (icon == null && c.source.icon.isNotEmpty) {
         icon = st.icon = _sheet?.entries[c.source.icon];
       }
+      st
+        ..iconDx = 0
+        ..iconDy = 0;
       if (icon != null && symbol != null) {
         final by = asNumber(symbol.iconSize(_context..zoom = styleZoom)) ?? 1;
+        if (!symbol.textFit) {
+          final (ax, ay) = _sides(symbol.iconAnchor);
+          st
+            ..iconDx = symbol.iconOffsetX * by + ax * icon.width * by / 2
+            ..iconDy = symbol.iconOffsetY * by + ay * icon.height * by / 2;
+        }
         st
           ..iconW = symbol.textFit ? textW + _fitPad * 2 : icon.width * by
           ..iconH = symbol.textFit ? textH + _fitPad * 2 : icon.height * by
@@ -830,6 +846,8 @@ class LabelEngine {
       st.pin = pin;
       if (pin != null) {
         st
+          ..iconDx = 0
+          ..iconDy = 0
           ..iconW = pins!.size
           ..iconH = pins.size
           ..iconOpacity = 1;
@@ -853,7 +871,37 @@ class LabelEngine {
       if (!hasIcon && !c.hasText) continue;
 
       var textFits = false;
-      if (c.hasText) {
+      final sides = symbol?.anchors ?? const <String>[];
+      if (c.hasText && sides.isNotEmpty) {
+        // The side the text took last is tried first, so a label stays put
+        // while it still fits there.
+        final away = pin != null
+            ? pins!.size / 2 + _pinGap
+            : symbol!.radialOffset * fontSize;
+        final first = st.side < sides.length ? st.side : 0;
+        for (var k = 0; k < sides.length && !textFits; k++) {
+          final at = (first + k) % sides.length;
+          final (ax, ay) = _sides(sides[at]);
+          final double fx, fy;
+          if (away > 0) {
+            final reach = ax != 0 && ay != 0 ? away / math.sqrt2 : away;
+            fx = ax * (reach + textW / 2);
+            fy = ay * (reach + textH / 2);
+          } else {
+            fx = ax * ((symbol!.offsetX * fontSize).abs() + textW / 2);
+            fy = ay * ((symbol.offsetY * fontSize).abs() + textH / 2);
+          }
+          if (!(symbol!.textOverlaps) &&
+              _collides(sx + fx, sy + fy, textW, textH, 0)) {
+            continue;
+          }
+          st
+            ..side = at
+            ..dx = fx
+            ..dy = fy;
+          textFits = true;
+        }
+      } else if (c.hasText) {
         if (obstacles.isEmpty) {
           textFits =
               (symbol?.textOverlaps ?? false) ||
@@ -910,7 +958,13 @@ class LabelEngine {
           hasIcon &&
           ((symbol?.iconOverlaps ?? false) ||
               fitted ||
-              !_collides(sx, sy, st.iconW, st.iconH, 0));
+              !_collides(
+                sx + st.iconDx,
+                sy + st.iconDy,
+                st.iconW,
+                st.iconH,
+                0,
+              ));
       final bool showText;
       final bool showIcon;
       if (c.hasText && hasIcon) {
@@ -923,7 +977,7 @@ class LabelEngine {
       if (!showText && !showIcon) continue;
       if (showText) _addBoxes(sx + st.dx, sy + st.dy, textW, textH, 0);
       if (showIcon && !fitted) {
-        _addBoxes(sx, sy, st.iconW, st.iconH, 0);
+        _addBoxes(sx + st.iconDx, sy + st.iconDy, st.iconW, st.iconH, 0);
       }
       st
         ..showText = showText
@@ -1121,6 +1175,21 @@ class LabelEngine {
     }
     return false;
   }
+
+  /// Which way a thing lies from its point when [anchor] is the part of it
+  /// on the point: 1 for right or below, -1 for left or above, 0 for neither.
+  static (double, double) _sides(String anchor) => (
+    anchor.endsWith('left')
+        ? 1
+        : anchor.endsWith('right')
+        ? -1
+        : 0,
+    anchor.startsWith('top')
+        ? 1
+        : anchor.startsWith('bottom')
+        ? -1
+        : 0,
+  );
 
   bool _nearSameRoad(_LabelState st, double world) {
     final text = st.candidate.source.text;

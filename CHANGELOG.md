@@ -1,3 +1,12 @@
+## 0.8.0
+
+- `text-variable-anchor` and `text-radial-offset`: a name that does not fit
+  on one side of its point is tried on the others, and stays on the side it
+  found while it still fits.
+- `icon-anchor` and `icon-offset`.
+- `symbol-sort-key`: of two labels in a layer wanting the same room, the one
+  with the lower number gets it.
+
 ## 0.7.0
 
 - PMTiles: a source whose address starts with `pmtiles://` is read from one

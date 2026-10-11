@@ -389,6 +389,12 @@ class SymbolLayer {
     required this.textUpright,
     required this.iconUpright,
     required this.textFit,
+    this.anchors = const [],
+    this.radialOffset = 0,
+    this.iconAnchor = 'center',
+    this.iconOffsetX = 0,
+    this.iconOffsetY = 0,
+    this.sortKey,
   });
 
   final String id;
@@ -432,6 +438,25 @@ class SymbolLayer {
   /// How far the text is moved from the anchor, in ems.
   final double offsetX;
   final double offsetY;
+
+  /// `text-variable-anchor`: the anchors tried in turn until the text fits.
+  /// Empty when the text has the one [anchor].
+  final List<String> anchors;
+
+  /// `text-radial-offset`: how far the text sits from its point whichever
+  /// way it lies, in ems.
+  final double radialOffset;
+
+  /// Which part of the icon sits on the point.
+  final String iconAnchor;
+
+  /// How far the icon is moved, in pixels at an icon size of 1.
+  final double iconOffsetX;
+  final double iconOffsetY;
+
+  /// `symbol-sort-key`: of two labels in this layer wanting the same room,
+  /// the one with the lower number gets it.
+  final Expr? sortKey;
 
   /// The icon may show without its text, or the text without its icon.
   final bool textOptional;
@@ -719,6 +744,9 @@ class StyleSheet {
         final textUpright = layout['text-rotation-alignment'] == 'viewport';
         final iconUpright = layout['icon-rotation-alignment'] == 'viewport';
         final anchor = layout['text-anchor'];
+        final anchors = layout['text-variable-anchor'];
+        final iconAnchor = layout['icon-anchor'];
+        final iconOffset = _pair(layout['icon-offset']);
         symbols.add(
           SymbolLayer(
             id: id,
@@ -757,6 +785,17 @@ class StyleSheet {
             textUpright: textUpright,
             iconUpright: iconUpright,
             textFit: (layout['icon-text-fit'] ?? 'none') != 'none',
+            anchors: anchors is List
+                ? anchors.whereType<String>().toList()
+                : const [],
+            radialOffset:
+                asNumber(layout['text-radial-offset'])?.toDouble() ?? 0,
+            iconAnchor: iconAnchor is String ? iconAnchor : 'center',
+            iconOffsetX: iconOffset.$1,
+            iconOffsetY: iconOffset.$2,
+            sortKey: layout['symbol-sort-key'] == null
+                ? null
+                : compileExpr(layout['symbol-sort-key']),
           ),
         );
         shape.write(
@@ -773,6 +812,7 @@ class StyleSheet {
             iconUpright,
             minZoom,
             maxZoom,
+            layout['symbol-sort-key'],
           ]),
         );
         continue;

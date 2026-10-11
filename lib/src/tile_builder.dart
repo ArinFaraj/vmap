@@ -373,16 +373,16 @@ class TileBuilder {
           if (text.isEmpty && icon.isEmpty) continue;
           final along = '${symbol.placement(context)}'.startsWith('line');
           final base = (sheet.symbols.length - 1 - s) * 4096;
+          final order = _order(symbol, context);
           if (f.type == mvtPolygon) {
             if (along) continue;
             scaled();
             final at = _inside();
             if (at == null) continue;
-            final rank = context.props['rank'];
             labels.add(
               BuiltLabel(
                 s,
-                base + (rank is int ? rank.clamp(0, 99) : 50),
+                base + order,
                 text,
                 at.$1,
                 at.$2,
@@ -396,13 +396,7 @@ class TileBuilder {
           if (f.type == mvtPoint) {
             if (along) continue;
             scaled();
-            final label = _pointLabel(
-              s,
-              base,
-              text,
-              icon,
-              context.props['rank'],
-            );
+            final label = _pointLabel(s, base + order, text, icon);
             if (label != null) labels.add(label);
             continue;
           }
@@ -419,7 +413,7 @@ class TileBuilder {
             (x, y, angle) => labels.add(
               BuiltLabel(
                 s,
-                base + 50,
+                base + (symbol.sortKey == null ? 50 : order),
                 text,
                 x,
                 y,
@@ -666,26 +660,23 @@ class TileBuilder {
     flush();
   }
 
-  BuiltLabel? _pointLabel(
-    int layer,
-    int base,
-    String text,
-    String icon,
-    Object? rank,
-  ) {
+  /// Where a label stands among its layer's own, lowest first.
+  static int _order(SymbolLayer symbol, EvalContext context) {
+    final key = symbol.sortKey;
+    if (key != null) {
+      final value = key(context);
+      return value is num ? value.round().clamp(0, 4095) : 50;
+    }
+    final rank = context.props['rank'];
+    return rank is int ? rank.clamp(0, 99) : 50;
+  }
+
+  BuiltLabel? _pointLabel(int layer, int priority, String text, String icon) {
     if (_sink.coordCount < 2) return null;
     final x = _sink.coords[0];
     final y = _sink.coords[1];
     if (x < 0 || y < 0 || x >= tileExtent || y >= tileExtent) return null;
-    return BuiltLabel(
-      layer,
-      base + (rank is int ? rank.clamp(0, 99) : 50),
-      text,
-      x,
-      y,
-      null,
-      icon: icon,
-    );
+    return BuiltLabel(layer, priority, text, x, y, null, icon: icon);
   }
 
   /// Labels the feature's longest line, anchored at its middle.
