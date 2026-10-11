@@ -65,6 +65,10 @@ class BuiltLabel {
   /// What makes this label the same label in another tile: its layer, text
   /// and place for a point, its tile and number otherwise.
   String key = '';
+
+  /// The feature's values of what its layer's paint reads. Null when the
+  /// paint reads nothing from the feature.
+  Map<String, Object?>? props;
 }
 
 class BuiltTile {
@@ -127,6 +131,7 @@ class BuiltTile {
           l.spaced,
           l.key,
           l.turns,
+          l.props,
         ],
     ],
   ];
@@ -154,17 +159,19 @@ class BuiltTile {
       final parts = l as List;
       labels.add(
         BuiltLabel(
-          parts[0] as int,
-          parts[1] as int,
-          parts[2] as String,
-          parts[3] as double,
-          parts[4] as double,
-          parts[5] as Float32List?,
-          icon: parts[6] as String,
-          angle: parts[7] as double,
-          spaced: parts[8] as bool,
-          turns: parts[10] as bool,
-        )..key = parts[9] as String,
+            parts[0] as int,
+            parts[1] as int,
+            parts[2] as String,
+            parts[3] as double,
+            parts[4] as double,
+            parts[5] as Float32List?,
+            icon: parts[6] as String,
+            angle: parts[7] as double,
+            spaced: parts[8] as bool,
+            turns: parts[10] as bool,
+          )
+          ..key = parts[9] as String
+          ..props = (parts[11] as Map?)?.cast<String, Object?>(),
       );
     }
     return BuiltTile(meshes, labels);
@@ -383,6 +390,9 @@ class TileBuilder {
           final along = '${symbol.placement(context)}'.startsWith('line');
           final base = (sheet.symbols.length - 1 - s) * 4096;
           final order = _order(symbol, context);
+          final carried = symbol.paintKeys.isEmpty
+              ? null
+              : {for (final k in symbol.paintKeys) k: context.props[k]};
           if (f.type == mvtPolygon) {
             if (along) continue;
             scaled();
@@ -398,7 +408,7 @@ class TileBuilder {
                 null,
                 icon: icon,
                 spaced: true,
-              ),
+              )..props = carried,
             );
             continue;
           }
@@ -406,13 +416,13 @@ class TileBuilder {
             if (along) continue;
             scaled();
             final label = _pointLabel(s, base + order, text, icon);
-            if (label != null) labels.add(label);
+            if (label != null) labels.add(label..props = carried);
             continue;
           }
           scaled();
           if (along && text.isNotEmpty && !symbol.textUpright) {
             final label = _lineLabel(s, base, text);
-            if (label != null) labels.add(label);
+            if (label != null) labels.add(label..props = carried);
             continue;
           }
           final turns = along && text.isEmpty && !symbol.iconUpright;
@@ -433,7 +443,7 @@ class TileBuilder {
                     : symbol.iconRotate * math.pi / 180,
                 spaced: true,
                 turns: turns,
-              ),
+              )..props = carried,
             ),
           );
         }

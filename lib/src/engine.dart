@@ -84,6 +84,7 @@ class VmapEngine extends ChangeNotifier {
        _labels = LabelEngine(text)
          ..pins = pins
          ..curvedRoads = curvedLabels {
+    _labels.stateOf = (source, id) => _states[_sources[source].def.name]?[id];
     _loadStyle();
   }
 
@@ -382,6 +383,7 @@ class VmapEngine extends ChangeNotifier {
       if (id == null) continue;
       (_states[s.source] ??= {})[id] = s.state;
     }
+    _labels.restyle();
     notifyListeners();
   }
 

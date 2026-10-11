@@ -62,7 +62,11 @@ class LabelCandidate {
       _line = source.line;
 
   final String key;
-  late final String spriteKey = '${source.layer}|${source.text}';
+  late String spriteKey = '${source.layer}|${source.text}';
+
+  /// The colours the text was last asked for in, when they come from the
+  /// feature. One picture is kept for each.
+  int ink = 0;
 
   /// Whether the text reads right to left, so its first letter is at its
   /// right edge.
@@ -281,6 +285,45 @@ class LabelEngine {
 
   /// A frame that spent this long placing labels draws no new text images;
   /// they wait a frame, so the two costs never land on the same one.
+  /// The state the app has given a feature of a source, for paint that
+  /// reads `feature-state`.
+  Map<String, Object?>? Function(int source, Object? id)? stateOf;
+
+  /// Has the labels placed and coloured again on the next frame.
+  void restyle() => _placeAgain = true;
+
+  /// Points the paint expressions at the feature behind [c].
+  void _bind(LabelCandidate c) {
+    final props = c.source.props;
+    if (props == null) {
+      _context
+        ..props = const {}
+        ..state = const {};
+      return;
+    }
+    _context
+      ..props = props
+      ..state =
+          stateOf?.call(symbols[c.source.layer].source, props[r'$id']) ??
+          const {};
+  }
+
+  /// A text's colour, halo colour and halo width from its layer's paint.
+  (int, int?, double) _ink(SymbolLayer symbol) {
+    final color = (Rgba.of(symbol.color(_context)) ?? Rgba.black).toArgb(
+      asNumber(symbol.opacity(_context)) ?? 1,
+    );
+    final double haloWidth = (asNumber(symbol.haloWidth(_context)) ?? 0).clamp(
+      0,
+      2,
+    );
+    return (
+      color,
+      haloWidth > 0 ? Rgba.of(symbol.haloColor(_context))?.toArgb() : null,
+      haloWidth,
+    );
+  }
+
   static const int _heavyPlaceMicros = 800;
 
   final Map<String, _LabelState> _states = {};
@@ -544,6 +587,7 @@ class LabelEngine {
         final tinted = icon.sdf && st.candidate.source.layer >= 0;
         if (tinted) {
           _context.zoom = styleZoom;
+          _bind(st.candidate);
           final tint =
               Rgba.of(symbols[st.candidate.source.layer].iconColor(_context)) ??
               Rgba.black;
@@ -729,7 +773,17 @@ class LabelEngine {
       }
       final c = st.candidate;
       final isRoad = c.source.line != null;
+      _bind(c);
       final fontSize = _size(c.source.layer, styleZoom);
+      if (c.source.props != null && c.hasText) {
+        final ink = _ink(symbols[c.source.layer]).hashCode;
+        if (ink != c.ink) {
+          c
+            ..ink = ink
+            ..spriteKey = '${c.source.layer}|${c.source.text}|$ink';
+          st.sprite = null;
+        }
+      }
       if (st.sprite?.dropped ?? false) st.sprite = null;
       final sprite = st.sprite ??= _sprites[c.spriteKey];
       st.scale = sprite == null ? 1 : fontSize / sprite.fontSize;
@@ -1318,6 +1372,7 @@ class LabelEngine {
     final beside = source.layer < 0;
     final symbol = beside ? null : symbols[source.layer];
     _context.zoom = styleZoom;
+    _bind(st.candidate);
     final fontSize = _size(source.layer, styleZoom);
     final isRoad = source.line != null;
     final label = symbol?.uppercase ?? false
@@ -1338,13 +1393,7 @@ class LabelEngine {
       haloWidth = 1.5;
       weight = text.markerWeight;
     } else {
-      color = (Rgba.of(symbol.color(_context)) ?? Rgba.black).toArgb(
-        asNumber(symbol.opacity(_context)) ?? 1,
-      );
-      haloWidth = (asNumber(symbol.haloWidth(_context)) ?? 0).clamp(0, 2);
-      halo = haloWidth > 0
-          ? Rgba.of(symbol.haloColor(_context))?.toArgb()
-          : null;
+      (color, halo, haloWidth) = _ink(symbol);
       weight = symbol.weight;
     }
     final italic = symbol?.italic ?? false;

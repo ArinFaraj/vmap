@@ -14,10 +14,11 @@
 | Text | field, size, font weight and slant, colour, halo, letter spacing, max width, transform, anchor, offset, `text-rotate`, `text-variable-anchor` with `text-radial-offset`, `text-optional`, `text-allow-overlap` |
 | Icons | `icon-image` from the style's sprite sheet (the `@2x` sheet when there is one), size, rotation, opacity, `icon-color` for SDF icons, `icon-anchor`, `icon-offset`, `icon-optional`, `icon-allow-overlap`, `icon-text-fit` |
 | Placement | `symbol-placement` point and line, `symbol-spacing`, text along a road and bent along its curves, labels for polygons, shields and arrows repeated along a line, `minzoom`, `maxzoom`, `visibility` |
-| Expressions | `interpolate` (linear, exponential and cubic-bezier), `step`, `match`, `case`, `coalesce`, `let`, `var`, `get`, `has`, `id`, `feature-state` in paint, `zoom`, `geometry-type`, `typeof`, comparisons, `all`, `any`, `!`, `concat`, `slice`, `index-of`, `to-string`, `to-rgba`, maths and trigonometry, and the legacy `stops` functions and filters |
+| Expressions | `interpolate` (linear, exponential and cubic-bezier), `step`, `match`, `case`, `coalesce`, `let`, `var`, `get`, `has`, `id`, `feature-state`, `zoom`, `geometry-type`, `typeof`, comparisons, `all`, `any`, `!`, `concat`, `slice`, `index-of`, `to-string`, `to-rgba`, maths and trigonometry, and the legacy `stops` functions and filters |
 
 Colours, opacities, widths and radii may read a feature's properties, for
-example a road coloured by its class. Features are grouped by the values the
+example a road coloured by its class. So may a label's colour, opacity and
+halo and an icon's colour and opacity, and all of them may read `feature-state`. Features are grouped by the values the
 paint reads, up to 64 groups per layer in a tile.
 
 ## What it does not read
@@ -26,7 +27,8 @@ paint reads, up to 64 groups per layer in a tile.
   flutter_map, which the camera comes from.
 - Halos on SDF icons, `hillshade-accent-color`, and line patterns on round
   caps.
-- `feature-state` in a symbol layer, `within` and `distance`.
+- `within` and `distance`.
+- `text-size` and `icon-size` that read the feature.
 - The style's `glyphs`. Text is drawn in the app's fonts.
 - A road name on a bend sharper than about 24 degrees between one slice of
   the text and the next. It is left out there.

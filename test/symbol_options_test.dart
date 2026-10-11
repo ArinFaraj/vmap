@@ -25,7 +25,10 @@ const _shops = {
   ],
 };
 
-StyleSheet _sheet(Map<String, Object?> layout) => StyleSheet.compile({
+StyleSheet _sheet(
+  Map<String, Object?> layout, [
+  Map<String, Object?> paint = const {},
+]) => StyleSheet.compile({
   'version': 8,
   'sources': {
     'mine': {'type': 'geojson', 'data': _shops},
@@ -39,11 +42,63 @@ StyleSheet _sheet(Map<String, Object?> layout) => StyleSheet.compile({
         'text-field': ['get', 'name'],
         ...layout,
       },
+      'paint': paint,
     },
   ],
 });
 
 void main() {
+  test('a label carries what its layer\'s paint reads from the feature', () {
+    final sheet = _sheet({}, {
+      'text-color': [
+        'case',
+        [
+          '>',
+          ['get', 'weight'],
+          5,
+        ],
+        '#d00',
+        '#333',
+      ],
+    });
+    expect(sheet.symbols.single.paintKeys, ['weight']);
+    final built = TileBuilder(sheet)
+        .buildLayers(GeoJsonTiles(_shops).tile(0, 0, 0), 0);
+    final sent = BuiltTile.fromMessage(built.toMessage());
+    expect(
+      {for (final l in sent.labels) l.text: l.props},
+      {
+        'late': {'weight': 9},
+        'early': {'weight': 2},
+      },
+    );
+  });
+
+  test('a label of a layer reading feature-state carries its id', () {
+    final sheet = _sheet({}, {
+      'text-opacity': [
+        'case',
+        [
+          'boolean',
+          ['feature-state', 'picked'],
+          false,
+        ],
+        1,
+        0.4,
+      ],
+    });
+    expect(sheet.symbols.single.paintKeys, [r'$id']);
+    expect(sheet.shape, isNot(_sheet({}).shape));
+  });
+
+  test('a label of a layer with plain paint carries nothing', () {
+    final sheet = _sheet({}, {'text-color': '#333'});
+    expect(sheet.symbols.single.paintKeys, isEmpty);
+    final built = TileBuilder(sheet)
+        .buildLayers(GeoJsonTiles(_shops).tile(0, 0, 0), 0);
+    expect(built.labels.every((l) => l.props == null), isTrue);
+  });
+
   test('a symbol layer reads where its text and icon may sit', () {
     final symbol = _sheet({
       'text-variable-anchor': ['top', 'left', 'bottom-right'],

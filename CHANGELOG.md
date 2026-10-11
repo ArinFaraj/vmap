@@ -1,3 +1,9 @@
+## 0.11.0
+
+- A label's colour, opacity and halo, and an icon's opacity and SDF colour, may read
+  the feature's properties and `feature-state`, so a picked place can have
+  its name in another colour.
+
 ## 0.10.0
 
 - `line-join`: bevel and miter corners beside the round ones. A line with no

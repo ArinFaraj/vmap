@@ -458,6 +458,7 @@ class SymbolLayer {
     this.iconOffsetX = 0,
     this.iconOffsetY = 0,
     this.sortKey,
+    this.paintKeys = const [],
   });
 
   final String id;
@@ -523,6 +524,10 @@ class SymbolLayer {
   /// `symbol-sort-key`: of two labels in this layer wanting the same room,
   /// the one with the lower number gets it.
   final Expr? sortKey;
+
+  /// The feature properties the layer's colours and opacities read. Each
+  /// label carries its feature's values of them.
+  final List<String> paintKeys;
 
   /// The icon may show without its text, or the text without its icon.
   final bool textOptional;
@@ -831,6 +836,17 @@ class StyleSheet {
         final anchors = layout['text-variable-anchor'];
         final iconAnchor = layout['icon-anchor'];
         final iconOffset = _pair(layout['icon-offset']);
+        final paintKeys = <String>{};
+        for (final p in const [
+          'text-color',
+          'text-opacity',
+          'text-halo-color',
+          'text-halo-width',
+          'icon-color',
+          'icon-opacity',
+        ]) {
+          _reads(paint[p], paintKeys);
+        }
         symbols.add(
           SymbolLayer(
             id: id,
@@ -881,6 +897,7 @@ class StyleSheet {
             sortKey: layout['symbol-sort-key'] == null
                 ? null
                 : compileExpr(layout['symbol-sort-key']),
+            paintKeys: paintKeys.toList()..sort(),
           ),
         );
         shape.write(
@@ -898,6 +915,7 @@ class StyleSheet {
             minZoom,
             maxZoom,
             layout['symbol-sort-key'],
+            paintKeys.toList()..sort(),
           ]),
         );
         continue;
