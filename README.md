@@ -98,13 +98,39 @@ this view than vmap does. The style holds those layers back until zoom 16 and
 17, and vmap follows that; I have not traced why vector_map_tiles shows them
 earlier.
 
-### Measuring it yourself
+### Measured
 
-`example/` is also a benchmark. It flies a fixed tour and reports how many
-display refreshes passed without a new frame, the longest gap between frames
-and the UI and raster time per frame. It runs each renderer twice, first
-straight after a clean install with nothing cached, then again with the cache
-that run left behind:
+![Frames lost during the tour](doc/images/bench.png)
+
+Both renderers drew the Liberty style on the same phone (Vivo V2514, Android,
+profile build) and flew the same scripted tour twice per start: once straight
+after a clean install with nothing cached, then again after a restart with the
+cache that run left behind. A lost frame is a display refresh that passed
+without a new frame.
+
+| | vmap lost | vmap worst gap | vector_map_tiles lost | vector_map_tiles worst gap |
+| --- | --- | --- | --- | --- |
+| Tour, clean install | 0 of 2778 | 17 ms | 196 of 2779 | 132 ms |
+| Tour, cached | 0 of 2775 | 17 ms | 10 of 2779 | 132 ms |
+| Fast zooms, clean install | 0 of 1328 | 17 ms | 164 of 1325 | 166 ms |
+| Fast zooms, cached | 0 of 1327 | 18 ms | 140 of 1321 | 166 ms |
+
+What this does and does not show:
+
+- The phone ran both apps at 60 Hz, so a frame had 16.6 ms. It was one run
+  per row on one phone.
+- vmap does more work per frame, because it redraws the vectors every frame:
+  about 3 ms on the UI thread and 4 ms on the raster thread at the median,
+  against 1 to 2 ms each for vector_map_tiles, which mostly draws finished
+  images. In most laps around a fifth of vmap's frames took more than 8 ms,
+  so at 120 Hz it would not hold every frame on this phone. That has not been
+  measured.
+- vector_map_tiles lost its frames in long gaps while waiting for tiles to be
+  rendered, not in slow frames of its own.
+- vmap's process used about 440 to 490 MB. vector_map_tiles' memory was not
+  recorded.
+
+Run it yourself:
 
 ```bash
 tool/bench_device.sh <adb-serial> ours --dart-define=STYLE=liberty --dart-define=ZOFF=1
@@ -113,7 +139,7 @@ tool/bench_device.sh <adb-serial> vmt --dart-define=STYLE=liberty
 
 `STYLE` gives both the same style, and `ZOFF=1` makes vmap read it at the
 zoom vector_map_tiles does, so both draw the same roads and names. Add
-`--dart-define=STRESS=true` for a tour of fast zooms.
+`--dart-define=STRESS=true` for the tour of fast zooms.
 
 ## Install
 
