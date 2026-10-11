@@ -36,6 +36,7 @@ class VmapLayer extends StatefulWidget {
     this.markers = const [],
     this.pins,
     this.overlay,
+    this.curvedLabels = true,
     this.textStyle,
     this.markerTextStyle,
     this.cacheDirectory,
@@ -50,6 +51,7 @@ class VmapLayer extends StatefulWidget {
       markers = const [],
       pins = null,
       overlay = null,
+      curvedLabels = true,
       textStyle = null,
       markerTextStyle = null,
       cacheDirectory = null,
@@ -71,6 +73,10 @@ class VmapLayer extends StatefulWidget {
 
   /// Sources and layers of your own, drawn with the style.
   final VmapOverlay? overlay;
+
+  /// Road names follow bends. Off, a name is written only where its road is
+  /// straight enough.
+  final bool curvedLabels;
 
   /// The font of every label: family and fallbacks. Sizes and colours come
   /// from the style.
@@ -117,6 +123,7 @@ class VmapLayerState extends State<VmapLayer> {
         text: _text,
         pins: widget.pins,
         overlay: widget.overlay,
+        curvedLabels: widget.curvedLabels,
         source: TileSourceConfig(
           cacheDirectory: widget.cacheDirectory,
           userAgent: widget.userAgentPackageName,
@@ -134,6 +141,7 @@ class VmapLayerState extends State<VmapLayer> {
       ..style = widget.style
       ..pins = widget.pins
       ..overlay = widget.overlay
+      ..curvedLabels = widget.curvedLabels
       ..text = _text;
     if (!_sameMarkers(oldWidget.markers, widget.markers)) {
       owned.markers = widget.markers;

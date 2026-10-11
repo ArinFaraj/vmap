@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -159,7 +160,16 @@ MapLook _openFreeMap(String label, String name, {bool dark = false}) => MapLook(
   dark: dark,
 );
 
+const _styleFile = String.fromEnvironment('STYLE_FILE');
+
 final looks = [
+  if (_styleFile.isNotEmpty)
+    MapLook(
+      'File',
+      VmapStyle.json(
+        jsonDecode(File(_styleFile).readAsStringSync()) as Map<String, Object?>,
+      ),
+    ),
   MapLook('Default', VmapStyle.builtIn(nameKeys: _nameKeys)),
   MapLook(
     'Night',

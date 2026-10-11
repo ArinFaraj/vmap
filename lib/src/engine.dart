@@ -315,8 +315,11 @@ class VmapEngine extends ChangeNotifier {
     this.showLabels = true,
     VmapPins? pins,
     VmapOverlay? overlay,
+    bool curvedLabels = true,
   }) : _overlay = overlay,
-       _labels = LabelEngine(text)..pins = pins {
+       _labels = LabelEngine(text)
+         ..pins = pins
+         ..curvedRoads = curvedLabels {
     _loadStyle();
   }
 
@@ -593,6 +596,17 @@ class VmapEngine extends ChangeNotifier {
   set pins(VmapPins? value) {
     if (identical(value, _labels.pins)) return;
     _labels.pins = value;
+    notifyListeners();
+  }
+
+  /// Road names follow bends. Off, a name is written only where its road is
+  /// straight enough, which is a little cheaper to draw.
+  bool get curvedLabels => _labels.curvedRoads;
+  set curvedLabels(bool value) {
+    if (value == _labels.curvedRoads) return;
+    _labels
+      ..curvedRoads = value
+      ..clear();
     notifyListeners();
   }
 
@@ -1002,25 +1016,30 @@ class VmapEngine extends ChangeNotifier {
     int end,
   ) {
     final scale = d.size / tileExtent;
-    canvas.save();
-    final clips = d.clips;
-    if (clips == null) {
-      canvas.clipRect(
-        ui.Rect.fromLTWH(d.left, d.top, d.size, d.size),
-        doAntiAlias: false,
-      );
-    } else if (clips.length == 1) {
-      canvas.clipRect(clips.first, doAntiAlias: false);
-    } else {
-      final path = ui.Path();
-      for (final r in clips) {
-        path.addRect(r);
+    void enter({bool clip = true}) {
+      canvas.save();
+      final clips = d.clips;
+      if (!clip) {
+      } else if (clips == null) {
+        canvas.clipRect(
+          ui.Rect.fromLTWH(d.left, d.top, d.size, d.size),
+          doAntiAlias: false,
+        );
+      } else if (clips.length == 1) {
+        canvas.clipRect(clips.first, doAntiAlias: false);
+      } else {
+        final path = ui.Path();
+        for (final r in clips) {
+          path.addRect(r);
+        }
+        canvas.clipPath(path, doAntiAlias: false);
       }
-      canvas.clipPath(path, doAntiAlias: false);
+      canvas
+        ..translate(d.left, d.top)
+        ..scale(scale);
     }
-    canvas
-      ..translate(d.left, d.top)
-      ..scale(scale);
+
+    enter();
     final groups = d.tile.groups;
     final layers = sheet.layers;
     var draws = 0;
@@ -1031,6 +1050,18 @@ class VmapEngine extends ChangeNotifier {
       if (meshes == null) continue;
       var color = _colors[p];
       var width = _widths[p];
+      final heat = layer.heat;
+      if (heat != null) {
+        if (width <= 0) continue;
+        // Glows reach past the tile's edge, so they are drawn unclipped.
+        canvas.restore();
+        enter(clip: false);
+        _drawHeat(canvas, heat, meshes, color, width / scale);
+        canvas.restore();
+        enter();
+        draws++;
+        continue;
+      }
       ui.ImageShader? shader;
       if (!layer.perFeature) {
         shader = _shaderFor(layer, width, scale);
@@ -1059,6 +1090,10 @@ class VmapEngine extends ChangeNotifier {
             if (width <= 0) continue;
             if (shader == null) {
               _paint.color = ui.Color(color);
+            } else if (layer.pattern != null) {
+              _paint
+                ..color = ui.Color(color)
+                ..shader = shader;
             } else {
               _paint
                 ..color = const ui.Color(0xFFFFFFFF)
@@ -1113,6 +1148,109 @@ class VmapEngine extends ChangeNotifier {
     return draws;
   }
 
+  ui.Image? _glow;
+  final ui.Paint _heatPaint = ui.Paint();
+
+  /// A heatmap's points as soft glows: wide ones in the colour of the ramp's
+  /// low end that add up, then tighter ones in the colour of its top that
+  /// build up where points crowd. The stops between are not followed.
+  void _drawHeat(
+    ui.Canvas canvas,
+    HeatPaint heat,
+    List<_Mesh> meshes,
+    int color,
+    double diameter,
+  ) {
+    final glow = _glow ??= _glowImage();
+    ui.Color at(double density) {
+      _context.progress = density;
+      final c = Rgba.of(heat.ramp(_context)) ?? Rgba.black;
+      return ui.Color.fromRGBO(
+        (c.r * 255).round(),
+        (c.g * 255).round(),
+        (c.b * 255).round(),
+        1,
+      );
+    }
+
+    final low = at(0.3);
+    final high = at(1);
+    final intensity = asNumber(heat.intensity(_context)) ?? 1;
+    canvas.saveLayer(
+      null,
+      ui.Paint()..color = ui.Color.fromRGBO(0, 0, 0, (color >>> 24) / 255),
+    );
+    for (final hot in const [false, true]) {
+      for (final mesh in meshes) {
+        final points = mesh.points;
+        if (points == null || points.isEmpty) continue;
+        _context.props = mesh.props ?? const {};
+        final strength = ((asNumber(heat.weight(_context)) ?? 1) * intensity)
+            .clamp(0.0, 4.0);
+        final n = points.length ~/ 2;
+        final size = hot ? diameter * 0.7 : diameter;
+        final k = size / glow.width;
+        final transforms = Float32List(n * 4);
+        final rects = Float32List(n * 4);
+        for (var i = 0; i < n; i++) {
+          transforms[i * 4] = k;
+          transforms[i * 4 + 2] = points[i * 2] - size / 2;
+          transforms[i * 4 + 3] = points[i * 2 + 1] - size / 2;
+          rects[i * 4 + 2] = glow.width.toDouble();
+          rects[i * 4 + 3] = glow.height.toDouble();
+        }
+        _heatPaint
+          ..color = ui.Color.fromRGBO(
+            255,
+            255,
+            255,
+            (strength * (hot ? 0.22 : 0.6)).clamp(0.0, 1.0),
+          )
+          ..colorFilter = ui.ColorFilter.mode(
+            hot ? high : low,
+            ui.BlendMode.srcIn,
+          )
+          ..blendMode = hot ? ui.BlendMode.srcOver : ui.BlendMode.plus;
+        canvas.drawRawAtlas(
+          glow,
+          transforms,
+          rects,
+          null,
+          null,
+          null,
+          _heatPaint,
+        );
+      }
+    }
+    _context.props = const {};
+    canvas.restore();
+  }
+
+  static ui.Image _glowImage() {
+    const size = 64.0;
+    final recorder = ui.PictureRecorder();
+    ui.Canvas(recorder).drawCircle(
+      const ui.Offset(size / 2, size / 2),
+      size / 2,
+      ui.Paint()
+        ..shader = ui.Gradient.radial(
+          const ui.Offset(size / 2, size / 2),
+          size / 2,
+          const [
+            ui.Color(0xFFFFFFFF),
+            ui.Color(0xB0FFFFFF),
+            ui.Color(0x48FFFFFF),
+            ui.Color(0x00FFFFFF),
+          ],
+          const [0, 0.3, 0.65, 1],
+        ),
+    );
+    final picture = recorder.endRecording();
+    final image = picture.toImageSync(size.toInt(), size.toInt());
+    picture.dispose();
+    return image;
+  }
+
   /// The repeating picture a layer is drawn through: its dashes, or the
   /// pattern that fills it. Null for a plain colour, and for a pattern whose
   /// sprite sheet has not loaded.
@@ -1139,15 +1277,22 @@ class VmapEngine extends ChangeNotifier {
       final found = sheet.pattern(name);
       if (found == null) return null;
       image = found;
-      stretch = 1 / (sheet.entries[name]!.pixelRatio * scale);
+      stretch = layer.isLine
+          ? width / scale / image.height
+          : 1 / (sheet.entries[name]!.pixelRatio * scale);
     }
+    final along = layer.isLine;
     _shaderMatrix
       ..[0] = stretch
-      ..[5] = dash != null ? 1 : stretch;
+      ..[5] = dash != null
+          ? 1
+          : along
+          ? 1 / image.height
+          : stretch;
     final shader = ui.ImageShader(
       image,
       ui.TileMode.repeated,
-      dash != null ? ui.TileMode.clamp : ui.TileMode.repeated,
+      along ? ui.TileMode.clamp : ui.TileMode.repeated,
       _shaderMatrix,
       filterQuality: ui.FilterQuality.low,
     );
@@ -1256,6 +1401,7 @@ class VmapEngine extends ChangeNotifier {
     _sources.clear();
     _labels.clear();
     _sprites?.dispose();
+    _glow?.dispose();
     for (final r in _rasters) {
       r.close();
     }

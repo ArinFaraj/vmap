@@ -286,6 +286,7 @@ class PaintLayer {
     this.strokeColor,
     this.strokeWidth,
     this.strokeOpacity,
+    this.heat,
     this.perFeature = false,
   });
 
@@ -304,7 +305,8 @@ class PaintLayer {
   /// Lengths of dashes and gaps in turn, in line widths.
   final Float64List? dash;
 
-  /// The name of the sprite image that fills the shape.
+  /// The name of the sprite image that fills the shape, or that is repeated
+  /// along the line.
   final Expr? pattern;
 
   /// The ring around a circle.
@@ -312,10 +314,29 @@ class PaintLayer {
   final Expr? strokeWidth;
   final Expr? strokeOpacity;
 
+  /// Set for a heatmap layer, whose points are drawn as glows that add up.
+  final HeatPaint? heat;
+
   /// The paint reads feature properties, so it is worked out per mesh.
   final bool perFeature;
 
   bool get isLine => kind == BucketKind.line;
+}
+
+/// How a heatmap layer turns its points into colour.
+class HeatPaint {
+  HeatPaint({
+    required this.weight,
+    required this.intensity,
+    required this.ramp,
+  });
+
+  /// How much one point adds, which may read the point's properties.
+  final Expr weight;
+  final Expr intensity;
+
+  /// The colour for a density from 0 to 1, read through `heatmap-density`.
+  final Expr ramp;
 }
 
 /// A text and icon layer of the style.
@@ -342,6 +363,7 @@ class SymbolLayer {
     required this.maxWidth,
     required this.iconSize,
     required this.iconOpacity,
+    required this.iconColor,
     required this.iconRotate,
     required this.anchor,
     required this.offsetX,
@@ -383,6 +405,9 @@ class SymbolLayer {
   final double maxWidth;
   final Expr iconSize;
   final Expr iconOpacity;
+
+  /// The colour of an icon that takes one.
+  final Expr iconColor;
 
   /// In degrees.
   final double iconRotate;
@@ -552,9 +577,13 @@ class StyleSheet {
         };
         continue;
       }
-      if (type == 'raster') {
+      if (type == 'raster' || type == 'hillshade') {
         final from = sources[raw['source']];
-        if (from is! Map || from['type'] != 'raster') continue;
+        final relief = type == 'hillshade';
+        if (from is! Map ||
+            from['type'] != (relief ? 'raster-dem' : 'raster')) {
+          continue;
+        }
         final direct = from['tiles'];
         rasterAt.add(layers.length);
         rasters.add(
@@ -567,7 +596,24 @@ class StyleSheet {
             sourceMaxZoom: asNumber(from['maxzoom'])?.toInt(),
             minZoom: minZoom,
             maxZoom: maxZoom,
-            opacity: compileExpr(paint['raster-opacity'] ?? 1),
+            opacity: compileExpr(relief ? 1 : paint['raster-opacity'] ?? 1),
+            relief: !relief
+                ? null
+                : ReliefPaint(
+                    terrarium: from['encoding'] == 'terrarium',
+                    exaggeration: compileExpr(
+                      paint['hillshade-exaggeration'] ?? 0.5,
+                    ),
+                    shadow: compileExpr(
+                      paint['hillshade-shadow-color'] ?? '#000000',
+                    ),
+                    highlight: compileExpr(
+                      paint['hillshade-highlight-color'] ?? '#ffffff',
+                    ),
+                    direction:
+                        asNumber(paint['hillshade-illumination-direction']) ??
+                        335,
+                  ),
           ),
         );
         continue;
@@ -622,6 +668,7 @@ class StyleSheet {
             maxWidth: asNumber(layout['text-max-width']) ?? 10,
             iconSize: compileExpr(layout['icon-size'] ?? 1),
             iconOpacity: compileExpr(paint['icon-opacity'] ?? 1),
+            iconColor: compileExpr(paint['icon-color'] ?? '#000000'),
             iconRotate: asNumber(layout['icon-rotate']) ?? 0,
             anchor: anchor is String ? anchor : 'center',
             offsetX: offset.$1,
@@ -659,7 +706,7 @@ class StyleSheet {
 
       final kind = switch (type) {
         'line' => BucketKind.line,
-        'circle' => BucketKind.circle,
+        'circle' || 'heatmap' => BucketKind.circle,
         'fill' || 'fill-extrusion' => BucketKind.fill,
         _ => null,
       };
@@ -717,6 +764,44 @@ class StyleSheet {
       final color = paint['$prefix-color'] ?? '#000000';
       final opacity = paint['$prefix-opacity'] ?? 1;
 
+      if (type == 'heatmap') {
+        final names = reads(const ['heatmap-weight']);
+        final radius = compileExpr(paint['heatmap-radius'] ?? 30);
+        layers.add(
+          PaintLayer(
+            id: id,
+            bucket: bucketFor(kind, names),
+            kind: kind,
+            minZoom: minZoom,
+            maxZoom: maxZoom,
+            color: compileExpr('#ffffff'),
+            opacity: compileExpr(opacity),
+            width: (c) => (asNumber(radius(c)) ?? 30) * 2,
+            heat: HeatPaint(
+              weight: compileExpr(paint['heatmap-weight'] ?? 1),
+              intensity: compileExpr(paint['heatmap-intensity'] ?? 1),
+              ramp: compileExpr(
+                paint['heatmap-color'] ??
+                    const [
+                      'interpolate',
+                      ['linear'],
+                      ['heatmap-density'],
+                      0,
+                      'rgba(0,0,255,0)',
+                      0.3,
+                      'royalblue',
+                      0.6,
+                      'lime',
+                      1,
+                      'red',
+                    ],
+              ),
+            ),
+          ),
+        );
+        continue;
+      }
+
       if (kind == BucketKind.circle) {
         final names = reads(const [
           'circle-color',
@@ -767,23 +852,27 @@ class StyleSheet {
           width = (c) =>
               (asNumber(own(c)) ?? 1) * 2 + (asNumber(between(c)) ?? 0);
         }
-        if (paint['line-pattern'] != null) continue;
+        final picture = paint['line-pattern'];
         layers.add(
           PaintLayer(
             id: id,
             bucket: bucketFor(
               kind,
               names,
-              caps: dash == null && layout['line-cap'] == 'round',
-              dashed: dash != null,
+              caps:
+                  dash == null &&
+                  picture == null &&
+                  layout['line-cap'] == 'round',
+              dashed: dash != null || picture != null,
             ),
             kind: kind,
             minZoom: minZoom,
             maxZoom: maxZoom,
-            color: compileExpr(color),
+            color: compileExpr(picture == null ? color : '#ffffff'),
             opacity: compileExpr(opacity),
             width: width,
-            dash: dash,
+            dash: picture == null ? dash : null,
+            pattern: picture == null ? null : compileText(picture),
             perFeature: names.isNotEmpty,
           ),
         );
@@ -931,6 +1020,26 @@ class StyleSheet {
   }
 }
 
+/// How a hillshade layer turns heights into shading.
+class ReliefPaint {
+  ReliefPaint({
+    required this.terrarium,
+    required this.exaggeration,
+    required this.shadow,
+    required this.highlight,
+    required this.direction,
+  });
+
+  /// The heights are in the Terrarium encoding instead of Mapbox's.
+  final bool terrarium;
+  final Expr exaggeration;
+  final Expr shadow;
+  final Expr highlight;
+
+  /// Where the light comes from, in degrees clockwise from north.
+  final double direction;
+}
+
 /// A layer of picture tiles.
 class RasterLayer {
   RasterLayer({
@@ -941,8 +1050,11 @@ class RasterLayer {
     required this.minZoom,
     required this.maxZoom,
     required this.opacity,
+    this.relief,
   });
 
+  /// Set for a hillshade layer, whose tiles hold heights to be shaded.
+  final ReliefPaint? relief;
   final String? tileJsonUrl;
   final String? tiles;
   final double tileSize;

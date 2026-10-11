@@ -146,6 +146,11 @@ class _LabelState {
   double angle = 0;
   double screenAngle = 0;
 
+  /// For a name that follows a bend: where the middle of each slice of the
+  /// text sits as fractions of the world, and the road's direction there, as
+  /// x, y, angle triples. Null for a name written straight.
+  Float64List? curve;
+
   /// The label's size now over the size its image was drawn at.
   double scale = 1;
 
@@ -526,6 +531,17 @@ class LabelEngine {
           255,
           st.opacity * st.iconOpacity,
         );
+        final tinted = icon.sdf && st.candidate.source.layer >= 0;
+        if (tinted) {
+          _context.zoom = styleZoom;
+          final tint =
+              Rgba.of(symbols[st.candidate.source.layer].iconColor(_context)) ??
+              Rgba.black;
+          _imagePaint.colorFilter = _sdfFilter(
+            tint,
+            st.iconW / icon.width * devicePixelRatio,
+          );
+        }
         final fit =
             st.candidate.source.layer >= 0 &&
             symbols[st.candidate.source.layer].textFit;
@@ -559,9 +575,51 @@ class LabelEngine {
             ..restore();
         }
       }
+      _imagePaint.colorFilter = null;
       if (sprite == null || !wantsText) continue;
       final image = sprite.image;
       _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
+      final curve = st.curve;
+      if (curve != null) {
+        final n = curve.length ~/ 3;
+        final flip = math.cos(st.angle + rotation) < 0;
+        final pad = _haloPad * image.width / sprite.width;
+        final slice = (image.width - pad * 2) / n;
+        final k = sprite.width * st.scale / image.width;
+        final transforms = Float32List(n * 4);
+        final rects = Float32List(n * 4);
+        for (var j = 0; j < n; j++) {
+          final i = flip ? n - 1 - j : j;
+          final a = curve[i * 3 + 2] + rotation + (flip ? math.pi : 0);
+          _project(curve[i * 3], curve[i * 3 + 1], world, origin);
+          final left = j == 0 ? 0.0 : pad + j * slice - 0.5;
+          final right = j == n - 1
+              ? image.width.toDouble()
+              : pad + (j + 1) * slice + 0.5;
+          final anchorX = pad + (j + 0.5) * slice - left;
+          final anchorY = image.height / 2;
+          final scos = math.cos(a) * k;
+          final ssin = math.sin(a) * k;
+          transforms[j * 4] = scos;
+          transforms[j * 4 + 1] = ssin;
+          transforms[j * 4 + 2] = _px - scos * anchorX + ssin * anchorY;
+          transforms[j * 4 + 3] = _py - ssin * anchorX - scos * anchorY;
+          rects[j * 4] = left;
+          rects[j * 4 + 1] = 0;
+          rects[j * 4 + 2] = right;
+          rects[j * 4 + 3] = image.height.toDouble();
+        }
+        canvas.drawRawAtlas(
+          image,
+          transforms,
+          rects,
+          null,
+          null,
+          null,
+          _imagePaint,
+        );
+        continue;
+      }
       _project(st.worldX, st.worldY, world, origin);
       final sx = _px + st.dx;
       final sy = _py + st.dy;
@@ -699,8 +757,14 @@ class LabelEngine {
         if (turn > math.pi / 2) turn -= math.pi;
         if (turn < -math.pi / 2) turn += math.pi;
         st.screenAngle = turn;
-        if (_collides(sx, sy, textW + room, textH + room, turn)) continue;
-        _addBoxes(sx, sy, textW + room, textH + room, turn);
+        if (st.curve != null) {
+          final reach = (textH + room) / 2 + _boxPad;
+          if (_curveHits(st, world, origin, reach, add: false)) continue;
+          _curveHits(st, world, origin, reach, add: true);
+        } else {
+          if (_collides(sx, sy, textW + room, textH + room, turn)) continue;
+          _addBoxes(sx, sy, textW + room, textH + room, turn);
+        }
         st
           ..dx = 0
           ..dy = 0
@@ -718,6 +782,7 @@ class LabelEngine {
         ..worldX = c.worldX
         ..worldY = c.worldY
         ..angle = 0
+        ..curve = null
         ..screenAngle = 0;
       final beside = c.source.layer < 0;
       final symbol = beside ? null : symbols[c.source.layer];
@@ -927,8 +992,11 @@ class LabelEngine {
     for (var i = first; i < last; i++) {
       final px = line[i * 2] - ax;
       final py = line[i * 2 + 1] - ay;
-      if ((px * cy - py * cx).abs() / chord > limit) return false;
+      if ((px * cy - py * cx).abs() / chord > limit) {
+        return curvedRoads && _bend(st, from, to, textH, unitPx);
+      }
     }
+    st.curve = null;
     var angle = math.atan2(cy, cx);
     if (angle > math.pi / 2) angle -= math.pi;
     if (angle < -math.pi / 2) angle += math.pi;
@@ -937,6 +1005,97 @@ class LabelEngine {
       ..worldX = c.tileX + (ax + bx) / 2 / tileExtent * c.tileSpan
       ..worldY = c.tileY + (ay + by) / 2 / tileExtent * c.tileSpan;
     return true;
+  }
+
+  /// Road names follow bends. Off, a name is only written where the road is
+  /// straight enough to carry it.
+  bool curvedRoads = true;
+
+  /// The sharpest turn between two neighbouring slices of a bent name.
+  static const double _maxBend = 0.42;
+
+  /// Lays the text along the road between [from] and [to] tile units from
+  /// its start, cut into slices about as wide as the text is tall.
+  bool _bend(
+    _LabelState st,
+    double from,
+    double to,
+    double textH,
+    double unitPx,
+  ) {
+    final c = st.candidate;
+    final line = c.source.line!;
+    final count = math.max(2, ((to - from) * unitPx / (textH * 0.7)).ceil());
+    final step = (to - from) / count;
+    final edges = Float64List((count + 1) * 2);
+    final n = line.length ~/ 2;
+    var walked = 0.0;
+    var at = 0;
+    for (var i = 1; i < n && at <= count; i++) {
+      final x0 = line[i * 2 - 2];
+      final y0 = line[i * 2 - 1];
+      final dx = line[i * 2] - x0;
+      final dy = line[i * 2 + 1] - y0;
+      final seg = math.sqrt(dx * dx + dy * dy);
+      if (seg == 0) continue;
+      while (at <= count && from + at * step <= walked + seg + 1e-6) {
+        final t = ((from + at * step - walked) / seg).clamp(0.0, 1.0);
+        edges[at * 2] = x0 + dx * t;
+        edges[at * 2 + 1] = y0 + dy * t;
+        at++;
+      }
+      walked += seg;
+    }
+    if (at <= count) return false;
+    final curve = Float64List(count * 3);
+    var previous = 0.0;
+    for (var i = 0; i < count; i++) {
+      final dx = edges[i * 2 + 2] - edges[i * 2];
+      final dy = edges[i * 2 + 3] - edges[i * 2 + 1];
+      final angle = math.atan2(dy, dx);
+      if (i > 0) {
+        var turn = (angle - previous).abs();
+        if (turn > math.pi) turn = 2 * math.pi - turn;
+        if (turn > _maxBend) return false;
+      }
+      previous = angle;
+      curve[i * 3] =
+          c.tileX + (edges[i * 2] + dx / 2) / tileExtent * c.tileSpan;
+      curve[i * 3 + 1] =
+          c.tileY + (edges[i * 2 + 1] + dy / 2) / tileExtent * c.tileSpan;
+      curve[i * 3 + 2] = angle;
+    }
+    final mid = count ~/ 2;
+    st
+      ..curve = curve
+      ..angle = math.atan2(
+        edges[count * 2 + 1] - edges[1],
+        edges[count * 2] - edges[0],
+      )
+      ..worldX = c.tileX + edges[mid * 2] / tileExtent * c.tileSpan
+      ..worldY = c.tileY + edges[mid * 2 + 1] / tileExtent * c.tileSpan;
+    return true;
+  }
+
+  /// Whether a bent name runs into something already placed, and with [add]
+  /// the space it takes itself.
+  bool _curveHits(
+    _LabelState st,
+    double world,
+    ui.Offset origin,
+    double reach, {
+    required bool add,
+  }) {
+    final curve = st.curve!;
+    for (var i = 0; i < curve.length; i += 3) {
+      _project(curve[i], curve[i + 1], world, origin);
+      if (add) {
+        _addBox(_px - reach, _py - reach, _px + reach, _py + reach);
+      } else if (_hits(_px - reach, _py - reach, _px + reach, _py + reach)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   bool _nearSameRoad(_LabelState st, double world) {
@@ -1020,6 +1179,20 @@ class LabelEngine {
     _boxes[_boxCount++] = t;
     _boxes[_boxCount++] = r;
     _boxes[_boxCount++] = b;
+  }
+
+  /// Turns a distance field into a crisp shape in [tint]. The edge of the
+  /// shape is where the field is three quarters full; [scale] is how many
+  /// screen pixels one pixel of the field covers, which sets how sharp the
+  /// edge may be.
+  static ui.ColorFilter _sdfFilter(Rgba tint, double scale) {
+    final gain = (6 * scale).clamp(2.0, 24.0);
+    return ui.ColorFilter.matrix([
+      0, 0, 0, 0, tint.r * 255, //
+      0, 0, 0, 0, tint.g * 255,
+      0, 0, 0, 0, tint.b * 255,
+      0, 0, 0, gain * tint.a, (0.5 - 0.75 * gain) * 255 * tint.a,
+    ]);
   }
 
   static bool _isRtl(String text) {

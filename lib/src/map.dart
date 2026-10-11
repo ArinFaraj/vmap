@@ -26,6 +26,7 @@ class VmapMap extends StatefulWidget {
     this.markers = const [],
     this.pins,
     this.overlay,
+    this.curvedLabels = true,
     this.textStyle,
     this.markerTextStyle,
     this.cacheDirectory,
@@ -64,6 +65,9 @@ class VmapMap extends StatefulWidget {
 
   /// Sources and layers of your own, drawn with the style.
   final VmapOverlay? overlay;
+
+  /// Road names follow bends.
+  final bool curvedLabels;
   final TextStyle? textStyle;
   final TextStyle? markerTextStyle;
   final String? cacheDirectory;
@@ -142,6 +146,7 @@ class _VmapMapState extends State<VmapMap> {
             markers: widget.markers,
             pins: widget.pins,
             overlay: widget.overlay,
+            curvedLabels: widget.curvedLabels,
             textStyle: widget.textStyle,
             markerTextStyle: widget.markerTextStyle,
             cacheDirectory: widget.cacheDirectory,

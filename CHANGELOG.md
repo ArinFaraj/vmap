@@ -1,3 +1,20 @@
+## 0.5.0
+
+- Rotation: two fingers turn the map in `VmapGestures` and `VmapMap`, and
+  labels are laid out upright on a turned map.
+- Every vector source of a style is drawn, not only the busiest one, and
+  layers keep the style's order across sources and raster layers.
+- GeoJSON sources, inline or by address.
+- `VmapOverlay`: sources and layers of your own on top of any style.
+- `onFeatureTap` and `featuresAt`: what the style draws at a point.
+- Road names bend along curves. `curvedLabels: false` turns it off.
+- Polygons are labelled.
+- `hillshade` and `heatmap` layers, `line-pattern`, and `icon-color` for SDF
+  icons.
+- More expressions: `let`, `var`, `slice`, `index-of`, `typeof`, `id`,
+  trigonometry and cubic-bezier interpolation.
+- `VmapLayer`'s state class is public as `VmapLayerState`.
+
 ## 0.4.0
 
 - `VmapMap`: a whole map in one widget, with `VmapGestures` in place of

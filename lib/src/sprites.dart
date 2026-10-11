@@ -5,7 +5,13 @@ import 'dart:ui' as ui;
 
 /// One image of a sprite sheet.
 class SpriteImage {
-  SpriteImage(this.source, this.width, this.height, this.pixelRatio);
+  SpriteImage(
+    this.source,
+    this.width,
+    this.height,
+    this.pixelRatio, {
+    this.sdf = false,
+  });
 
   /// Where it sits in the sheet, in the sheet's pixels.
   final ui.Rect source;
@@ -14,6 +20,10 @@ class SpriteImage {
   final double width;
   final double height;
   final double pixelRatio;
+
+  /// The picture is a distance field: a shape with no colour of its own,
+  /// drawn in the colour the style gives it.
+  final bool sdf;
 }
 
 /// The icons and patterns a style draws with.
@@ -146,6 +156,7 @@ class SpriteSheet {
         w / ratio,
         h / ratio,
         ratio,
+        sdf: v['sdf'] == true,
       );
     }
     return SpriteSheet(frame.image, entries);

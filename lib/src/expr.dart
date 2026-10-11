@@ -8,6 +8,9 @@ class EvalContext {
 
   /// `Point`, `LineString` or `Polygon`.
   String geometryType = '';
+
+  /// What `heatmap-density` and `line-progress` read.
+  double progress = 0;
 }
 
 typedef Expr = Object? Function(EvalContext c);
@@ -187,7 +190,12 @@ const _operators = {
   'rgb', 'rgba', 'var', 'let', 'id', 'properties', 'feature-state', 'image',
   'typeof', 'collator', 'resolved-locale', 'is-supported-script', 'slice',
   'index-of', 'e', 'pi', 'ln2', 'line-progress', 'heatmap-density',
+  'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'within', 'distance',
+  'accumulated', 'to-rgba',
 };
+
+/// The variables `let` has bound around the expression being compiled.
+final List<Map<String, Expr>> _scopes = [];
 
 Expr _constant(Object? value) =>
     (_) => value;
@@ -343,6 +351,96 @@ Expr _op(String op, List<Object?> args) {
       return (c) => !c.props.containsKey(name);
     case 'properties':
       return (c) => c.props;
+    case 'id':
+      return (c) => c.props[r'$id'];
+    case 'let':
+      final scope = <String, Expr>{};
+      for (var i = 0; i + 2 < args.length; i += 2) {
+        scope['${args[i]}'] = compileExpr(args[i + 1]);
+      }
+      _scopes.add(scope);
+      try {
+        return args.isEmpty ? _constant(null) : compileExpr(args.last);
+      } finally {
+        _scopes.removeLast();
+      }
+    case 'var':
+      for (final scope in _scopes.reversed) {
+        final bound = scope[args.isEmpty ? '' : '${args.first}'];
+        if (bound != null) return bound;
+      }
+      return _constant(null);
+    case 'heatmap-density' || 'line-progress':
+      return (c) => c.progress;
+    case 'image':
+      return arg(0);
+    case 'is-supported-script':
+      return _constant(true);
+    case 'resolved-locale':
+      return _constant('en');
+    case 'within':
+      return _constant(false);
+    case 'typeof':
+      final a = arg(0);
+      return (c) => switch (a(c)) {
+        null => 'null',
+        String() => 'string',
+        num() => 'number',
+        bool() => 'boolean',
+        List() => 'array',
+        Rgba() => 'color',
+        _ => 'object',
+      };
+    case 'to-rgba':
+      final a = arg(0);
+      return (c) {
+        final v = Rgba.of(a(c));
+        return v == null ? null : [v.r * 255, v.g * 255, v.b * 255, v.a];
+      };
+    case 'slice':
+      final input = arg(0), from = arg(1);
+      final to = args.length > 2 ? arg(2) : null;
+      return (c) {
+        final v = input(c);
+        final length = v is String
+            ? v.length
+            : v is List
+            ? v.length
+            : -1;
+        if (length < 0) return null;
+        int at(Object? raw, int fallback) {
+          var i = asNumber(raw)?.toInt() ?? fallback;
+          if (i < 0) i += length;
+          return i.clamp(0, length);
+        }
+
+        final a = at(from(c), 0);
+        final b = math.max(a, at(to?.call(c), length));
+        return v is String ? v.substring(a, b) : (v! as List).sublist(a, b);
+      };
+    case 'index-of':
+      final needle = arg(0), haystack = arg(1);
+      final from = args.length > 2 ? arg(2) : null;
+      return (c) {
+        final h = haystack(c);
+        final n = needle(c);
+        final start = asNumber(from?.call(c))?.toInt() ?? 0;
+        if (h is String && n is String) return h.indexOf(n, start);
+        if (h is List) return h.indexOf(n, start);
+        return -1;
+      };
+    case 'sin':
+      return math1(math.sin);
+    case 'cos':
+      return math1(math.cos);
+    case 'tan':
+      return math1(math.tan);
+    case 'asin':
+      return math1(math.asin);
+    case 'acos':
+      return math1(math.acos);
+    case 'atan':
+      return math1(math.atan);
     case 'zoom':
       return (c) => c.zoom;
     case 'geometry-type':
@@ -450,6 +548,9 @@ Expr _op(String op, List<Object?> args) {
             ? asNumber(kind[1]) ?? 1
             : 1,
         geometric: kind.first == 'geometric',
+        bezier: kind.first == 'cubic-bezier' && kind.length > 4
+            ? [for (var i = 1; i < 5; i++) (asNumber(kind[i]) ?? 0).toDouble()]
+            : null,
       );
     case 'to-string' || 'number-format':
       final a = arg(0);
@@ -598,6 +699,7 @@ Expr _interpolate(
   List<Expr> outs, {
   double base = 1,
   bool geometric = false,
+  List<double>? bezier,
 }) {
   if (stops.isEmpty) return _constant(null);
   return (c) {
@@ -612,6 +714,8 @@ Expr _interpolate(
     final at = v - stops[i - 1];
     final t = span == 0
         ? 0.0
+        : bezier != null
+        ? _bezier(bezier, at / span)
         : base == 1
         ? at / span
         : (math.pow(base, at) - 1) / (math.pow(base, span) - 1);
@@ -632,6 +736,26 @@ Expr _interpolate(
     if (ca != null && cb != null) return Rgba.lerp(ca, cb, t);
     return a;
   };
+}
+
+/// The height of the curve through (0,0), the two control points in [p] and
+/// (1,1) at horizontal position [x].
+double _bezier(List<double> p, double x) {
+  double at(double t, double a, double b) {
+    final u = 1 - t;
+    return 3 * u * u * t * a + 3 * u * t * t * b + t * t * t;
+  }
+
+  var lo = 0.0, hi = 1.0;
+  for (var i = 0; i < 24; i++) {
+    final mid = (lo + hi) / 2;
+    if (at(mid, p[0], p[2]) < x) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  return at((lo + hi) / 2, p[1], p[3]);
 }
 
 Expr _legacyFunction(Map<Object?, Object?> json) {

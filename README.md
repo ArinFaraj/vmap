@@ -13,7 +13,8 @@
 - Redraws from vectors every frame, so nothing goes soft between zoom levels.
 - Tiles are loaded and built on background isolates.
 - Labels in any script, in your app's own fonts.
-- Its own gestures, and optional round pins for places.
+- Its own gestures, with rotation, and optional round pins for places.
+- Your own GeoJSON drawn with the style, and a lookup of what is under a tap.
 
 ## Install
 
@@ -26,7 +27,7 @@ dependencies:
   vmap:
     git:
       url: https://github.com/ArinFaraj/vmap.git
-      ref: v0.4.0
+      ref: v0.5.0
 ```
 
 ## Quick start
@@ -142,8 +143,9 @@ MarkerLayer(markers: markers),
 ## Gestures
 
 `VmapMap` comes with its own gestures: drag with a glide, pinch around the
-fingers, double tap, two finger tap, and double tap then drag. It does not
-rotate the map.
+fingers, turn with two fingers, double tap, two finger tap, and double tap
+then drag. Labels stay upright while the map turns. `rotate: false` switches
+turning off.
 
 Move the map from code with a flutter_map `MapController`:
 
@@ -158,6 +160,68 @@ controller.move(const LatLng(36.19, 44.01), 15);
 To get the same gestures on your own `FlutterMap`, wrap it in `VmapGestures`
 and set `InteractionOptions(flags: InteractiveFlag.none)`. flutter_map's own
 gestures also work with `VmapLayer`.
+
+## Your own data
+
+An overlay adds sources and layers of your own to whatever style is showing.
+Both are written the way a MapLibre style writes them, so anything a style
+can draw, you can draw: lines, fills, circles, text, icons, heatmaps.
+
+```dart
+const route = VmapOverlay(
+  sources: {
+    'route': {
+      'type': 'geojson',
+      'data': {
+        'type': 'Feature',
+        'properties': {'name': 'Evening walk'},
+        'geometry': {
+          'type': 'LineString',
+          'coordinates': [[44.0053, 36.1930], [44.0087, 36.1890]],
+        },
+      },
+    },
+  },
+  layers: [
+    {
+      'id': 'route',
+      'type': 'line',
+      'source': 'route',
+      'layout': {'line-cap': 'round'},
+      'paint': {'line-color': '#1A73E8', 'line-width': 5},
+    },
+  ],
+);
+
+VmapMap(overlay: route)
+```
+
+A layer with `'before': 'some-layer-id'` is drawn under that layer of the
+style instead of on top. `data` may also be the address of a GeoJSON file.
+
+To change what is shown, build a new overlay with a new `data` object. Only
+that source is read again. Keep the overlay between builds: a new one in
+every `build` is treated as a change every time.
+
+## What is under a tap
+
+```dart
+VmapMap(
+  onFeatureTap: (point, features) {
+    if (features.isEmpty) return;
+    final top = features.first;
+    print('${top.properties['name']} from ${top.layers.first}');
+  },
+)
+```
+
+`features` holds what the style draws at that point, topmost first: roads,
+buildings, places, and the features of your overlay, each with its
+properties, its source and the ids of the style layers drawing it. The answer
+comes from the tiles off the UI thread, so it arrives a moment after the tap.
+
+With your own `FlutterMap`, give the layer a `GlobalKey<VmapLayerState>` and
+call `key.currentState!.featuresAt(point)`.
 
 ## Fonts and language
 
@@ -199,7 +263,8 @@ established vector layer for flutter_map.
 | Drawing | vectors, every frame, with `Canvas` | 9.x: tiles rendered to images. 10.x beta: `flutter_gpu` |
 | Flutter channel | stable | 9.x: stable. 10.x beta: main, with Flutter GPU on |
 | Renderer | Skia or Impeller | 10.x beta needs Impeller |
-| Hillshade layers | no | yes |
+| Hillshade layers | yes | yes |
+| Rotation | yes | yes |
 | Labels that avoid your markers | yes | no |
 | Pins for places | yes | no |
 
@@ -213,10 +278,10 @@ table, the caveats and how to run it are in
 
 ## Limits
 
-- One vector source per style.
-- No hillshade or heatmap layers, no `line-pattern`, no SDF icons.
-- Road names are written straight, not bent along curves.
-- No 3D: buildings are flat and the map does not pitch or rotate by gesture.
+- No 3D: buildings are flat and the map does not pitch.
+- A heatmap is drawn in two colours of its ramp, not through every stop.
+- GeoJSON sources are not clustered.
+- Fonts come from the app, not from the style's glyph server.
 - Run so far on one Android phone and on macOS. iOS, web and low end devices
   are untested.
 

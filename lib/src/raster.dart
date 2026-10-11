@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -165,10 +167,13 @@ class RasterTiles {
       final codec = await ui.instantiateImageCodec(bytes);
       final frame = await codec.getNextFrame();
       codec.dispose();
+      var image = frame.image;
+      final relief = layer.relief;
+      if (relief != null) image = await _shade(image, relief, z, y);
       if (_closed) {
-        frame.image.dispose();
+        image.dispose();
       } else {
-        tile.image = frame.image;
+        tile.image = image;
         onLoaded();
       }
     } catch (_) {
@@ -179,6 +184,56 @@ class RasterTiles {
     }
   }
 
+  /// Turns a tile of heights into a picture of shadow and highlight.
+  Future<ui.Image> _shade(
+    ui.Image heights,
+    ReliefPaint relief,
+    int z,
+    int y,
+  ) async {
+    final width = heights.width;
+    final height = heights.height;
+    final data = await heights.toByteData();
+    heights.dispose();
+    final pixels = data!.buffer.asUint8List();
+    final context = EvalContext()..zoom = z.toDouble();
+    final shadow = Rgba.of(relief.shadow(context)) ?? Rgba.black;
+    final light = Rgba.of(relief.highlight(context)) ?? Rgba.black;
+    final strength = (asNumber(relief.exaggeration(context)) ?? 0.5).toDouble();
+    final terrarium = relief.terrarium;
+    final direction = relief.direction;
+    final n = math.pow(2, z);
+    final latitude = math.atan(_sinh(math.pi * (1 - 2 * (y + 0.5) / n))).abs();
+    final metres = 40075016.686 * math.cos(latitude) / (n * width);
+    final colours = [
+      shadow.r, shadow.g, shadow.b, shadow.a, //
+      light.r, light.g, light.b, light.a,
+    ];
+    final shaded = await Isolate.run(
+      () => _hillshade(
+        pixels,
+        width,
+        height,
+        terrarium,
+        metres,
+        strength,
+        direction,
+        colours,
+      ),
+    );
+    final done = Completer<ui.Image>();
+    ui.decodeImageFromPixels(
+      shaded,
+      width,
+      height,
+      ui.PixelFormat.rgba8888,
+      done.complete,
+    );
+    return done.future;
+  }
+
+  static double _sinh(double x) => (math.exp(x) - math.exp(-x)) / 2;
+
   void close() {
     _closed = true;
     _client.close(force: true);
@@ -187,4 +242,65 @@ class RasterTiles {
     }
     _tiles.clear();
   }
+}
+
+/// Shades a grid of heights lit from [direction] degrees: premultiplied RGBA
+/// that is the shadow colour on slopes facing away from the light and the
+/// highlight colour on slopes facing it, and clear on flat ground.
+Uint8List _hillshade(
+  Uint8List pixels,
+  int width,
+  int height,
+  bool terrarium,
+  double metresPerPixel,
+  double strength,
+  double direction,
+  List<double> colours,
+) {
+  final heights = Float32List(width * height);
+  for (var i = 0; i < heights.length; i++) {
+    final r = pixels[i * 4], g = pixels[i * 4 + 1], b = pixels[i * 4 + 2];
+    heights[i] = terrarium
+        ? r * 256 + g + b / 256 - 32768
+        : -10000 + (r * 65536 + g * 256 + b) * 0.1;
+  }
+  final out = Uint8List(width * height * 4);
+  final azimuth = (360 - direction + 90) * math.pi / 180;
+  const zenith = math.pi / 4;
+  final flat = math.cos(zenith);
+  final steep = strength * 2 / (8 * metresPerPixel);
+  for (var y = 0; y < height; y++) {
+    final up = y == 0 ? 0 : y - 1;
+    final down = y == height - 1 ? y : y + 1;
+    for (var x = 0; x < width; x++) {
+      final left = x == 0 ? 0 : x - 1;
+      final right = x == width - 1 ? x : x + 1;
+      final a = heights[up * width + left];
+      final b = heights[up * width + x];
+      final c = heights[up * width + right];
+      final d = heights[y * width + left];
+      final f = heights[y * width + right];
+      final g = heights[down * width + left];
+      final h = heights[down * width + x];
+      final i = heights[down * width + right];
+      final dx = ((c + 2 * f + i) - (a + 2 * d + g)) * steep;
+      final dy = ((g + 2 * h + i) - (a + 2 * b + c)) * steep;
+      final slope = math.atan(math.sqrt(dx * dx + dy * dy));
+      final aspect = math.atan2(dy, -dx);
+      final lit =
+          flat * math.cos(slope) +
+          math.sin(zenith) * math.sin(slope) * math.cos(azimuth - aspect);
+      final delta = lit - flat;
+      final o = delta < 0 ? 0 : 4;
+      final alpha =
+          (delta.abs() * (delta < 0 ? 1.4 : 2.4)).clamp(0.0, 1.0) *
+          colours[o + 3];
+      final at = (y * width + x) * 4;
+      out[at] = (colours[o] * alpha * 255).round();
+      out[at + 1] = (colours[o + 1] * alpha * 255).round();
+      out[at + 2] = (colours[o + 2] * alpha * 255).round();
+      out[at + 3] = (alpha * 255).round();
+    }
+  }
+  return out;
 }

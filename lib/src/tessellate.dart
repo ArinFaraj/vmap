@@ -20,8 +20,9 @@ class MeshChunk {
   final Float32List? extrusions;
   final Uint16List indices;
 
-  /// Per-vertex distance along its line as x with a zero y, the texture
-  /// coordinates a dash pattern is drawn by. Null when not asked for.
+  /// Per-vertex distance along its line as x, and as y where the vertex sits
+  /// across the line from 0 to 1: the texture coordinates dashes and line
+  /// patterns are drawn by. Null when not asked for.
   final Float32List? distances;
 }
 
@@ -203,16 +204,16 @@ class LineMesher {
     _along = 0;
     var segment = len;
     if (caps) _fan(pts[0], pts[1], -dy, dx, math.pi, 1);
-    var left = _vertex(pts[0], pts[1], -dy, dx);
-    var right = _vertex(pts[0], pts[1], dy, -dx);
+    var left = _vertex(pts[0], pts[1], -dy, dx, 0);
+    var right = _vertex(pts[0], pts[1], dy, -dx, 1);
 
     for (var i = 1; i < n; i++) {
       final x = pts[i * 2];
       final y = pts[i * 2 + 1];
       _along += segment;
       if (i == n - 1) {
-        final l = _vertex(x, y, -dy, dx);
-        final r = _vertex(x, y, dy, -dx);
+        final l = _vertex(x, y, -dy, dx, 0);
+        final r = _vertex(x, y, dy, -dx, 1);
         _quad(left, right, l, r);
         if (caps) _fan(x, y, -dy, dx, math.pi, -1);
         break;
@@ -228,14 +229,14 @@ class LineMesher {
         final k = 1 / (1 + dot);
         final mx = (-dy - ey) * k;
         final my = (dx + ex) * k;
-        final l = _vertex(x, y, mx, my);
-        final r = _vertex(x, y, -mx, -my);
+        final l = _vertex(x, y, mx, my, 0);
+        final r = _vertex(x, y, -mx, -my, 1);
         _quad(left, right, l, r);
         left = l;
         right = r;
       } else {
-        final l = _vertex(x, y, -dy, dx);
-        final r = _vertex(x, y, dy, -dx);
+        final l = _vertex(x, y, -dy, dx, 0);
+        final r = _vertex(x, y, dy, -dx, 1);
         _quad(left, right, l, r);
         if (joins) {
           final cross = dx * ey - dy * ex;
@@ -249,8 +250,8 @@ class LineMesher {
             cross > 0 ? 1 : -1,
           );
         }
-        left = _vertex(x, y, -ey, ex);
-        right = _vertex(x, y, ey, -ex);
+        left = _vertex(x, y, -ey, ex, 0);
+        right = _vertex(x, y, ey, -ex, 1);
       }
       dx = ex;
       dy = ey;
@@ -298,7 +299,9 @@ class LineMesher {
     _b.indexCount = k;
   }
 
-  int _vertex(double x, double y, double ex, double ey) {
+  /// [across] is where the vertex sits over the line's width: 0 on its left
+  /// edge, 1 on its right.
+  int _vertex(double x, double y, double ex, double ey, [double across = 0.5]) {
     final v = _b.vertexCount;
     final o = v * 2;
     _b.pos[o] = x;
@@ -307,7 +310,7 @@ class LineMesher {
     _b.ext[o + 1] = ey;
     if (_b.withDistances) {
       _b.dst[o] = _along;
-      _b.dst[o + 1] = 0;
+      _b.dst[o + 1] = across;
     }
     _b.vertexCount = v + 1;
     return v;
