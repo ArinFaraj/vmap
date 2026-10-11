@@ -17,9 +17,10 @@
 | Expressions | `interpolate` (linear, exponential and cubic-bezier), `step`, `match`, `case`, `coalesce`, `let`, `var`, `get`, `has`, `id`, `feature-state`, `zoom`, `geometry-type`, `typeof`, comparisons, `all`, `any`, `!`, `concat`, `slice`, `index-of`, `to-string`, `to-rgba`, maths and trigonometry, and the legacy `stops` functions and filters |
 
 Colours, opacities, widths and radii may read a feature's properties, for
-example a road coloured by its class. So may a label's colour, opacity and
-halo and an icon's colour and opacity, and all of them may read `feature-state`. Features are grouped by the values the
-paint reads, up to 64 groups per layer in a tile.
+example a road coloured by its class. So may a label's size, colour, opacity
+and halo and an icon's size, colour and opacity, and all of them may read
+`feature-state`. Features are grouped by the values the paint reads, up to
+64 groups per layer in a tile.
 
 ## What it does not read
 
@@ -28,7 +29,6 @@ paint reads, up to 64 groups per layer in a tile.
 - Halos on SDF icons, `hillshade-accent-color`, and line patterns on round
   caps.
 - `within` and `distance`.
-- `text-size` and `icon-size` that read the feature.
 - The style's `glyphs`. Text is drawn in the app's fonts.
 - A road name on a bend sharper than about 24 degrees between one slice of
   the text and the next. It is left out there.

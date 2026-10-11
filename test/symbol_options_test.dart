@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vmap/src/expr.dart';
 import 'package:vmap/src/geojson.dart';
 import 'package:vmap/src/style.dart';
 import 'package:vmap/src/tile_builder.dart';
@@ -89,6 +90,29 @@ void main() {
     });
     expect(sheet.symbols.single.paintKeys, [r'$id']);
     expect(sheet.shape, isNot(_sheet({}).shape));
+  });
+
+  test('a label carries what its layer\'s sizes read', () {
+    final sheet = _sheet({
+      'text-size': [
+        'interpolate',
+        ['linear'],
+        ['get', 'weight'],
+        0,
+        10,
+        10,
+        30,
+      ],
+    });
+    final symbol = sheet.symbols.single;
+    expect(symbol.paintKeys, ['weight']);
+    final built = TileBuilder(sheet)
+        .buildLayers(GeoJsonTiles(_shops).tile(0, 0, 0), 0);
+    final sizes = {
+      for (final l in built.labels)
+        l.text: symbol.size(EvalContext()..props = l.props!),
+    };
+    expect(sizes, {'late': 28, 'early': 14});
   });
 
   test('a label of a layer with plain paint carries nothing', () {

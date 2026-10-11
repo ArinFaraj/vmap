@@ -1,3 +1,8 @@
+## 0.12.0
+
+- `text-size` and `icon-size` may read the feature's properties, so a city
+  can have a larger name than a village from one layer.
+
 ## 0.11.0
 
 - A label's colour, opacity and halo, and an icon's opacity and SDF colour, may read

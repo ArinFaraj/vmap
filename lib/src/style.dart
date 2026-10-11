@@ -525,8 +525,8 @@ class SymbolLayer {
   /// the one with the lower number gets it.
   final Expr? sortKey;
 
-  /// The feature properties the layer's colours and opacities read. Each
-  /// label carries its feature's values of them.
+  /// The feature properties the layer's colours, opacities and sizes read.
+  /// Each label carries its feature's values of them.
   final List<String> paintKeys;
 
   /// The icon may show without its text, or the text without its icon.
@@ -847,6 +847,8 @@ class StyleSheet {
         ]) {
           _reads(paint[p], paintKeys);
         }
+        _reads(layout['text-size'], paintKeys);
+        _reads(layout['icon-size'], paintKeys);
         symbols.add(
           SymbolLayer(
             id: id,
