@@ -1,3 +1,10 @@
+## 0.19.0
+
+- `downloadRegion` on the layer's state and on the engine fetches the tiles
+  of an area into the cache directory for use offline, vector and raster,
+  skipping what is already there. It reports progress and how many tiles
+  were fetched and failed, and can be stopped.
+
 ## 0.18.0
 
 More of the style is read:

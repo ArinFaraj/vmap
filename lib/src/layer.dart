@@ -154,6 +154,28 @@ class VmapLayerState extends State<VmapLayer> {
     int offset = 0,
   }) => _engine.clusterLeaves(source, clusterId, limit: limit, offset: offset);
 
+  /// Fetches the tiles of a region into the cache directory for use
+  /// offline. See [VmapEngine.downloadRegion].
+  Future<VmapDownload> downloadRegion({
+    required double west,
+    required double south,
+    required double east,
+    required double north,
+    required double minZoom,
+    required double maxZoom,
+    void Function(int done, int total)? onProgress,
+    bool Function()? cancelled,
+  }) => _engine.downloadRegion(
+    west: west,
+    south: south,
+    east: east,
+    north: north,
+    minZoom: minZoom,
+    maxZoom: maxZoom,
+    onProgress: onProgress,
+    cancelled: cancelled,
+  );
+
   /// The credit the style's sources ask for, once the style has loaded.
   List<String> get attributions => _engine.attributions;
 

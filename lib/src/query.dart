@@ -33,6 +33,21 @@ class VmapFeature {
       'VmapFeature($source/$sourceLayer $id $layers $properties)';
 }
 
+/// How a download of a region for use offline went.
+class VmapDownload {
+  const VmapDownload({
+    required this.tiles,
+    required this.fetched,
+    required this.failed,
+  });
+
+  /// The tiles the region takes, and how many of them had to be fetched and
+  /// could not be. The rest were in the cache already or do not exist.
+  final int tiles;
+  final int fetched;
+  final int failed;
+}
+
 /// What a cluster of a clustered source holds: a smaller cluster, or one of
 /// the points of the data.
 class VmapClusterMember {

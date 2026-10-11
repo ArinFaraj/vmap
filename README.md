@@ -27,7 +27,7 @@ dependencies:
   vmap:
     git:
       url: https://github.com/ArinFaraj/vmap.git
-      ref: v0.18.0
+      ref: v0.19.0
 ```
 
 ## Quick start
@@ -375,6 +375,28 @@ VmapMap(cacheDirectory: '${cacheDir.path}/vmap')
 
 `clearCache()` on the layer's state deletes what the map kept there and
 loads it again. `reload()` loads again without deleting.
+
+### A region for offline use
+
+`downloadRegion` on the layer's state (or on the engine) fetches every tile
+the style draws for an area into the same directory, so that part of the
+map shows with no network:
+
+```dart
+final result = await layerKey.currentState!.downloadRegion(
+  west: 43.9, south: 36.1, east: 44.1, north: 36.3,
+  minZoom: 10, maxZoom: 16,
+  onProgress: (done, total) => setState(() => progress = done / total),
+);
+print('${result.fetched} fetched, ${result.failed} failed');
+```
+
+Tiles already kept are skipped, so a download that was cut short carries on
+where it stopped. Each zoom has four times the tiles of the one before:
+look at the size of a small range first, and at the terms of the tile
+server before downloading in bulk. The style and its icons are kept the
+first time the map shows them. There is nothing to download into in a
+browser.
 
 ## Servers that want a key
 

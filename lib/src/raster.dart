@@ -175,6 +175,44 @@ class RasterTiles {
     }
   }
 
+  /// The zoom of the tiles drawn at map zoom [zoom].
+  int tileZoom(double zoom) =>
+      (zoom + math.log(256 / layer.tileSize) / math.ln2).round().clamp(
+        0,
+        _maxZoom,
+      );
+
+  /// Fetches tile [z]/[x]/[y] into the cache directory unless it is there
+  /// already, and returns whether it had to.
+  Future<bool> keep(int z, int x, int y) async {
+    final template = _template;
+    final archive = _archive;
+    if (cacheDirectory == null || template == null) return false;
+    if (archive?.local ?? false) return false;
+    if (!layer.cover.has(z, x, y)) return false;
+    final file =
+        '$cacheDirectory/raster-${template.hashCode.toRadixString(36)}/$z/$x/$y';
+    if (fileExists(file)) return false;
+    if (archive != null) {
+      final bytes = await archive.tile(z, x, y);
+      if (bytes.isEmpty) return false;
+      await writeFile(file, bytes);
+      return true;
+    }
+    final (url, reply) = await getTile(
+      _client,
+      template,
+      z,
+      x,
+      layer.cover.row(z, y),
+      headers,
+    );
+    if (reply.status == 204 || reply.status == 404) return false;
+    if (reply.status != 200) throw HttpFailure(reply.status, url);
+    await writeFile(file, reply.bytes);
+    return true;
+  }
+
   /// Draws the tiles covering the view. [zoom] is the slippy-map zoom and
   /// [origin] the world pixel at the canvas origin.
   void paint(
@@ -197,8 +235,7 @@ class RasterTiles {
     }
     if (_template == null) return;
     _frame++;
-    final ideal = zoom + math.log(256 / layer.tileSize) / math.ln2;
-    final z = ideal.round().clamp(0, _maxZoom);
+    final z = tileZoom(zoom);
     final span = 256.0 * math.pow(2, zoom - z);
     final n = 1 << z;
     final x0 = (origin.dx / span).floor();

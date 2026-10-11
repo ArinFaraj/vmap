@@ -166,6 +166,88 @@ class VmapEngine extends ChangeNotifier {
     if (!_disposed) reload();
   }
 
+  /// Fetches into the cache directory every tile the style draws between
+  /// [west], [south], [east] and [north] at map zooms [minZoom] to
+  /// [maxZoom], so that part of the map shows without a network. Call it
+  /// once the style has loaded. [onProgress] is told how many tiles are
+  /// dealt with out of how many, and the download stops early once
+  /// [cancelled] answers true.
+  ///
+  /// The number of tiles grows fourfold with each zoom: check
+  /// [VmapDownload.tiles] of a small range before asking for a large one,
+  /// and the terms of the tile server before downloading in bulk.
+  Future<VmapDownload> downloadRegion({
+    required double west,
+    required double south,
+    required double east,
+    required double north,
+    required double minZoom,
+    required double maxZoom,
+    void Function(int done, int total)? onProgress,
+    bool Function()? cancelled,
+  }) async {
+    if (!hasFiles || source.cacheDirectory == null) {
+      throw StateError('A region is downloaded into a cache directory');
+    }
+    final jobs = <Future<bool> Function()>[];
+    final client = Net(userAgent: source.userAgent, perHost: 6);
+    void cover(int from, int to, void Function(int z, int x, int y) add) {
+      for (var z = from; z <= to; z++) {
+        final n = 1 << z;
+        int column(double lng) =>
+            ((lng + 180) / 360 * n).floor().clamp(0, n - 1);
+        int row(double lat) {
+          final turn = lat.clamp(-85.0511, 85.0511) * math.pi / 180;
+          final y =
+              (1 - math.log(math.tan(turn) + 1 / math.cos(turn)) / math.pi) / 2;
+          return (y * n).floor().clamp(0, n - 1);
+        }
+
+        for (var y = row(north); y <= row(south); y++) {
+          for (var x = column(west); x <= column(east); x++) {
+            add(z, x, y);
+          }
+        }
+      }
+    }
+
+    for (final s in _sources) {
+      final pool = s.pool;
+      int at(double zoom) => (zoom - 1).floor().clamp(0, pool.maxZoom);
+      cover(
+        at(minZoom),
+        at(maxZoom),
+        (z, x, y) => jobs.add(() => pool.keep(TileId(z, x, y), client)),
+      );
+    }
+    for (final r in _rasters) {
+      cover(
+        r.tileZoom(minZoom),
+        r.tileZoom(maxZoom),
+        (z, x, y) => jobs.add(() => r.keep(z, x, y)),
+      );
+    }
+    var next = 0, done = 0, fetched = 0, failed = 0;
+    Future<void> lane() async {
+      while (next < jobs.length && !(cancelled?.call() ?? false)) {
+        final job = jobs[next++];
+        try {
+          if (await job()) fetched++;
+        } catch (_) {
+          failed++;
+        }
+        onProgress?.call(++done, jobs.length);
+      }
+    }
+
+    try {
+      await Future.wait([for (var i = 0; i < 6; i++) lane()]);
+    } finally {
+      client.close();
+    }
+    return VmapDownload(tiles: jobs.length, fetched: fetched, failed: failed);
+  }
+
   VmapStyle get style => _style;
   set style(VmapStyle value) {
     if (value == _style) return;

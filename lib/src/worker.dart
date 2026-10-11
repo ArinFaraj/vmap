@@ -265,6 +265,40 @@ class TilePool {
     }
   }
 
+  PmTiles? _keeping;
+
+  /// Fetches tile [id] into the cache directory unless it is there already,
+  /// and returns whether it had to. A source with nothing to keep (data
+  /// held by the style, an archive on this device) answers false.
+  Future<bool> keep(TileId id, Net client) async {
+    await _starting;
+    final directory = config.cacheDirectory;
+    final template = _template;
+    if (startError case final error?) throw error;
+    if (directory == null || template == null || _def.geoJson) return false;
+    if (id.z > maxZoom || !_def.cover.has(id.z, id.x, id.y)) return false;
+    final file = _tileCachePath(directory, template, id.z, id.x, id.y);
+    if (fileExists(file)) return false;
+    if (PmTiles.handles(template)) {
+      final archive = _keeping ??= PmTiles(template, headers: config.headers);
+      if (archive.local) return false;
+      await writeFile(file, await archive.tile(id.z, id.x, id.y));
+      return true;
+    }
+    final (url, reply) = await getTile(
+      client,
+      template,
+      id.z,
+      id.x,
+      _def.cover.row(id.z, id.y),
+      config.headers,
+    );
+    if (reply.status == 204 || reply.status == 404) return false;
+    if (reply.status != 200) throw HttpFailure(reply.status, url);
+    await writeFile(file, reply.bytes);
+    return true;
+  }
+
   bool _onDisk(TileId id) {
     if (_notOnDisk.contains(id)) return false;
     final found = fileExists(
@@ -353,6 +387,7 @@ class TilePool {
 
   void close() {
     _closed = true;
+    _keeping?.close();
     for (final q in _queries.values) {
       q.complete(const []);
     }
