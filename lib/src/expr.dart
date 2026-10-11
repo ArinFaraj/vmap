@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'place.dart';
+
 /// What a style expression is evaluated against.
 class EvalContext {
   /// Style zoom: the 512 px tile convention MapLibre styles are written in.
@@ -17,6 +19,10 @@ class EvalContext {
 
   /// What `accumulated` reads while a cluster adds up one of its properties.
   Object? accumulated;
+
+  /// The feature's points as longitude and latitude in turn, which `within`
+  /// and `distance` read. Null where features are not weighed by place.
+  List<double> Function()? lonLats;
 }
 
 typedef Expr = Object? Function(EvalContext c);
@@ -197,7 +203,7 @@ const _operators = {
   'typeof', 'collator', 'resolved-locale', 'is-supported-script', 'slice',
   'index-of', 'e', 'pi', 'ln2', 'line-progress', 'heatmap-density',
   'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'within', 'distance',
-  'accumulated', 'to-rgba',
+  'accumulated', 'to-rgba', 'hsl', 'hsla', 'split', 'join',
 };
 
 /// The variables `let` has bound around the expression being compiled.
@@ -313,6 +319,19 @@ Expr _filter(Object? json) {
   return compileExpr(json);
 }
 
+/// Whether a comparison is given a collator that sets case aside, which is
+/// what a collator does unless told otherwise.
+bool _folds(List<Object?> args) =>
+    args.length > 2 &&
+    args[2] is List &&
+    (args[2]! as List).firstOrNull == 'collator' &&
+    switch ((args[2]! as List).elementAtOrNull(1)) {
+      {'case-sensitive': true} => false,
+      _ => true,
+    };
+
+Object? _folded(Object? value) => value is String ? value.toLowerCase() : value;
+
 bool _compare(String op, Object? a, Object? b) {
   final int order;
   if (a is num && b is num) {
@@ -346,11 +365,25 @@ Expr _op(String op, List<Object?> args) {
       return _constant(args.isEmpty ? null : args.first);
     case 'get':
       final name = args.isEmpty ? null : args.first;
+      if (args.length > 1) {
+        final key = arg(0), from = arg(1);
+        return (c) => switch (from(c)) {
+          final Map<Object?, Object?> m => m[key(c)],
+          _ => null,
+        };
+      }
       if (name is String) return (c) => c.props[name];
       final inner = arg(0);
       return (c) => c.props[inner(c)];
     case 'has':
       final name = args.isEmpty ? null : args.first;
+      if (args.length > 1) {
+        final key = arg(0), from = arg(1);
+        return (c) => switch (from(c)) {
+          final Map<Object?, Object?> m => m.containsKey(key(c)),
+          _ => false,
+        };
+      }
       return (c) => c.props.containsKey(name);
     case '!has':
       final name = args.isEmpty ? null : args.first;
@@ -390,7 +423,23 @@ Expr _op(String op, List<Object?> args) {
     case 'resolved-locale':
       return _constant('en');
     case 'within':
-      return _constant(false);
+      final place = Place.of(args.isEmpty ? null : args.first);
+      if (place == null) return _constant(false);
+      return (c) {
+        final points = c.lonLats?.call();
+        return points != null &&
+            c.geometryType != 'Polygon' &&
+            place.holds(points);
+      };
+    case 'distance':
+      final place = Place.of(args.isEmpty ? null : args.first);
+      if (place == null) return _constant(null);
+      return (c) {
+        final points = c.lonLats?.call();
+        return points == null
+            ? null
+            : place.distanceTo(points, joined: c.geometryType != 'Point');
+      };
     case 'typeof':
       final a = arg(0);
       return (c) => switch (a(c)) {
@@ -459,6 +508,14 @@ Expr _op(String op, List<Object?> args) {
     case '!':
       final a = arg(0);
       return (c) => !_truthy(a(c));
+    case '==' || '!=' || '<' || '<=' || '>' || '>=' when _folds(args):
+      final a = arg(0), b = arg(1);
+      final same = op == '==' || op == '!=';
+      return (c) {
+        final x = _folded(a(c)), y = _folded(b(c));
+        if (same) return (x == y) == (op == '==');
+        return _compare(op, x, y);
+      };
     case '==':
       final a = arg(0), b = arg(1);
       return (c) => a(c) == b(c);
@@ -563,9 +620,55 @@ Expr _op(String op, List<Object?> args) {
             ? [for (var i = 1; i < 5; i++) (asNumber(kind[i]) ?? 0).toDouble()]
             : null,
       );
-    case 'to-string' || 'number-format':
+    case 'to-string':
       final a = arg(0);
       return (c) => asText(a(c));
+    case 'number-format':
+      final a = arg(0);
+      final options = args.length > 1 && args[1] is Map
+          ? args[1] as Map
+          : const <Object?, Object?>{};
+      final least = asNumber(options['min-fraction-digits'])?.toInt() ?? 0;
+      final most = math.max(
+        least,
+        asNumber(options['max-fraction-digits'])?.toInt() ?? 3,
+      );
+      return (c) {
+        final value = asNumber(a(c));
+        if (value == null) return '';
+        var text = value.toStringAsFixed(most);
+        if (most > least && text.contains('.')) {
+          final keep = text.indexOf('.') + least + (least == 0 ? 0 : 1);
+          var end = text.length;
+          while (end > keep && text[end - 1] == '0') {
+            end--;
+          }
+          if (end > 0 && text[end - 1] == '.') end--;
+          text = text.substring(0, end);
+        }
+        return text;
+      };
+    case 'split':
+      final a = arg(0), by = arg(1);
+      return (c) => asText(a(c)).split(asText(by(c)));
+    case 'join':
+      final a = arg(0), by = arg(1);
+      return (c) => switch (a(c)) {
+        final List<Object?> l => l.map(asText).join(asText(by(c))),
+        _ => '',
+      };
+    case 'hsl' || 'hsla':
+      final parts = all();
+      return (c) {
+        final v = [for (final p in parts) asNumber(p(c)) ?? 0];
+        if (v.length < 3) return null;
+        return Rgba._hsl(
+          (v[0] % 360) / 360,
+          (v[1] / 100).clamp(0, 1),
+          (v[2] / 100).clamp(0, 1),
+          v.length > 3 ? v[3].toDouble() : 1,
+        );
+      };
     case 'to-number' || 'number':
       final parts = all();
       return (c) {

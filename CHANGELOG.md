@@ -1,3 +1,10 @@
+## 0.14.0
+
+- `within` and `distance`: a layer can keep the features inside a polygon,
+  or within so many metres of a place. `within` used to hide everything.
+- `hsl` and `hsla`, `split` and `join`, `number-format` with its fraction
+  digits, comparisons with a `collator`, and `get` and `has` on an object.
+
 ## 0.13.0
 
 - `text-padding` and `icon-padding`: how much room a label keeps clear of

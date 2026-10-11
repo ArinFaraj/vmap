@@ -530,7 +530,7 @@ Future<void> _workerMain(List<Object?> init) async {
         final layers = await layersOf(z, x, y);
         final tile = layers.isEmpty
             ? BuiltTile(const [], const [])
-            : (builder.buildLayers(layers, z, maxZoom: m[4]! as int)
+            : (builder.buildLayers(layers, z, x: x, y: y, maxZoom: m[4]! as int)
                 ..keyLabels(z, x, y, grid: geoJson == null ? 1024 : 1 << 24));
         out.send([job, tile.toMessage()]);
       } catch (e) {

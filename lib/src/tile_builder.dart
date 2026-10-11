@@ -226,12 +226,27 @@ class TileBuilder {
 
   /// [maxZoom] is the deepest zoom the source has tiles for; a tile at that
   /// zoom is drawn at every zoom beyond it.
-  BuiltTile build(Uint8List bytes, int z, {int maxZoom = 14}) =>
-      buildLayers(MvtTile.decode(bytes).layers.values, z, maxZoom: maxZoom);
+  BuiltTile build(
+    Uint8List bytes,
+    int z, {
+    int x = 0,
+    int y = 0,
+    int maxZoom = 14,
+  }) => buildLayers(
+    MvtTile.decode(bytes).layers.values,
+    z,
+    x: x,
+    y: y,
+    maxZoom: maxZoom,
+  );
+
+  static double _sinh(double v) => (math.exp(v) - math.exp(-v)) / 2;
 
   BuiltTile buildLayers(
     Iterable<TileLayer> tileLayers,
     int z, {
+    int x = 0,
+    int y = 0,
     int maxZoom = 14,
   }) {
     final plain = List<_Group?>.filled(sheet.buckets.length, null);
@@ -311,6 +326,25 @@ class TileBuilder {
             pending = 1;
           }
         }
+
+        context.lonLats = () {
+          geometry();
+          final across = pending / tileExtent;
+          final tiles = 1 << z;
+          return [
+            for (var i = 0; i < _sink.coordCount; i += 2) ...[
+              (x + _sink.coords[i] * across) / tiles * 360 - 180,
+              math.atan(
+                    _sinh(
+                      math.pi *
+                          (1 - 2 * (y + _sink.coords[i + 1] * across) / tiles),
+                    ),
+                  ) *
+                  180 /
+                  math.pi,
+            ],
+          ];
+        };
 
         for (final b in buckets) {
           final bucket = sheet.buckets[b];
