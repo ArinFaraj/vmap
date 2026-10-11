@@ -1,3 +1,10 @@
+## 0.21.1
+
+- In a browser's JavaScript build the names along roads are images again
+  and every other label stays text. Turned text was costing about half of
+  the frames a lap skipped: one lap went from 104 frames a second with
+  about 350 skipped to 112 and 114 with 225 and 168.
+
 ## 0.21.0
 
 - `VmapEngine.webWorker` and `dart run vmap:build_web_worker`: in a browser

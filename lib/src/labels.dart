@@ -713,19 +713,15 @@ class LabelEngine {
           rects[j * 4 + 2] = right;
           rects[j * 4 + 3] = pixelH;
         }
-        if (picture != null) {
-          _playStrips(canvas, picture, transforms, rects, st.opacity);
-        } else {
-          canvas.drawRawAtlas(
-            image!,
-            transforms,
-            rects,
-            null,
-            null,
-            null,
-            _imagePaint,
-          );
-        }
+        canvas.drawRawAtlas(
+          image!,
+          transforms,
+          rects,
+          null,
+          null,
+          null,
+          _imagePaint,
+        );
         continue;
       }
       _project(st.worldX, st.worldY, world, origin);
@@ -1467,71 +1463,6 @@ class LabelEngine {
 
   /// Draws the label once into an image. The halo is the text redrawn in the
   /// halo colour around itself, so the text is laid out a single time.
-  final Float64List _stripMatrix = Float64List(16)
-    ..[10] = 1
-    ..[15] = 1;
-  final ui.Paint _fadePaint = ui.Paint();
-
-  /// Plays the pieces of a recorded label that [transforms] and [rects] lay
-  /// along a line, the way an atlas would draw them from an image.
-  void _playStrips(
-    ui.Canvas canvas,
-    ui.Picture picture,
-    Float32List transforms,
-    Float32List rects,
-    double opacity,
-  ) {
-    final n = rects.length ~/ 4;
-    final fading = opacity < 1;
-    if (fading) {
-      var l = double.infinity, t = double.infinity;
-      var r = -double.infinity, b = -double.infinity;
-      for (var j = 0; j < n; j++) {
-        final w = rects[j * 4 + 2] - rects[j * 4];
-        final h = rects[j * 4 + 3] - rects[j * 4 + 1];
-        final scos = transforms[j * 4], ssin = transforms[j * 4 + 1];
-        for (var corner = 0; corner < 4; corner++) {
-          final cx = corner.isEven ? 0.0 : w, cy = corner < 2 ? 0.0 : h;
-          final x = scos * cx - ssin * cy + transforms[j * 4 + 2];
-          final y = ssin * cx + scos * cy + transforms[j * 4 + 3];
-          l = math.min(l, x);
-          t = math.min(t, y);
-          r = math.max(r, x);
-          b = math.max(b, y);
-        }
-      }
-      canvas.saveLayer(
-        ui.Rect.fromLTRB(l, t, r, b),
-        _fadePaint..color = ui.Color.fromRGBO(255, 255, 255, opacity),
-      );
-    }
-    for (var j = 0; j < n; j++) {
-      final left = rects[j * 4];
-      _stripMatrix
-        ..[0] = transforms[j * 4]
-        ..[1] = transforms[j * 4 + 1]
-        ..[4] = -transforms[j * 4 + 1]
-        ..[5] = transforms[j * 4]
-        ..[12] = transforms[j * 4 + 2]
-        ..[13] = transforms[j * 4 + 3];
-      canvas
-        ..save()
-        ..transform(_stripMatrix)
-        ..clipRect(
-          ui.Rect.fromLTWH(
-            0,
-            0,
-            rects[j * 4 + 2] - left,
-            rects[j * 4 + 3] - rects[j * 4 + 1],
-          ),
-        )
-        ..translate(-left, -rects[j * 4 + 1])
-        ..drawPicture(picture)
-        ..restore();
-    }
-    if (fading) canvas.restore();
-  }
-
   _Sprite _rasterize(
     _LabelState st,
     double styleZoom,
@@ -1626,21 +1557,24 @@ class LabelEngine {
       ui.TextAlign.right => _haloPad + textW - layoutWidth,
       _ => _haloPad + textW / 2 - layoutWidth / 2,
     }, _haloPad);
-    if (directLabels) {
-      // The halo is the text again with its outline stroked, which costs a
-      // frame far less to play than a layer of shifted copies does.
-      final outline = halo == null || haloWidth <= 0
-          ? null
-          : lay(
-              ui.Paint()
-                ..style = ui.PaintingStyle.stroke
-                ..strokeWidth = haloWidth * 2 / 1.5
-                ..strokeJoin = ui.StrokeJoin.round
-                ..color = ui.Color(halo)
-                ..maskFilter = haloBlur > 0
-                    ? ui.MaskFilter.blur(ui.BlurStyle.normal, haloBlur / 2)
-                    : null,
-            );
+    // Where text is drawn straight to the page the halo is the text again
+    // with its outline stroked, which costs far less than a layer of shifted
+    // copies does.
+    final outline = !directLabels || halo == null || haloWidth <= 0
+        ? null
+        : lay(
+            ui.Paint()
+              ..style = ui.PaintingStyle.stroke
+              ..strokeWidth = haloWidth * 2 / 1.5
+              ..strokeJoin = ui.StrokeJoin.round
+              ..color = ui.Color(halo)
+              ..maskFilter = haloBlur > 0
+                  ? ui.MaskFilter.blur(ui.BlurStyle.normal, haloBlur / 2)
+                  : null,
+          );
+    // A name along a road stays an image: turned text is drawn as outlines
+    // every frame, which a turned image is not.
+    if (directLabels && !isRoad) {
       final canvas = ui.Canvas(recorder);
       if (outline != null) canvas.drawParagraph(outline, at);
       canvas.drawParagraph(paragraph, at);
@@ -1658,7 +1592,9 @@ class LabelEngine {
       return _sprites[st.candidate.spriteKey] = sprite;
     }
     final canvas = ui.Canvas(recorder)..scale(dpr);
-    if (halo != null) {
+    if (outline != null) {
+      canvas.drawParagraph(outline, at);
+    } else if (halo != null) {
       canvas.saveLayer(
         null,
         ui.Paint()
@@ -1697,6 +1633,7 @@ class LabelEngine {
     )..usedPass = _pass;
     picture.dispose();
     paragraph.dispose();
+    outline?.dispose();
     _sprites.remove(st.candidate.spriteKey)?.dispose();
     _sprites[st.candidate.spriteKey] = sprite;
     return sprite;

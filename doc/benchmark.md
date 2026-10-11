@@ -59,6 +59,7 @@ Mac was busy with other work during every run here (a load of 17 to 26 on
 |---|---|---|---|
 | JavaScript build, a label image each (0.17.0) | 25 and 32 | 463 and 473 | 213 and 226 ms |
 | JavaScript build, labels as text (0.17.2) | 104 and 105 | 381 and 356 | 148 and 99 ms |
+| JavaScript build, labels as text, road names as images (0.21.1) | 112 and 114 | 225 and 168 | 101 and 103 ms |
 | `--wasm` build, a label image each (0.17.2) | 107 and 68 | 299 and 248 | 76 and 77 ms |
 
 In the JavaScript build an image of a label took 28 ms to make on average,
@@ -75,8 +76,16 @@ Both of its laps drew the same number of frames, about 2700 in 30 seconds,
 so the 68 is more likely the browser's frame times than the map. 0.17.1
 measured this build at 18 to 30, and why it differs has not been traced.
 
-The frames still skipped are the label text, not the tiles. With labels
-off the same lap skipped 16 to 31 frames and ran at 119 frames a second.
+The frames still skipped are the labels, not the tiles. With labels off
+the same lap skipped 16 to 31 frames and ran at 119 frames a second.
+
+About half of what 0.17.2 skipped was the names along roads. Text that is
+turned is drawn again from its outlines every frame, and a road name is
+turned and has a stroked halo. From 0.21.1 those names are images, made
+with the stroked halo instead of the ring of copies, which takes about 2 ms
+an image here where the ring took 28. Playing the straight stretch of a
+name in one piece instead of a slice at a time was tried first and changed
+nothing (363 frames skipped).
 
 ### A worker for the tiles
 
