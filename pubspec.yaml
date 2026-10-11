@@ -1,0 +1,18 @@
+name: vmap
+description: A vector tile renderer for flutter_map, drawn with the Flutter canvas.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ">=3.13.0 <4.0.0"
+  flutter: ">=3.35.0"
+
+dependencies:
+  dart_earcut: ^1.2.0
+  flutter:
+    sdk: flutter
+  flutter_map: ^8.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
