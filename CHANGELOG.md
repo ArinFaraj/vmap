@@ -1,3 +1,12 @@
+## 0.5.1
+
+- A road name on a bend is laid along the road every frame, so its letters
+  keep their spacing while the map zooms. They used to drift apart until
+  the labels were next placed.
+- Changing the data of an overlay source keeps what was drawn until the new
+  data is ready, and leaves the map's labels alone when the overlay's layers
+  are the same. A moving dot no longer blinks.
+
 ## 0.5.0
 
 - Rotation: two fingers turn the map in `VmapGestures` and `VmapMap`, and

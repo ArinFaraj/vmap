@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -78,6 +79,57 @@ class MapLook {
 }
 
 final _nameKeys = _names.split(',');
+
+const _live = bool.fromEnvironment('LIVE');
+
+final _liveLayers = <Map<String, Object?>>[
+  ..._overlay.layers,
+  {
+    'id': 'walker',
+    'type': 'circle',
+    'source': 'walker',
+    'paint': {
+      'circle-radius': 7,
+      'circle-color': '#1A73E8',
+      'circle-stroke-color': '#FFFFFF',
+      'circle-stroke-width': 3,
+    },
+  },
+];
+
+/// The demo overlay with a dot that is [step] steps into the walk, to show
+/// data that changes while the map is up.
+VmapOverlay _walking(int step) {
+  final walk = _overlay.sources['walk']! as Map;
+  final line =
+      ((((walk['data'] as Map)['features'] as List).first as Map)['geometry']
+              as Map)['coordinates']
+          as List;
+  final at = step % ((line.length - 1) * 20) / 20;
+  final from = line[at.floor()] as List;
+  final to = line[at.floor() + 1] as List;
+  final t = at - at.floor();
+  return VmapOverlay(
+    sources: {
+      ..._overlay.sources,
+      'walker': {
+        'type': 'geojson',
+        'data': {
+          'type': 'Feature',
+          'properties': <String, Object?>{},
+          'geometry': {
+            'type': 'Point',
+            'coordinates': [
+              (from[0] as num) + ((to[0] as num) - (from[0] as num)) * t,
+              (from[1] as num) + ((to[1] as num) - (from[1] as num)) * t,
+            ],
+          },
+        },
+      },
+    },
+    layers: _liveLayers,
+  );
+}
 
 /// A walk through the old town and the square in front of the citadel, to
 /// show an overlay of the app's own data.
@@ -216,9 +268,29 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
     if (_shotPath.isNotEmpty) {
       Future<void>.delayed(const Duration(seconds: 12), _capture);
     }
+    if (_live) {
+      _walker = Timer.periodic(
+        const Duration(milliseconds: 250),
+        (_) => setState(() => _step++),
+      );
+    }
+  }
+
+  Timer? _walker;
+  int _step = 0;
+
+  @override
+  void dispose() {
+    _walker?.cancel();
+    super.dispose();
   }
 
   Future<void> _capture() async {
+    const nudge = int.fromEnvironment('NUDGE');
+    if (nudge != 0) {
+      _map.move(_map.camera.center, _map.camera.zoom + nudge / 10);
+      await WidgetsBinding.instance.endOfFrame;
+    }
     final render =
         _boundary.currentContext!.findRenderObject()! as RenderRepaintBoundary;
     final image = await render.toImage(pixelRatio: 3);
@@ -293,7 +365,11 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
               style: look.style,
               markers: markers,
               pins: _pins ? VmapPins.standard : null,
-              overlay: const bool.fromEnvironment('OVERLAY') ? _overlay : null,
+              overlay: _live
+                  ? _walking(_step)
+                  : const bool.fromEnvironment('OVERLAY')
+                  ? _overlay
+                  : null,
               onFeatureTap: (_, features) {
                 if (features.isEmpty) return;
                 final top = features.first;

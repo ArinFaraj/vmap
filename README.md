@@ -27,7 +27,7 @@ dependencies:
   vmap:
     git:
       url: https://github.com/ArinFaraj/vmap.git
-      ref: v0.5.0
+      ref: v0.5.1
 ```
 
 ## Quick start
@@ -200,7 +200,8 @@ A layer with `'before': 'some-layer-id'` is drawn under that layer of the
 style instead of on top. `data` may also be the address of a GeoJSON file.
 
 To change what is shown, build a new overlay with a new `data` object. Only
-that source is read again. Keep the overlay between builds: a new one in
+that source is read again, and what it drew stays up until the new data is
+ready, so a dot that moves a few times a second does not blink. Keep the overlay between builds: a new one in
 every `build` is treated as a change every time.
 
 ## What is under a tap

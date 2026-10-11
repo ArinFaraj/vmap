@@ -241,6 +241,10 @@ class _Source {
   final VectorSource def;
   late TilePool pool;
   final Map<TileId, _Tile> tiles = {};
+
+  /// Tiles of the data this source had before it changed, shown until the
+  /// tiles of the new data are ready.
+  final Map<TileId, _Tile> previous = {};
   final Map<TileId, int> failedAt = {};
   final List<_Draw> ideal = [];
   final List<_Draw> fallback = [];
@@ -256,6 +260,14 @@ class _Source {
       t.dispose();
     }
     tiles.clear();
+    dropPrevious();
+  }
+
+  void dropPrevious() {
+    for (final t in previous.values) {
+      t.dispose();
+    }
+    previous.clear();
   }
 }
 
@@ -444,12 +456,19 @@ class VmapEngine extends ChangeNotifier {
   VmapOverlay? get overlay => _overlay;
   set overlay(VmapOverlay? value) {
     if (identical(value, _overlay)) return;
+    final sameLayers =
+        value != null &&
+        jsonEncode(value.layers) == jsonEncode(_overlay?.layers);
     _overlay = value;
     final base = _base;
-    if (base != null) _apply(base, _style);
+    if (base != null) _apply(base, _style, keepLabels: sameLayers);
   }
 
-  void _apply(Map<String, Object?> base, VmapStyle from) {
+  void _apply(
+    Map<String, Object?> base,
+    VmapStyle from, {
+    bool keepLabels = false,
+  }) {
     _base = base;
     final document = _overlay?.applyTo(base) ?? base;
     final sheet = StyleSheet.compile(
@@ -490,8 +509,12 @@ class VmapEngine extends ChangeNotifier {
     _widths = Float64List(sheet.layers.length);
     _labels
       ..symbols = sheet.symbols
-      ..zoomOffset = sheet.zoomOffset
-      ..clear();
+      ..zoomOffset = sheet.zoomOffset;
+    if (!keepLabels || !sameShape) _labels.clear();
+    final byName = <String, _Source>{
+      if (sameShape)
+        for (final s in _sources) s.def.name: s,
+    };
     final kept = <String, _Source>{
       if (sameShape)
         for (final s in _sources) s.def.signature: s,
@@ -514,6 +537,14 @@ class VmapEngine extends ChangeNotifier {
         onLoaded: (id, built) => _onLoaded(made, id, built),
         onFailed: (id, _) => made.failedAt[id] = _clock.elapsedMilliseconds,
       );
+      final before = byName[def.name];
+      if (before != null) {
+        made.previous
+          ..addAll(before.previous)
+          ..addAll(before.tiles);
+        before.previous.clear();
+        before.tiles.clear();
+      }
       next.add(made);
     }
     for (final s in _sources) {
@@ -877,6 +908,7 @@ class VmapEngine extends ChangeNotifier {
     s.fallbackByKey.clear();
     s.missing.clear();
     var waiting = false;
+    var covered = true;
     for (var y = y0; y <= y1; y++) {
       for (var x = x0; x <= x1; x++) {
         final id = TileId(tz, x % n, y);
@@ -892,13 +924,20 @@ class VmapEngine extends ChangeNotifier {
           }
           waiting = true;
         } else {
+          covered = false;
           final dx = x - centerX;
           final dy = y - centerY;
           s.missing.add((id, dx * dx + dy * dy));
         }
+        final before = s.previous[id];
+        if (before != null && before.prepared) {
+          s.ideal.add(_Draw(before, left, top, tileSize));
+          continue;
+        }
         _addFallback(s, id, x, y, left, top, tileSize, camera.origin);
       }
     }
+    if (covered && !waiting) s.dropPrevious();
     _updateWanted(s, tz, camera, size);
     return waiting;
   }

@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show listEquals;
 
 import 'expr.dart';
+import 'label_path.dart';
 import 'pins.dart';
 import 'sprites.dart';
 import 'style.dart';
@@ -146,10 +147,12 @@ class _LabelState {
   double angle = 0;
   double screenAngle = 0;
 
-  /// For a name that follows a bend: where the middle of each slice of the
-  /// text sits as fractions of the world, and the road's direction there, as
-  /// x, y, angle triples. Null for a name written straight.
+  /// For a name that follows a bend: the stretch of road it sits on, as x,y
+  /// pairs in fractions of the world, and how far along it the middle of the
+  /// text is. Null for a name written straight. The text is laid on it
+  /// afresh every frame, so its letters keep their spacing through a zoom.
   Float64List? curve;
+  double curveMid = 0;
 
   /// The label's size now over the size its image was drawn at.
   double scale = 1;
@@ -579,9 +582,10 @@ class LabelEngine {
       if (sprite == null || !wantsText) continue;
       final image = sprite.image;
       _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
-      final curve = st.curve;
-      if (curve != null) {
-        final n = curve.length ~/ 3;
+      if (st.curve != null) {
+        final textW = sprite.textWidth * st.scale;
+        final n = _stripCount(textW, sprite.textHeight * st.scale);
+        final strips = _layStrips(st, n, textW / n / world);
         final flip = math.cos(st.angle + rotation) < 0;
         final pad = _haloPad * image.width / sprite.width;
         final slice = (image.width - pad * 2) / n;
@@ -590,8 +594,8 @@ class LabelEngine {
         final rects = Float32List(n * 4);
         for (var j = 0; j < n; j++) {
           final i = flip ? n - 1 - j : j;
-          final a = curve[i * 3 + 2] + rotation + (flip ? math.pi : 0);
-          _project(curve[i * 3], curve[i * 3 + 1], world, origin);
+          final a = strips[i * 3 + 2] + rotation + (flip ? math.pi : 0);
+          _project(strips[i * 3], strips[i * 3 + 1], world, origin);
           final left = j == 0 ? 0.0 : pad + j * slice - 0.5;
           final right = j == n - 1
               ? image.width.toDouble()
@@ -759,8 +763,10 @@ class LabelEngine {
         st.screenAngle = turn;
         if (st.curve != null) {
           final reach = (textH + room) / 2 + _boxPad;
-          if (_curveHits(st, world, origin, reach, add: false)) continue;
-          _curveHits(st, world, origin, reach, add: true);
+          if (_curveHits(st, world, origin, textW, textH, reach, add: false)) {
+            continue;
+          }
+          _curveHits(st, world, origin, textW, textH, reach, add: true);
         } else {
           if (_collides(sx, sy, textW + room, textH + room, turn)) continue;
           _addBoxes(sx, sy, textW + room, textH + room, turn);
@@ -1014,8 +1020,10 @@ class LabelEngine {
   /// The sharpest turn between two neighbouring slices of a bent name.
   static const double _maxBend = 0.42;
 
-  /// Lays the text along the road between [from] and [to] tile units from
-  /// its start, cut into slices about as wide as the text is tall.
+  /// Remembers the road around [from]..[to] tile units from its start as the
+  /// path the text bends along, with as much road again on either side so
+  /// the text has room when the zoom changes. False when the road turns too
+  /// sharply under the text.
   bool _bend(
     _LabelState st,
     double from,
@@ -1025,57 +1033,70 @@ class LabelEngine {
   ) {
     final c = st.candidate;
     final line = c.source.line!;
-    final count = math.max(2, ((to - from) * unitPx / (textH * 0.7)).ceil());
-    final step = (to - from) / count;
-    final edges = Float64List((count + 1) * 2);
-    final n = line.length ~/ 2;
+    final room = (to - from) / 2;
+    final lo = from - room;
+    final hi = to + room;
+    final unit = c.tileSpan / tileExtent;
+    final path = <double>[];
     var walked = 0.0;
-    var at = 0;
-    for (var i = 1; i < n && at <= count; i++) {
+    var before = 0.0;
+    final n = line.length ~/ 2;
+    for (var i = 1; i < n; i++) {
       final x0 = line[i * 2 - 2];
       final y0 = line[i * 2 - 1];
       final dx = line[i * 2] - x0;
       final dy = line[i * 2 + 1] - y0;
       final seg = math.sqrt(dx * dx + dy * dy);
       if (seg == 0) continue;
-      while (at <= count && from + at * step <= walked + seg + 1e-6) {
-        final t = ((from + at * step - walked) / seg).clamp(0.0, 1.0);
-        edges[at * 2] = x0 + dx * t;
-        edges[at * 2 + 1] = y0 + dy * t;
-        at++;
+      if (walked + seg >= lo && walked <= hi) {
+        if (path.isEmpty) {
+          before = walked;
+          path
+            ..add(c.tileX + x0 * unit)
+            ..add(c.tileY + y0 * unit);
+        }
+        path
+          ..add(c.tileX + (x0 + dx) * unit)
+          ..add(c.tileY + (y0 + dy) * unit);
       }
       walked += seg;
     }
-    if (at <= count) return false;
-    final curve = Float64List(count * 3);
-    var previous = 0.0;
-    for (var i = 0; i < count; i++) {
-      final dx = edges[i * 2 + 2] - edges[i * 2];
-      final dy = edges[i * 2 + 3] - edges[i * 2 + 1];
-      final angle = math.atan2(dy, dx);
-      if (i > 0) {
-        var turn = (angle - previous).abs();
-        if (turn > math.pi) turn = 2 * math.pi - turn;
-        if (turn > _maxBend) return false;
-      }
-      previous = angle;
-      curve[i * 3] =
-          c.tileX + (edges[i * 2] + dx / 2) / tileExtent * c.tileSpan;
-      curve[i * 3 + 1] =
-          c.tileY + (edges[i * 2 + 1] + dy / 2) / tileExtent * c.tileSpan;
-      curve[i * 3 + 2] = angle;
-    }
-    final mid = count ~/ 2;
+    if (path.length < 4) return false;
     st
-      ..curve = curve
+      ..curve = Float64List.fromList(path)
+      ..curveMid = ((from + to) / 2 - before) * unit;
+    final count = math.max(2, ((to - from) * unitPx / (textH * 0.7)).ceil());
+    final strips = _layStrips(st, count, (to - from) / count * unit);
+    for (var i = 1; i < count; i++) {
+      var turn = (strips[i * 3 + 2] - strips[i * 3 - 1]).abs();
+      if (turn > math.pi) turn = 2 * math.pi - turn;
+      if (turn > _maxBend) {
+        st.curve = null;
+        return false;
+      }
+    }
+    final last = (count - 1) * 3;
+    st
       ..angle = math.atan2(
-        edges[count * 2 + 1] - edges[1],
-        edges[count * 2] - edges[0],
+        strips[last + 1] - strips[1],
+        strips[last] - strips[0],
       )
-      ..worldX = c.tileX + edges[mid * 2] / tileExtent * c.tileSpan
-      ..worldY = c.tileY + edges[mid * 2 + 1] / tileExtent * c.tileSpan;
+      ..worldX = strips[(count ~/ 2) * 3]
+      ..worldY = strips[(count ~/ 2) * 3 + 1];
     return true;
   }
+
+  Float64List _strips = Float64List(96);
+
+  Float64List _layStrips(_LabelState st, int count, double step) {
+    if (_strips.length < count * 3) _strips = Float64List(count * 6);
+    layStrips(st.curve!, st.curveMid, count, step, _strips);
+    return _strips;
+  }
+
+  /// How many slices a bent text [textW] by [textH] pixels is cut into.
+  static int _stripCount(double textW, double textH) =>
+      math.max(2, (textW / (textH * 0.7)).ceil());
 
   /// Whether a bent name runs into something already placed, and with [add]
   /// the space it takes itself.
@@ -1083,12 +1104,15 @@ class LabelEngine {
     _LabelState st,
     double world,
     ui.Offset origin,
+    double textW,
+    double textH,
     double reach, {
     required bool add,
   }) {
-    final curve = st.curve!;
-    for (var i = 0; i < curve.length; i += 3) {
-      _project(curve[i], curve[i + 1], world, origin);
+    final count = _stripCount(textW, textH);
+    final strips = _layStrips(st, count, textW / count / world);
+    for (var i = 0; i < count * 3; i += 3) {
+      _project(strips[i], strips[i + 1], world, origin);
       if (add) {
         _addBox(_px - reach, _py - reach, _px + reach, _py + reach);
       } else if (_hits(_px - reach, _py - reach, _px + reach, _py + reach)) {
