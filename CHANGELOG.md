@@ -1,3 +1,11 @@
+## 0.22.0
+
+- `styleEdits` on `VmapMap` and `VmapLayer`, and `edits` on the engine: a
+  list of `VmapStyleEdit` that sets a paint or layout property, the filter,
+  the zoom range or the visibility of one style layer by its `id`. It works
+  on a style loaded by address. A change of paint keeps the tiles loaded,
+  and labels stay as they are unless a symbol layer was changed.
+
 ## 0.21.1
 
 - In a browser's JavaScript build the names along roads are images again

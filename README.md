@@ -27,7 +27,7 @@ dependencies:
   vmap:
     git:
       url: https://github.com/ArinFaraj/vmap.git
-      ref: v0.21.1
+      ref: v0.22.0
 ```
 
 ## Quick start
@@ -78,6 +78,29 @@ The style decides the look and where the tiles come from. Light and dark
 versions of one style switch without reloading a tile.
 
 ![One style from a country down to a street](doc/images/zooms.png)
+
+### Changing a layer
+
+To recolour, hide or filter one layer of a style without writing the whole
+style out again, name the layer by its `id`:
+
+```dart
+VmapMap(
+  style: VmapStyle.url('https://tiles.openfreemap.org/styles/liberty'),
+  styleEdits: [
+    const VmapStyleEdit.paint('water', 'fill-color', '#2a6fdb'),
+    const VmapStyleEdit.visible('building', false),
+    const VmapStyleEdit.filter('poi_r1', ['==', 'class', 'hospital']),
+    VmapStyleEdit.zoomRange('road_minor', min: 14),
+  ],
+)
+```
+
+These are MapLibre's `setPaintProperty`, `setLayoutProperty`, `setFilter`
+and `setLayerZoomRange`, given as a list instead of called. A change of
+colour, width or opacity keeps the tiles already loaded; a filter, a zoom
+range or a layout property builds them again behind what is on screen.
+Layers of your own are changed the same way, or by passing a new overlay.
 
 ### Tiles from one file
 

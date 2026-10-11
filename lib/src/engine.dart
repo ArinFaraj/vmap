@@ -90,10 +90,10 @@ class VmapEngine extends ChangeNotifier {
     this.maxCachedTiles = 56,
     this.showLabels = true,
     VmapPins? pins,
-    VmapOverlay? overlay,
+    this._overlay,
+    this._edits = const [],
     bool curvedLabels = true,
-  }) : _overlay = overlay,
-       _labels = LabelEngine(text)
+  }) : _labels = LabelEngine(text)
          ..pins = pins
          ..curvedRoads = curvedLabels {
     _labels.stateOf = (source, id) => _states[_sources[source].def.name]?[id];
@@ -340,13 +340,38 @@ class VmapEngine extends ChangeNotifier {
     if (base != null) _apply(base, _style, keepLabels: sameLayers);
   }
 
+  List<VmapStyleEdit> _edits;
+
+  /// Changes made to single layers of the style, on top of what it says.
+  List<VmapStyleEdit> get edits => _edits;
+  set edits(List<VmapStyleEdit> value) {
+    if (VmapStyleEdit.same(value, _edits)) return;
+    final base = _base;
+    if (base == null) {
+      _edits = value;
+      return;
+    }
+    final document = _overlay?.applyTo(base) ?? base;
+    String symbols(List<VmapStyleEdit> edits) => jsonEncode([
+      for (final layer
+          in VmapStyleEdit.applyAll(edits, document)['layers']! as List)
+        if (layer case {'type': 'symbol'}) layer,
+    ]);
+    final sameSymbols = symbols(value) == symbols(_edits);
+    _edits = value;
+    _apply(base, _style, keepLabels: sameSymbols);
+  }
+
   void _apply(
     Map<String, Object?> base,
     VmapStyle from, {
     bool keepLabels = false,
   }) {
     _base = base;
-    final document = _overlay?.applyTo(base) ?? base;
+    final document = VmapStyleEdit.applyAll(
+      _edits,
+      _overlay?.applyTo(base) ?? base,
+    );
     final sheet = StyleSheet.compile(
       document,
       nameKeys: from.nameKeys,

@@ -26,6 +26,7 @@ class VmapMap extends StatefulWidget {
     this.markers = const [],
     this.pins,
     this.overlay,
+    this.styleEdits = const [],
     this.featureStates = const [],
     this.curvedLabels = true,
     this.textStyle,
@@ -68,6 +69,10 @@ class VmapMap extends StatefulWidget {
 
   /// Sources and layers of your own, drawn with the style.
   final VmapOverlay? overlay;
+
+  /// Changes to single layers of the style: a colour, a filter, whether a
+  /// layer is shown.
+  final List<VmapStyleEdit> styleEdits;
 
   /// State for single features, which the style reads with
   /// `['feature-state', name]`: the way to highlight what was tapped.
@@ -160,6 +165,7 @@ class _VmapMapState extends State<VmapMap> {
             markers: widget.markers,
             pins: widget.pins,
             overlay: widget.overlay,
+            styleEdits: widget.styleEdits,
             featureStates: widget.featureStates,
             curvedLabels: widget.curvedLabels,
             textStyle: widget.textStyle,

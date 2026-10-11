@@ -127,6 +127,107 @@ class VmapOverlay {
   }
 }
 
+/// One change to a layer of the style, by the layer's id: what MapLibre's
+/// `setPaintProperty`, `setLayoutProperty`, `setFilter` and
+/// `setLayerZoomRange` do. It works on a style loaded by address as well as
+/// one given as JSON, and on the layers of a [VmapOverlay].
+///
+/// A change of colour, width or opacity keeps the tiles already loaded. A
+/// filter, a zoom range or a layout property builds them again.
+class VmapStyleEdit {
+  /// Sets paint property [name] of [layer]. A null [value] puts back the
+  /// property's default.
+  const VmapStyleEdit.paint(this.layer, String this.name, this.value)
+    : _part = 'paint';
+
+  /// Sets layout property [name] of [layer]. A null [value] puts back the
+  /// property's default.
+  const VmapStyleEdit.layout(this.layer, String this.name, this.value)
+    : _part = 'layout';
+
+  /// Shows or hides [layer].
+  const VmapStyleEdit.visible(this.layer, bool visible)
+    : _part = 'layout',
+      name = 'visibility',
+      value = visible ? 'visible' : 'none';
+
+  /// Replaces the filter of [layer]. Null draws every feature.
+  const VmapStyleEdit.filter(this.layer, this.value)
+    : _part = 'filter',
+      name = null;
+
+  /// Draws [layer] from zoom [min] up to, but not at, zoom [max].
+  VmapStyleEdit.zoomRange(this.layer, {double? min, double? max})
+    : _part = 'zoom',
+      name = null,
+      value = [min, max];
+
+  /// The `id` of the style layer changed.
+  final String layer;
+  final String? name;
+  final Object? value;
+  final String _part;
+
+  /// [document] with every one of [edits] made, in order. An edit naming a
+  /// layer the style does not have changes nothing.
+  static Map<String, Object?> applyAll(
+    List<VmapStyleEdit> edits,
+    Map<String, Object?> document,
+  ) {
+    if (edits.isEmpty) return document;
+    final layers = [...(document['layers'] as List?) ?? const <Object?>[]];
+    final at = <String, int>{
+      for (var i = 0; i < layers.length; i++)
+        if (layers[i] case {'id': final String id}) id: i,
+    };
+    final copied = <int>{};
+    for (final edit in edits) {
+      final i = at[edit.layer];
+      if (i == null) continue;
+      if (copied.add(i)) layers[i] = {...layers[i]! as Map<String, Object?>};
+      final layer = layers[i]! as Map<String, Object?>;
+      switch (edit._part) {
+        case 'filter':
+          _set(layer, 'filter', edit.value);
+        case 'zoom':
+          final [min, max] = edit.value! as List<double?>;
+          _set(layer, 'minzoom', min);
+          _set(layer, 'maxzoom', max);
+        default:
+          final part = {...(layer[edit._part] as Map?) ?? const {}};
+          _set(part, edit.name!, edit.value);
+          layer[edit._part] = part;
+      }
+    }
+    return {...document, 'layers': layers};
+  }
+
+  static void _set(Map<Object?, Object?> map, String key, Object? value) {
+    if (value == null) {
+      map.remove(key);
+    } else {
+      map[key] = value;
+    }
+  }
+
+  /// Whether [a] and [b] make the same changes.
+  static bool same(List<VmapStyleEdit> a, List<VmapStyleEdit> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final x = a[i], y = b[i];
+      if (identical(x, y)) continue;
+      if (x.layer != y.layer ||
+          x._part != y._part ||
+          x.name != y.name ||
+          jsonEncode(x.value) != jsonEncode(y.value)) {
+        return false;
+      }
+    }
+    return true;
+  }
+}
+
 abstract final class Tone {
   static const background = 0;
   static const residential = 1;

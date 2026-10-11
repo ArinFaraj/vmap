@@ -38,10 +38,14 @@ and halo and an icon's size, colour and opacity, and all of them may read
   the text and the next is left out there, unless the style sets
   `text-max-angle`, which is then the limit.
 
+A style is changed while it is shown with `styleEdits`: a paint or layout
+property, a filter, or the zoom range of a layer named by its `id`. Adding
+and removing layers and sources is done with the overlay.
+
 Checked on screen: several sources, GeoJSON, raster order, hillshade,
 heatmap, bent road names and rotation. Seen in a hand written style
 only: `image` sources, `line-blur` on dashes, `line-gradient`, the translate
-anchors and `text-max-angle`. Covered by tests only, not seen drawn: `line-pattern`,
+anchors, `text-max-angle` and `styleEdits`. Covered by tests only, not seen drawn: `line-pattern`,
 SDF icons and their halos, polygon labels and `hillshade-accent-color`.
 
 ## How it draws

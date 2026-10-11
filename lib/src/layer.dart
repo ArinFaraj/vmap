@@ -37,6 +37,7 @@ class VmapLayer extends StatefulWidget {
     this.markers = const [],
     this.pins,
     this.overlay,
+    this.styleEdits = const [],
     this.featureStates = const [],
     this.curvedLabels = true,
     this.textStyle,
@@ -61,6 +62,7 @@ class VmapLayer extends StatefulWidget {
        markers = const [],
        pins = null,
        overlay = null,
+       styleEdits = const [],
        featureStates = const [],
        curvedLabels = true,
        textStyle = null,
@@ -86,6 +88,10 @@ class VmapLayer extends StatefulWidget {
 
   /// Sources and layers of your own, drawn with the style.
   final VmapOverlay? overlay;
+
+  /// Changes to single layers of the style: a colour, a filter, whether a
+  /// layer is shown.
+  final List<VmapStyleEdit> styleEdits;
 
   /// State for single features, which the style reads with
   /// `['feature-state', name]`.
@@ -210,6 +216,7 @@ class VmapLayerState extends State<VmapLayer> {
               text: _text,
               pins: widget.pins,
               overlay: widget.overlay,
+              edits: widget.styleEdits,
               curvedLabels: widget.curvedLabels,
               source: TileSourceConfig(
                 cacheDirectory: widget.cacheDirectory,
@@ -233,6 +240,7 @@ class VmapLayerState extends State<VmapLayer> {
       ..style = widget.style
       ..pins = widget.pins
       ..overlay = widget.overlay
+      ..edits = widget.styleEdits
       ..curvedLabels = widget.curvedLabels
       ..onError = widget.onError
       ..text = _text;
