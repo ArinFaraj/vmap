@@ -430,7 +430,10 @@ Future<void> _workerMain(List<Object?> init) async {
   /// The bytes of the tiles built last, which a lookup reads again.
   final recent = <int, Uint8List>{};
 
+  final cover = sheet.sources[source].cover;
+
   Future<Uint8List> fetch(int z, int x, int y) async {
+    if (!cover.has(z, x, y)) return Uint8List(0);
     final key = (z << 50) | (x << 25) | y;
     final kept = recent.remove(key);
     if (kept != null) {
@@ -471,7 +474,7 @@ Future<void> _workerMain(List<Object?> init) async {
     final url = template
         .replaceFirst('{z}', '$z')
         .replaceFirst('{x}', '$x')
-        .replaceFirst('{y}', '$y');
+        .replaceFirst('{y}', '${cover.row(z, y)}');
     final request = await client.getUrl(Uri.parse(url));
     final response = await request.close().timeout(const Duration(seconds: 20));
     if (response.statusCode == 204 || response.statusCode == 404) {

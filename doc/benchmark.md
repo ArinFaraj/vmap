@@ -36,6 +36,10 @@ without a new frame. The numbers are from vmap 0.3.0 and vector_map_tiles
   skipped. Its slowest 1 percent of frames took 6.8 ms on the UI thread and
   6.5 ms on the raster thread, and 122 frames took more than 8 ms in total.
   Still at 60 Hz.
+- Versions 0.9.0 and 0.14.0 ran five laps each in turn on a warm phone. The
+  slowest 1 percent of frames took 6.9 to 7.4 ms on the UI thread for 0.9.0
+  and 6.6 to 8.0 ms for 0.14.0, and 5.9 to 7.2 ms against 6.5 to 7.5 ms on
+  the raster thread. Laps of one build differ from each other by as much.
 - A heatmap layer of 300 points in view cost 0.2 to 0.5 ms more per frame on
   the UI thread and nothing measurable on the raster thread: two laps with
   the layer and two without, in the same style.

@@ -27,7 +27,7 @@ dependencies:
   vmap:
     git:
       url: https://github.com/ArinFaraj/vmap.git
-      ref: v0.14.0
+      ref: v0.15.0
 ```
 
 ## Quick start
@@ -397,7 +397,9 @@ The full list of what is read from a style, and how the renderer works, is in
 ## Attribution
 
 Show the credit your tile source asks for. For OpenFreeMap that is
-`© OpenFreeMap © OpenMapTiles © OpenStreetMap`.
+`© OpenFreeMap © OpenMapTiles © OpenStreetMap`. `attributions` on the
+layer's state lists what the sources of a style ask for in their
+`attribution`.
 
 ## Example
 

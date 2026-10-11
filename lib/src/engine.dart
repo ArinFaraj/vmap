@@ -133,6 +133,9 @@ class VmapEngine extends ChangeNotifier {
     _loadStyle();
   }
 
+  /// The credit the style's sources ask for, once the style has loaded.
+  List<String> get attributions => _sheet?.attributions ?? const [];
+
   /// The style's background colour, once the style has loaded.
   ui.Color? get backgroundColor {
     final sheet = _sheet;

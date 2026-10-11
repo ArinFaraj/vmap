@@ -1,3 +1,10 @@
+## 0.15.0
+
+- A tile source's `bounds` and `minzoom`: tiles the source does not have
+  are not asked for. That matters for a tile set of one region.
+- `scheme: tms` for servers that number their rows from the south.
+- `attributions` on the layer's state and on the engine lists the credit the style's sources ask for.
+
 ## 0.14.0
 
 - `within` and `distance`: a layer can keep the features inside a polygon,

@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | Layers | `background` with `background-pattern`, `fill`, `line`, `circle`, `symbol`, `raster`, `hillshade`, `heatmap`. `fill-extrusion` is drawn flat |
-| Sources | any number of `vector`, `geojson`, `raster` and `raster-dem` sources. Tiles by TileJSON `url` or `tiles` template, GeoJSON inline or by address, with `cluster`, `clusterRadius`, `clusterMaxZoom`, `clusterMinPoints` and `clusterProperties`. `pmtiles://` archives over HTTP or on disk. `promoteId`, and `generateId` for GeoJSON |
+| Sources | any number of `vector`, `geojson`, `raster` and `raster-dem` sources. Tiles by TileJSON `url` or `tiles` template, with the source's `minzoom`, `maxzoom`, `bounds` and `scheme`, GeoJSON inline or by address, with `cluster`, `clusterRadius`, `clusterMaxZoom`, `clusterMinPoints` and `clusterProperties`. `pmtiles://` archives over HTTP or on disk. `promoteId`, and `generateId` for GeoJSON |
 | Order | layers are drawn in the style's order, across sources and with raster layers where the style puts them |
 | Fills | colour, opacity, `fill-outline-color`, `fill-pattern`, `fill-translate` |
 | Raster | opacity, `raster-hue-rotate`, `raster-saturation`, `raster-contrast`, `raster-brightness-min` and `-max` |

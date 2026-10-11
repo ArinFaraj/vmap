@@ -573,6 +573,57 @@ class SymbolLayer {
 }
 
 /// Where features come from: vector tiles, or GeoJSON cut into tiles here.
+/// The tiles a source has: from which zoom, over which part of the world,
+/// and in which order its rows are numbered.
+class TileCover {
+  const TileCover({this.minZoom = 0, this.bounds, this.tms = false});
+
+  /// Reads `minzoom`, `bounds` and `scheme` from a style's source.
+  factory TileCover.of(Map<Object?, Object?> source) {
+    final bounds = source['bounds'];
+    return TileCover(
+      minZoom: asNumber(source['minzoom'])?.toInt() ?? 0,
+      bounds:
+          bounds is List && bounds.length == 4 && bounds.every((b) => b is num)
+          ? [for (final b in bounds) (b as num).toDouble()]
+          : null,
+      tms: source['scheme'] == 'tms',
+    );
+  }
+
+  final int minZoom;
+
+  /// West, south, east and north in degrees. Null for the whole world.
+  final List<double>? bounds;
+
+  /// Rows are numbered from the south, as a TMS server does.
+  final bool tms;
+
+  /// Whether the source has the tile [x], [y] at zoom [z].
+  bool has(int z, int x, int y) {
+    if (z < minZoom) return false;
+    final bounds = this.bounds;
+    if (bounds == null) return true;
+    final n = 1 << z;
+    int column(double lon) => ((lon + 180) / 360 * n).floor();
+    int row(double lat) {
+      final r = lat.clamp(-85.0511, 85.0511) * math.pi / 180;
+      return ((1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2 * n)
+          .floor();
+    }
+
+    return x >= column(bounds[0]) &&
+        x <= column(bounds[2]) &&
+        y >= row(bounds[3]) &&
+        y <= row(bounds[1]);
+  }
+
+  /// The row to ask the server for.
+  int row(int z, int y) => tms ? (1 << z) - 1 - y : y;
+
+  String get signature => '$minZoom|${bounds?.join(',')}|$tms';
+}
+
 class VectorSource {
   VectorSource({
     required this.name,
@@ -585,10 +636,12 @@ class VectorSource {
     this.cluster,
     this.promoteId,
     this.generateId = false,
+    this.cover = const TileCover(),
   });
 
   final String name;
   final bool geoJson;
+  final TileCover cover;
 
   /// A TileJSON address, or the tile address itself.
   final String? tileJsonUrl;
@@ -649,7 +702,11 @@ class StyleSheet {
     this.rasters,
     this.backgroundPattern,
     this.backgroundOpacity,
+    this.attributions,
   );
+
+  /// The credit each source asks for in its `attribution`, without repeats.
+  final List<String> attributions;
 
   final Expr background;
 
@@ -724,11 +781,13 @@ class StyleSheet {
           cluster: cluster,
           promoteId: from['promoteId'],
           generateId: from['generateId'] == true,
+          cover: geoJson ? const TileCover() : TileCover.of(from),
           signature: geoJson
               ? 'g|${data is String ? data : identityHashCode(data)}'
                     '|${cluster?.signature}|${from['promoteId']}'
                     '|${from['generateId']}'
-              : 'v|${from['url']}|$direct|${from['promoteId']}',
+              : 'v|${from['url']}|$direct|${from['promoteId']}'
+                    '|${TileCover.of(from).signature}',
         ),
       );
       return vectorSources.length - 1;
@@ -786,6 +845,7 @@ class StyleSheet {
                 : null,
             tileSize: asNumber(from['tileSize']) ?? 512,
             sourceMaxZoom: asNumber(from['maxzoom'])?.toInt(),
+            cover: TileCover.of(from),
             minZoom: minZoom,
             maxZoom: maxZoom,
             opacity: compileExpr(relief ? 1 : paint['raster-opacity'] ?? 1),
@@ -1223,6 +1283,11 @@ class StyleSheet {
       rasters,
       backgroundPattern,
       backgroundOpacity,
+      {
+        for (final s in sources.values)
+          if (s is Map && s['attribution'] is String)
+            s['attribution'] as String,
+      }.toList(),
     );
   }
 
@@ -1422,7 +1487,10 @@ class RasterLayer {
     required this.opacity,
     this.relief,
     this.adjust,
+    this.cover = const TileCover(),
   });
+
+  final TileCover cover;
 
   /// Set for a hillshade layer, whose tiles hold heights to be shaded.
   final ReliefPaint? relief;

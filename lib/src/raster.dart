@@ -161,6 +161,7 @@ class RasterTiles {
 
   Future<void> _load(_RasterTile tile, int z, int x, int y) async {
     if (tile.loading || _loading >= _maxLoading) return;
+    if (!layer.cover.has(z, x, y)) return;
     if (tile.failedAtMs >= 0 &&
         _clock.elapsedMilliseconds - tile.failedAtMs < 5000) {
       return;
@@ -189,7 +190,7 @@ class RasterTiles {
         final url = template
             .replaceFirst('{z}', '$z')
             .replaceFirst('{x}', '$x')
-            .replaceFirst('{y}', '$y');
+            .replaceFirst('{y}', '${layer.cover.row(z, y)}');
         final request = await _client.getUrl(Uri.parse(url));
         final response = await request.close().timeout(
           const Duration(seconds: 20),

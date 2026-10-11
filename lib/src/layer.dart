@@ -111,6 +111,9 @@ class VmapLayerState extends State<VmapLayer> {
   Future<List<VmapFeature>> featuresAt(LatLng point, {double radius = 6}) =>
       _engine.featuresAt(point, radius: radius);
 
+  /// The credit the style's sources ask for, once the style has loaded.
+  List<String> get attributions => _engine.attributions;
+
   VmapEngine get _engine => widget.engine ?? _owned!;
 
   VmapTextStyle get _text => VmapTextStyle(
