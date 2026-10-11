@@ -1,3 +1,10 @@
+## 0.23.0
+
+- `text-translate` moves names along a line too, straight and bent.
+- `text-translate` and `icon-translate` may change with the zoom.
+- `icon-halo-blur` softens the rim of an SDF icon. Covered by a test of the
+  style reader only; it has not been seen drawn.
+
 ## 0.22.0
 
 - `styleEdits` on `VmapMap` and `VmapLayer`, and `edits` on the engine: a

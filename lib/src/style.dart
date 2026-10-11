@@ -600,13 +600,14 @@ class SymbolLayer {
     this.iconOffsetY = 0,
     this.sortKey,
     this.paintKeys = const [],
-    this.textTranslate = (0, 0),
+    this.textTranslate,
     this.textTranslateOnScreen = false,
-    this.iconTranslate = (0, 0),
+    this.iconTranslate,
     this.iconTranslateOnScreen = false,
     this.maxBend,
     this.iconHaloColor,
     this.iconHaloWidth,
+    this.iconHaloBlur,
   });
 
   final String id;
@@ -698,15 +699,16 @@ class SymbolLayer {
 
   /// How far the text and the icon are drawn from their place, in logical
   /// pixels, along the map's sides or the screen's.
-  final (double, double) textTranslate;
+  final Expr? textTranslate;
   final bool textTranslateOnScreen;
-  final (double, double) iconTranslate;
+  final Expr? iconTranslate;
   final bool iconTranslateOnScreen;
 
   /// The rim drawn around an icon that takes a colour, and how far out it
   /// reaches in logical pixels. Null when the style names none.
   final Expr? iconHaloColor;
   final Expr? iconHaloWidth;
+  final Expr? iconHaloBlur;
 
   /// `text-max-angle` in radians: the sharpest turn a name bent along a
   /// line takes. Null for the package's own.
@@ -1159,7 +1161,7 @@ class StyleSheet {
                 ? null
                 : compileExpr(layout['symbol-sort-key']),
             paintKeys: paintKeys.toList()..sort(),
-            textTranslate: _pair(paint['text-translate']),
+            textTranslate: _maybe(paint['text-translate']),
             textTranslateOnScreen: paint['text-translate-anchor'] == 'viewport',
             iconHaloColor: paint['icon-halo-color'] == null
                 ? null
@@ -1167,7 +1169,8 @@ class StyleSheet {
             iconHaloWidth: paint['icon-halo-width'] == null
                 ? null
                 : compileExpr(paint['icon-halo-width']),
-            iconTranslate: _pair(paint['icon-translate']),
+            iconTranslate: _maybe(paint['icon-translate']),
+            iconHaloBlur: _maybe(paint['icon-halo-blur']),
             iconTranslateOnScreen: paint['icon-translate-anchor'] == 'viewport',
             maxBend: switch (asNumber(layout['text-max-angle'])) {
               final degrees? => degrees * math.pi / 180,
@@ -1530,6 +1533,8 @@ class StyleSheet {
     }
     return out;
   }
+
+  static Expr? _maybe(Object? json) => json == null ? null : compileExpr(json);
 
   static (double, double) _pair(Object? json) {
     var list = json;

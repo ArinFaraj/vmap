@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vmap/src/expr.dart';
 import 'package:vmap/src/style.dart';
 
 StyleSheet _sheet(
@@ -42,7 +43,8 @@ void main() {
 
   test('a symbol layer reads its translates, bend limit and icon rim', () {
     final plain = _sheet('symbol', {'text-field': 'a'}, {}).symbols.single;
-    expect(plain.textTranslate, (0, 0));
+    expect(plain.textTranslate, isNull);
+    expect(plain.iconHaloBlur, isNull);
     expect(plain.maxBend, isNull);
     expect(plain.iconHaloColor, isNull);
 
@@ -52,14 +54,31 @@ void main() {
       {
         'text-translate': [3, -5],
         'text-translate-anchor': 'viewport',
-        'icon-translate': [1, 2],
+        'icon-translate': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          10,
+          [
+            'literal',
+            [1, 2],
+          ],
+          12,
+          [
+            'literal',
+            [3, 6],
+          ],
+        ],
+        'icon-halo-blur': 1,
         'icon-halo-color': '#fff',
         'icon-halo-width': 2,
       },
     ).symbols.single;
-    expect(set.textTranslate, (3, -5));
+    final at = EvalContext()..zoom = 11;
+    expect(set.textTranslate!(at), [3, -5]);
     expect(set.textTranslateOnScreen, isTrue);
-    expect(set.iconTranslate, (1, 2));
+    expect(set.iconTranslate!(at), [2, 4]);
+    expect(set.iconHaloBlur!(at), 1);
     expect(set.iconTranslateOnScreen, isFalse);
     expect(set.maxBend, closeTo(1.5708, 0.0001));
     expect(set.iconHaloColor, isNotNull);

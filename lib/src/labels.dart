@@ -400,10 +400,15 @@ class LabelEngine {
 
   /// A move of [by] logical pixels as the upright label frame sees it: one
   /// along the map's sides turns with the map.
-  (double, double) _moved((double, double) by, bool onScreen) =>
-      onScreen || _rotation == 0
-      ? by
-      : (by.$1 * _cos - by.$2 * _sin, by.$1 * _sin + by.$2 * _cos);
+  (double, double) _moved(Expr? translate, bool onScreen, double styleZoom) {
+    if (translate == null) return (0, 0);
+    final by = translate(_context..zoom = styleZoom);
+    if (by is! List || by.length != 2) return (0, 0);
+    final x = asNumber(by[0]) ?? 0, y = asNumber(by[1]) ?? 0;
+    return onScreen || _rotation == 0
+        ? (x, y)
+        : (x * _cos - y * _sin, x * _sin + y * _cos);
+  }
 
   /// Sets [_px] and [_py] to where a point of the world is on the screen,
   /// with the map's rotation undone so labels can be laid out upright.
@@ -638,6 +643,9 @@ class LabelEngine {
               around,
               by * devicePixelRatio,
               edge: (0.75 - reach / (8 * by)).clamp(0.1, 0.75),
+              fade:
+                  (asNumber(symbol.iconHaloBlur?.call(_context)) ?? 0) /
+                  (8 * by),
             );
           }
         }
@@ -706,8 +714,8 @@ class LabelEngine {
           final ssin = math.sin(a) * k;
           transforms[j * 4] = scos;
           transforms[j * 4 + 1] = ssin;
-          transforms[j * 4 + 2] = _px - scos * anchorX + ssin * anchorY;
-          transforms[j * 4 + 3] = _py - ssin * anchorX - scos * anchorY;
+          transforms[j * 4 + 2] = _px + st.dx - scos * anchorX + ssin * anchorY;
+          transforms[j * 4 + 3] = _py + st.dy - ssin * anchorX - scos * anchorY;
           rects[j * 4] = left;
           rects[j * 4 + 1] = 0;
           rects[j * 4 + 2] = right;
@@ -890,9 +898,16 @@ class LabelEngine {
         }
         if (!st.roadFits || _nearSameRoad(st, world)) continue;
         final room = fontSize <= 12.5 ? _minorRoadRoom : _majorRoadRoom;
+        final (roadX, roadY) = layer == null
+            ? (0.0, 0.0)
+            : _moved(
+                layer.textTranslate,
+                layer.textTranslateOnScreen,
+                styleZoom,
+              );
         _project(st.worldX, st.worldY, world, origin);
-        final sx = _px;
-        final sy = _py;
+        final sx = _px + roadX;
+        final sy = _py + roadY;
         var turn = (st.angle + _rotation) % (2 * math.pi);
         if (turn > math.pi) turn -= 2 * math.pi;
         if (turn > math.pi / 2) turn -= math.pi;
@@ -909,8 +924,8 @@ class LabelEngine {
           _addBoxes(sx, sy, textW + room, textH + room, turn);
         }
         st
-          ..dx = 0
-          ..dy = 0
+          ..dx = roadX
+          ..dy = roadY
           ..placed = true;
         if (!st.live) {
           st.live = true;
@@ -954,7 +969,11 @@ class LabelEngine {
       }
       final (moveX, moveY) = symbol == null
           ? (0.0, 0.0)
-          : _moved(symbol.textTranslate, symbol.textTranslateOnScreen);
+          : _moved(
+              symbol.textTranslate,
+              symbol.textTranslateOnScreen,
+              styleZoom,
+            );
       tx += moveX;
       ty += moveY;
 
@@ -976,6 +995,7 @@ class LabelEngine {
         final (ix, iy) = _moved(
           symbol.iconTranslate,
           symbol.iconTranslateOnScreen,
+          styleZoom,
         );
         st
           ..iconDx += ix
@@ -1436,12 +1456,15 @@ class LabelEngine {
   /// shape is where the field is [edge] full, three quarters for the shape
   /// itself and less for a rim around it; [scale] is how many screen pixels
   /// one pixel of the field covers, which sets how sharp the edge may be.
+  /// The edge fades out over [fade] of the field's range.
   static ui.ColorFilter _sdfFilter(
     Rgba tint,
     double scale, {
     double edge = 0.75,
+    double fade = 0,
   }) {
-    final gain = (6 * scale).clamp(2.0, 24.0);
+    final crisp = (6 * scale).clamp(2.0, 24.0);
+    final gain = fade > 0 ? math.min(crisp, 1 / fade) : crisp;
     return ui.ColorFilter.matrix([
       0, 0, 0, 0, tint.r * 255, //
       0, 0, 0, 0, tint.g * 255,

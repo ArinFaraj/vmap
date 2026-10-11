@@ -26,11 +26,9 @@ and halo and an icon's size, colour and opacity, and all of them may read
 
 - 3D: buildings are flat and the map does not pitch. Neither does
   flutter_map, which the camera comes from.
-- `video` sources, `icon-halo-blur`, and line patterns on round caps.
+- `video` sources, and line patterns on round caps.
 - `line-gradient` together with dashes, a pattern, `line-blur`, or a width
   or colour read from the feature. The gradient is drawn alone.
-- `text-translate` for a name along a line, and a translate that changes
-  with the zoom for text and icons: the style's number is read once.
 - `within` and `distance` in what `featuresAt` returns, and for lines a
   `within` that looks at more than the line's corners.
 - The style's `glyphs`. Text is drawn in the app's fonts.
@@ -45,8 +43,10 @@ and removing layers and sources is done with the overlay.
 Checked on screen: several sources, GeoJSON, raster order, hillshade,
 heatmap, bent road names and rotation. Seen in a hand written style
 only: `image` sources, `line-blur` on dashes, `line-gradient`, the translate
-anchors, `text-max-angle` and `styleEdits`. Covered by tests only, not seen drawn: `line-pattern`,
-SDF icons and their halos, polygon labels and `hillshade-accent-color`.
+anchors, `text-translate` on names along a line, `text-max-angle` and
+`styleEdits`. Covered by tests only, not seen drawn: `line-pattern`,
+SDF icons, their halos and `icon-halo-blur`, a translate that changes with
+the zoom, polygon labels and `hillshade-accent-color`.
 
 ## How it draws
 
