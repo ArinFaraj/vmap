@@ -213,7 +213,9 @@ void main() {
       expect(sheet.layers, hasLength(3));
       expect(sheet.buckets, hasLength(2));
       expect(sheet.layers[0].bucket, sheet.layers[1].bucket);
-      expect(sheet.layers[2].coverage, 0.25);
+      expect(sheet.layers[2].dash, [1, 3]);
+      expect(sheet.buckets[sheet.layers[2].bucket].dashed, isTrue);
+      expect(sheet.buckets[sheet.layers[0].bucket].dashed, isFalse);
       expect(sheet.symbols.single.weight, 700);
       expect(Rgba.of(sheet.background(at(0)))!.toArgb(), 0xFFEEEEEE);
     });
@@ -223,6 +225,133 @@ void main() {
       final props = {'name': 'Hewler', 'name:en': 'Erbil'};
       expect(sheet.symbols.single.text(at(0, props)), 'Erbil');
       expect(sheet.shape, isNot(StyleSheet.compile(style).shape));
+    });
+  });
+
+  group('what a style asks for beyond plain fills and lines', () {
+    StyleSheet compile(List<Map<String, Object?>> layers) =>
+        StyleSheet.compile({
+          'version': 8,
+          'sprite': 'https://example.org/sprites/basic',
+          'sources': {
+            'omt': {'type': 'vector', 'url': 'https://example.org/planet'},
+            'relief': {
+              'type': 'raster',
+              'tiles': ['https://example.org/relief/{z}/{x}/{y}.png'],
+              'tileSize': 256,
+              'maxzoom': 6,
+            },
+          },
+          'layers': [
+            for (final l in layers) {'source': 'omt', ...l},
+          ],
+        });
+
+    test('a fill with an outline colour also draws its edges', () {
+      final sheet = compile([
+        {
+          'type': 'fill',
+          'source-layer': 'building',
+          'paint': {'fill-color': '#ddd', 'fill-outline-color': '#999'},
+        },
+      ]);
+      expect(sheet.layers, hasLength(2));
+      final edge = sheet.layers[1];
+      expect(edge.isLine, isTrue);
+      expect(edge.width!(at(15)), 1);
+      expect(sheet.buckets[edge.bucket].outline, isTrue);
+      expect(Rgba.of(edge.color(at(15)))!.toArgb(), 0xFF999999);
+    });
+
+    test('paint that reads a property splits its bucket by that property', () {
+      final sheet = compile([
+        {
+          'type': 'line',
+          'source-layer': 'transportation',
+          'paint': {
+            'line-color': [
+              'match',
+              ['get', 'class'],
+              'motorway',
+              '#f00',
+              '#fff',
+            ],
+            'line-width': 2,
+          },
+        },
+        {
+          'type': 'line',
+          'source-layer': 'transportation',
+          'paint': {'line-color': '#000', 'line-width': 2},
+        },
+      ]);
+      expect(sheet.layers[0].perFeature, isTrue);
+      expect(sheet.layers[1].perFeature, isFalse);
+      expect(sheet.buckets[sheet.layers[0].bucket].variantKeys, ['class']);
+      expect(sheet.layers[0].bucket, isNot(sheet.layers[1].bucket));
+      expect(
+        Rgba.of(sheet.layers[0].color(at(10, {'class': 'motorway'})))!.toArgb(),
+        0xFFFF0000,
+      );
+    });
+
+    test('a symbol layer keeps its icon, anchor and offset', () {
+      final sheet = compile([
+        {
+          'type': 'symbol',
+          'source-layer': 'poi',
+          'layout': {
+            'icon-image': ['get', 'class'],
+            'icon-size': 0.7,
+            'text-field': '{name}',
+            'text-anchor': 'top',
+            'text-offset': [0, 0.6],
+            'text-optional': true,
+          },
+        },
+        {
+          'type': 'symbol',
+          'source-layer': 'transportation',
+          'layout': {'icon-image': 'arrow', 'symbol-placement': 'line'},
+        },
+      ]);
+      expect(sheet.sprite, 'https://example.org/sprites/basic');
+      final poi = sheet.symbols[0];
+      expect(poi.icon!(at(15, {'class': 'cafe'})), 'cafe');
+      expect(poi.iconSize(at(15)), 0.7);
+      expect(poi.anchor, 'top');
+      expect(poi.offsetY, 0.6);
+      expect(poi.textOptional, isTrue);
+      expect(sheet.symbols[1].text(at(16)), '');
+      expect(sheet.symbols[1].icon!(at(16)), 'arrow');
+    });
+
+    test('circle, pattern and raster layers are kept', () {
+      final sheet = compile([
+        {'type': 'raster', 'source': 'relief', 'maxzoom': 7},
+        {
+          'type': 'fill',
+          'source-layer': 'landcover',
+          'paint': {'fill-pattern': 'wetland'},
+        },
+        {
+          'type': 'circle',
+          'source-layer': 'poi',
+          'paint': {
+            'circle-radius': 4,
+            'circle-color': '#06c',
+            'circle-stroke-width': 1,
+            'circle-stroke-color': '#fff',
+          },
+        },
+      ]);
+      expect(sheet.rasters.single.tiles, contains('relief'));
+      expect(sheet.rasters.single.sourceMaxZoom, 6);
+      expect(sheet.layers[0].pattern!(at(12)), 'wetland');
+      final circle = sheet.layers[1];
+      expect(circle.kind, BucketKind.circle);
+      expect(circle.width!(at(12)), 8);
+      expect(circle.strokeWidth!(at(12)), 1);
     });
   });
 

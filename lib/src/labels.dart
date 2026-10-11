@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show listEquals;
 
 import 'expr.dart';
+import 'sprites.dart';
 import 'style.dart';
 import 'tile_builder.dart';
 
@@ -76,6 +77,7 @@ class LabelCandidate {
   }
 
   final BuiltLabel source;
+  late final bool hasText = source.text.isNotEmpty;
 
   /// The owning tile's corner and width, as fractions of the world.
   final double tileX;
@@ -149,6 +151,14 @@ class _LabelState {
   double dy = 0;
   int roadFitKey = -1;
   bool roadFits = false;
+
+  /// The icon at the anchor and the size it is drawn at.
+  SpriteImage? icon;
+  double iconW = 0;
+  double iconH = 0;
+  double iconOpacity = 1;
+  bool showIcon = false;
+  bool showText = true;
 }
 
 /// Chooses which labels show, fades them, and draws them. Text is laid out by
@@ -158,6 +168,20 @@ class LabelEngine {
 
   VmapTextStyle text;
   List<SymbolLayer> symbols = const [];
+
+  /// The style's icons. Null until they have loaded.
+  SpriteSheet? get sheet => _sheet;
+  SpriteSheet? _sheet;
+  set sheet(SpriteSheet? value) {
+    _sheet = value;
+    for (final st in _states.values) {
+      st.icon = null;
+    }
+    _placeAgain = true;
+  }
+
+  /// Clear space around the text an icon is stretched behind.
+  static const double _fitPad = 3;
   double zoomOffset = 0;
   final EvalContext _context = EvalContext();
 
@@ -308,6 +332,7 @@ class LabelEngine {
         st.sprite = _sprites[st.candidate.spriteKey];
       }
       if (!st.placed || st.seenPass != _pass) continue;
+      if (!st.candidate.hasText || !st.showText) continue;
       if (st.sprite != null && !st.resize) continue;
       var cached = _sprites[st.candidate.spriteKey];
       if (identical(cached, st.sprite)) cached = null;
@@ -341,7 +366,11 @@ class LabelEngine {
       }
       final sprite = st.sprite;
       final inRange = _inRange(st.candidate.source.layer, styleZoom);
-      final target = seen && inRange && st.placed && sprite != null ? 1.0 : 0.0;
+      final wantsText = st.candidate.hasText && st.showText;
+      final target =
+          seen && inRange && st.placed && (sprite != null || !wantsText)
+          ? 1.0
+          : 0.0;
       if (st.opacity < target) {
         st.opacity = math.min(1, st.opacity + step);
       } else if (st.opacity > target) {
@@ -355,7 +384,47 @@ class LabelEngine {
         if (!seen) _dead.add(entry.key);
         continue;
       }
-      if (sprite == null) continue;
+      final icon = st.icon;
+      final sheet = _sheet;
+      if (icon != null && st.showIcon && sheet != null) {
+        _imagePaint.color = ui.Color.fromRGBO(
+          255,
+          255,
+          255,
+          st.opacity * st.iconOpacity,
+        );
+        final fit =
+            st.candidate.source.layer >= 0 &&
+            symbols[st.candidate.source.layer].textFit;
+        final ix = st.worldX * world - origin.dx + (fit ? st.dx : 0);
+        final iy = st.worldY * world - origin.dy + (fit ? st.dy : 0);
+        final turn = st.candidate.source.angle - rotation;
+        final area = ui.Rect.fromLTWH(
+          -st.iconW / 2,
+          -st.iconH / 2,
+          st.iconW,
+          st.iconH,
+        );
+        if (turn == 0) {
+          canvas.drawImageRect(
+            sheet.image,
+            icon.source,
+            area.translate(
+              (ix * devicePixelRatio).roundToDouble() / devicePixelRatio,
+              (iy * devicePixelRatio).roundToDouble() / devicePixelRatio,
+            ),
+            _imagePaint,
+          );
+        } else {
+          canvas
+            ..save()
+            ..translate(ix, iy)
+            ..rotate(turn)
+            ..drawImageRect(sheet.image, icon.source, area, _imagePaint)
+            ..restore();
+        }
+      }
+      if (sprite == null || !wantsText) continue;
       final image = sprite.image;
       _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
       final sx = st.worldX * world - origin.dx + st.dx;
@@ -466,7 +535,10 @@ class LabelEngine {
           ? fontSize * 1.35
           : sprite.textHeight * st.scale;
 
-      st.placed = false;
+      st
+        ..placed = false
+        ..showText = c.hasText
+        ..showIcon = false;
       if (isRoad) {
         if (st.roadFitKey != fitKey) {
           st
@@ -479,74 +551,136 @@ class LabelEngine {
             );
         }
         if (!st.roadFits || _nearSameRoad(st, world)) continue;
-      } else {
-        st
-          ..worldX = c.worldX
-          ..worldY = c.worldY
-          ..angle = 0;
-      }
-      final sx = st.worldX * world - origin.dx;
-      final sy = st.worldY * world - origin.dy;
-      if (!isRoad && obstacles.isNotEmpty) {
-        final beside = c.source.layer < 0;
-        var down = textH / 2 + _obstacleReach;
-        var across = textW / 2 + _obstacleReach;
-        if (beside) {
-          final own = c.source.priority + 1000000;
-          down = textH / 2 + obstacles[own].$4 / 2 + 2;
-          across = textW / 2 + obstacles[own].$3 / 2 + 4;
-          _ownBox = own * 4;
-        }
-        var shiftX = 0.0;
-        var shiftY = 0.0;
-        if (beside) {
-          shiftX = obstacles[_ownBox ~/ 4].$5;
-          shiftY = obstacles[_ownBox ~/ 4].$6;
-        }
-        final first = beside && c.startsRight ? -across : across;
-        var found = false;
-        for (var k = 0; k < 6 && !found; k++) {
-          final ox = switch (k) {
-            1 => st.dx,
-            2 => beside ? first : 0.0,
-            3 => beside ? -first : 0.0,
-            4 => beside ? 0.0 : across,
-            5 => beside ? 0.0 : -across,
-            _ => 0.0,
-          };
-          final oy = switch (k) {
-            1 => st.dy,
-            2 => beside ? 0.0 : down,
-            3 => beside ? 0.0 : -down,
-            4 => beside ? down : 0.0,
-            5 => beside ? -down : 0.0,
-            _ => 0.0,
-          };
-          if (beside && (k == 1 || (ox == 0 && oy == 0))) continue;
-          final fx = k == 1 ? ox : ox + shiftX;
-          final fy = k == 1 ? oy : oy + shiftY;
-          if (_collides(sx + fx, sy + fy, textW, textH, 0)) continue;
-          st
-            ..dx = fx
-            ..dy = fy;
-          found = true;
-        }
-        _ownBox = -1;
-        if (!found) continue;
-        _addBoxes(sx + st.dx, sy + st.dy, textW, textH, 0);
-      } else {
-        final room = !isRoad
-            ? 0.0
-            : (fontSize <= 12.5 ? _minorRoadRoom : _majorRoadRoom);
+        final room = fontSize <= 12.5 ? _minorRoadRoom : _majorRoadRoom;
+        final sx = st.worldX * world - origin.dx;
+        final sy = st.worldY * world - origin.dy;
         if (_collides(sx, sy, textW + room, textH + room, st.angle)) continue;
         _addBoxes(sx, sy, textW + room, textH + room, st.angle);
         st
           ..dx = 0
-          ..dy = 0;
+          ..dy = 0
+          ..placed = true;
+        sprite?.usedPass = _pass;
+        _placedRoads.add(st);
+        continue;
       }
+
+      st
+        ..worldX = c.worldX
+        ..worldY = c.worldY
+        ..angle = 0;
+      final beside = c.source.layer < 0;
+      final symbol = beside ? null : symbols[c.source.layer];
+      if (c.source.spaced && c.hasText && _nearSameRoad(st, world)) continue;
+      final sx = st.worldX * world - origin.dx;
+      final sy = st.worldY * world - origin.dy;
+
+      var tx = 0.0;
+      var ty = 0.0;
+      if (symbol != null && c.hasText) {
+        tx = symbol.offsetX * fontSize;
+        ty = symbol.offsetY * fontSize;
+        final anchor = symbol.anchor;
+        if (anchor.startsWith('top')) ty += textH / 2;
+        if (anchor.startsWith('bottom')) ty -= textH / 2;
+        if (anchor.endsWith('left')) tx += textW / 2;
+        if (anchor.endsWith('right')) tx -= textW / 2;
+      }
+
+      var icon = st.icon;
+      if (icon == null && c.source.icon.isNotEmpty) {
+        icon = st.icon = _sheet?.entries[c.source.icon];
+      }
+      if (icon != null && symbol != null) {
+        final by = asNumber(symbol.iconSize(_context..zoom = styleZoom)) ?? 1;
+        st
+          ..iconW = symbol.textFit ? textW + _fitPad * 2 : icon.width * by
+          ..iconH = symbol.textFit ? textH + _fitPad * 2 : icon.height * by
+          ..iconOpacity = (asNumber(symbol.iconOpacity(_context)) ?? 1).clamp(
+            0.0,
+            1.0,
+          );
+      }
+      if (icon == null && !c.hasText) continue;
+
+      var textFits = false;
+      if (c.hasText) {
+        if (obstacles.isEmpty) {
+          textFits =
+              (symbol?.textOverlaps ?? false) ||
+              !_collides(sx + tx, sy + ty, textW, textH, 0);
+          st
+            ..dx = tx
+            ..dy = ty;
+        } else {
+          var down = textH / 2 + _obstacleReach;
+          var across = textW / 2 + _obstacleReach;
+          var shiftX = tx;
+          var shiftY = ty;
+          if (beside) {
+            final own = c.source.priority + 1000000;
+            down = textH / 2 + obstacles[own].$4 / 2 + 2;
+            across = textW / 2 + obstacles[own].$3 / 2 + 4;
+            _ownBox = own * 4;
+            shiftX = obstacles[own].$5;
+            shiftY = obstacles[own].$6;
+          }
+          final first = beside && c.startsRight ? -across : across;
+          for (var k = 0; k < 6 && !textFits; k++) {
+            final ox = switch (k) {
+              1 => st.dx,
+              2 => beside ? first : 0.0,
+              3 => beside ? -first : 0.0,
+              4 => beside ? 0.0 : across,
+              5 => beside ? 0.0 : -across,
+              _ => 0.0,
+            };
+            final oy = switch (k) {
+              1 => st.dy,
+              2 => beside ? 0.0 : down,
+              3 => beside ? 0.0 : -down,
+              4 => beside ? down : 0.0,
+              5 => beside ? -down : 0.0,
+              _ => 0.0,
+            };
+            if (beside && (k == 1 || (ox == 0 && oy == 0))) continue;
+            if (icon != null && k > 1) break;
+            final fx = k == 1 ? ox : ox + shiftX;
+            final fy = k == 1 ? oy : oy + shiftY;
+            if (_collides(sx + fx, sy + fy, textW, textH, 0)) continue;
+            st
+              ..dx = fx
+              ..dy = fy;
+            textFits = true;
+          }
+          _ownBox = -1;
+        }
+      }
+      final iconFits =
+          icon != null &&
+          ((symbol?.iconOverlaps ?? false) ||
+              (symbol?.textFit ?? false) ||
+              !_collides(sx, sy, st.iconW, st.iconH, 0));
+      final bool showText;
+      final bool showIcon;
+      if (c.hasText && icon != null) {
+        showText = textFits && (iconFits || symbol!.iconOptional);
+        showIcon = iconFits && (textFits || symbol!.textOptional);
+      } else {
+        showText = textFits;
+        showIcon = iconFits;
+      }
+      if (!showText && !showIcon) continue;
+      if (showText) _addBoxes(sx + st.dx, sy + st.dy, textW, textH, 0);
+      if (showIcon && !(symbol?.textFit ?? false)) {
+        _addBoxes(sx, sy, st.iconW, st.iconH, 0);
+      }
+      st
+        ..showText = showText
+        ..showIcon = showIcon;
+      if (c.source.spaced && c.hasText) _placedRoads.add(st);
       st.placed = true;
       sprite?.usedPass = _pass;
-      if (isRoad) _placedRoads.add(st);
     }
     if (_sprites.length > _maxSprites) {
       final unused = [

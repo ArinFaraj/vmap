@@ -33,7 +33,7 @@ your `MarkerLayer` and your gestures, and swap the tile layer:
 ## Any MapLibre style
 
 Point it at a style JSON, yours or a tile server's. The style decides the
-colours, the widths, the text and where the tiles come from.
+colours, the widths, the text, the icons and where the tiles come from.
 
 ![The same place in six styles](doc/images/styles.png)
 
@@ -46,6 +46,12 @@ VmapLayer(style: VmapStyle.light) // the built in style, and VmapStyle.dark
 A style is drawn as MapLibre draws it for the same view. Two styles that
 differ only in colour, like a light and a dark version, switch without
 reloading a tile.
+
+![One style from a country down to a street](doc/images/zooms.png)
+
+Shaded relief from a raster source, dashed borders and park edges, road
+shields, icons from the style's sprite sheet, patterned fills and one way
+arrows all come from the style. Nothing here is drawn by the app.
 
 ## Why another vector layer
 
@@ -74,8 +80,9 @@ differ in how they draw.
 | Drawing | vectors, redrawn every frame with `Canvas` | 8.x and 9.x: tiles rendered to images, then drawn. 10.x beta: `flutter_gpu` |
 | Flutter channel | stable | 8.x and 9.x: stable. 10.x beta: main channel with Flutter GPU enabled |
 | Renderer | Skia or Impeller | 10.x beta needs Impeller, which Flutter enables on Android API 29 and up |
-| Icons and sprites | no | yes |
-| Raster and hillshade layers | no | yes |
+| Icons, sprites and patterns | yes | yes |
+| Raster layers | yes | yes |
+| Hillshade layers | no | yes |
 | Marker aware labels | yes | no |
 
 The 10.x requirements are taken from that version's own README, and the
@@ -86,8 +93,10 @@ Impeller availability from
 
 The same style, camera and tiles. vector_map_tiles reads a style one zoom
 level deeper than MapLibre does for the same view, so for this picture vmap
-was given `zoomOffset: 1` to match. What is left is what the table says:
-vector_map_tiles draws the style's icons and vmap does not.
+was given `zoomOffset: 1` to match. vector_map_tiles shows more shops in
+this view than vmap does. The style holds those layers back until zoom 16 and
+17, and vmap follows that; I have not traced why vector_map_tiles shows them
+earlier.
 
 ### Measuring it yourself
 
@@ -116,7 +125,7 @@ dependencies:
   vmap:
     git:
       url: https://github.com/ArinFaraj/vmap.git
-      ref: v0.2.0
+      ref: v0.3.0
 ```
 
 ## Use
@@ -200,26 +209,33 @@ frame counters, create a `VmapEngine` yourself and use
 
 | | |
 | --- | --- |
-| Layers | `background`, `fill`, `line`, `symbol` text. `fill-extrusion` is drawn flat |
-| Sources | one vector source, by TileJSON `url` or `tiles` template |
-| Paint and layout | colour, opacity, line width, gap width and cap; text field, size, font weight and slant, colour, halo, letter spacing, max width, transform; `symbol-placement`; `minzoom`, `maxzoom`, `visibility` |
+| Layers | `background`, `fill`, `line`, `circle`, `symbol`, `raster`. `fill-extrusion` is drawn flat |
+| Sources | one vector source and any number of raster sources, by TileJSON `url` or `tiles` template |
+| Fills | colour, opacity, `fill-outline-color`, `fill-pattern` |
+| Lines | colour, opacity, width, gap width, round caps, `line-dasharray` |
+| Circles | radius, colour, opacity, and the stroke's width, colour and opacity |
+| Text | field, size, font weight and slant, colour, halo, letter spacing, max width, transform, anchor, offset, `text-optional`, `text-allow-overlap` |
+| Icons | `icon-image` from the style's sprite sheet (the `@2x` sheet when there is one), size, rotation, opacity, `icon-optional`, `icon-allow-overlap`, `icon-text-fit` |
+| Placement | `symbol-placement` point and line, `symbol-spacing`, text along a road, shields and arrows repeated along a line, `minzoom`, `maxzoom`, `visibility` |
 | Expressions | `interpolate` (linear and exponential), `step`, `match`, `case`, `coalesce`, `get`, `has`, `zoom`, `geometry-type`, comparisons, `all`, `any`, `!`, `concat`, `to-string`, maths, and the legacy `stops` functions and filters |
+
+Colours, opacities, widths and radii may read a feature's properties, for
+example a road coloured by its class. Features are grouped by the values the
+paint reads, up to 64 groups per layer in a tile.
 
 ## What it does not do
 
-- Icons, sprites and patterns. A label that goes with an icon is still
-  written, without the icon.
-- Dashes. A dashed line is drawn whole, faded by how much of it the dashes
-  cover, which reads the same from a distance and not up close.
-- Colours and widths of fills and lines that depend on a feature's properties.
-  They follow the zoom only. Filters and text can use any property.
-- Raster, hillshade, heatmap and circle layers, and more than one vector
-  source.
+- More than one vector source. The one most layers use is drawn.
+- Hillshade and heatmap layers, `line-pattern`, and icons that take a colour
+  (SDF icons).
+- Text bent along a curve. A road's name is written straight on the
+  straightest stretch that fits it, and left out where none does.
+- Labels for polygons. Points and lines are labelled.
+- Raster layers are drawn under every vector layer, wherever the style puts
+  them.
 - 3D: buildings are flat and the map does not pitch.
 - It has been run on one Android phone and on macOS. iOS, web and low end
   devices are untested.
-
-If you need one of these today, use vector_map_tiles.
 
 ## Tiles and attribution
 
@@ -235,10 +251,12 @@ shown. For OpenFreeMap that is `© OpenFreeMap © OpenMapTiles © OpenStreetMap`
    The result crosses to the UI isolate without a copy.
 2. Every frame the engine evaluates the style for the zoom and draws the
    visible tiles with `Canvas.drawVertices`, falling back to parent tiles
-   while a tile loads.
+   while a tile loads. Dashes and patterns are a small repeating image the
+   same triangles are drawn through.
 3. Labels are collected across tiles and placed on the screen as a whole, so
-   they never collide or get cut at a tile edge. Each is drawn once into a
-   small image and faded in and out.
+   they never collide or get cut at a tile edge. Each text is drawn once into
+   a small image, icons come straight from the sprite sheet, and both fade in
+   and out.
 
 ## Example
 

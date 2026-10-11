@@ -210,6 +210,17 @@ def main():
     )
     panels(
         directory,
+        "zooms",
+        [
+            ("far-liberty", "Country", "Raster relief, borders, park edges"),
+            ("wide-liberty", "City", "Road shields, place dots, an airport"),
+            ("plain-liberty-deep", "Street", "Icons, dashed paths, patterns"),
+        ],
+        columns=3,
+        size=(704, 900),
+    )
+    panels(
+        directory,
         "compare",
         [
             ("plain-liberty-deep", "vmap", "The Liberty style, with zoomOffset: 1"),

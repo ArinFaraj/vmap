@@ -7,7 +7,7 @@ import 'package:dart_earcut/dart_earcut.dart';
 const int _maxVertices = 65000;
 
 class MeshChunk {
-  MeshChunk(this.positions, this.extrusions, this.indices);
+  MeshChunk(this.positions, this.extrusions, this.indices, [this.distances]);
 
   final Float32List positions;
 
@@ -15,12 +15,18 @@ class MeshChunk {
   /// `position + extrusion * halfWidth`. Null for fills.
   final Float32List? extrusions;
   final Uint16List indices;
+
+  /// Per-vertex distance along its line as x with a zero y, the texture
+  /// coordinates a dash pattern is drawn by. Null when not asked for.
+  final Float32List? distances;
 }
 
 class _Buffers {
-  _Buffers(this.withExtrusions);
+  _Buffers(this.withExtrusions, {this.withDistances = false});
 
   final bool withExtrusions;
+  final bool withDistances;
+  Float32List dst = Float32List(0);
   Float32List pos = Float32List(2048);
   Float32List ext = Float32List(0);
   Uint16List idx = Uint16List(4096);
@@ -48,6 +54,10 @@ class _Buffers {
       ext = Float32List(math.max(needPos, pos.length))
         ..setRange(0, vertexCount * 2, ext);
     }
+    if (withDistances && needPos > dst.length) {
+      dst = Float32List(math.max(needPos, pos.length))
+        ..setRange(0, vertexCount * 2, dst);
+    }
   }
 
   void flush() {
@@ -57,6 +67,7 @@ class _Buffers {
       pos[vertexCount * 2 + 1] = 0;
       ext[vertexCount * 2] = 0;
       ext[vertexCount * 2 + 1] = 0;
+      if (withDistances) dst[vertexCount * 2] = 0;
       vertexCount++;
     }
     if (indexCount > 0) {
@@ -71,6 +82,11 @@ class _Buffers {
                 )
               : null,
           Uint16List.fromList(Uint16List.sublistView(idx, 0, indexCount)),
+          withDistances
+              ? Float32List.fromList(
+                  Float32List.sublistView(dst, 0, vertexCount * 2),
+                )
+              : null,
         ),
       );
     }
@@ -123,7 +139,13 @@ class FillMesher {
 /// centre-line point and an offset vector, so one mesh serves any stroke
 /// width.
 class LineMesher {
-  final _Buffers _b = _Buffers(true);
+  LineMesher({bool distances = false})
+    : _b = _Buffers(true, withDistances: distances);
+
+  final _Buffers _b;
+
+  /// How far along the current line the vertices being added are.
+  double _along = 0;
 
   static const double _arcStep = math.pi / 5;
   static const int _fanVertices = 7;
@@ -140,12 +162,13 @@ class LineMesher {
     int end,
     double minDistance, {
     bool caps = true,
+    bool joins = true,
   }) {
     if (end - start < 2) return;
     if (end - start > _maxPoints) {
       final mid = start + _maxPoints - 1;
-      addLine(coords, start, mid + 1, minDistance, caps: caps);
-      addLine(coords, mid, end, minDistance, caps: caps);
+      addLine(coords, start, mid + 1, minDistance, caps: caps, joins: joins);
+      addLine(coords, mid, end, minDistance, caps: caps, joins: joins);
       return;
     }
     if ((end - start) * 2 > _pts.length) _pts = Float64List((end - start) * 4);
@@ -173,6 +196,8 @@ class LineMesher {
     var len = math.sqrt(dx * dx + dy * dy);
     dx /= len;
     dy /= len;
+    _along = 0;
+    var segment = len;
     if (caps) _fan(pts[0], pts[1], -dy, dx, math.pi, 1);
     var left = _vertex(pts[0], pts[1], -dy, dx);
     var right = _vertex(pts[0], pts[1], dy, -dx);
@@ -180,6 +205,7 @@ class LineMesher {
     for (var i = 1; i < n; i++) {
       final x = pts[i * 2];
       final y = pts[i * 2 + 1];
+      _along += segment;
       if (i == n - 1) {
         final l = _vertex(x, y, -dy, dx);
         final r = _vertex(x, y, dy, -dx);
@@ -190,6 +216,7 @@ class LineMesher {
       var ex = pts[i * 2 + 2] - x;
       var ey = pts[i * 2 + 3] - y;
       len = math.sqrt(ex * ex + ey * ey);
+      segment = len;
       ex /= len;
       ey /= len;
       final dot = dx * ex + dy * ey;
@@ -206,16 +233,18 @@ class LineMesher {
         final l = _vertex(x, y, -dy, dx);
         final r = _vertex(x, y, dy, -dx);
         _quad(left, right, l, r);
-        final cross = dx * ey - dy * ex;
-        final side = cross > 0 ? -1.0 : 1.0;
-        _fan(
-          x,
-          y,
-          -dy * side,
-          dx * side,
-          math.atan2(cross.abs(), dot),
-          cross > 0 ? 1 : -1,
-        );
+        if (joins) {
+          final cross = dx * ey - dy * ex;
+          final side = cross > 0 ? -1.0 : 1.0;
+          _fan(
+            x,
+            y,
+            -dy * side,
+            dx * side,
+            math.atan2(cross.abs(), dot),
+            cross > 0 ? 1 : -1,
+          );
+        }
         left = _vertex(x, y, -ey, ex);
         right = _vertex(x, y, ey, -ex);
       }
@@ -272,6 +301,10 @@ class LineMesher {
     _b.pos[o + 1] = y;
     _b.ext[o] = ex;
     _b.ext[o + 1] = ey;
+    if (_b.withDistances) {
+      _b.dst[o] = _along;
+      _b.dst[o + 1] = 0;
+    }
     _b.vertexCount = v + 1;
     return v;
   }
@@ -279,53 +312,5 @@ class LineMesher {
   List<MeshChunk> finish() {
     _b.flush();
     return _b.chunks;
-  }
-}
-
-/// Keeps polylines as points plus a point count per line, for drawing as one
-/// stroked path. [MeshChunk.indices] holds the counts.
-class PolylineCollector {
-  Float32List _pos = Float32List(1024);
-  int _n = 0;
-  final List<int> _counts = [];
-
-  void addLine(Float64List coords, int start, int end, double minDistance) {
-    if (end - start < 2) return;
-    final need = _n + (end - start) * 2;
-    if (need > _pos.length) {
-      _pos = Float32List(math.max(need, _pos.length * 2))
-        ..setRange(0, _n, _pos);
-    }
-    final minSq = minDistance * minDistance;
-    final first = _n;
-    for (var i = start; i < end; i++) {
-      final x = coords[i * 2];
-      final y = coords[i * 2 + 1];
-      if (_n > first) {
-        final dx = x - _pos[_n - 2];
-        final dy = y - _pos[_n - 1];
-        final dSq = dx * dx + dy * dy;
-        if (dSq == 0 || (dSq < minSq && i != end - 1)) continue;
-      }
-      _pos[_n++] = x;
-      _pos[_n++] = y;
-    }
-    final count = (_n - first) >> 1;
-    if (count < 2 || count > 65535) {
-      _n = first;
-      return;
-    }
-    _counts.add(count);
-  }
-
-  List<MeshChunk> finish() {
-    if (_counts.isEmpty) return const [];
-    return [
-      MeshChunk(
-        Float32List.fromList(Float32List.sublistView(_pos, 0, _n)),
-        null,
-        Uint16List.fromList(_counts),
-      ),
-    ];
   }
 }

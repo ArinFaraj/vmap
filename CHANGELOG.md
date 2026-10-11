@@ -1,3 +1,14 @@
+## 0.3.0
+
+- Icons: `icon-image` from the style's sprite sheet, with text placed by
+  `text-anchor` and `text-offset`, road shields, and arrows repeated along a
+  line.
+- Real dashes for `line-dasharray`.
+- `fill-outline-color`, `fill-pattern`, `circle` layers and `raster` layers.
+- Fill, line and circle paint may read a feature's properties.
+- `text-anchor` and `text-offset` now move every point label, so a town's
+  name sits above its point as the style asks.
+
 ## 0.2.0
 
 - Draws any MapLibre style: `VmapStyle.url`, `VmapStyle.json`, or the built in

@@ -11,6 +11,8 @@ import 'package:flutter_map/flutter_map.dart' show Marker;
 import 'expr.dart';
 import 'labels.dart';
 import 'layer.dart' show NamedMarker;
+import 'raster.dart';
+import 'sprites.dart';
 import 'style.dart';
 import 'tessellate.dart';
 import 'tile_builder.dart';
@@ -44,18 +46,30 @@ class _Stroke {
 }
 
 class _Mesh {
-  _Mesh.fill(MeshChunk chunk)
+  _Mesh.fill(MeshChunk chunk, this.props)
     : fill = ui.Vertices.raw(
         ui.VertexMode.triangles,
         chunk.positions,
         indices: chunk.indices,
       ),
+      points = null,
       _base = null,
       _ext = null,
+      _along = null,
       _indices = null;
 
-  _Mesh.line(MeshChunk chunk)
+  _Mesh.points(MeshChunk chunk, this.props)
     : fill = null,
+      points = chunk.positions,
+      _base = null,
+      _ext = null,
+      _along = null,
+      _indices = null;
+
+  _Mesh.line(MeshChunk chunk, this.props)
+    : fill = null,
+      points = null,
+      _along = chunk.distances,
       _base = chunk.positions.buffer.asFloat32x4List(
         chunk.positions.offsetInBytes,
         chunk.positions.length >> 2,
@@ -67,6 +81,13 @@ class _Mesh {
       _indices = chunk.indices;
 
   final ui.Vertices? fill;
+
+  /// The centres of a circle layer's circles.
+  final Float32List? points;
+
+  /// What the features in the mesh have in common, for paint that reads it.
+  final Map<String, Object?>? props;
+  final Float32List? _along;
   final Float32x4List? _base;
   final Float32x4List? _ext;
   final Uint16List? _indices;
@@ -103,6 +124,7 @@ class _Mesh {
       ui.VertexMode.triangles,
       out.buffer.asFloat32List(0, n * 4),
       indices: _indices,
+      textureCoordinates: _along,
     );
     _strokes.add(_Stroke(pass, halfWidth, vertices));
     return vertices;
@@ -150,11 +172,11 @@ class _Tile {
       while (_uploaded < built.meshes.length) {
         if (_uploaded > 0 && clock.elapsedMicroseconds > deadline) return;
         final m = built.meshes[_uploaded++];
-        (groups[m.bucket] ??= []).add(
-          sheet.buckets[m.bucket].isLine
-              ? _Mesh.line(m.chunk)
-              : _Mesh.fill(m.chunk),
-        );
+        (groups[m.bucket] ??= []).add(switch (sheet.buckets[m.bucket].kind) {
+          BucketKind.line => _Mesh.line(m.chunk, m.props),
+          BucketKind.circle => _Mesh.points(m.chunk, m.props),
+          BucketKind.fill => _Mesh.fill(m.chunk, m.props),
+        });
       }
       _step = 1;
       if (clock.elapsedMicroseconds > deadline) return;
@@ -164,7 +186,12 @@ class _Tile {
       final layer = sheet.layers[p];
       final meshes = groups[layer.bucket];
       _step++;
-      if (!layer.isLine || meshes == null || widths[p] <= 0) continue;
+      if (!layer.isLine ||
+          layer.perFeature ||
+          meshes == null ||
+          widths[p] <= 0) {
+        continue;
+      }
       final halfWidth = widths[p] / 2 / scale;
       for (final m in meshes) {
         m.build(p, halfWidth);
@@ -176,7 +203,7 @@ class _Tile {
     final ty = id.y * span;
     for (var i = 0; i < built.labels.length; i++) {
       final l = built.labels[i];
-      final key = l.line != null
+      final key = l.line != null || l.spaced || l.text.isEmpty
           ? 'r|$id|$i'
           : 'p|${l.layer}|${l.text}|${((tx + l.x / tileExtent * span) * 1024).floor()}|${((ty + l.y / tileExtent * span) * 1024).floor()}';
       labels.add(LabelCandidate(key, l, tx, ty, span));
@@ -267,6 +294,18 @@ class VmapEngine extends ChangeNotifier {
   final Map<TileId, _Tile> _tiles = {};
   final Map<TileId, int> _failedAt = {};
   final ui.Paint _paint = ui.Paint()..isAntiAlias = true;
+  final ui.Paint _pointPaint = ui.Paint()
+    ..isAntiAlias = true
+    ..strokeCap = ui.StrokeCap.round;
+  SpriteSheet? _sprites;
+  String? _spriteUrl;
+  final List<RasterTiles> _rasters = [];
+  final Map<String, ui.Image> _dashImages = {};
+  final Map<(PaintLayer, double, double), ui.ImageShader> _shaders = {};
+  final Float64List _shaderMatrix = Float64List(16)
+    ..[5] = 1
+    ..[10] = 1
+    ..[15] = 1;
   final VmapStats stats = VmapStats();
   final EvalContext _context = EvalContext();
   VmapStyle _style;
@@ -365,7 +404,29 @@ class VmapEngine extends ChangeNotifier {
         _sheet!.shape != sheet.shape ||
         _sheet!.tileJsonUrl != sheet.tileJsonUrl ||
         _sheet!.tiles != sheet.tiles;
+    final rasters =
+        _sheet == null ||
+        jsonEncode(document['sources']) != _sources ||
+        _sheet!.rasters.length != sheet.rasters.length;
+    _sources = jsonEncode(document['sources']);
     _sheet = sheet;
+    if (rasters) {
+      for (final r in _rasters) {
+        r.close();
+      }
+      _rasters
+        ..clear()
+        ..addAll([
+          for (final layer in sheet.rasters)
+            RasterTiles(
+              layer,
+              cacheDirectory: source.cacheDirectory,
+              userAgent: source.userAgent,
+              onLoaded: _requestFrame,
+            ),
+        ]);
+    }
+    if (sheet.sprite != _spriteUrl) _loadSprites(sheet.sprite);
     _colors = Int32List(sheet.layers.length);
     _widths = Float64List(sheet.layers.length);
     _labels
@@ -388,6 +449,32 @@ class VmapEngine extends ChangeNotifier {
         onFailed: _onFailed,
       );
     }
+    notifyListeners();
+  }
+
+  String? _sources;
+
+  Future<void> _loadSprites(String? url) async {
+    _spriteUrl = url;
+    _sprites?.dispose();
+    _sprites = null;
+    _labels.sheet = null;
+    if (url == null) return;
+    SpriteSheet? loaded;
+    try {
+      loaded = await SpriteSheet.load(
+        url,
+        cacheDirectory: source.cacheDirectory,
+        userAgent: source.userAgent,
+      );
+    } catch (_) {}
+    if (loaded == null) return;
+    if (_disposed || url != _spriteUrl) {
+      loaded.dispose();
+      return;
+    }
+    _sprites = loaded;
+    _labels.sheet = loaded;
     notifyListeners();
   }
 
@@ -492,12 +579,23 @@ class VmapEngine extends ChangeNotifier {
       _colors[i] = 0;
       _widths[i] = 0;
       if (styleZoom < layer.minZoom || styleZoom >= layer.maxZoom) continue;
+      if (layer.perFeature) {
+        _colors[i] = 0xFF000000;
+        continue;
+      }
       final color = Rgba.of(layer.color(_context));
       if (color == null) continue;
-      _colors[i] = color.toArgb(
-        (asNumber(layer.opacity(_context)) ?? 1) * layer.coverage,
-      );
-      if (layer.isLine) _widths[i] = asNumber(layer.width!(_context)) ?? 0;
+      _colors[i] = color.toArgb(asNumber(layer.opacity(_context)) ?? 1);
+      if (layer.width != null) {
+        _widths[i] = asNumber(layer.width!(_context)) ?? 0;
+      }
+    }
+    for (final s in _shaders.values) {
+      s.dispose();
+    }
+    _shaders.clear();
+    for (final r in _rasters) {
+      r.paint(canvas, _context, camera.zoom, camera.origin, size);
     }
     _maxDataZoom = pool.maxZoom;
 
@@ -787,32 +885,154 @@ class VmapEngine extends ChangeNotifier {
     final layers = d.tile.sheet.layers;
     var draws = 0;
     for (var p = 0; p < layers.length; p++) {
-      final color = _colors[p];
-      if (color >>> 24 == 0) continue;
+      if (_colors[p] >>> 24 == 0) continue;
       final layer = layers[p];
       final meshes = groups[layer.bucket];
       if (meshes == null) continue;
-      _paint.color = ui.Color(color);
-      if (!layer.isLine) {
-        for (final m in meshes) {
-          canvas.drawVertices(m.fill!, ui.BlendMode.srcOver, _paint);
-          draws++;
-        }
-        continue;
+      var color = _colors[p];
+      var width = _widths[p];
+      ui.ImageShader? shader;
+      if (!layer.perFeature) {
+        shader = _shaderFor(layer, width, scale);
+        if (shader == null && (layer.pattern != null)) continue;
       }
-      if (_widths[p] <= 0) continue;
-      final halfWidth = _widths[p] / 2 / scale;
       for (final m in meshes) {
-        canvas.drawVertices(
-          _stroke(m, p, halfWidth),
-          ui.BlendMode.srcOver,
-          _paint,
-        );
+        if (layer.perFeature) {
+          _context.props = m.props ?? const {};
+          final own = Rgba.of(layer.color(_context));
+          if (own == null) continue;
+          color = own.toArgb(asNumber(layer.opacity(_context)) ?? 1);
+          if (color >>> 24 == 0) continue;
+          if (layer.width != null) {
+            width = asNumber(layer.width!(_context)) ?? 0;
+          }
+          shader = _shaderFor(layer, width, scale);
+          if (shader == null && layer.pattern != null) continue;
+        }
+        switch (layer.kind) {
+          case BucketKind.fill:
+            _paint
+              ..color = ui.Color(color)
+              ..shader = shader;
+            canvas.drawVertices(m.fill!, ui.BlendMode.srcOver, _paint);
+          case BucketKind.line:
+            if (width <= 0) continue;
+            if (shader == null) {
+              _paint.color = ui.Color(color);
+            } else {
+              _paint
+                ..color = const ui.Color(0xFFFFFFFF)
+                ..shader = shader
+                ..colorFilter = ui.ColorFilter.mode(
+                  ui.Color(color),
+                  ui.BlendMode.srcIn,
+                );
+            }
+            canvas.drawVertices(
+              _stroke(m, p, width / 2 / scale),
+              ui.BlendMode.srcOver,
+              _paint,
+            );
+          case BucketKind.circle:
+            if (width <= 0) continue;
+            final ring = layer.strokeWidth == null
+                ? 0.0
+                : asNumber(layer.strokeWidth!(_context)) ?? 0;
+            if (ring > 0) {
+              final ringColor = Rgba.of(layer.strokeColor!(_context));
+              if (ringColor != null) {
+                _pointPaint
+                  ..color = ui.Color(
+                    ringColor.toArgb(
+                      asNumber(layer.strokeOpacity!(_context)) ?? 1,
+                    ),
+                  )
+                  ..strokeWidth = (width + ring * 2) / scale;
+                canvas.drawRawPoints(
+                  ui.PointMode.points,
+                  m.points!,
+                  _pointPaint,
+                );
+              }
+            }
+            _pointPaint
+              ..color = ui.Color(color)
+              ..strokeWidth = width / scale;
+            canvas.drawRawPoints(ui.PointMode.points, m.points!, _pointPaint);
+        }
         draws++;
+        if (shader != null) {
+          _paint
+            ..shader = null
+            ..colorFilter = null;
+        }
       }
+      if (layer.perFeature) _context.props = const {};
     }
     canvas.restore();
     return draws;
+  }
+
+  /// The repeating picture a layer is drawn through: its dashes, or the
+  /// pattern that fills it. Null for a plain colour, and for a pattern whose
+  /// sprite sheet has not loaded.
+  ui.ImageShader? _shaderFor(PaintLayer layer, double width, double scale) {
+    if (layer.dash == null && layer.pattern == null) return null;
+    final key = (layer, width, scale);
+    final made = _shaders[key];
+    if (made != null) return made;
+    final ui.Image image;
+    final double stretch;
+    final dash = layer.dash;
+    if (dash != null) {
+      if (width <= 0) return null;
+      var total = 0.0;
+      for (final d in dash) {
+        total += d;
+      }
+      image = _dashImages[dash.join(',')] ??= _dashImage(dash, total);
+      stretch = total * width / scale / image.width;
+    } else {
+      final sheet = _sprites;
+      if (sheet == null) return null;
+      final name = layer.pattern!(_context) as String;
+      final found = sheet.pattern(name);
+      if (found == null) return null;
+      image = found;
+      stretch = 1 / (sheet.entries[name]!.pixelRatio * scale);
+    }
+    _shaderMatrix
+      ..[0] = stretch
+      ..[5] = dash != null ? 1 : stretch;
+    final shader = ui.ImageShader(
+      image,
+      ui.TileMode.repeated,
+      dash != null ? ui.TileMode.clamp : ui.TileMode.repeated,
+      _shaderMatrix,
+      filterQuality: ui.FilterQuality.low,
+    );
+    return _shaders[key] = shader;
+  }
+
+  static const int _dashImageWidth = 256;
+
+  /// One period of a dash pattern as a strip of white and clear.
+  ui.Image _dashImage(Float64List dash, double total) {
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    final paint = ui.Paint()..color = const ui.Color(0xFFFFFFFF);
+    var at = 0.0;
+    for (var i = 0; i < dash.length; i++) {
+      final length = dash[i] / total * _dashImageWidth;
+      if (i.isEven) {
+        canvas.drawRect(ui.Rect.fromLTWH(at, 0, math.max(1, length), 2), paint);
+      }
+      at += length;
+    }
+    final picture = recorder.endRecording();
+    final image = picture.toImageSync(_dashImageWidth, 2);
+    picture.dispose();
+    return image;
   }
 
   /// UI-thread time a frame may spend preparing tiles and re-widening lines
@@ -892,6 +1112,16 @@ class VmapEngine extends ChangeNotifier {
     _disposed = true;
     _pool?.close();
     _labels.clear();
+    _sprites?.dispose();
+    for (final r in _rasters) {
+      r.close();
+    }
+    for (final s in _shaders.values) {
+      s.dispose();
+    }
+    for (final i in _dashImages.values) {
+      i.dispose();
+    }
     for (final t in _tiles.values) {
       t.dispose();
     }

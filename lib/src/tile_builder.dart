@@ -10,15 +10,29 @@ import 'tessellate.dart';
 const double tileExtent = 4096;
 
 class BuiltMesh {
-  BuiltMesh(this.bucket, this.chunk);
+  BuiltMesh(this.bucket, this.chunk, [this.props]);
 
   /// Index into the style's buckets.
   final int bucket;
   final MeshChunk chunk;
+
+  /// The property values every feature in the mesh shares, for a bucket
+  /// whose paint reads them.
+  final Map<String, Object?>? props;
 }
 
 class BuiltLabel {
-  BuiltLabel(this.layer, this.priority, this.text, this.x, this.y, this.line);
+  BuiltLabel(
+    this.layer,
+    this.priority,
+    this.text,
+    this.x,
+    this.y,
+    this.line, {
+    this.icon = '',
+    this.angle = 0,
+    this.spaced = false,
+  });
 
   /// Index into the style's symbol layers. Negative for a label the app
   /// supplies.
@@ -33,6 +47,16 @@ class BuiltLabel {
   /// The line the text runs along, as x,y pairs in tile units. Null for point
   /// labels.
   final Float32List? line;
+
+  /// The name of the sprite image drawn at the anchor. Empty for none.
+  final String icon;
+
+  /// How far the icon is turned, in radians.
+  final double angle;
+
+  /// One of several placed along a line, which keeps its distance from
+  /// others with the same text.
+  final bool spaced;
 }
 
 class BuiltTile {
@@ -54,10 +78,26 @@ class BuiltTile {
           else
             null,
           TransferableTypedData.fromList([m.chunk.indices]),
+          if (m.chunk.distances case final d?)
+            TransferableTypedData.fromList([d])
+          else
+            null,
+          m.props,
         ],
     ],
     [
-      for (final l in labels) [l.layer, l.priority, l.text, l.x, l.y, l.line],
+      for (final l in labels)
+        [
+          l.layer,
+          l.priority,
+          l.text,
+          l.x,
+          l.y,
+          l.line,
+          l.icon,
+          l.angle,
+          l.spaced,
+        ],
     ],
   ];
 
@@ -72,7 +112,9 @@ class BuiltTile {
             (parts[1] as TransferableTypedData).materialize().asFloat32List(),
             (parts[2] as TransferableTypedData?)?.materialize().asFloat32List(),
             (parts[3] as TransferableTypedData).materialize().asUint16List(),
+            (parts[4] as TransferableTypedData?)?.materialize().asFloat32List(),
           ),
+          (parts[5] as Map?)?.cast<String, Object?>(),
         ),
       );
     }
@@ -87,11 +129,26 @@ class BuiltTile {
           parts[3] as double,
           parts[4] as double,
           parts[5] as Float32List?,
+          icon: parts[6] as String,
+          angle: parts[7] as double,
+          spaced: parts[8] as bool,
         ),
       );
     }
     return BuiltTile(meshes, labels);
   }
+}
+
+/// The geometry one bucket collects, or one combination of property values
+/// within it.
+class _Group {
+  _Group(this.bucket, this.props);
+
+  final int bucket;
+  final Map<String, Object?>? props;
+  FillMesher? fill;
+  LineMesher? line;
+  List<double>? points;
 }
 
 /// Turns one vector tile into the meshes and labels a style asks for.
@@ -113,12 +170,22 @@ class TileBuilder {
   Float64List _ring = Float64List(4096);
   final List<int> _holes = [];
 
+  /// A bucket whose features differ in more ways than this draws the rest
+  /// with the paint of the last combination.
+  static const int _maxVariants = 64;
+
+  /// Symbols placed along one line at most.
+  static const int _maxRepeats = 24;
+
   /// [maxZoom] is the deepest zoom the source has tiles for; a tile at that
   /// zoom is drawn at every zoom beyond it.
   BuiltTile build(Uint8List bytes, int z, {int maxZoom = 14}) {
     final tile = MvtTile.decode(bytes);
-    final fills = <int, FillMesher>{};
-    final lines = <int, LineMesher>{};
+    final plain = List<_Group?>.filled(sheet.buckets.length, null);
+    final varied = <String, _Group>{};
+    final variantCount = List<int>.filled(sheet.buckets.length, 0);
+    final lastVariant = List<_Group?>.filled(sheet.buckets.length, null);
+    final groups = <_Group>[];
     final labels = <BuiltLabel>[];
     final deepest = z >= maxZoom;
     final lineTolerance = deepest ? 0.75 : 2.0;
@@ -127,6 +194,27 @@ class TileBuilder {
     bool drawnAt(double minZoom, double maxZoom) =>
         maxZoom > styleZoom && (deepest || minZoom < styleZoom + 1);
     final context = _context..zoom = styleZoom;
+
+    _Group groupFor(int b, Bucket bucket) {
+      final keys = bucket.variantKeys;
+      if (keys.isEmpty) {
+        var group = plain[b];
+        if (group == null) groups.add(group = plain[b] = _Group(b, null));
+        return group;
+      }
+      final values = [for (final k in keys) context.props[k]];
+      final key = '$b|${values.join('\u0001')}';
+      var group = varied[key];
+      if (group != null) return group;
+      if (variantCount[b] >= _maxVariants) return lastVariant[b]!;
+      variantCount[b]++;
+      group = varied[key] = lastVariant[b] = _Group(b, {
+        for (var i = 0; i < keys.length; i++)
+          if (values[i] != null) keys[i]: values[i],
+      });
+      groups.add(group);
+      return group;
+    }
 
     for (final layer in tile.layers.values) {
       final buckets = [
@@ -156,22 +244,45 @@ class TileBuilder {
           f.readGeometry(_sink);
         }
 
-        for (final b in buckets) {
-          final bucket = sheet.buckets[b];
-          if (bucket.isLine ? f.type == mvtPoint : f.type != mvtPolygon) {
-            continue;
-          }
-          if (!bucket.filter(context)) continue;
+        void scaled() {
           geometry();
-          if (!bucket.isLine) {
-            _addPolygons(fills[b] ??= FillMesher(), pending, ringTolerance);
-            continue;
-          }
           if (pending != 1) {
             _scaleSink(pending);
             pending = 1;
           }
-          final mesher = lines[b] ??= LineMesher();
+        }
+
+        for (final b in buckets) {
+          final bucket = sheet.buckets[b];
+          final fits = switch (bucket.kind) {
+            BucketKind.fill => f.type == mvtPolygon,
+            BucketKind.circle => f.type == mvtPoint,
+            BucketKind.line =>
+              bucket.outline ? f.type == mvtPolygon : f.type != mvtPoint,
+          };
+          if (!fits || !bucket.filter(context)) continue;
+          final group = groupFor(b, bucket);
+          if (bucket.kind == BucketKind.fill) {
+            geometry();
+            _addPolygons(group.fill ??= FillMesher(), pending, ringTolerance);
+            continue;
+          }
+          scaled();
+          if (bucket.kind == BucketKind.circle) {
+            final points = group.points ??= [];
+            for (var i = 0; i < _sink.coordCount; i += 2) {
+              final x = _sink.coords[i];
+              final y = _sink.coords[i + 1];
+              if (x < 0 || y < 0 || x >= tileExtent || y >= tileExtent) {
+                continue;
+              }
+              points
+                ..add(x)
+                ..add(y);
+            }
+            continue;
+          }
+          final mesher = group.line ??= LineMesher(distances: bucket.dashed);
           for (var r = 0; r < _sink.ringCount; r++) {
             final start = _sink.ringStart(r);
             final end = _sink.ringEnd(r);
@@ -193,7 +304,14 @@ class TileBuilder {
             _ring.setRange(0, count * 2, _sink.coords, start * 2);
             _ring[count * 2] = _ring[0];
             _ring[count * 2 + 1] = _ring[1];
-            mesher.addLine(_ring, 0, count + 1, lineTolerance, caps: false);
+            mesher.addLine(
+              _ring,
+              0,
+              count + 1,
+              lineTolerance,
+              caps: false,
+              joins: !bucket.outline,
+            );
           }
         }
 
@@ -202,32 +320,120 @@ class TileBuilder {
           final symbol = sheet.symbols[s];
           if (!symbol.filter(context)) continue;
           final text = symbol.text(context) as String;
-          if (text.isEmpty) continue;
+          final icon = symbol.icon == null
+              ? ''
+              : symbol.icon!(context) as String;
+          if (text.isEmpty && icon.isEmpty) continue;
           final along = '${symbol.placement(context)}'.startsWith('line');
-          if (along != (f.type == mvtLine)) continue;
-          geometry();
-          if (pending != 1) {
-            _scaleSink(pending);
-            pending = 1;
-          }
           final base = (sheet.symbols.length - 1 - s) * 4096;
-          final label = along
-              ? _lineLabel(s, base, text)
-              : _pointLabel(s, base, text, context.props['rank']);
-          if (label != null) labels.add(label);
+          if (f.type == mvtPoint) {
+            if (along) continue;
+            scaled();
+            final label = _pointLabel(
+              s,
+              base,
+              text,
+              icon,
+              context.props['rank'],
+            );
+            if (label != null) labels.add(label);
+            continue;
+          }
+          scaled();
+          if (along && text.isNotEmpty && !symbol.textUpright) {
+            final label = _lineLabel(s, base, text);
+            if (label != null) labels.add(label);
+            continue;
+          }
+          final turns = along && text.isEmpty && !symbol.iconUpright;
+          final deeper = math.max(0, (symbol.minZoom - styleZoom).ceil());
+          _repeat(
+            along ? symbol.spacing * 8 / (1 << deeper) : double.infinity,
+            (x, y, angle) => labels.add(
+              BuiltLabel(
+                s,
+                base + 50,
+                text,
+                x,
+                y,
+                null,
+                icon: icon,
+                angle: turns
+                    ? angle + symbol.iconRotate * math.pi / 180
+                    : symbol.iconRotate * math.pi / 180,
+                spaced: true,
+              ),
+            ),
+          );
         }
       }
     }
 
     final meshes = <BuiltMesh>[];
-    for (var b = 0; b < sheet.buckets.length; b++) {
-      final chunks = fills[b]?.finish() ?? lines[b]?.finish();
+    groups.sort((a, b) => a.bucket - b.bucket);
+    for (final group in groups) {
+      final points = group.points;
+      if (points != null && points.isNotEmpty) {
+        meshes.add(
+          BuiltMesh(
+            group.bucket,
+            MeshChunk(Float32List.fromList(points), null, Uint16List(0)),
+            group.props,
+          ),
+        );
+      }
+      final chunks = group.fill?.finish() ?? group.line?.finish();
       if (chunks == null) continue;
       for (final chunk in chunks) {
-        meshes.add(BuiltMesh(b, chunk));
+        meshes.add(BuiltMesh(group.bucket, chunk, group.props));
       }
     }
     return BuiltTile(meshes, labels);
+  }
+
+  /// Calls [place] for points [spacing] tile units apart along every line in
+  /// the sink, or for the middle of a line too short for two.
+  void _repeat(
+    double spacing,
+    void Function(double x, double y, double angle) place,
+  ) {
+    final c = _sink.coords;
+    for (var r = 0; r < _sink.ringCount; r++) {
+      final start = _sink.ringStart(r);
+      final end = _sink.ringEnd(r);
+      var length = 0.0;
+      for (var i = start + 1; i < end; i++) {
+        final dx = c[i * 2] - c[i * 2 - 2];
+        final dy = c[i * 2 + 1] - c[i * 2 - 1];
+        length += math.sqrt(dx * dx + dy * dy);
+      }
+      if (length < 48) continue;
+      final count = spacing.isFinite
+          ? (length / spacing).round().clamp(1, _maxRepeats)
+          : 1;
+      final step = length / count;
+      var next = step / 2;
+      var walked = 0.0;
+      var placed = 0;
+      for (var i = start + 1; i < end && placed < count; i++) {
+        final x0 = c[i * 2 - 2];
+        final y0 = c[i * 2 - 1];
+        final dx = c[i * 2] - x0;
+        final dy = c[i * 2 + 1] - y0;
+        final seg = math.sqrt(dx * dx + dy * dy);
+        while (seg > 0 && next <= walked + seg && placed < count) {
+          final t = (next - walked) / seg;
+          final x = x0 + dx * t;
+          final y = y0 + dy * t;
+          if (x >= 0 && y >= 0 && x < tileExtent && y < tileExtent) {
+            place(x, y, math.atan2(dy, dx));
+          }
+          placed++;
+          next += step;
+        }
+        walked += seg;
+      }
+    }
   }
 
   void _scaleSink(double scale) {
@@ -308,7 +514,13 @@ class TileBuilder {
     flush();
   }
 
-  BuiltLabel? _pointLabel(int layer, int base, String text, Object? rank) {
+  BuiltLabel? _pointLabel(
+    int layer,
+    int base,
+    String text,
+    String icon,
+    Object? rank,
+  ) {
     if (_sink.coordCount < 2) return null;
     final x = _sink.coords[0];
     final y = _sink.coords[1];
@@ -320,6 +532,7 @@ class TileBuilder {
       x,
       y,
       null,
+      icon: icon,
     );
   }
 
