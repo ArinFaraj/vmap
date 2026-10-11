@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -9,267 +8,20 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_map/flutter_map.dart' show Marker;
 import 'package:latlong2/latlong.dart' show LatLng;
 
+import 'camera.dart';
 import 'expr.dart';
+import 'heat.dart';
 import 'labels.dart';
 import 'pins.dart';
 import 'query.dart';
 import 'layer.dart' show NamedMarker;
 import 'raster.dart';
+import 'shaders.dart';
 import 'sprites.dart';
 import 'style.dart';
-import 'tessellate.dart';
 import 'tile_builder.dart';
+import 'tiles.dart';
 import 'worker.dart';
-
-class VmapCamera {
-  const VmapCamera({
-    required this.zoom,
-    required this.origin,
-    required this.size,
-    required this.rotation,
-    required this.devicePixelRatio,
-  });
-
-  /// Slippy-map zoom: the world is `256 * 2^zoom` logical pixels wide.
-  final double zoom;
-
-  /// World pixel at the canvas origin.
-  final ui.Offset origin;
-  final ui.Size size;
-  final double rotation;
-  final double devicePixelRatio;
-}
-
-class _Stroke {
-  _Stroke(this.pass, this.halfWidth, this.vertices);
-
-  final int pass;
-  final double halfWidth;
-  final ui.Vertices vertices;
-}
-
-class _Mesh {
-  _Mesh.fill(MeshChunk chunk, this.props)
-    : fill = ui.Vertices.raw(
-        ui.VertexMode.triangles,
-        chunk.positions,
-        indices: chunk.indices,
-      ),
-      points = null,
-      _base = null,
-      _ext = null,
-      _along = null,
-      _indices = null;
-
-  _Mesh.points(MeshChunk chunk, this.props)
-    : fill = null,
-      points = chunk.positions,
-      _base = null,
-      _ext = null,
-      _along = null,
-      _indices = null;
-
-  _Mesh.line(MeshChunk chunk, this.props)
-    : fill = null,
-      points = null,
-      _along = chunk.distances,
-      _base = chunk.positions.buffer.asFloat32x4List(
-        chunk.positions.offsetInBytes,
-        chunk.positions.length >> 2,
-      ),
-      _ext = chunk.extrusions!.buffer.asFloat32x4List(
-        chunk.extrusions!.offsetInBytes,
-        chunk.positions.length >> 2,
-      ),
-      _indices = chunk.indices;
-
-  final ui.Vertices? fill;
-
-  /// The centres of a circle layer's circles.
-  final Float32List? points;
-
-  /// What the features in the mesh have in common, for paint that reads it.
-  final Map<String, Object?>? props;
-  final Float32List? _along;
-  final Float32x4List? _base;
-  final Float32x4List? _ext;
-  final Uint16List? _indices;
-  final List<_Stroke> _strokes = [];
-
-  static Float32x4List _scratch = Float32x4List(0);
-
-  _Stroke? existing(int pass) {
-    for (final s in _strokes) {
-      if (s.pass == pass) return s;
-    }
-    return null;
-  }
-
-  /// Widens the line mesh to [halfWidth] tile units for [pass], replacing
-  /// whatever width that pass had.
-  ui.Vertices build(int pass, double halfWidth) {
-    for (var i = 0; i < _strokes.length; i++) {
-      if (_strokes[i].pass == pass) {
-        _strokes.removeAt(i).vertices.dispose();
-        break;
-      }
-    }
-    final base = _base!;
-    final ext = _ext!;
-    final n = base.length;
-    if (_scratch.length < n) _scratch = Float32x4List(n);
-    final out = _scratch;
-    final w = Float32x4.splat(halfWidth);
-    for (var i = 0; i < n; i++) {
-      out[i] = base[i] + ext[i] * w;
-    }
-    final vertices = ui.Vertices.raw(
-      ui.VertexMode.triangles,
-      out.buffer.asFloat32List(0, n * 4),
-      indices: _indices,
-      textureCoordinates: _along,
-    );
-    _strokes.add(_Stroke(pass, halfWidth, vertices));
-    return vertices;
-  }
-
-  void dispose() {
-    fill?.dispose();
-    for (final s in _strokes) {
-      s.vertices.dispose();
-    }
-    _strokes.clear();
-  }
-}
-
-class _Tile {
-  _Tile(this.id, BuiltTile built, this.sheet)
-    : _built = built,
-      groups = List.filled(sheet.buckets.length, null);
-
-  final TileId id;
-  final StyleSheet sheet;
-  BuiltTile? _built;
-  final List<List<_Mesh>?> groups;
-  final List<LabelCandidate> labels = [];
-  int usedFrame = 0;
-
-  bool get prepared => _step < 0;
-
-  /// 0 uploads the geometry, 1..layers widen one line layer each, then
-  /// labels.
-  int _step = 0;
-  int _uploaded = 0;
-  int _labelAt = 0;
-
-  /// Uploads the geometry and widens every line to [widths], so the first
-  /// frame that draws this tile has nothing left to compute. Works in steps
-  /// and returns once [clock] passes [deadline]; call again to continue.
-  void prepare(
-    Float64List widths,
-    double scale,
-    Stopwatch clock,
-    int deadline,
-  ) {
-    final built = _built!;
-    if (_step == 0) {
-      while (_uploaded < built.meshes.length) {
-        if (_uploaded > 0 && clock.elapsedMicroseconds > deadline) return;
-        final m = built.meshes[_uploaded++];
-        (groups[m.bucket] ??= []).add(switch (sheet.buckets[m.bucket].kind) {
-          BucketKind.line => _Mesh.line(m.chunk, m.props),
-          BucketKind.circle => _Mesh.points(m.chunk, m.props),
-          BucketKind.fill => _Mesh.fill(m.chunk, m.props),
-        });
-      }
-      _step = 1;
-      if (clock.elapsedMicroseconds > deadline) return;
-    }
-    while (_step <= sheet.layers.length) {
-      final p = _step - 1;
-      final layer = sheet.layers[p];
-      final meshes = groups[layer.bucket];
-      _step++;
-      if (!layer.isLine ||
-          layer.perFeature ||
-          meshes == null ||
-          widths[p] <= 0) {
-        continue;
-      }
-      final halfWidth = widths[p] / 2 / scale;
-      for (final m in meshes) {
-        m.build(p, halfWidth);
-      }
-      if (clock.elapsedMicroseconds > deadline) return;
-    }
-    final span = 1 / (1 << id.z);
-    final tx = id.x * span;
-    final ty = id.y * span;
-    while (_labelAt < built.labels.length) {
-      final l = built.labels[_labelAt++];
-      labels.add(LabelCandidate(l.key, l, tx, ty, span));
-      if (_labelAt & 127 == 0 && clock.elapsedMicroseconds > deadline) return;
-    }
-    _built = null;
-    _step = -1;
-  }
-
-  void dispose() {
-    for (final g in groups) {
-      if (g == null) continue;
-      for (final m in g) {
-        m.dispose();
-      }
-    }
-  }
-}
-
-class _Draw {
-  _Draw(this.tile, this.left, this.top, this.size);
-
-  final _Tile tile;
-  final double left;
-  final double top;
-  final double size;
-  List<ui.Rect>? clips;
-}
-
-/// The tiles of one of the style's sources.
-class _Source {
-  _Source(this.def);
-
-  final VectorSource def;
-  late TilePool pool;
-  final Map<TileId, _Tile> tiles = {};
-
-  /// Tiles of the data this source had before it changed, shown until the
-  /// tiles of the new data are ready.
-  final Map<TileId, _Tile> previous = {};
-  final Map<TileId, int> failedAt = {};
-  final List<_Draw> ideal = [];
-  final List<_Draw> fallback = [];
-  final Map<int, _Draw> fallbackByKey = {};
-  final List<TileId> wanted = [];
-  final List<(TileId, double)> missing = [];
-  bool hadWanted = false;
-  int maxDataZoom = 14;
-
-  void dispose() {
-    pool.close();
-    for (final t in tiles.values) {
-      t.dispose();
-    }
-    tiles.clear();
-    dropPrevious();
-  }
-
-  void dropPrevious() {
-    for (final t in previous.values) {
-      t.dispose();
-    }
-    previous.clear();
-  }
-}
 
 class VmapStats {
   int tilesDrawn = 0;
@@ -341,7 +93,7 @@ class VmapEngine extends ChangeNotifier {
   bool showLabels;
   StyleSheet? _sheet;
   final LabelEngine _labels;
-  final List<_Source> _sources = [];
+  final List<TileSource> _sources = [];
   final ui.Paint _paint = ui.Paint()..isAntiAlias = true;
   final ui.Paint _pointPaint = ui.Paint()
     ..isAntiAlias = true
@@ -349,12 +101,8 @@ class VmapEngine extends ChangeNotifier {
   SpriteSheet? _sprites;
   String? _spriteUrl;
   final List<RasterTiles> _rasters = [];
-  final Map<String, ui.Image> _dashImages = {};
-  final Map<(PaintLayer, double, double), ui.ImageShader> _shaders = {};
-  final Float64List _shaderMatrix = Float64List(16)
-    ..[5] = 1
-    ..[10] = 1
-    ..[15] = 1;
+  final LayerShaders _shaders = LayerShaders();
+  final HeatPainter _heat = HeatPainter();
   final VmapStats stats = VmapStats();
   final EvalContext _context = EvalContext();
   VmapStyle _style;
@@ -511,15 +259,15 @@ class VmapEngine extends ChangeNotifier {
       ..symbols = sheet.symbols
       ..zoomOffset = sheet.zoomOffset;
     if (!keepLabels || !sameShape) _labels.clear();
-    final byName = <String, _Source>{
+    final byName = <String, TileSource>{
       if (sameShape)
         for (final s in _sources) s.def.name: s,
     };
-    final kept = <String, _Source>{
+    final kept = <String, TileSource>{
       if (sameShape)
         for (final s in _sources) s.def.signature: s,
     };
-    final next = <_Source>[];
+    final next = <TileSource>[];
     for (var i = 0; i < sheet.sources.length; i++) {
       final def = sheet.sources[i];
       final reused = kept.remove(def.signature);
@@ -527,7 +275,7 @@ class VmapEngine extends ChangeNotifier {
         next.add(reused);
         continue;
       }
-      final made = _Source(def);
+      final made = TileSource(def);
       made.pool = TilePool(
         source,
         style: document,
@@ -649,10 +397,10 @@ class VmapEngine extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _onLoaded(_Source from, TileId id, BuiltTile built) {
+  void _onLoaded(TileSource from, TileId id, BuiltTile built) {
     if (_disposed || !_sources.contains(from)) return;
     from.tiles[id]?.dispose();
-    from.tiles[id] = _Tile(id, built, _sheet!)..usedFrame = _frame;
+    from.tiles[id] = LoadedTile(id, built, _sheet!)..usedFrame = _frame;
     from.failedAt.remove(id);
     notifyListeners();
   }
@@ -755,10 +503,7 @@ class VmapEngine extends ChangeNotifier {
         _widths[i] = asNumber(layer.width!(_context)) ?? 0;
       }
     }
-    for (final s in _shaders.values) {
-      s.dispose();
-    }
-    _shaders.clear();
+    _shaders.startFrame();
 
     _prepSpent = 0;
     _stale = false;
@@ -766,7 +511,15 @@ class VmapEngine extends ChangeNotifier {
     _zooming = (camera.zoom - _lastZoom).abs() > 0.002;
     _lastZoom = camera.zoom;
     for (final s in _sources) {
-      if (_cover(s, camera, dataZoom)) waiting = true;
+      final preparing = s.cover(
+        camera,
+        dataZoom,
+        frame: _frame,
+        nowMs: _clock.elapsedMilliseconds,
+        prepare: _prepare,
+      );
+      if (preparing) waiting = true;
+      if (s.retrying) _requestFrameLater();
     }
     if (!waiting) _prepareBackdrop(camera.zoom);
 
@@ -881,159 +634,8 @@ class VmapEngine extends ChangeNotifier {
       ..tilesLoading = loading
       ..drawCalls = draws;
     for (final s in _sources) {
-      _evict(s);
+      s.evict(maxCachedTiles, _frame);
     }
-  }
-
-  /// Works out which of the source's tiles cover the view, asks for the
-  /// missing ones, and returns whether a tile is still being prepared.
-  bool _cover(_Source s, VmapCamera camera, double dataZoom) {
-    final size = camera.size;
-    s.maxDataZoom = s.pool.maxZoom;
-    final tz = dataZoom.floor().clamp(0, s.maxDataZoom);
-    final tileSize = 256.0 * math.pow(2, camera.zoom - tz);
-    final n = 1 << tz;
-    final x0 = (camera.origin.dx / tileSize).floor();
-    final x1 = ((camera.origin.dx + size.width) / tileSize).floor();
-    final y0 = math.max(0, (camera.origin.dy / tileSize).floor());
-    final y1 = math.min(
-      n - 1,
-      ((camera.origin.dy + size.height) / tileSize).floor(),
-    );
-    final centerX = (camera.origin.dx + size.width / 2) / tileSize - 0.5;
-    final centerY = (camera.origin.dy + size.height / 2) / tileSize - 0.5;
-
-    s.ideal.clear();
-    s.fallback.clear();
-    s.fallbackByKey.clear();
-    s.missing.clear();
-    var waiting = false;
-    var covered = true;
-    for (var y = y0; y <= y1; y++) {
-      for (var x = x0; x <= x1; x++) {
-        final id = TileId(tz, x % n, y);
-        final left = x * tileSize - camera.origin.dx;
-        final top = y * tileSize - camera.origin.dy;
-        final tile = s.tiles[id];
-        if (tile != null) {
-          tile.usedFrame = _frame;
-          if (!tile.prepared) _prepare(tile, tileSize / tileExtent);
-          if (tile.prepared) {
-            s.ideal.add(_Draw(tile, left, top, tileSize));
-            continue;
-          }
-          waiting = true;
-        } else {
-          covered = false;
-          final dx = x - centerX;
-          final dy = y - centerY;
-          s.missing.add((id, dx * dx + dy * dy));
-        }
-        final before = s.previous[id];
-        if (before != null && before.prepared) {
-          s.ideal.add(_Draw(before, left, top, tileSize));
-          continue;
-        }
-        _addFallback(s, id, x, y, left, top, tileSize, camera.origin);
-      }
-    }
-    if (covered && !waiting) s.dropPrevious();
-    _updateWanted(s, tz, camera, size);
-    return waiting;
-  }
-
-  /// Covers a missing tile with the nearest loaded ancestor, or failing that
-  /// with whichever of its children are loaded.
-  void _addFallback(
-    _Source s,
-    TileId id,
-    int x,
-    int y,
-    double left,
-    double top,
-    double tileSize,
-    ui.Offset origin,
-  ) {
-    var ancestor = id;
-    for (var dz = 1; dz <= 6 && ancestor.z > 0; dz++) {
-      ancestor = ancestor.parent;
-      final tile = s.tiles[ancestor];
-      if (tile == null) continue;
-      tile.usedFrame = _frame;
-      if (!tile.prepared) continue;
-      final ax = x >> dz;
-      final ay = y >> dz;
-      final key = (ancestor.z << 50) | ((ax & 0x1ffffff) << 25) | ay;
-      final big = tileSize * (1 << dz);
-      final draw = s.fallbackByKey[key] ??= () {
-        final d = _Draw(tile, ax * big - origin.dx, ay * big - origin.dy, big)
-          ..clips = [];
-        s.fallback.add(d);
-        return d;
-      }();
-      draw.clips!.add(ui.Rect.fromLTWH(left, top, tileSize, tileSize));
-      return;
-    }
-    if (id.z >= s.maxDataZoom) return;
-    final half = tileSize / 2;
-    for (var cy = 0; cy < 2; cy++) {
-      for (var cx = 0; cx < 2; cx++) {
-        final child = s.tiles[TileId(id.z + 1, id.x * 2 + cx, id.y * 2 + cy)];
-        if (child == null || !child.prepared) continue;
-        child.usedFrame = _frame;
-        s.fallback.add(_Draw(child, left + cx * half, top + cy * half, half));
-      }
-    }
-  }
-
-  void _updateWanted(_Source s, int tz, VmapCamera camera, ui.Size size) {
-    final wanted = s.wanted..clear();
-    final nowMs = _clock.elapsedMilliseconds;
-    s.missing.sort((a, b) => a.$2.compareTo(b.$2));
-    for (final (id, _) in s.missing) {
-      final failed = s.failedAt[id];
-      if (failed != null && nowMs - failed < 3000) {
-        _requestFrameLater();
-        continue;
-      }
-      wanted.add(id);
-    }
-    void cover(int z, {required bool fetch}) {
-      final span = 256.0 * math.pow(2, camera.zoom - z);
-      final n = 1 << z;
-      final x0 = (camera.origin.dx / span).floor();
-      final x1 = ((camera.origin.dx + size.width) / span).floor();
-      final y0 = math.max(0, (camera.origin.dy / span).floor());
-      final y1 = math.min(
-        n - 1,
-        ((camera.origin.dy + size.height) / span).floor(),
-      );
-      for (var y = y0; y <= y1; y++) {
-        for (var x = x0; x <= x1; x++) {
-          final id = TileId(z, x % n, y);
-          final tile = s.tiles[id];
-          if (tile != null) {
-            tile.usedFrame = _frame;
-          } else if (fetch && !wanted.contains(id)) {
-            wanted.add(id);
-          }
-        }
-      }
-    }
-
-    final bz = math.max(0, tz - 3);
-    if (bz < tz) cover(bz, fetch: true);
-    // The level above the view is kept alive and, past the middle of a zoom
-    // level, the level below is fetched, so crossing into the next level in
-    // either direction finds its tiles ready.
-    if (tz > 0) cover(tz - 1, fetch: false);
-    if (tz < s.maxDataZoom && camera.zoom - 1 - tz > 0.55) {
-      cover(tz + 1, fetch: true);
-    }
-    if (wanted.isNotEmpty || s.hadWanted) {
-      s.pool.want(List.of(wanted));
-    }
-    s.hadWanted = wanted.isNotEmpty;
   }
 
   bool _retryPending = false;
@@ -1050,7 +652,7 @@ class VmapEngine extends ChangeNotifier {
   int _drawTile(
     ui.Canvas canvas,
     StyleSheet sheet,
-    _Draw d,
+    TileDraw d,
     int first,
     int end,
   ) {
@@ -1095,7 +697,7 @@ class VmapEngine extends ChangeNotifier {
         // Glows reach past the tile's edge, so they are drawn unclipped.
         canvas.restore();
         enter(clip: false);
-        _drawHeat(canvas, heat, meshes, color, width / scale);
+        _heat.draw(canvas, _context, heat, meshes, color, width / scale);
         canvas.restore();
         enter();
         draws++;
@@ -1103,7 +705,7 @@ class VmapEngine extends ChangeNotifier {
       }
       ui.ImageShader? shader;
       if (!layer.perFeature) {
-        shader = _shaderFor(layer, width, scale);
+        shader = _shaders.of(layer, width, scale, _context, _sprites);
         if (shader == null && (layer.pattern != null)) continue;
       }
       for (final m in meshes) {
@@ -1116,7 +718,7 @@ class VmapEngine extends ChangeNotifier {
           if (layer.width != null) {
             width = asNumber(layer.width!(_context)) ?? 0;
           }
-          shader = _shaderFor(layer, width, scale);
+          shader = _shaders.of(layer, width, scale, _context, _sprites);
           if (shader == null && layer.pattern != null) continue;
         }
         switch (layer.kind) {
@@ -1187,178 +789,6 @@ class VmapEngine extends ChangeNotifier {
     return draws;
   }
 
-  ui.Image? _glow;
-  final ui.Paint _heatPaint = ui.Paint();
-
-  /// A heatmap's points as soft glows: wide ones in the colour of the ramp's
-  /// low end that add up, then tighter ones in the colour of its top that
-  /// build up where points crowd. The stops between are not followed.
-  void _drawHeat(
-    ui.Canvas canvas,
-    HeatPaint heat,
-    List<_Mesh> meshes,
-    int color,
-    double diameter,
-  ) {
-    final glow = _glow ??= _glowImage();
-    ui.Color at(double density) {
-      _context.progress = density;
-      final c = Rgba.of(heat.ramp(_context)) ?? Rgba.black;
-      return ui.Color.fromRGBO(
-        (c.r * 255).round(),
-        (c.g * 255).round(),
-        (c.b * 255).round(),
-        1,
-      );
-    }
-
-    final low = at(0.3);
-    final high = at(1);
-    final intensity = asNumber(heat.intensity(_context)) ?? 1;
-    canvas.saveLayer(
-      null,
-      ui.Paint()..color = ui.Color.fromRGBO(0, 0, 0, (color >>> 24) / 255),
-    );
-    for (final hot in const [false, true]) {
-      for (final mesh in meshes) {
-        final points = mesh.points;
-        if (points == null || points.isEmpty) continue;
-        _context.props = mesh.props ?? const {};
-        final strength = ((asNumber(heat.weight(_context)) ?? 1) * intensity)
-            .clamp(0.0, 4.0);
-        final n = points.length ~/ 2;
-        final size = hot ? diameter * 0.7 : diameter;
-        final k = size / glow.width;
-        final transforms = Float32List(n * 4);
-        final rects = Float32List(n * 4);
-        for (var i = 0; i < n; i++) {
-          transforms[i * 4] = k;
-          transforms[i * 4 + 2] = points[i * 2] - size / 2;
-          transforms[i * 4 + 3] = points[i * 2 + 1] - size / 2;
-          rects[i * 4 + 2] = glow.width.toDouble();
-          rects[i * 4 + 3] = glow.height.toDouble();
-        }
-        _heatPaint
-          ..color = ui.Color.fromRGBO(
-            255,
-            255,
-            255,
-            (strength * (hot ? 0.22 : 0.6)).clamp(0.0, 1.0),
-          )
-          ..colorFilter = ui.ColorFilter.mode(
-            hot ? high : low,
-            ui.BlendMode.srcIn,
-          )
-          ..blendMode = hot ? ui.BlendMode.srcOver : ui.BlendMode.plus;
-        canvas.drawRawAtlas(
-          glow,
-          transforms,
-          rects,
-          null,
-          null,
-          null,
-          _heatPaint,
-        );
-      }
-    }
-    _context.props = const {};
-    canvas.restore();
-  }
-
-  static ui.Image _glowImage() {
-    const size = 64.0;
-    final recorder = ui.PictureRecorder();
-    ui.Canvas(recorder).drawCircle(
-      const ui.Offset(size / 2, size / 2),
-      size / 2,
-      ui.Paint()
-        ..shader = ui.Gradient.radial(
-          const ui.Offset(size / 2, size / 2),
-          size / 2,
-          const [
-            ui.Color(0xFFFFFFFF),
-            ui.Color(0xB0FFFFFF),
-            ui.Color(0x48FFFFFF),
-            ui.Color(0x00FFFFFF),
-          ],
-          const [0, 0.3, 0.65, 1],
-        ),
-    );
-    final picture = recorder.endRecording();
-    final image = picture.toImageSync(size.toInt(), size.toInt());
-    picture.dispose();
-    return image;
-  }
-
-  /// The repeating picture a layer is drawn through: its dashes, or the
-  /// pattern that fills it. Null for a plain colour, and for a pattern whose
-  /// sprite sheet has not loaded.
-  ui.ImageShader? _shaderFor(PaintLayer layer, double width, double scale) {
-    if (layer.dash == null && layer.pattern == null) return null;
-    final key = (layer, width, scale);
-    final made = _shaders[key];
-    if (made != null) return made;
-    final ui.Image image;
-    final double stretch;
-    final dash = layer.dash;
-    if (dash != null) {
-      if (width <= 0) return null;
-      var total = 0.0;
-      for (final d in dash) {
-        total += d;
-      }
-      image = _dashImages[dash.join(',')] ??= _dashImage(dash, total);
-      stretch = total * width / scale / image.width;
-    } else {
-      final sheet = _sprites;
-      if (sheet == null) return null;
-      final name = layer.pattern!(_context) as String;
-      final found = sheet.pattern(name);
-      if (found == null) return null;
-      image = found;
-      stretch = layer.isLine
-          ? width / scale / image.height
-          : 1 / (sheet.entries[name]!.pixelRatio * scale);
-    }
-    final along = layer.isLine;
-    _shaderMatrix
-      ..[0] = stretch
-      ..[5] = dash != null
-          ? 1
-          : along
-          ? 1 / image.height
-          : stretch;
-    final shader = ui.ImageShader(
-      image,
-      ui.TileMode.repeated,
-      along ? ui.TileMode.clamp : ui.TileMode.repeated,
-      _shaderMatrix,
-      filterQuality: ui.FilterQuality.low,
-    );
-    return _shaders[key] = shader;
-  }
-
-  static const int _dashImageWidth = 256;
-
-  /// One period of a dash pattern as a strip of white and clear.
-  ui.Image _dashImage(Float64List dash, double total) {
-    final recorder = ui.PictureRecorder();
-    final canvas = ui.Canvas(recorder);
-    final paint = ui.Paint()..color = const ui.Color(0xFFFFFFFF);
-    var at = 0.0;
-    for (var i = 0; i < dash.length; i++) {
-      final length = dash[i] / total * _dashImageWidth;
-      if (i.isEven) {
-        canvas.drawRect(ui.Rect.fromLTWH(at, 0, math.max(1, length), 2), paint);
-      }
-      at += length;
-    }
-    final picture = recorder.endRecording();
-    final image = picture.toImageSync(_dashImageWidth, 2);
-    picture.dispose();
-    return image;
-  }
-
   /// UI-thread time a frame may spend preparing tiles and re-widening lines
   /// before the rest waits for the next frame.
   static const int _prepBudgetMicros = 1500;
@@ -1368,7 +798,7 @@ class VmapEngine extends ChangeNotifier {
   int _prepSpent = 0;
   bool _stale = false;
 
-  void _prepare(_Tile tile, double scale) {
+  void _prepare(LoadedTile tile, double scale) {
     if (_prepSpent >= _prepBudgetMicros) return;
     final started = _clock.elapsedMicroseconds;
     tile.prepare(
@@ -1397,7 +827,7 @@ class VmapEngine extends ChangeNotifier {
 
   /// The mesh widened for [pass]. A width a few percent off is kept when the
   /// frame's budget is spent, and corrected on a later frame.
-  ui.Vertices _stroke(_Mesh mesh, int pass, double halfWidth) {
+  ui.Vertices _stroke(TileMesh mesh, int pass, double halfWidth) {
     final current = mesh.existing(pass);
     if (current != null) {
       final ratio = halfWidth / current.halfWidth;
@@ -1420,17 +850,6 @@ class VmapEngine extends ChangeNotifier {
     return vertices;
   }
 
-  void _evict(_Source s) {
-    if (s.tiles.length <= maxCachedTiles) return;
-    final stale = s.tiles.values.where((t) => t.usedFrame != _frame).toList()
-      ..sort((a, b) => a.usedFrame - b.usedFrame);
-    for (final t in stale) {
-      if (s.tiles.length <= maxCachedTiles) break;
-      s.tiles.remove(t.id);
-      t.dispose();
-    }
-  }
-
   @override
   void dispose() {
     _disposed = true;
@@ -1440,15 +859,10 @@ class VmapEngine extends ChangeNotifier {
     _sources.clear();
     _labels.clear();
     _sprites?.dispose();
-    _glow?.dispose();
+    _heat.dispose();
+    _shaders.dispose();
     for (final r in _rasters) {
       r.close();
-    }
-    for (final s in _shaders.values) {
-      s.dispose();
-    }
-    for (final i in _dashImages.values) {
-      i.dispose();
     }
     super.dispose();
   }
