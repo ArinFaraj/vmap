@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 
 import 'engine.dart';
 import 'labels.dart';
+import 'pins.dart';
 import 'style.dart';
 import 'worker.dart';
 
@@ -29,6 +30,7 @@ class VmapLayer extends StatefulWidget {
   const VmapLayer({
     this.style = VmapStyle.light,
     this.markers = const [],
+    this.pins,
     this.textStyle,
     this.markerTextStyle,
     this.cacheDirectory,
@@ -41,6 +43,7 @@ class VmapLayer extends StatefulWidget {
   const VmapLayer.engine(VmapEngine this.engine, {super.key})
     : style = VmapStyle.light,
       markers = const [],
+      pins = null,
       textStyle = null,
       markerTextStyle = null,
       cacheDirectory = null,
@@ -55,6 +58,10 @@ class VmapLayer extends StatefulWidget {
   /// Map labels keep clear of them, and a [NamedMarker] gets its name written
   /// beside it.
   final List<Marker> markers;
+
+  /// Draws places of interest as round pins instead of the style's icons.
+  /// [VmapPins.standard] covers the usual kinds of place.
+  final VmapPins? pins;
 
   /// The font of every label: family and fallbacks. Sizes and colours come
   /// from the style.
@@ -93,6 +100,7 @@ class _VmapLayerState extends State<VmapLayer> {
       _owned = VmapEngine(
         style: widget.style,
         text: _text,
+        pins: widget.pins,
         source: TileSourceConfig(
           cacheDirectory: widget.cacheDirectory,
           userAgent: widget.userAgentPackageName,
@@ -108,6 +116,7 @@ class _VmapLayerState extends State<VmapLayer> {
     if (owned == null) return;
     owned
       ..style = widget.style
+      ..pins = widget.pins
       ..text = _text;
     if (!_sameMarkers(oldWidget.markers, widget.markers)) {
       owned.markers = widget.markers;

@@ -360,7 +360,7 @@ void main() {
     final dark = StyleSheet.compile(VmapStyle.dark.document!);
     expect(light.shape, dark.shape);
     expect(light.layers, isNotEmpty);
-    expect(light.symbols, hasLength(13));
+    expect(light.symbols, hasLength(14));
     final casing = light.layers.firstWhere((l) => l.isLine && l.width != null);
     expect(casing.width!(at(14)), isA<double>());
   });

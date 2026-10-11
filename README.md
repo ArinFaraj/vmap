@@ -155,10 +155,11 @@ vmap is not on pub.dev yet. Depend on it from git:
 ```yaml
 dependencies:
   flutter_map: ^8.3.0
+  latlong2: ^0.9.1
   vmap:
     git:
       url: https://github.com/ArinFaraj/vmap.git
-      ref: v0.3.2
+      ref: v0.4.0
 ```
 
 ## Use
@@ -225,12 +226,72 @@ background.
 VmapLayer(cacheDirectory: '${cacheDir.path}/vmap')
 ```
 
+### Pins
+
+A style draws places of interest with the small icons of its sprite sheet.
+Pass `pins` and they are drawn as round pins instead, in the same place, with
+the name below:
+
+```dart
+VmapLayer(pins: VmapPins.standard)
+```
+
+![Places drawn as pins on two styles](doc/images/pins.png)
+
+`VmapPins.standard` covers the place classes of OpenMapTiles styles:
+restaurants, cafes, hotels, shops, parks, museums, hospitals, bus stops and
+so on. The icons are Material icons, so the app needs
+`uses-material-design: true` in its pubspec. Road shields, arrows and town
+dots stay as the style draws them.
+
+A style names an icon per place, and the pin is looked up by that name. Change
+the set, the size, or the pin of everything else:
+
+```dart
+VmapLayer(
+  pins: VmapPins(
+    size: 26,
+    byIcon: {
+      ...standardPins,
+      'cafe': VmapPin(Icons.coffee_rounded, Color(0xFF6F4E37)),
+    },
+    other: null, // places with no pin keep the style's icon
+  ),
+)
+```
+
+Create a `VmapPins` once and keep it, rather than building a new one in every
+`build`. The built in style has no icons of its own, so without pins it shows
+the names of places and nothing beside them.
+
+These pins are part of the map and do not take taps. For places of your own
+that the user can tap, use markers.
+
 ### Gestures
 
-flutter_map's own gestures work as they are. `VmapGestures` is an optional
-replacement tuned for a map that redraws every frame: a glide after a drag,
-pinch around the fingers, double tap, two finger tap, and double tap then
-drag. Wrap the map in it and set `InteractiveFlag.none`.
+`VmapMap` is the whole map in one widget, with vmap's own gestures: the map
+follows the finger from the first frame, glides after a drag, zooms around
+the fingers and carries the zoom on after a pinch, and has double tap, two
+finger tap, and double tap then drag.
+
+```dart
+VmapMap(
+  initialCenter: const LatLng(36.19, 44.01),
+  initialZoom: 14,
+  style: VmapStyle.url('https://tiles.openfreemap.org/styles/liberty'),
+  pins: VmapPins.standard,
+  markers: markers,
+  onTap: (point) {},
+)
+```
+
+It takes a `controller` (a flutter_map `MapController`) and more layers as
+`children`. It does not rotate the map.
+
+To keep your own `FlutterMap`, wrap it in `VmapGestures` and switch
+flutter_map's gestures off with
+`InteractionOptions(flags: InteractiveFlag.none)`. flutter_map's own gestures
+also work with `VmapLayer` as they are.
 
 ### Sharing an engine
 

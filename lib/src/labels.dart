@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show listEquals;
 
 import 'expr.dart';
+import 'pins.dart';
 import 'sprites.dart';
 import 'style.dart';
 import 'tile_builder.dart';
@@ -155,6 +156,9 @@ class _LabelState {
 
   /// The icon at the anchor and the size it is drawn at.
   SpriteImage? icon;
+
+  /// The pin drawn in place of the icon.
+  VmapPin? pin;
   double iconW = 0;
   double iconH = 0;
   double iconOpacity = 1;
@@ -183,6 +187,29 @@ class LabelEngine {
     }
     _placeAgain = true;
   }
+
+  /// Pins drawn in place of the style's icons. Null draws the style's own.
+  VmapPins? get pins => _pins;
+  VmapPins? _pins;
+  set pins(VmapPins? value) {
+    if (identical(value, _pins)) return;
+    _pins = value;
+    _dropPinImages();
+    _placeAgain = true;
+  }
+
+  final Map<VmapPin, ui.Image> _pinImages = {};
+  double _pinRatio = 0;
+
+  void _dropPinImages() {
+    for (final image in _pinImages.values) {
+      image.dispose();
+    }
+    _pinImages.clear();
+  }
+
+  /// Space between a pin and its name.
+  static const double _pinGap = 3;
 
   /// Clear space around the text an icon is stretched behind.
   static const double _fitPad = 3;
@@ -296,6 +323,7 @@ class LabelEngine {
       sprite.image.dispose();
     }
     _sprites.clear();
+    _dropPinImages();
     _states.clear();
     _frameStates.clear();
     _live.clear();
@@ -414,7 +442,39 @@ class LabelEngine {
       if (st.opacity == 0) continue;
       final icon = st.icon;
       final sheet = _sheet;
-      if (icon != null && st.showIcon && sheet != null) {
+      final pin = st.pin;
+      final pins = _pins;
+      if (pin != null && pins != null && st.showIcon) {
+        if (_pinRatio != devicePixelRatio) {
+          _dropPinImages();
+          _pinRatio = devicePixelRatio;
+        }
+        final image = _pinImages[pin] ??= drawPin(
+          pin,
+          pins.size,
+          devicePixelRatio,
+        );
+        _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
+        final extent = pins.size + pinPad * 2;
+        final px = st.worldX * world - origin.dx - extent / 2;
+        final py = st.worldY * world - origin.dy - extent / 2;
+        canvas.drawImageRect(
+          image,
+          ui.Rect.fromLTWH(
+            0,
+            0,
+            image.width.toDouble(),
+            image.height.toDouble(),
+          ),
+          ui.Rect.fromLTWH(
+            (px * devicePixelRatio).roundToDouble() / devicePixelRatio,
+            (py * devicePixelRatio).roundToDouble() / devicePixelRatio,
+            extent,
+            extent,
+          ),
+          _imagePaint,
+        );
+      } else if (icon != null && st.showIcon && sheet != null) {
         _imagePaint.color = ui.Color.fromRGBO(
           255,
           255,
@@ -633,7 +693,34 @@ class LabelEngine {
             1.0,
           );
       }
-      if (icon == null && !c.hasText) continue;
+      final pins = _pins;
+      final pin = pins == null || symbol == null || c.source.icon.isEmpty
+          ? null
+          : pins.resolve(c.source.icon, place: symbol.sourceLayer == 'poi');
+      st.pin = pin;
+      if (pin != null) {
+        st
+          ..iconW = pins!.size
+          ..iconH = pins.size
+          ..iconOpacity = 1;
+        if (c.hasText) {
+          final reach = pins.size / 2 + _pinGap;
+          final anchor = symbol!.anchor;
+          tx = 0;
+          ty = 0;
+          if (anchor.endsWith('left')) {
+            tx = reach + textW / 2;
+          } else if (anchor.endsWith('right')) {
+            tx = -reach - textW / 2;
+          } else if (anchor.startsWith('bottom')) {
+            ty = -reach - textH / 2;
+          } else {
+            ty = reach + textH / 2;
+          }
+        }
+      }
+      final hasIcon = icon != null || pin != null;
+      if (!hasIcon && !c.hasText) continue;
 
       var textFits = false;
       if (c.hasText) {
@@ -676,7 +763,7 @@ class LabelEngine {
               _ => 0.0,
             };
             if (beside && (k == 1 || (ox == 0 && oy == 0))) continue;
-            if (icon != null && k > 1) break;
+            if (hasIcon && k > 1) break;
             final fx = k == 1 ? ox : ox + shiftX;
             final fy = k == 1 ? oy : oy + shiftY;
             if (_collides(sx + fx, sy + fy, textW, textH, 0)) continue;
@@ -688,14 +775,15 @@ class LabelEngine {
           _ownBox = -1;
         }
       }
+      final fitted = pin == null && (symbol?.textFit ?? false);
       final iconFits =
-          icon != null &&
+          hasIcon &&
           ((symbol?.iconOverlaps ?? false) ||
-              (symbol?.textFit ?? false) ||
+              fitted ||
               !_collides(sx, sy, st.iconW, st.iconH, 0));
       final bool showText;
       final bool showIcon;
-      if (c.hasText && icon != null) {
+      if (c.hasText && hasIcon) {
         showText = textFits && (iconFits || symbol!.iconOptional);
         showIcon = iconFits && (textFits || symbol!.textOptional);
       } else {
@@ -704,7 +792,7 @@ class LabelEngine {
       }
       if (!showText && !showIcon) continue;
       if (showText) _addBoxes(sx + st.dx, sy + st.dy, textW, textH, 0);
-      if (showIcon && !(symbol?.textFit ?? false)) {
+      if (showIcon && !fitted) {
         _addBoxes(sx, sy, st.iconW, st.iconH, 0);
       }
       st

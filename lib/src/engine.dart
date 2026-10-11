@@ -10,6 +10,7 @@ import 'package:flutter_map/flutter_map.dart' show Marker;
 
 import 'expr.dart';
 import 'labels.dart';
+import 'pins.dart';
 import 'layer.dart' show NamedMarker;
 import 'raster.dart';
 import 'sprites.dart';
@@ -285,7 +286,8 @@ class VmapEngine extends ChangeNotifier {
     VmapTextStyle text = const VmapTextStyle(),
     this.maxCachedTiles = 56,
     this.showLabels = true,
-  }) : _labels = LabelEngine(text) {
+    VmapPins? pins,
+  }) : _labels = LabelEngine(text)..pins = pins {
     _loadStyle();
   }
 
@@ -521,6 +523,15 @@ class VmapEngine extends ChangeNotifier {
   }
 
   final List<LabelCandidate> _markerLabels = [];
+
+  /// Pins drawn in place of the style's icons for places of interest. Null
+  /// draws the style's own icons.
+  VmapPins? get pins => _labels.pins;
+  set pins(VmapPins? value) {
+    if (identical(value, _labels.pins)) return;
+    _labels.pins = value;
+    notifyListeners();
+  }
 
   set text(VmapTextStyle value) {
     if (value == _labels.text) return;

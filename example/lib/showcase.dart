@@ -14,6 +14,7 @@ const _dark = bool.fromEnvironment('DARK');
 const _zoomTenths = int.fromEnvironment('ZOOM', defaultValue: 158);
 const _selected = int.fromEnvironment('SELECT', defaultValue: -1);
 const _plain = bool.fromEnvironment('PLAIN');
+const _pins = bool.fromEnvironment('PINS', defaultValue: true);
 const _names = String.fromEnvironment(
   'NAMES',
   defaultValue: 'name:en,name:latin,name',
@@ -176,21 +177,17 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
     Widget screen = Scaffold(
       body: Stack(
         children: [
-          FlutterMap(
-            mapController: _map,
-            options: MapOptions(
-              initialCenter: _centre,
-              initialZoom: _zoomTenths / 10,
-              minZoom: 3,
-              maxZoom: 19,
-              backgroundColor: scheme.surface,
-              onTap: (_, _) => _select(null),
-              interactionOptions: const InteractionOptions(
-                flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+          if (widget.vmtStyle case final other?)
+            FlutterMap(
+              mapController: _map,
+              options: MapOptions(
+                initialCenter: _centre,
+                initialZoom: _zoomTenths / 10,
+                minZoom: 3,
+                maxZoom: 19,
+                backgroundColor: scheme.surface,
               ),
-            ),
-            children: [
-              if (widget.vmtStyle case final other?)
+              children: [
                 vmt.VectorTileLayer(
                   theme: other.theme,
                   sprites: other.sprites,
@@ -198,28 +195,33 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
                       ? vmt.TileOffset.mapbox
                       : vmt.TileOffset.DEFAULT,
                   tileProviders: other.providers,
-                )
-              else
-                VmapLayer(
-                  style: look.style,
-                  markers: markers,
-                  cacheDirectory: widget.cacheDirectory,
-                  userAgentPackageName: 'dev.vmap.bench',
-                  textStyle: const TextStyle(
-                    fontFamily: 'GoogleSansFlex',
-                    fontFamilyFallback: ['Vazirmatn'],
-                  ),
-                  markerTextStyle: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: look.dark
-                        ? const Color(0xFFE8EAED)
-                        : const Color(0xFF30343A),
-                  ),
                 ),
-              MarkerLayer(markers: markers),
-            ],
-          ),
+              ],
+            )
+          else
+            VmapMap(
+              controller: _map,
+              initialCenter: _centre,
+              initialZoom: _zoomTenths / 10,
+              backgroundColor: scheme.surface,
+              onTap: (_) => _select(null),
+              style: look.style,
+              markers: markers,
+              pins: _pins ? VmapPins.standard : null,
+              cacheDirectory: widget.cacheDirectory,
+              userAgentPackageName: 'dev.vmap.bench',
+              textStyle: const TextStyle(
+                fontFamily: 'GoogleSansFlex',
+                fontFamilyFallback: ['Vazirmatn'],
+              ),
+              markerTextStyle: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: look.dark
+                    ? const Color(0xFFE8EAED)
+                    : const Color(0xFF30343A),
+              ),
+            ),
           if (!_plain)
             SafeArea(
               minimum: const EdgeInsets.all(16),

@@ -1,3 +1,12 @@
+## 0.4.0
+
+- `VmapMap`: a whole map in one widget, with `VmapGestures` in place of
+  flutter_map's gestures.
+- `pins`: places of interest drawn as round pins instead of the style's
+  icons. `VmapPins.standard` covers the place classes of OpenMapTiles styles.
+- The built in style names places of interest from zoom 15.5.
+- vmap now depends on latlong2 directly.
+
 ## 0.3.2
 
 - A frame that places labels draws no new text images, and a frame draws

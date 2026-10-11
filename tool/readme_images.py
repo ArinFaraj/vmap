@@ -239,6 +239,16 @@ def main():
         columns=2,
         size=(1080, 900),
     )
+    panels(
+        directory,
+        "pins",
+        [
+            ("pins-default", "Built in style", "pins: VmapPins.standard"),
+            ("pins-liberty", "Liberty", "The same pins on another style"),
+        ],
+        columns=2,
+        size=(1080, 900),
+    )
     if len(sys.argv) > 2:
         with open(sys.argv[2]) as f:
             chart(json.load(f))

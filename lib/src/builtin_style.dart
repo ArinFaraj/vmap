@@ -313,6 +313,7 @@ Map<String, Object?> builtInStyle(
     bool uppercase = false,
     double spacing = 0,
     double maxWidth = 9,
+    Object? icon,
   }) {
     layers.add({
       'id': id,
@@ -335,6 +336,12 @@ Map<String, Object?> builtInStyle(
         'text-letter-spacing': spacing / size,
         'symbol-placement': line ? 'line' : 'point',
         if (uppercase) 'text-transform': 'uppercase',
+        if (icon != null) ...{
+          'icon-image': icon,
+          'text-anchor': 'top',
+          'text-offset': [0, 0.6],
+          'text-optional': true,
+        },
       },
       'paint': {
         'text-color': tone(color),
@@ -355,6 +362,16 @@ Map<String, Object?> builtInStyle(
     ['in', 'class', ...classes],
   ];
 
+  label(
+    'poi',
+    'poi',
+    place(['<=', 'rank', 25]),
+    size: 11.5,
+    color: Tone.labelSecondary,
+    minZoom: 14.5,
+    maxWidth: 8,
+    icon: ['get', 'class'],
+  );
   label(
     'road-minor',
     'transportation_name',
