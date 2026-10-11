@@ -95,8 +95,8 @@ The same style, camera and tiles. vector_map_tiles reads a style one zoom
 level deeper than MapLibre does for the same view, so for this picture vmap
 was given `zoomOffset: 1` to match. vector_map_tiles shows more shops in
 this view than vmap does. The style holds those layers back until zoom 16 and
-17, and vmap follows that; I have not traced why vector_map_tiles shows them
-earlier.
+17, and vmap follows that. Why vector_map_tiles shows them earlier has not
+been traced.
 
 ### Measured
 
@@ -106,7 +106,8 @@ Both renderers drew the Liberty style on the same phone (Vivo V2514, Android,
 profile build) and flew the same scripted tour twice per start: once straight
 after a clean install with nothing cached, then again after a restart with the
 cache that run left behind. A lost frame is a display refresh that passed
-without a new frame.
+without a new frame. The table and the chart are from vmap 0.3.0 and
+vector_map_tiles 9.0.0-beta.13.
 
 | | vmap lost | vmap worst gap | vector_map_tiles lost | vector_map_tiles worst gap |
 | --- | --- | --- | --- | --- |
@@ -141,6 +142,11 @@ tool/bench_device.sh <adb-serial> vmt --dart-define=STYLE=liberty
 `STYLE` gives both the same style, and `ZOFF=1` makes vmap read it at the
 zoom vector_map_tiles does, so both draw the same roads and names. Add
 `--dart-define=STRESS=true` for the tour of fast zooms.
+
+Once a build is installed, `tool/quick_bench.sh <adb-serial>` flies one lap
+again in about half a minute without rebuilding, which is the quick way to
+check a change. `tool/quick_bench.sh <adb-serial> labels=off` does the same
+with labels off.
 
 ## Install
 

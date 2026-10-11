@@ -26,5 +26,10 @@ Compile time switches select the rest:
 tour on an Android device with nothing cached and then again with the cache,
 and prints both summaries.
 
+`tool/quick_bench.sh` runs one lap again with the app already installed. It
+writes `flags.txt` into the app's external files directory, which the app
+reads at start: `laps=1` sets the number of laps and `labels=off` hides the
+labels.
+
 `tool/readme_images.py` composes the pictures in the README from `SHOT`
 screenshots.
