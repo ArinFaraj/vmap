@@ -264,7 +264,7 @@ class VmapEngine extends ChangeNotifier {
     final sameShape = _sheet != null && _sheet!.shape == sheet.shape;
     final rasterKey = [
       for (final r in sheet.rasters)
-        '${r.tileJsonUrl}|${r.tiles}|${r.tileSize}',
+        '${r.tileJsonUrl}|${r.tiles}|${r.tileSize}|${r.picture}',
     ].join('\n');
     final rasters = _sheet == null || rasterKey != _rasterKey;
     _rasterKey = rasterKey;
@@ -861,12 +861,16 @@ class VmapEngine extends ChangeNotifier {
       final moved = layer.translate?.call(_context);
       final shifted = moved is List && moved.length == 2;
       if (shifted) {
+        var mx = (asNumber(moved[0]) ?? 0) / scale;
+        var my = (asNumber(moved[1]) ?? 0) / scale;
+        final turn = layer.translateOnScreen ? -(_camera?.rotation ?? 0) : 0.0;
+        if (turn != 0) {
+          final cos = math.cos(turn), sin = math.sin(turn);
+          (mx, my) = (mx * cos - my * sin, mx * sin + my * cos);
+        }
         canvas
           ..save()
-          ..translate(
-            (asNumber(moved[0]) ?? 0) / scale,
-            (asNumber(moved[1]) ?? 0) / scale,
-          );
+          ..translate(mx, my);
       }
       for (final m in meshes) {
         if (layer.perFeature) {

@@ -98,7 +98,8 @@ void main() {
     );
     expect(dashed.layers.single.dashCap, DashCap.round);
     expect(dashed.layers.single.dash, [2, 2]);
-    expect(dashed.layers.single.blur, isNull);
+    expect(dashed.layers.single.blur, isNotNull);
+    expect(dashed.buckets.single.edged, isFalse);
     expect(dashed.buckets.single.caps, isFalse);
 
     final solid = _sheet(

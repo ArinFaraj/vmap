@@ -398,6 +398,13 @@ class LabelEngine {
   double _px = 0;
   double _py = 0;
 
+  /// A move of [by] logical pixels as the upright label frame sees it: one
+  /// along the map's sides turns with the map.
+  (double, double) _moved((double, double) by, bool onScreen) =>
+      onScreen || _rotation == 0
+      ? by
+      : (by.$1 * _cos - by.$2 * _sin, by.$1 * _sin + by.$2 * _cos);
+
   /// Sets [_px] and [_py] to where a point of the world is on the screen,
   /// with the map's rotation undone so labels can be laid out upright.
   void _project(double wx, double wy, double world, ui.Offset origin) {
@@ -614,16 +621,25 @@ class LabelEngine {
           st.opacity * st.iconOpacity,
         );
         final tinted = icon.sdf && st.candidate.source.layer >= 0;
+        ui.ColorFilter? fill, rim;
         if (tinted) {
           _context.zoom = styleZoom;
           _bind(st.candidate);
-          final tint =
-              Rgba.of(symbols[st.candidate.source.layer].iconColor(_context)) ??
-              Rgba.black;
-          _imagePaint.colorFilter = _sdfFilter(
-            tint,
-            st.iconW / icon.width * devicePixelRatio,
+          final symbol = symbols[st.candidate.source.layer];
+          final by = st.iconW / icon.width;
+          fill = _sdfFilter(
+            Rgba.of(symbol.iconColor(_context)) ?? Rgba.black,
+            by * devicePixelRatio,
           );
+          final reach = asNumber(symbol.iconHaloWidth?.call(_context)) ?? 0;
+          final around = Rgba.of(symbol.iconHaloColor?.call(_context));
+          if (reach > 0 && around != null && by > 0) {
+            rim = _sdfFilter(
+              around,
+              by * devicePixelRatio,
+              edge: (0.75 - reach / (8 * by)).clamp(0.1, 0.75),
+            );
+          }
         }
         final fit =
             st.candidate.source.layer >= 0 &&
@@ -639,23 +655,26 @@ class LabelEngine {
           st.iconW,
           st.iconH,
         );
-        if (turn == 0) {
-          canvas.drawImageRect(
-            sheet.image,
-            icon.source,
-            area.translate(
-              (ix * devicePixelRatio).roundToDouble() / devicePixelRatio,
-              (iy * devicePixelRatio).roundToDouble() / devicePixelRatio,
-            ),
-            _imagePaint,
-          );
-        } else {
-          canvas
-            ..save()
-            ..translate(ix, iy)
-            ..rotate(turn)
-            ..drawImageRect(sheet.image, icon.source, area, _imagePaint)
-            ..restore();
+        for (final filter in [?rim, fill]) {
+          _imagePaint.colorFilter = filter;
+          if (turn == 0) {
+            canvas.drawImageRect(
+              sheet.image,
+              icon.source,
+              area.translate(
+                (ix * devicePixelRatio).roundToDouble() / devicePixelRatio,
+                (iy * devicePixelRatio).roundToDouble() / devicePixelRatio,
+              ),
+              _imagePaint,
+            );
+          } else {
+            canvas
+              ..save()
+              ..translate(ix, iy)
+              ..rotate(turn)
+              ..drawImageRect(sheet.image, icon.source, area, _imagePaint)
+              ..restore();
+          }
         }
       }
       _imagePaint.colorFilter = null;
@@ -937,6 +956,11 @@ class LabelEngine {
           (tx, ty) = (tx * cos - ty * sin, tx * sin + ty * cos);
         }
       }
+      final (moveX, moveY) = symbol == null
+          ? (0.0, 0.0)
+          : _moved(symbol.textTranslate, symbol.textTranslateOnScreen);
+      tx += moveX;
+      ty += moveY;
 
       var icon = st.icon;
       if (icon == null && c.source.icon.isNotEmpty) {
@@ -953,6 +977,13 @@ class LabelEngine {
             ..iconDx = symbol.iconOffsetX * by + ax * icon.width * by / 2
             ..iconDy = symbol.iconOffsetY * by + ay * icon.height * by / 2;
         }
+        final (ix, iy) = _moved(
+          symbol.iconTranslate,
+          symbol.iconTranslateOnScreen,
+        );
+        st
+          ..iconDx += ix
+          ..iconDy += iy;
         st
           ..iconW = symbol.textFit ? textW + _fitPad * 2 : icon.width * by
           ..iconH = symbol.textFit ? textH + _fitPad * 2 : icon.height * by
@@ -1007,11 +1038,11 @@ class LabelEngine {
           final double fx, fy;
           if (away > 0) {
             final reach = ax != 0 && ay != 0 ? away / math.sqrt2 : away;
-            fx = ax * (reach + textW / 2);
-            fy = ay * (reach + textH / 2);
+            fx = moveX + ax * (reach + textW / 2);
+            fy = moveY + ay * (reach + textH / 2);
           } else {
-            fx = ax * ((symbol!.offsetX * fontSize).abs() + textW / 2);
-            fy = ay * ((symbol.offsetY * fontSize).abs() + textH / 2);
+            fx = moveX + ax * ((symbol!.offsetX * fontSize).abs() + textW / 2);
+            fy = moveY + ay * ((symbol.offsetY * fontSize).abs() + textH / 2);
           }
           if (!(symbol!.textOverlaps) &&
               _collides(sx + fx, sy + fy, textW, textH, spin)) {
@@ -1246,10 +1277,13 @@ class LabelEngine {
       ..curveMid = ((from + to) / 2 - before) * unit;
     final count = math.max(2, ((to - from) * unitPx / (textH * 0.7)).ceil());
     final strips = _layStrips(st, count, (to - from) / count * unit);
+    final limit = c.source.layer < 0
+        ? _maxBend
+        : symbols[c.source.layer].maxBend ?? _maxBend;
     for (var i = 1; i < count; i++) {
       var turn = (strips[i * 3 + 2] - strips[i * 3 - 1]).abs();
       if (turn > math.pi) turn = 2 * math.pi - turn;
-      if (turn > _maxBend) {
+      if (turn > limit) {
         st.curve = null;
         return false;
       }
@@ -1403,16 +1437,20 @@ class LabelEngine {
   }
 
   /// Turns a distance field into a crisp shape in [tint]. The edge of the
-  /// shape is where the field is three quarters full; [scale] is how many
-  /// screen pixels one pixel of the field covers, which sets how sharp the
-  /// edge may be.
-  static ui.ColorFilter _sdfFilter(Rgba tint, double scale) {
+  /// shape is where the field is [edge] full, three quarters for the shape
+  /// itself and less for a rim around it; [scale] is how many screen pixels
+  /// one pixel of the field covers, which sets how sharp the edge may be.
+  static ui.ColorFilter _sdfFilter(
+    Rgba tint,
+    double scale, {
+    double edge = 0.75,
+  }) {
     final gain = (6 * scale).clamp(2.0, 24.0);
     return ui.ColorFilter.matrix([
       0, 0, 0, 0, tint.r * 255, //
       0, 0, 0, 0, tint.g * 255,
       0, 0, 0, 0, tint.b * 255,
-      0, 0, 0, gain * tint.a, (0.5 - 0.75 * gain) * 255 * tint.a,
+      0, 0, 0, gain * tint.a, (0.5 - edge * gain) * 255 * tint.a,
     ]);
   }
 

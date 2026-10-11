@@ -3,16 +3,16 @@
 | | |
 | --- | --- |
 | Layers | `background` with `background-pattern`, `fill`, `line`, `circle`, `symbol`, `raster`, `hillshade`, `heatmap`. `fill-extrusion` is drawn flat |
-| Sources | any number of `vector`, `geojson`, `raster` and `raster-dem` sources. Tiles by TileJSON `url` or `tiles` templates (several addresses are spread over and fall back to one another), with the source's `minzoom`, `maxzoom`, `bounds` and `scheme`, GeoJSON inline or by address, with `cluster`, `clusterRadius`, `clusterMaxZoom`, `clusterMinPoints` and `clusterProperties`. `pmtiles://` archives over HTTP or on disk. `promoteId`, and `generateId` for GeoJSON |
+| Sources | any number of `vector`, `geojson`, `raster`, `raster-dem` and `image` sources. Tiles by TileJSON `url` or `tiles` templates (several addresses are spread over and fall back to one another), with the source's `minzoom`, `maxzoom`, `bounds` and `scheme`, GeoJSON inline or by address, with `cluster`, `clusterRadius`, `clusterMaxZoom`, `clusterMinPoints` and `clusterProperties`. `pmtiles://` archives over HTTP or on disk. `promoteId`, and `generateId` for GeoJSON |
 | Order | layers are drawn in the style's order, across sources and with raster layers where the style puts them |
-| Fills | colour, opacity, `fill-outline-color`, `fill-pattern`, `fill-translate` |
-| Raster | opacity, `raster-hue-rotate`, `raster-saturation`, `raster-contrast`, `raster-brightness-min` and `-max` |
-| Lines | colour, opacity, width, gap width, `line-offset`, round caps, `line-join` round, bevel and miter, `line-dasharray` with butt, round and square dash caps, `line-blur` (not on a dashed line), `line-pattern`, `line-translate` |
-| Hillshade | Mapbox and Terrarium heights, exaggeration, shadow and highlight colours, light direction |
+| Fills | colour, opacity, `fill-outline-color`, `fill-pattern`, `fill-translate` with `fill-translate-anchor` |
+| Raster | opacity, `raster-hue-rotate`, `raster-saturation`, `raster-contrast`, `raster-brightness-min` and `-max`, `raster-resampling`. An `image` source is one picture stretched between its four `coordinates` |
+| Lines | colour, opacity, width, gap width, `line-offset`, round caps, `line-join` round, bevel and miter, `line-dasharray` with butt, round and square dash caps, `line-blur`, `line-pattern`, `line-translate` with `line-translate-anchor` |
+| Hillshade | Mapbox and Terrarium heights, exaggeration, shadow and highlight colours, `hillshade-accent-color` when the style names one, light direction |
 | Heatmap | radius, weight, intensity, opacity and `heatmap-color` |
-| Circles | radius, colour, opacity, the stroke's width, colour and opacity, `circle-translate` |
-| Text | field, size, font weight and slant, colour, halo and `text-halo-blur`, letter spacing, line height, justify, max width, transform, anchor, offset, `text-rotate`, `text-variable-anchor` with `text-radial-offset`, `text-optional`, `text-allow-overlap`, `text-ignore-placement`, `text-padding` |
-| Icons | `icon-image` from the style's sprite sheet (the `@2x` sheet when there is one), size, rotation, opacity, `icon-color` for SDF icons, `icon-anchor`, `icon-offset`, `icon-optional`, `icon-allow-overlap`, `icon-ignore-placement`, `icon-padding`, `icon-text-fit` |
+| Circles | radius, colour, opacity, the stroke's width, colour and opacity, `circle-translate` with `circle-translate-anchor` |
+| Text | field, size, font weight and slant, colour, halo and `text-halo-blur`, letter spacing, line height, justify, max width, transform, anchor, offset, `text-rotate`, `text-variable-anchor` with `text-radial-offset`, `text-optional`, `text-allow-overlap`, `text-ignore-placement`, `text-padding`, `text-max-angle`, `text-translate` and `text-translate-anchor` for a point's text |
+| Icons | `icon-image` from the style's sprite sheet (the `@2x` sheet when there is one), size, rotation, opacity, `icon-color`, `icon-halo-color` and `icon-halo-width` for SDF icons, `icon-translate` with `icon-translate-anchor`, `icon-anchor`, `icon-offset`, `icon-optional`, `icon-allow-overlap`, `icon-ignore-placement`, `icon-padding`, `icon-text-fit` |
 | Placement | `symbol-placement` point and line, `symbol-spacing`, text along a road and bent along its curves, labels for polygons, shields and arrows repeated along a line, `minzoom`, `maxzoom`, `visibility` |
 | Expressions | `interpolate` (linear, exponential and cubic-bezier), `step`, `match`, `case`, `coalesce`, `let`, `var`, `get`, `has`, `id`, `feature-state`, `zoom`, `geometry-type`, `typeof`, `within`, `distance`, comparisons with or without a `collator`, `all`, `any`, `!`, `concat`, `slice`, `index-of`, `split`, `join`, `to-string`, `number-format`, `to-rgba`, `rgb`, `hsl`, maths and trigonometry, and the legacy `stops` functions and filters |
 
@@ -26,17 +26,22 @@ and halo and an icon's size, colour and opacity, and all of them may read
 
 - 3D: buildings are flat and the map does not pitch. Neither does
   flutter_map, which the camera comes from.
-- Halos on SDF icons, `hillshade-accent-color`, and line patterns on round
-  caps.
+- `line-gradient`, `video` sources, `icon-halo-blur`, and line patterns on
+  round caps.
+- `text-translate` for a name along a line, and a translate that changes
+  with the zoom for text and icons: the style's number is read once.
 - `within` and `distance` in what `featuresAt` returns, and for lines a
   `within` that looks at more than the line's corners.
 - The style's `glyphs`. Text is drawn in the app's fonts.
 - A road name on a bend sharper than about 24 degrees between one slice of
-  the text and the next. It is left out there.
+  the text and the next is left out there, unless the style sets
+  `text-max-angle`, which is then the limit.
 
 Checked on screen: several sources, GeoJSON, raster order, hillshade,
-heatmap, bent road names and rotation. Covered by tests only, not seen in a
-real style: `line-pattern`, SDF icons and polygon labels.
+heatmap, bent road names and rotation. Seen in a hand written style
+only: `image` sources, `line-blur` on dashes, the translate anchors and
+`text-max-angle`. Covered by tests only, not seen drawn: `line-pattern`,
+SDF icons and their halos, polygon labels and `hillshade-accent-color`.
 
 ## How it draws
 

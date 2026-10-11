@@ -310,6 +310,7 @@ class PaintLayer {
     this.strokeOpacity,
     this.heat,
     this.translate,
+    this.translateOnScreen = false,
     this.perFeature = false,
   });
 
@@ -354,6 +355,10 @@ class PaintLayer {
   /// How far the layer is drawn from its place, as x and y in logical
   /// pixels.
   final Expr? translate;
+
+  /// The move is along the screen's sides and not the map's, which differ
+  /// once the map is turned.
+  final bool translateOnScreen;
 
   /// The paint reads feature properties, so it is worked out per mesh.
   final bool perFeature;
@@ -484,6 +489,13 @@ class SymbolLayer {
     this.iconOffsetY = 0,
     this.sortKey,
     this.paintKeys = const [],
+    this.textTranslate = (0, 0),
+    this.textTranslateOnScreen = false,
+    this.iconTranslate = (0, 0),
+    this.iconTranslateOnScreen = false,
+    this.maxBend,
+    this.iconHaloColor,
+    this.iconHaloWidth,
   });
 
   final String id;
@@ -572,6 +584,22 @@ class SymbolLayer {
   /// The feature properties the layer's colours, opacities and sizes read.
   /// Each label carries its feature's values of them.
   final List<String> paintKeys;
+
+  /// How far the text and the icon are drawn from their place, in logical
+  /// pixels, along the map's sides or the screen's.
+  final (double, double) textTranslate;
+  final bool textTranslateOnScreen;
+  final (double, double) iconTranslate;
+  final bool iconTranslateOnScreen;
+
+  /// The rim drawn around an icon that takes a colour, and how far out it
+  /// reaches in logical pixels. Null when the style names none.
+  final Expr? iconHaloColor;
+  final Expr? iconHaloWidth;
+
+  /// `text-max-angle` in radians: the sharpest turn a name bent along a
+  /// line takes. Null for the package's own.
+  final double? maxBend;
 
   /// The icon may show without its text, or the text without its icon.
   final bool textOptional;
@@ -827,6 +855,8 @@ class StyleSheet {
       final layout = (raw['layout'] as Map?) ?? const {};
       final moved = paint['${raw['type']}-translate'];
       final translate = moved == null ? null : compileExpr(moved);
+      final translateOnScreen =
+          paint['${raw['type']}-translate-anchor'] == 'viewport';
       if (layout['visibility'] == 'none') continue;
       final minZoom = asNumber(raw['minzoom']) ?? 0;
       final maxZoom = asNumber(raw['maxzoom']) ?? 30;
@@ -846,14 +876,21 @@ class StyleSheet {
       if (type == 'raster' || type == 'hillshade') {
         final from = sources[raw['source']];
         final relief = type == 'hillshade';
-        if (from is! Map ||
+        if (from is! Map) continue;
+        final corners = relief || from['type'] != 'image'
+            ? null
+            : _corners(from['coordinates']);
+        if (corners == null &&
             from['type'] != (relief ? 'raster-dem' : 'raster')) {
           continue;
         }
         rasterAt.add(layers.length);
         rasters.add(
           RasterLayer(
-            tileJsonUrl: from['url'] as String?,
+            tileJsonUrl: corners == null ? from['url'] as String? : null,
+            picture: corners == null ? null : from['url'] as String?,
+            corners: corners,
+            nearest: paint['raster-resampling'] == 'nearest',
             tiles: tileTemplate(from['tiles']),
             tileSize: asNumber(from['tileSize']) ?? 512,
             sourceMaxZoom: asNumber(from['maxzoom'])?.toInt(),
@@ -896,6 +933,9 @@ class StyleSheet {
                     highlight: compileExpr(
                       paint['hillshade-highlight-color'] ?? '#ffffff',
                     ),
+                    accent: paint['hillshade-accent-color'] == null
+                        ? null
+                        : compileExpr(paint['hillshade-accent-color']),
                     direction:
                         asNumber(paint['hillshade-illumination-direction']) ??
                         335,
@@ -1008,6 +1048,20 @@ class StyleSheet {
                 ? null
                 : compileExpr(layout['symbol-sort-key']),
             paintKeys: paintKeys.toList()..sort(),
+            textTranslate: _pair(paint['text-translate']),
+            textTranslateOnScreen: paint['text-translate-anchor'] == 'viewport',
+            iconHaloColor: paint['icon-halo-color'] == null
+                ? null
+                : compileExpr(paint['icon-halo-color']),
+            iconHaloWidth: paint['icon-halo-width'] == null
+                ? null
+                : compileExpr(paint['icon-halo-width']),
+            iconTranslate: _pair(paint['icon-translate']),
+            iconTranslateOnScreen: paint['icon-translate-anchor'] == 'viewport',
+            maxBend: switch (asNumber(layout['text-max-angle'])) {
+              final degrees? => degrees * math.pi / 180,
+              null => null,
+            },
           ),
         );
         shape.write(
@@ -1107,6 +1161,7 @@ class StyleSheet {
           PaintLayer(
             id: id,
             translate: translate,
+            translateOnScreen: translateOnScreen,
             bucket: bucketFor(kind, names),
             kind: kind,
             minZoom: minZoom,
@@ -1139,6 +1194,7 @@ class StyleSheet {
           PaintLayer(
             id: id,
             translate: translate,
+            translateOnScreen: translateOnScreen,
             bucket: bucketFor(kind, names),
             kind: kind,
             minZoom: minZoom,
@@ -1179,11 +1235,12 @@ class StyleSheet {
               (asNumber(own(c)) ?? 1) * 2 + (asNumber(between(c)) ?? 0);
         }
         final picture = paint['line-pattern'];
-        final soft = blur != null && dash == null && picture == null;
+        final soft = blur != null && picture == null;
         layers.add(
           PaintLayer(
             id: id,
             translate: translate,
+            translateOnScreen: translateOnScreen,
             bucket: bucketFor(
               kind,
               names,
@@ -1192,7 +1249,7 @@ class StyleSheet {
                   picture == null &&
                   layout['line-cap'] == 'round',
               dashed: dash != null || picture != null || soft,
-              edged: soft,
+              edged: soft && dash == null,
               offset: beside != null,
               join: switch (layout['line-join']) {
                 'round' => LineJoin.round,
@@ -1227,6 +1284,7 @@ class StyleSheet {
         PaintLayer(
           id: id,
           translate: translate,
+          translateOnScreen: translateOnScreen,
           bucket: bucketFor(kind, names),
           kind: kind,
           minZoom: minZoom,
@@ -1244,6 +1302,7 @@ class StyleSheet {
           PaintLayer(
             id: id,
             translate: translate,
+            translateOnScreen: translateOnScreen,
             bucket: bucketFor(BucketKind.line, edgeNames, outline: true),
             kind: BucketKind.line,
             minZoom: minZoom,
@@ -1335,6 +1394,22 @@ class StyleSheet {
     }
   }
 
+  static Float64List? _corners(Object? json) {
+    if (json is! List || json.length != 4) return null;
+    final out = Float64List(8);
+    for (var i = 0; i < 4; i++) {
+      final at = json[i];
+      if (at is! List || at.length < 2) return null;
+      final lng = asNumber(at[0]), lat = asNumber(at[1]);
+      if (lng == null || lat == null) return null;
+      final turn = lat.clamp(-85.0511, 85.0511) * math.pi / 180;
+      out[i * 2] = (lng + 180) / 360;
+      out[i * 2 + 1] =
+          (1 - math.log(math.tan(turn) + 1 / math.cos(turn)) / math.pi) / 2;
+    }
+    return out;
+  }
+
   static (double, double) _pair(Object? json) {
     var list = json;
     if (list is List && list.length == 2 && list[0] == 'literal') {
@@ -1385,6 +1460,7 @@ class ReliefPaint {
     required this.shadow,
     required this.highlight,
     required this.direction,
+    this.accent,
   });
 
   /// The heights are in the Terrarium encoding instead of Mapbox's.
@@ -1392,6 +1468,10 @@ class ReliefPaint {
   final Expr exaggeration;
   final Expr shadow;
   final Expr highlight;
+
+  /// The colour steep ground is tinted whichever way it faces. Null when
+  /// the style names none.
+  final Expr? accent;
 
   /// Where the light comes from, in degrees clockwise from north.
   final double direction;
@@ -1512,9 +1592,22 @@ class RasterLayer {
     this.relief,
     this.adjust,
     this.cover = const TileCover(),
+    this.picture,
+    this.corners,
+    this.nearest = false,
   });
 
   final TileCover cover;
+
+  /// For an `image` source: the address of its one picture, and where the
+  /// picture's corners sit as x,y pairs in a world one unit wide, from the
+  /// top left clockwise.
+  final String? picture;
+  final Float64List? corners;
+
+  /// `raster-resampling` nearest: a picture drawn larger than it is shows
+  /// its pixels as squares instead of being smoothed.
+  final bool nearest;
 
   /// Set for a hillshade layer, whose tiles hold heights to be shaded.
   final ReliefPaint? relief;

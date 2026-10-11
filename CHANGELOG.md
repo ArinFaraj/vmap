@@ -1,3 +1,20 @@
+## 0.18.0
+
+More of the style is read:
+
+- `image` sources: one picture stretched between its four corners.
+- `fill-translate-anchor`, `line-translate-anchor` and
+  `circle-translate-anchor`: a move along the screen's sides stays that way
+  when the map is turned.
+- `text-translate` and `icon-translate` with their anchors, for labels at a
+  point.
+- `text-max-angle` sets how sharp a turn a name along a line may take. A
+  style that does not set it keeps the limit of about 24 degrees.
+- `line-blur` on a dashed line.
+- `icon-halo-color` and `icon-halo-width` for SDF icons.
+- `hillshade-accent-color`, when the style names one.
+- `raster-resampling`.
+
 ## 0.17.2
 
 - Labels in the default JavaScript build no longer wait on images: each is

@@ -70,4 +70,25 @@ void main() {
     expect(alpha(beside, size, 4), greaterThan(0));
     expect(alpha(beside, 2, 4), 0);
   });
+
+  test('an accent colour tints steep ground under the shading', () {
+    const size = 8;
+    final pixels = Uint8List(size * size * 4);
+    for (var y = 0; y < size; y++) {
+      for (var x = 0; x < size; x++) {
+        final metres = 32768 + x * 40;
+        pixels[(y * size + x) * 4] = metres >> 8;
+        pixels[(y * size + x) * 4 + 1] = metres & 255;
+      }
+    }
+    Uint8List shade(List<double> colours) =>
+        shadeHeights(pixels, size, size, true, 30, 1, 335, colours);
+    const two = <double>[0, 0, 0, 0.2, 1, 1, 1, 0.2];
+    final plain = shade(two);
+    final tinted = shade([...two, 1, 0, 0, 1]);
+    const at = (4 * (size + 2) + 4) * 4;
+    expect(tinted[at + 3], greaterThan(plain[at + 3]));
+    expect(tinted[at], greaterThan(plain[at]));
+    expect(tinted[at + 1], plain[at + 1]);
+  });
 }

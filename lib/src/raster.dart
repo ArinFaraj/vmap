@@ -55,9 +55,85 @@ class RasterTiles {
           if (!_closed) onLoaded();
         }, onError: (_) {});
       }
+    } else if (layer.picture != null) {
+      _loadPicture();
     } else if (_template == null && layer.tileJsonUrl != null) {
       _resolve();
     }
+  }
+
+  ui.Image? _picture;
+  ui.ImageShader? _pictureShader;
+
+  Future<void> _loadPicture() async {
+    final url = layer.picture!;
+    try {
+      final reply = await _client.get(
+        url,
+        headers,
+        timeout: const Duration(seconds: 30),
+      );
+      if (reply.status != 200) throw HttpFailure(reply.status, url);
+      final codec = await ui.instantiateImageCodec(reply.bytes);
+      final frame = await codec.getNextFrame();
+      codec.dispose();
+      if (_closed) return frame.image.dispose();
+      _picture = frame.image;
+      _pictureShader = ui.ImageShader(
+        forShader(frame.image),
+        ui.TileMode.clamp,
+        ui.TileMode.clamp,
+        Float64List(16)
+          ..[0] = 1
+          ..[5] = 1
+          ..[10] = 1
+          ..[15] = 1,
+        filterQuality: layer.nearest
+            ? ui.FilterQuality.none
+            : ui.FilterQuality.low,
+      );
+      onLoaded();
+    } catch (e) {
+      if (!_closed) onError?.call(e);
+    }
+  }
+
+  /// Draws the one picture of an `image` source stretched between its four
+  /// corners, once for every copy of the world in view.
+  void _paintPicture(
+    ui.Canvas canvas,
+    double zoom,
+    ui.Offset origin,
+    ui.Size size,
+  ) {
+    final image = _picture, corners = layer.corners;
+    if (image == null || corners == null) return;
+    final world = 256.0 * math.pow(2, zoom);
+    final w = image.width.toDouble(), h = image.height.toDouble();
+    final first = (origin.dx / world).floor() - 1;
+    final last = ((origin.dx + size.width) / world).floor() + 1;
+    _paint.shader = _pictureShader;
+    for (var copy = first; copy <= last; copy++) {
+      final at = Float32List(8);
+      var left = double.infinity, right = -double.infinity;
+      for (var i = 0; i < 4; i++) {
+        final x = (corners[i * 2] + copy) * world - origin.dx;
+        at[i * 2] = x;
+        at[i * 2 + 1] = corners[i * 2 + 1] * world - origin.dy;
+        left = math.min(left, x);
+        right = math.max(right, x);
+      }
+      if (right < 0 || left > size.width) continue;
+      final quad = ui.Vertices.raw(
+        ui.VertexMode.triangles,
+        at,
+        textureCoordinates: Float32List.fromList([0, 0, w, 0, w, h, 0, h]),
+        indices: Uint16List.fromList(const [0, 1, 2, 0, 2, 3]),
+      );
+      canvas.drawVertices(quad, ui.BlendMode.srcOver, _paint);
+      quad.dispose();
+    }
+    _paint.shader = null;
   }
 
   PmTiles? _archive;
@@ -111,7 +187,15 @@ class RasterTiles {
     final styleZoom = context.zoom;
     if (styleZoom < layer.minZoom || styleZoom >= layer.maxZoom) return;
     final opacity = (asNumber(layer.opacity(context)) ?? 1).clamp(0.0, 1.0);
-    if (opacity <= 0 || _template == null) return;
+    if (opacity <= 0) return;
+    if (layer.picture != null) {
+      _paint
+        ..color = ui.Color.fromRGBO(255, 255, 255, opacity)
+        ..isAntiAlias = true
+        ..colorFilter = layer.adjust?.filter(context);
+      return _paintPicture(canvas, zoom, origin, size);
+    }
+    if (_template == null) return;
     _frame++;
     final ideal = zoom + math.log(256 / layer.tileSize) / math.ln2;
     final z = ideal.round().clamp(0, _maxZoom);
@@ -128,6 +212,9 @@ class RasterTiles {
     final shaded = layer.relief != null;
     final lap = shaded ? 0.0 : 0.5;
     _paint
+      ..filterQuality = layer.nearest
+          ? ui.FilterQuality.none
+          : ui.FilterQuality.low
       ..color = ui.Color.fromRGBO(255, 255, 255, opacity)
       ..isAntiAlias = !shaded
       ..colorFilter = layer.adjust?.filter(context);
@@ -348,6 +435,9 @@ class RasterTiles {
     final colours = [
       shadow.r, shadow.g, shadow.b, shadow.a, //
       light.r, light.g, light.b, light.a,
+      if (Rgba.of(relief.accent?.call(context)) case final accent?) ...[
+        accent.r, accent.g, accent.b, accent.a, //
+      ],
     ];
     final shaded = await runAside(
       () => shadeHeights(
@@ -377,6 +467,8 @@ class RasterTiles {
 
   void close() {
     _closed = true;
+    _pictureShader?.dispose();
+    _picture?.dispose();
     _archive?.close();
     _client.close();
     for (final t in _tiles.values) {
@@ -388,7 +480,8 @@ class RasterTiles {
 
 /// Shades a grid of heights lit from [direction] degrees: premultiplied RGBA
 /// that is the shadow colour on slopes facing away from the light and the
-/// highlight colour on slopes facing it, and clear on flat ground.
+/// highlight colour on slopes facing it, and clear on flat ground. A third
+/// colour in [colours] tints ground under the shading by how steep it is.
 ///
 /// The picture is one cell larger on every side than the grid. [sides] are
 /// the two rows or columns of the tiles above, below, left and right that
@@ -478,11 +571,18 @@ Uint8List shadeHeights(
       final alpha =
           (delta.abs() * (delta < 0 ? 1.4 : 2.4)).clamp(0.0, 1.0) *
           colours[o + 3];
+      final under = colours.length < 12
+          ? 0.0
+          : (1 - math.cos(slope)) *
+                colours[11] *
+                (strength * 2).clamp(0.0, 1.0) *
+                (1 - alpha);
       final at = (y * outWidth + x) * 4;
-      out[at] = (colours[o] * alpha * 255).round();
-      out[at + 1] = (colours[o + 1] * alpha * 255).round();
-      out[at + 2] = (colours[o + 2] * alpha * 255).round();
-      out[at + 3] = (alpha * 255).round();
+      for (var k = 0; k < 3; k++) {
+        final tint = under == 0 ? 0.0 : colours[8 + k] * under;
+        out[at + k] = ((colours[o + k] * alpha + tint) * 255).round();
+      }
+      out[at + 3] = ((alpha + under) * 255).round();
     }
   }
   return out;

@@ -93,6 +93,11 @@ class LayerShaders {
     final ui.Image image;
     final double stretch;
     final dash = layer.dash;
+    final step = blur == null || width <= 0
+        ? 0
+        : ((asNumber(blur(context)) ?? 0) / width * _blurSteps * 2)
+              .round()
+              .clamp(0, _blurSteps);
     if (dash != null) {
       if (width <= 0) return null;
       var total = 0.0;
@@ -100,16 +105,20 @@ class LayerShaders {
         total += d;
       }
       final kept =
-          _dashImages['${dash.join(',')}|${layer.dashCap.index}|$rgb'] ??=
-              _DashImage(_dashImage(dash, total, layer.dashCap, rgb));
+          _dashImages['${dash.join(',')}|${layer.dashCap.index}|$step|$rgb'] ??=
+              _DashImage(
+                _dashImage(
+                  dash,
+                  total,
+                  layer.dashCap,
+                  rgb,
+                  step / _blurSteps / 2,
+                ),
+              );
       kept.usedFrame = _frame;
       image = kept.image;
       stretch = total * width / scale / image.width;
     } else if (blur != null) {
-      if (width <= 0) return null;
-      final step = ((asNumber(blur(context)) ?? 0) / width * _blurSteps * 2)
-          .round()
-          .clamp(0, _blurSteps);
       if (step == 0) return null;
       final kept = _dashImages['b|$step|$rgb'] ??= _DashImage(
         _blurImage(step / _blurSteps / 2, rgb),
@@ -169,14 +178,24 @@ class LayerShaders {
   }
 
   /// One period of a dash pattern as a strip of [rgb] and clear, as tall as
-  /// the line is wide.
-  ui.Image _dashImage(Float64List dash, double total, DashCap cap, int rgb) {
+  /// the line is wide, fading out over [reach] of that width at each edge.
+  ui.Image _dashImage(
+    Float64List dash,
+    double total,
+    DashCap cap,
+    int rgb,
+    double reach,
+  ) {
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder);
     final paint = ui.Paint()..color = ui.Color(0xFF000000 | rgb);
-    final height = cap == DashCap.round ? 32.0 : 2.0;
+    final height = reach > 0
+        ? _blurImageHeight + 0.0
+        : cap == DashCap.round
+        ? 32.0
+        : 2.0;
     final lineWidth = _dashImageWidth / total;
-    final reach = cap == DashCap.butt ? 0.0 : lineWidth / 2;
+    final capReach = cap == DashCap.butt ? 0.0 : lineWidth / 2;
     var at = 0.0;
     for (var i = 0; i < dash.length; i++) {
       final length = dash[i] / total * _dashImageWidth;
@@ -185,9 +204,9 @@ class LayerShaders {
         // other.
         for (final shift in const [-1, 0, 1]) {
           final rect = ui.Rect.fromLTWH(
-            at - reach + shift * _dashImageWidth,
+            at - capReach + shift * _dashImageWidth,
             0,
-            math.max(1, length + reach * 2),
+            math.max(1, length + capReach * 2),
             height,
           );
           if (cap == DashCap.round) {
@@ -195,7 +214,7 @@ class LayerShaders {
               ui.RRect.fromRectAndRadius(
                 rect,
                 ui.Radius.elliptical(
-                  math.min(reach, rect.width / 2),
+                  math.min(capReach, rect.width / 2),
                   height / 2,
                 ),
               ),
@@ -207,6 +226,20 @@ class LayerShaders {
         }
       }
       at += length;
+    }
+    if (reach > 0) {
+      const solid = ui.Color(0xFF000000), clear = ui.Color(0x00000000);
+      canvas.drawRect(
+        ui.Rect.fromLTWH(0, 0, _dashImageWidth + 0.0, height),
+        ui.Paint()
+          ..blendMode = ui.BlendMode.dstIn
+          ..shader = ui.Gradient.linear(
+            ui.Offset.zero,
+            ui.Offset(0, height),
+            [clear, solid, solid, clear],
+            [0, reach, 1 - reach, 1],
+          ),
+      );
     }
     final picture = recorder.endRecording();
     final image = picture.toImageSync(_dashImageWidth, height.toInt());

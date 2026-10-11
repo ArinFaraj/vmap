@@ -27,7 +27,7 @@ dependencies:
   vmap:
     git:
       url: https://github.com/ArinFaraj/vmap.git
-      ref: v0.17.2
+      ref: v0.18.0
 ```
 
 ## Quick start
