@@ -1,3 +1,9 @@
+## 0.6.1
+
+- Hillshade tiles meet without a line: each is shaded with the heights of
+  the tiles around it and blends into them, and the shading is no longer
+  doubled where two tiles touch.
+
 ## 0.6.0
 
 - GeoJSON sources cluster their points: `cluster`, `clusterRadius`,

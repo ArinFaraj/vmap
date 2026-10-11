@@ -14,6 +14,18 @@ class _RasterTile {
   int usedFrame = 0;
   int failedAtMs = -1;
   bool loading = false;
+
+  /// A tile of heights as it was downloaded, kept until it has been shaded
+  /// with all four tiles around it.
+  Uint8List? pixels;
+  int width = 0;
+  int height = 0;
+
+  /// The two rows or columns of heights along the top, bottom, left and
+  /// right edge, which the tiles around this one shade their own edge with.
+  List<Uint8List>? edges;
+  bool shading = false;
+  bool shadeAgain = false;
 }
 
 /// Downloads and draws the picture tiles of one raster layer.
@@ -85,7 +97,15 @@ class RasterTiles {
     final x1 = ((origin.dx + size.width) / span).floor();
     final y0 = math.max(0, (origin.dy / span).floor());
     final y1 = math.min(n - 1, ((origin.dy + size.height) / span).floor());
-    _paint.color = ui.Color.fromRGBO(255, 255, 255, opacity);
+    // Opaque tiles lap over each other a little so no gap shows between
+    // them. See-through shading would be twice as dark in the lap, so its
+    // tiles share their edges exactly, drawn without anti-aliasing so every
+    // pixel belongs to one tile.
+    final shaded = layer.relief != null;
+    final lap = shaded ? 0.0 : 0.5;
+    _paint
+      ..color = ui.Color.fromRGBO(255, 255, 255, opacity)
+      ..isAntiAlias = !shaded;
     for (var y = y0; y <= y1; y++) {
       for (var x = x0; x <= x1; x++) {
         final key = (z << 50) | ((x % n) << 25) | y;
@@ -96,19 +116,17 @@ class RasterTiles {
           _load(tile, z, x % n, y);
           continue;
         }
+        // A shaded tile carries a ring one cell wide of what lies past its
+        // edge, so the picture blends into the next tile's.
+        final ring = shaded ? 1.0 : 0.0;
         canvas.drawImageRect(
           image,
-          ui.Rect.fromLTWH(
-            0,
-            0,
-            image.width.toDouble(),
-            image.height.toDouble(),
-          ),
-          ui.Rect.fromLTWH(
+          ui.Rect.fromLTRB(ring, ring, image.width - ring, image.height - ring),
+          ui.Rect.fromLTRB(
             x * span - origin.dx,
             y * span - origin.dy,
-            span + 0.5,
-            span + 0.5,
+            (x + 1) * span - origin.dx + lap,
+            (y + 1) * span - origin.dy + lap,
           ),
           _paint,
         );
@@ -167,10 +185,27 @@ class RasterTiles {
       final codec = await ui.instantiateImageCodec(bytes);
       final frame = await codec.getNextFrame();
       codec.dispose();
-      var image = frame.image;
-      final relief = layer.relief;
-      if (relief != null) image = await _shade(image, relief, z, y);
-      if (_closed) {
+      final image = frame.image;
+      if (layer.relief != null) {
+        final data = await image.toByteData();
+        tile
+          ..pixels = data!.buffer.asUint8List()
+          ..width = image.width
+          ..height = image.height
+          ..edges = _edgesOf(
+            data.buffer.asUint8List(),
+            image.width,
+            image.height,
+          );
+        image.dispose();
+        await _reshade(tile, z, x, y);
+        for (final (dx, dy) in _around) {
+          final beside = _beside(z, x + dx, y + dy);
+          if (beside != null && beside.pixels != null) {
+            unawaited(_reshade(beside, z, (x + dx) % (1 << z), y + dy));
+          }
+        }
+      } else if (_closed) {
         image.dispose();
       } else {
         tile.image = image;
@@ -184,18 +219,101 @@ class RasterTiles {
     }
   }
 
-  /// Turns a tile of heights into a picture of shadow and highlight.
+  /// Above, below, left and right, in the order a tile's [_RasterTile.edges]
+  /// are kept.
+  static const List<(int, int)> _around = [(0, -1), (0, 1), (-1, 0), (1, 0)];
+
+  _RasterTile? _beside(int z, int x, int y) {
+    final n = 1 << z;
+    if (y < 0 || y >= n) return null;
+    return _tiles[(z << 50) | ((x % n) << 25) | y];
+  }
+
+  /// The two rows along the top and bottom and the two columns along the
+  /// left and right of a tile of heights.
+  static List<Uint8List> _edgesOf(Uint8List pixels, int width, int height) {
+    Uint8List rows(int first) => Uint8List.sublistView(
+      pixels,
+      first * width * 4,
+      (first + 2) * width * 4,
+    );
+    Uint8List columns(int first) {
+      final out = Uint8List(height * 8);
+      for (var y = 0; y < height; y++) {
+        final from = (y * width + first) * 4;
+        out.setRange(y * 8, y * 8 + 8, pixels, from);
+      }
+      return out;
+    }
+
+    return [
+      Uint8List.fromList(rows(0)),
+      Uint8List.fromList(rows(height - 2)),
+      columns(0),
+      columns(width - 2),
+    ];
+  }
+
+  /// Shades [tile] with what is known of the tiles around it, and again
+  /// when one of them arrived meanwhile.
+  Future<void> _reshade(_RasterTile tile, int z, int x, int y) async {
+    if (tile.shading) {
+      tile.shadeAgain = true;
+      return;
+    }
+    tile.shading = true;
+    try {
+      do {
+        tile.shadeAgain = false;
+        final relief = layer.relief;
+        final pixels = tile.pixels;
+        if (relief == null || pixels == null) return;
+        final n = 1 << z;
+        var complete = true;
+        final sides = <Uint8List?>[
+          for (var i = 0; i < 4; i++)
+            () {
+              final (dx, dy) = _around[i];
+              if (y + dy < 0 || y + dy >= n) return null;
+              final beside = _beside(z, x + dx, y + dy);
+              final edges = beside?.edges;
+              if (edges == null ||
+                  beside!.width != tile.width ||
+                  beside.height != tile.height) {
+                complete = false;
+                return null;
+              }
+              // The side of the other tile that faces this one.
+              return edges[i ^ 1];
+            }(),
+        ];
+        final image = await _shade(tile, pixels, sides, relief, z, y);
+        if (_closed || !identical(_beside(z, x, y), tile)) {
+          image.dispose();
+          return;
+        }
+        tile.image?.dispose();
+        tile.image = image;
+        if (complete && !tile.shadeAgain) tile.pixels = null;
+        onLoaded();
+      } while (tile.shadeAgain);
+    } finally {
+      tile.shading = false;
+    }
+  }
+
+  /// Turns a tile of heights into a picture of shadow and highlight, one
+  /// cell larger on every side than the tile.
   Future<ui.Image> _shade(
-    ui.Image heights,
+    _RasterTile tile,
+    Uint8List pixels,
+    List<Uint8List?> sides,
     ReliefPaint relief,
     int z,
     int y,
   ) async {
-    final width = heights.width;
-    final height = heights.height;
-    final data = await heights.toByteData();
-    heights.dispose();
-    final pixels = data!.buffer.asUint8List();
+    final width = tile.width;
+    final height = tile.height;
     final context = EvalContext()..zoom = z.toDouble();
     final shadow = Rgba.of(relief.shadow(context)) ?? Rgba.black;
     final light = Rgba.of(relief.highlight(context)) ?? Rgba.black;
@@ -210,7 +328,7 @@ class RasterTiles {
       light.r, light.g, light.b, light.a,
     ];
     final shaded = await Isolate.run(
-      () => _hillshade(
+      () => shadeHeights(
         pixels,
         width,
         height,
@@ -219,13 +337,14 @@ class RasterTiles {
         strength,
         direction,
         colours,
+        sides: sides,
       ),
     );
     final done = Completer<ui.Image>();
     ui.decodeImageFromPixels(
       shaded,
-      width,
-      height,
+      width + 2,
+      height + 2,
       ui.PixelFormat.rgba8888,
       done.complete,
     );
@@ -247,7 +366,13 @@ class RasterTiles {
 /// Shades a grid of heights lit from [direction] degrees: premultiplied RGBA
 /// that is the shadow colour on slopes facing away from the light and the
 /// highlight colour on slopes facing it, and clear on flat ground.
-Uint8List _hillshade(
+///
+/// The picture is one cell larger on every side than the grid. [sides] are
+/// the two rows or columns of the tiles above, below, left and right that
+/// face this one, nearest last for above and left, nearest first for below
+/// and right. Where one is missing the edge's own slope is carried on
+/// outwards, which keeps the edge from being drawn as a line.
+Uint8List shadeHeights(
   Uint8List pixels,
   int width,
   int height,
@@ -255,34 +380,69 @@ Uint8List _hillshade(
   double metresPerPixel,
   double strength,
   double direction,
-  List<double> colours,
-) {
-  final heights = Float32List(width * height);
-  for (var i = 0; i < heights.length; i++) {
-    final r = pixels[i * 4], g = pixels[i * 4 + 1], b = pixels[i * 4 + 2];
-    heights[i] = terrarium
+  List<double> colours, {
+  List<Uint8List?> sides = const [null, null, null, null],
+}) {
+  double metres(Uint8List from, int at) {
+    final r = from[at], g = from[at + 1], b = from[at + 2];
+    return terrarium
         ? r * 256 + g + b / 256 - 32768
         : -10000 + (r * 65536 + g * 256 + b) * 0.1;
   }
-  final out = Uint8List(width * height * 4);
+
+  final w = width + 4;
+  final h = height + 4;
+  final heights = Float32List(w * h);
+  for (var y = 0; y < height; y++) {
+    for (var x = 0; x < width; x++) {
+      heights[(y + 2) * w + x + 2] = metres(pixels, (y * width + x) * 4);
+    }
+  }
+  final above = sides[0], below = sides[1], left = sides[2], right = sides[3];
+  for (var x = 2; x < w - 2; x++) {
+    for (var k = 1; k >= 0; k--) {
+      heights[k * w + x] = above != null
+          ? metres(above, (k * width + x - 2) * 4)
+          : 2 * heights[(k + 1) * w + x] - heights[(k + 2) * w + x];
+    }
+    for (var k = 0; k < 2; k++) {
+      final y = h - 2 + k;
+      heights[y * w + x] = below != null
+          ? metres(below, (k * width + x - 2) * 4)
+          : 2 * heights[(y - 1) * w + x] - heights[(y - 2) * w + x];
+    }
+  }
+  for (var y = 0; y < h; y++) {
+    final inside = y >= 2 && y < h - 2;
+    for (var k = 1; k >= 0; k--) {
+      heights[y * w + k] = inside && left != null
+          ? metres(left, ((y - 2) * 2 + k) * 4)
+          : 2 * heights[y * w + k + 1] - heights[y * w + k + 2];
+    }
+    for (var k = 0; k < 2; k++) {
+      final x = w - 2 + k;
+      heights[y * w + x] = inside && right != null
+          ? metres(right, ((y - 2) * 2 + k) * 4)
+          : 2 * heights[y * w + x - 1] - heights[y * w + x - 2];
+    }
+  }
+  final outWidth = width + 2;
+  final out = Uint8List(outWidth * (height + 2) * 4);
   final azimuth = (360 - direction + 90) * math.pi / 180;
   const zenith = math.pi / 4;
   final flat = math.cos(zenith);
   final steep = strength * 2 / (8 * metresPerPixel);
-  for (var y = 0; y < height; y++) {
-    final up = y == 0 ? 0 : y - 1;
-    final down = y == height - 1 ? y : y + 1;
-    for (var x = 0; x < width; x++) {
-      final left = x == 0 ? 0 : x - 1;
-      final right = x == width - 1 ? x : x + 1;
-      final a = heights[up * width + left];
-      final b = heights[up * width + x];
-      final c = heights[up * width + right];
-      final d = heights[y * width + left];
-      final f = heights[y * width + right];
-      final g = heights[down * width + left];
-      final h = heights[down * width + x];
-      final i = heights[down * width + right];
+  for (var y = 0; y < height + 2; y++) {
+    for (var x = 0; x < outWidth; x++) {
+      final at0 = y * w + x;
+      final a = heights[at0];
+      final b = heights[at0 + 1];
+      final c = heights[at0 + 2];
+      final d = heights[at0 + w];
+      final f = heights[at0 + w + 2];
+      final g = heights[at0 + 2 * w];
+      final h = heights[at0 + 2 * w + 1];
+      final i = heights[at0 + 2 * w + 2];
       final dx = ((c + 2 * f + i) - (a + 2 * d + g)) * steep;
       final dy = ((g + 2 * h + i) - (a + 2 * b + c)) * steep;
       final slope = math.atan(math.sqrt(dx * dx + dy * dy));
@@ -295,7 +455,7 @@ Uint8List _hillshade(
       final alpha =
           (delta.abs() * (delta < 0 ? 1.4 : 2.4)).clamp(0.0, 1.0) *
           colours[o + 3];
-      final at = (y * width + x) * 4;
+      final at = (y * outWidth + x) * 4;
       out[at] = (colours[o] * alpha * 255).round();
       out[at + 1] = (colours[o + 1] * alpha * 255).round();
       out[at + 2] = (colours[o + 2] * alpha * 255).round();
