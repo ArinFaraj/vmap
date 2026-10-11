@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show listEquals;
 
 import 'expr.dart';
 import 'label_path.dart';
+import 'platform.dart';
 import 'pins.dart';
 import 'sprites.dart';
 import 'style.dart';
@@ -106,11 +107,23 @@ class LabelCandidate {
   }
 }
 
+/// An image one or more labels are drawn into.
+class _SpritePage {
+  ui.Image? image;
+
+  /// How many labels still use it.
+  int live = 0;
+}
+
 /// A label drawn once into an image, shared by every label with the same
 /// text and class.
 class _Sprite {
   _Sprite(
-    this.image,
+    this.page,
+    this.left,
+    this.top,
+    this.pixelW,
+    this.pixelH,
     this.width,
     this.height,
     this.textWidth,
@@ -118,7 +131,29 @@ class _Sprite {
     this.fontSize,
   );
 
-  final ui.Image image;
+  final _SpritePage page;
+
+  /// Where the label is in the page's image, in its pixels.
+  final int left;
+  final int top;
+  final int pixelW;
+  final int pixelH;
+
+  ui.Image get image => page.image!;
+
+  ui.Rect get source => ui.Rect.fromLTWH(
+    left.toDouble(),
+    top.toDouble(),
+    pixelW.toDouble(),
+    pixelH.toDouble(),
+  );
+
+  /// Gives the label's place in its page up. The image goes with the last
+  /// label on it.
+  void release() {
+    dropped = true;
+    if (--page.live == 0) page.image?.dispose();
+  }
 
   /// The size the text was drawn at. The image is scaled while the label's
   /// size stays close to it.
@@ -397,6 +432,10 @@ class LabelEngine {
   bool _zooming = false;
   int lastRasterMicros = 0;
   int rasterizedTotal = 0;
+
+  /// Time spent laying label text out, and turning it into images.
+  int layoutMicrosTotal = 0;
+  int imageMicrosTotal = 0;
   int resizedTotal = 0;
   int evictedTotal = 0;
   int statesWalked = 0;
@@ -408,9 +447,10 @@ class LabelEngine {
 
   void clear() {
     for (final sprite in _sprites.values) {
-      sprite.image.dispose();
+      sprite.release();
     }
     _sprites.clear();
+    _dropPage();
     _dropPinImages();
     _states.clear();
     _frameStates.clear();
@@ -480,6 +520,10 @@ class LabelEngine {
       if (st.sprite != null && !st.resize) continue;
       var cached = _sprites[st.candidate.spriteKey];
       if (identical(cached, st.sprite)) cached = null;
+      if (cached == null && _pageKeys.contains(st.candidate.spriteKey)) {
+        pending = true;
+        continue;
+      }
       if (cached == null &&
           (lastPlaceMicros > _heavyPlaceMicros ||
               (rasterized > 0 &&
@@ -489,16 +533,25 @@ class LabelEngine {
         break;
       }
       if (cached == null && st.sprite != null) resizedTotal++;
+      if (cached == null) rasterized++;
+      final sprite =
+          cached ??
+          _rasterize(st, zoom - 1 + zoomOffset, background, devicePixelRatio);
+      if (sprite == null) continue;
       st
-        ..sprite =
-            cached ??
-            _rasterize(st, zoom - 1 + zoomOffset, background, devicePixelRatio)
+        ..sprite = sprite
         ..resize = false
         ..roadFitKey = -1;
       _placeAgain = true;
-      if (cached == null) rasterized++;
     }
 
+    if (_page != null) {
+      if (_clock.elapsedMicroseconds - _pageOpened > _pageWaitMicros) {
+        _closePage();
+      } else {
+        pending = true;
+      }
+    }
     lastRasterMicros = _clock.elapsedMicroseconds - rasterStart;
     rasterizedTotal += rasterized;
     _lastZoom = zoom;
@@ -638,9 +691,9 @@ class LabelEngine {
         final n = _stripCount(textW, sprite.textHeight * st.scale);
         final strips = _layStrips(st, n, textW / n / world);
         final flip = math.cos(st.angle + rotation) < 0;
-        final pad = _haloPad * image.width / sprite.width;
-        final slice = (image.width - pad * 2) / n;
-        final k = sprite.width * st.scale / image.width;
+        final pad = _haloPad * sprite.pixelW / sprite.width;
+        final slice = (sprite.pixelW - pad * 2) / n;
+        final k = sprite.width * st.scale / sprite.pixelW;
         final transforms = Float32List(n * 4);
         final rects = Float32List(n * 4);
         for (var j = 0; j < n; j++) {
@@ -649,20 +702,20 @@ class LabelEngine {
           _project(strips[i * 3], strips[i * 3 + 1], world, origin);
           final left = j == 0 ? 0.0 : pad + j * slice - 0.5;
           final right = j == n - 1
-              ? image.width.toDouble()
+              ? sprite.pixelW.toDouble()
               : pad + (j + 1) * slice + 0.5;
           final anchorX = pad + (j + 0.5) * slice - left;
-          final anchorY = image.height / 2;
+          final anchorY = sprite.pixelH / 2;
           final scos = math.cos(a) * k;
           final ssin = math.sin(a) * k;
           transforms[j * 4] = scos;
           transforms[j * 4 + 1] = ssin;
           transforms[j * 4 + 2] = _px - scos * anchorX + ssin * anchorY;
           transforms[j * 4 + 3] = _py - ssin * anchorX - scos * anchorY;
-          rects[j * 4] = left;
-          rects[j * 4 + 1] = 0;
-          rects[j * 4 + 2] = right;
-          rects[j * 4 + 3] = image.height.toDouble();
+          rects[j * 4] = sprite.left + left;
+          rects[j * 4 + 1] = sprite.top.toDouble();
+          rects[j * 4 + 2] = sprite.left + right;
+          rects[j * 4 + 3] = (sprite.top + sprite.pixelH).toDouble();
         }
         canvas.drawRawAtlas(
           image,
@@ -681,12 +734,7 @@ class LabelEngine {
       final turn = st.screenAngle;
       final w = sprite.width * st.scale;
       final h = sprite.height * st.scale;
-      final source = ui.Rect.fromLTWH(
-        0,
-        0,
-        image.width.toDouble(),
-        image.height.toDouble(),
-      );
+      final source = sprite.source;
       if (turn == 0) {
         final left =
             ((sx - w / 2) * devicePixelRatio).roundToDouble() /
@@ -1069,9 +1117,7 @@ class LabelEngine {
       for (final key in unused) {
         if (_sprites.length <= _maxSprites * 3 ~/ 4) break;
         evictedTotal++;
-        _sprites.remove(key)!
-          ..dropped = true
-          ..image.dispose();
+        _sprites.remove(key)!.release();
       }
     }
   }
@@ -1374,7 +1420,79 @@ class LabelEngine {
 
   /// Draws the label once into an image. The halo is the text redrawn in the
   /// halo colour around itself, so the text is laid out a single time.
-  _Sprite _rasterize(
+  static const int _pageWidth = 1024;
+  static const int _pageHeight = 512;
+  static const int _pageGap = 2;
+
+  /// How long a page gathers labels before it becomes an image, unless it
+  /// fills first.
+  static const int _pageWaitMicros = 100000;
+
+  /// The page the labels of this frame are being drawn into, where making an
+  /// image is dear and one image has to serve many labels.
+  _SpritePage? _page;
+  ui.PictureRecorder? _pageRecorder;
+  ui.Canvas? _pageCanvas;
+  final List<ui.Paragraph> _pageParagraphs = [];
+  final List<(_LabelState, _Sprite)> _pageLabels = [];
+  final Set<String> _pageKeys = {};
+  int _pageOpened = 0;
+  int _pageX = 0;
+  int _pageY = 0;
+  int _pageRow = 0;
+
+  /// Turns the open page into its image and hands its labels their place
+  /// on it.
+  void _closePage() {
+    final page = _page;
+    if (page == null) return;
+    final picture = _pageRecorder!.endRecording();
+    final imageStart = _clock.elapsedMicroseconds;
+    // Always the one size: an image of a new size costs several times more.
+    page.image = picture.toImageSync(_pageWidth, _pageHeight);
+    imageMicrosTotal += _clock.elapsedMicroseconds - imageStart;
+    picture.dispose();
+    for (final paragraph in _pageParagraphs) {
+      paragraph.dispose();
+    }
+    _pageParagraphs.clear();
+    for (final (st, sprite) in _pageLabels) {
+      final key = st.candidate.spriteKey;
+      _sprites.remove(key)?.release();
+      _sprites[key] = sprite;
+      st
+        ..sprite = sprite
+        ..resize = false
+        ..roadFitKey = -1;
+    }
+    _pageLabels.clear();
+    _pageKeys.clear();
+    _placeAgain = true;
+    _page = null;
+    _pageRecorder = null;
+    _pageCanvas = null;
+    _pageX = _pageY = _pageRow = 0;
+  }
+
+  /// Throws the open page away with the labels waiting on it.
+  void _dropPage() {
+    if (_page == null) return;
+    _pageRecorder!.endRecording().dispose();
+    for (final paragraph in _pageParagraphs) {
+      paragraph.dispose();
+    }
+    _pageParagraphs.clear();
+    _pageLabels.clear();
+    _pageKeys.clear();
+    _page = null;
+    _pageRecorder = null;
+    _pageCanvas = null;
+    _pageX = _pageY = _pageRow = 0;
+  }
+
+  /// Draws a label's text. Null when it went onto the open page, whose
+  /// image comes later.
+  _Sprite? _rasterize(
     _LabelState st,
     double styleZoom,
     int background,
@@ -1447,19 +1565,48 @@ class LabelEngine {
           )
           ..addText(label);
     final layoutWidth = maxWidthEm * fontSize;
+    final layoutStart = _clock.elapsedMicroseconds;
     final paragraph = builder.build()
       ..layout(ui.ParagraphConstraints(width: layoutWidth));
+    layoutMicrosTotal += _clock.elapsedMicroseconds - layoutStart;
     final textW = math.max(1, paragraph.longestLine).ceilToDouble();
     final textH = paragraph.height.ceilToDouble();
     final pixelW = ((textW + _haloPad * 2) * dpr).ceil();
     final pixelH = ((textH + _haloPad * 2) * dpr).ceil();
-    final recorder = ui.PictureRecorder();
     final at = ui.Offset(switch (align) {
       ui.TextAlign.left => _haloPad,
       ui.TextAlign.right => _haloPad + textW - layoutWidth,
       _ => _haloPad + textW / 2 - layoutWidth / 2,
     }, _haloPad);
-    final canvas = ui.Canvas(recorder)..scale(dpr);
+    final paged =
+        sharedLabelImages && pixelW <= _pageWidth && pixelH <= _pageHeight;
+    final recorder = paged ? null : ui.PictureRecorder();
+    final _SpritePage page;
+    final ui.Canvas canvas;
+    var left = 0, top = 0;
+    if (recorder != null) {
+      page = _SpritePage();
+      canvas = ui.Canvas(recorder);
+    } else {
+      if (_pageX + pixelW > _pageWidth) {
+        _pageX = 0;
+        _pageY += _pageRow + _pageGap;
+        _pageRow = 0;
+      }
+      if (_pageY + pixelH > _pageHeight) _closePage();
+      if (_page == null) _pageOpened = _clock.elapsedMicroseconds;
+      page = _page ??= _SpritePage();
+      canvas = _pageCanvas ??= ui.Canvas(_pageRecorder = ui.PictureRecorder());
+      left = _pageX;
+      top = _pageY;
+      _pageX += pixelW + _pageGap;
+      _pageRow = math.max(_pageRow, pixelH);
+      canvas
+        ..save()
+        ..translate(left.toDouble(), top.toDouble())
+        ..clipRect(ui.Rect.fromLTWH(0, 0, pixelW + 0.0, pixelH + 0.0));
+    }
+    canvas.scale(dpr);
     if (halo != null) {
       canvas.saveLayer(
         null,
@@ -1484,20 +1631,36 @@ class LabelEngine {
       canvas.restore();
     }
     canvas.drawParagraph(paragraph, at);
-    final picture = recorder.endRecording();
+    if (recorder != null) {
+      final picture = recorder.endRecording();
+      final imageStart = _clock.elapsedMicroseconds;
+      page.image = picture.toImageSync(pixelW, pixelH);
+      imageMicrosTotal += _clock.elapsedMicroseconds - imageStart;
+      picture.dispose();
+      paragraph.dispose();
+    } else {
+      canvas.restore();
+      _pageParagraphs.add(paragraph);
+    }
+    page.live++;
     final sprite = _Sprite(
-      picture.toImageSync(pixelW, pixelH),
+      page,
+      left,
+      top,
+      pixelW,
+      pixelH,
       pixelW / dpr,
       pixelH / dpr,
       textW,
       textH,
       fontSize,
     )..usedPass = _pass;
-    picture.dispose();
-    paragraph.dispose();
-    _sprites.remove(st.candidate.spriteKey)
-      ?..dropped = true
-      ..image.dispose();
+    if (recorder == null) {
+      _pageLabels.add((st, sprite));
+      _pageKeys.add(st.candidate.spriteKey);
+      return null;
+    }
+    _sprites.remove(st.candidate.spriteKey)?.release();
     _sprites[st.candidate.spriteKey] = sprite;
     return sprite;
   }

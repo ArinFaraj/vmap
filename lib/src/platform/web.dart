@@ -69,6 +69,10 @@ Future<Uint8List> gunzip(Uint8List bytes) async {
   return buffer.toDart.asUint8List();
 }
 
+/// Labels share images. Making one costs milliseconds in a browser, and more
+/// when its size differs from the last.
+const bool sharedLabelImages = true;
+
 /// The image to make a shader of. The web engine's image shader releases
 /// the image it is given when it is disposed, so it gets a handle of its own.
 ui.Image forShader(ui.Image image) => image.clone();

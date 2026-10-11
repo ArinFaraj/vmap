@@ -1,3 +1,12 @@
+## 0.17.1
+
+- Much faster in a browser. Making an image there costs milliseconds, and a
+  label used to get one of its own; labels now share pages of a fixed size
+  that fill over a few frames. In Chrome the benchmark tour went from 25
+  frames a second to 119 on a 120 Hz screen. Other platforms draw as before.
+- The benchmark tour runs in a browser: `--dart-define=TOUR=true` with
+  `lib/main_web.dart` prints its result to the console.
+
 ## 0.17.0
 
 - Runs on the web. Files, requests and workers sit behind one platform

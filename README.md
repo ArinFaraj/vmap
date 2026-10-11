@@ -27,7 +27,7 @@ dependencies:
   vmap:
     git:
       url: https://github.com/ArinFaraj/vmap.git
-      ref: v0.17.0
+      ref: v0.17.1
 ```
 
 ## Quick start
@@ -422,7 +422,8 @@ table, the caveats and how to run it are in
 - Fonts come from the app, not from the style's glyph server.
 - On the web there is no disk cache, tiles are built on the page's thread
   instead of on workers, and a PMTiles archive has to be at an `https://`
-  address. It has been run in Chrome, with CanvasKit.
+  address. It has been run in Chrome. Use the default JavaScript build: the
+  `--wasm` build ran the same tour at a fifth of the speed.
 - Run so far on one Android phone, on macOS and in Chrome. iOS and low end
   devices are untested.
 

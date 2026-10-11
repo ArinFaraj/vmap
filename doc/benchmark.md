@@ -49,6 +49,22 @@ without a new frame. The numbers are from vmap 0.3.0 and vector_map_tiles
   recorded.
 - Pins (0.4.0) were not part of any of these runs.
 
+## In a browser
+
+Chrome on a Mac with a 120 Hz screen, the same tour and style, two laps, the
+default JavaScript build. One run of each, so read the size of the change
+and not the last digit.
+
+| | frames a second | frames skipped | longest gap |
+|---|---|---|---|
+| a label image each (0.17.0) | 25 and 32 | 463 and 473 | 213 and 226 ms |
+| labels sharing pages (0.17.1) | 119 and 119 | 50 and 14 | 34 and 29 ms |
+
+Making a label's image took 28 ms on average before and is under 1 ms a
+label now. The `--wasm` build ran the tour at 18 to 30 frames a second with
+or without shared pages; its time goes on the raster side and has not been
+looked into.
+
 ## The comparison picture
 
 ![vmap and vector_map_tiles drawing the same style](images/compare.png)

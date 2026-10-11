@@ -51,6 +51,8 @@ class VmapStats {
   int labelStates = 0;
   int labelRasterMicros = 0;
   int labelsRasterized = 0;
+  int labelLayoutMicros = 0;
+  int labelImageMicros = 0;
   int labelStatesWalked = 0;
   int labelsResized = 0;
   int labelsEvicted = 0;
@@ -748,6 +750,8 @@ class VmapEngine extends ChangeNotifier {
     stats
       ..labelRasterMicros += _labels.lastRasterMicros
       ..labelsRasterized = _labels.rasterizedTotal
+      ..labelLayoutMicros = _labels.layoutMicrosTotal
+      ..labelImageMicros = _labels.imageMicrosTotal
       ..labelStatesWalked = _labels.statesWalked
       ..labelsResized = _labels.resizedTotal
       ..labelsEvicted = _labels.evictedTotal;

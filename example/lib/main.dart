@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
@@ -239,13 +240,15 @@ class _BenchAppState extends State<BenchApp>
         'place_total_ms': engine.stats.placeMicros ~/ 1000,
         'label_raster_total_ms': engine.stats.labelRasterMicros ~/ 1000,
         'labels_rasterized': engine.stats.labelsRasterized,
+        'label_layout_ms': engine.stats.labelLayoutMicros ~/ 1000,
+        'label_image_ms': engine.stats.labelImageMicros ~/ 1000,
         'labels_resized': engine.stats.labelsResized,
         'labels_evicted': engine.stats.labelsEvicted,
         'label_states_walked': engine.stats.labelStatesWalked,
         'label_raster_max_us': engine.stats.maxLabelRasterMicros,
         'draw_max_us': engine.stats.maxDrawMicros,
         'unpack_max_us': engine.stats.maxUnpackMicros,
-        'rss_mb': ProcessInfo.currentRss >> 20,
+        'rss_mb': kIsWeb ? 0 : ProcessInfo.currentRss >> 20,
         'slow':
             (engine.stats.slowPaints.toList()..sort(
                   (a, b) =>
@@ -329,6 +332,29 @@ class _BenchAppState extends State<BenchApp>
         'lap$i': _summarize(laps[i], tourKeys.last.t),
       if (mode == 'ours') 'engine': engineLaps,
     };
+    // ignore: avoid_print
+    if (kIsWeb) {
+      const lapKeys = [
+        'fps', 'skipped', 'worst_gap_ms', 'build_p50', 'build_p99', //
+        'raster_p50', 'raster_p99', 'over_33ms',
+      ];
+      const engineKeys = [
+        'frames', 'paint_avg_us', 'label_total_ms', 'label_raster_total_ms', //
+        'labels_rasterized', 'label_layout_ms', 'label_image_ms',
+        'stroke_total_ms', 'tile_setup_total_ms', 'prep_max_us',
+        'draw_max_us', 'unpack_max_us',
+      ];
+      // ignore: avoid_print
+      print(
+        'VMAP_WEB ${jsonEncode({
+          for (var i = 0; i < laps.length; i++) 'lap$i': {for (final k in lapKeys) k: (out['lap$i']! as Map)[k]},
+          'engine': [
+            for (final e in engineLaps) {for (final k in engineKeys) k: e[k]},
+          ],
+        })}',
+      );
+      return;
+    }
     // ignore: avoid_print
     print('VMAP_BENCH ${jsonEncode(out)}');
     if (!Platform.isAndroid) exit(0);
