@@ -557,12 +557,17 @@ class VmapEngine extends ChangeNotifier {
       }
       final s = _sources[run.source];
       final states = _states[s.def.name];
+      final heat = sheet.layers[run.first].heat;
+      final shown = _colors[run.first] >>> 24;
+      if (heat != null && (shown == 0 || _widths[run.first] <= 0)) continue;
+      final onto = heat == null ? canvas : _heat.begin();
       for (final d in s.fallback) {
-        draws += _drawTile(canvas, sheet, d, run.first, run.end, states);
+        draws += _drawTile(onto, sheet, d, run.first, run.end, states);
       }
       for (final d in s.ideal) {
-        draws += _drawTile(canvas, sheet, d, run.first, run.end, states);
+        draws += _drawTile(onto, sheet, d, run.first, run.end, states);
       }
+      if (heat != null) _heat.end(canvas, size, _context, heat, shown / 255);
     }
 
     var animating = false;
@@ -721,8 +726,7 @@ class VmapEngine extends ChangeNotifier {
       var width = _widths[p];
       final heat = layer.heat;
       if (heat != null) {
-        if (width <= 0) continue;
-        _heat.draw(canvas, _context, heat, meshes, color, width / scale);
+        _heat.add(canvas, _context, heat, meshes, width / scale);
         draws++;
         continue;
       }

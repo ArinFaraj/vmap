@@ -27,7 +27,7 @@ dependencies:
   vmap:
     git:
       url: https://github.com/ArinFaraj/vmap.git
-      ref: v0.8.0
+      ref: v0.9.0
 ```
 
 ## Quick start
@@ -387,7 +387,6 @@ table, the caveats and how to run it are in
 ## Limits
 
 - No 3D: buildings are flat and the map does not pitch.
-- A heatmap is drawn in two colours of its ramp, not through every stop.
 - Fonts come from the app, not from the style's glyph server.
 - Run so far on one Android phone and on macOS. iOS, web and low end devices
   are untested.

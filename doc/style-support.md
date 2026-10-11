@@ -3,13 +3,13 @@
 | | |
 | --- | --- |
 | Layers | `background`, `fill`, `line`, `circle`, `symbol`, `raster`, `hillshade`, `heatmap`. `fill-extrusion` is drawn flat |
-| Sources | any number of `vector`, `geojson`, `raster` and `raster-dem` sources. Tiles by TileJSON `url` or `tiles` template, GeoJSON inline or by address, with `cluster`, `clusterRadius`, `clusterMaxZoom` and `clusterMinPoints`. `pmtiles://` archives over HTTP or on disk. `promoteId`, and `generateId` for GeoJSON |
+| Sources | any number of `vector`, `geojson`, `raster` and `raster-dem` sources. Tiles by TileJSON `url` or `tiles` template, GeoJSON inline or by address, with `cluster`, `clusterRadius`, `clusterMaxZoom`, `clusterMinPoints` and `clusterProperties`. `pmtiles://` archives over HTTP or on disk. `promoteId`, and `generateId` for GeoJSON |
 | Order | layers are drawn in the style's order, across sources and with raster layers where the style puts them |
 | Fills | colour, opacity, `fill-outline-color`, `fill-pattern`, `fill-translate` |
 | Raster | opacity, `raster-hue-rotate`, `raster-saturation`, `raster-contrast`, `raster-brightness-min` and `-max` |
 | Lines | colour, opacity, width, gap width, round caps, `line-dasharray`, `line-pattern`, `line-translate` |
 | Hillshade | Mapbox and Terrarium heights, exaggeration, shadow and highlight colours, light direction |
-| Heatmap | radius, weight, intensity, opacity, and the low and top colours of `heatmap-color` |
+| Heatmap | radius, weight, intensity, opacity and `heatmap-color` |
 | Circles | radius, colour, opacity, the stroke's width, colour and opacity, `circle-translate` |
 | Text | field, size, font weight and slant, colour, halo, letter spacing, max width, transform, anchor, offset, `text-variable-anchor` with `text-radial-offset`, `text-optional`, `text-allow-overlap` |
 | Icons | `icon-image` from the style's sprite sheet (the `@2x` sheet when there is one), size, rotation, opacity, `icon-color` for SDF icons, `icon-anchor`, `icon-offset`, `icon-optional`, `icon-allow-overlap`, `icon-text-fit` |
@@ -24,12 +24,9 @@ paint reads, up to 64 groups per layer in a tile.
 
 - 3D: buildings are flat and the map does not pitch. Neither does
   flutter_map, which the camera comes from.
-- The middle of a heatmap's colour ramp. Glows are drawn in the ramp's low
-  colour and build up to its top colour.
 - Halos on SDF icons, `hillshade-accent-color`, and line patterns on round
   caps.
-- `clusterProperties` on a clustered source, `feature-state` in a symbol
-  layer, `within` and `distance`.
+- `feature-state` in a symbol layer, `within` and `distance`.
 - The style's `glyphs`. Text is drawn in the app's fonts.
 - A road name on a bend sharper than about 24 degrees between one slice of
   the text and the next. It is left out there.

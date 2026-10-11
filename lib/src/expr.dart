@@ -14,6 +14,9 @@ class EvalContext {
 
   /// What `feature-state` reads: the state the app gave the feature.
   Map<String, Object?> state = const {};
+
+  /// What `accumulated` reads while a cluster adds up one of its properties.
+  Object? accumulated;
 }
 
 typedef Expr = Object? Function(EvalContext c);
@@ -356,6 +359,8 @@ Expr _op(String op, List<Object?> args) {
       return (c) => c.props;
     case 'id':
       return (c) => c.props[r'$id'];
+    case 'accumulated':
+      return (c) => c.accumulated;
     case 'feature-state':
       final name = args.isEmpty ? null : args.first;
       return (c) => c.state[name];

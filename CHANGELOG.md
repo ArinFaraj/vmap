@@ -1,3 +1,11 @@
+## 0.9.0
+
+- Heatmaps follow their whole colour ramp. Points add up to a density the
+  way MapLibre's do, across tile edges, and the density is coloured stop by
+  stop.
+- `clusterProperties`: a cluster adds up, or takes the largest of, a
+  property of its points, for the style to read.
+
 ## 0.8.0
 
 - `text-variable-anchor` and `text-radial-offset`: a name that does not fit

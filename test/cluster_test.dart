@@ -91,4 +91,67 @@ void main() {
     expect(options.maxZoom, 12);
     expect(options.minPoints, 2);
   });
+
+  test('a cluster adds up what its points carry', () {
+    final counted = GeoJsonTiles(
+      _data,
+      cluster: const ClusterOptions(
+        maxZoom: 5,
+        properties: {
+          'weight': [
+            '+',
+            [
+              'case',
+              [
+                '==',
+                ['get', 'name'],
+                'a',
+              ],
+              5,
+              1,
+            ],
+          ],
+          'names': [
+            [
+              'concat',
+              ['accumulated'],
+              ['get', 'names'],
+            ],
+            ['get', 'name'],
+          ],
+        },
+      ),
+    );
+    for (final z in [0, 2, 5]) {
+      final cluster = _shown(
+        counted,
+        z,
+      ).firstWhere((p) => p['cluster'] == true);
+      expect(cluster['weight'], 7, reason: 'zoom $z');
+      expect(('${cluster['names']}'.split('')..sort()).join(), 'abc');
+    }
+  });
+
+  test('a source reads its cluster properties', () {
+    final sheet = StyleSheet.compile({
+      'version': 8,
+      'sources': {
+        'mine': {
+          'type': 'geojson',
+          'data': _data,
+          'cluster': true,
+          'clusterProperties': {
+            'most': [
+              'max',
+              ['get', 'size'],
+            ],
+          },
+        },
+      },
+      'layers': [
+        {'id': 'dots', 'type': 'circle', 'source': 'mine'},
+      ],
+    });
+    expect(sheet.sources.single.cluster!.properties.keys, ['most']);
+  });
 }

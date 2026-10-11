@@ -342,7 +342,53 @@ class HeatPaint {
     required this.weight,
     required this.intensity,
     required this.ramp,
+    required this.stops,
   });
+
+  /// Reads a layer's `heatmap-color`.
+  factory HeatPaint.of({
+    required Expr weight,
+    required Expr intensity,
+    required Object? color,
+  }) {
+    final json = color ?? _defaultRamp;
+    final stops = <double>[];
+    if (json is List &&
+        json.length > 4 &&
+        json[0] == 'interpolate' &&
+        jsonEncode(json[1]) == '["linear"]' &&
+        jsonEncode(json[2]) == '["heatmap-density"]') {
+      for (var i = 3; i + 1 < json.length; i += 2) {
+        final at = asNumber(json[i]);
+        if (at != null) stops.add(at.toDouble().clamp(0.0, 1.0));
+      }
+    }
+    if (stops.length < 2) {
+      stops
+        ..clear()
+        ..addAll([for (var i = 0; i <= 8; i++) i / 8]);
+    }
+    return HeatPaint(
+      weight: weight,
+      intensity: intensity,
+      ramp: compileExpr(json),
+      stops: stops,
+    );
+  }
+
+  static const _defaultRamp = [
+    'interpolate',
+    ['linear'],
+    ['heatmap-density'],
+    0,
+    'rgba(0,0,255,0)',
+    0.3,
+    'royalblue',
+    0.6,
+    'lime',
+    1,
+    'red',
+  ];
 
   /// How much one point adds, which may read the point's properties.
   final Expr weight;
@@ -350,6 +396,10 @@ class HeatPaint {
 
   /// The colour for a density from 0 to 1, read through `heatmap-density`.
   final Expr ramp;
+
+  /// The densities between which the ramp is drawn as straight blends: its
+  /// own stops when it is a plain linear ramp, an even ladder otherwise.
+  final List<double> stops;
 }
 
 /// A text and icon layer of the style.
@@ -601,6 +651,12 @@ class StyleSheet {
                           (maxZoom ?? 18) - 1)
                       .clamp(0, 24),
               minPoints: asNumber(from['clusterMinPoints'])?.toInt() ?? 2,
+              properties: switch (from['clusterProperties']) {
+                final Map<Object?, Object?> named => {
+                  for (final e in named.entries) '${e.key}': e.value,
+                },
+                _ => const {},
+              },
             )
           : null;
       vectorSources.add(
@@ -892,25 +948,10 @@ class StyleSheet {
             color: compileExpr('#ffffff'),
             opacity: compileExpr(opacity),
             width: (c) => (asNumber(radius(c)) ?? 30) * 2,
-            heat: HeatPaint(
+            heat: HeatPaint.of(
               weight: compileExpr(paint['heatmap-weight'] ?? 1),
               intensity: compileExpr(paint['heatmap-intensity'] ?? 1),
-              ramp: compileExpr(
-                paint['heatmap-color'] ??
-                    const [
-                      'interpolate',
-                      ['linear'],
-                      ['heatmap-density'],
-                      0,
-                      'rgba(0,0,255,0)',
-                      0.3,
-                      'royalblue',
-                      0.6,
-                      'lime',
-                      1,
-                      'red',
-                    ],
-              ),
+              color: paint['heatmap-color'],
             ),
           ),
         );
@@ -1057,7 +1098,9 @@ class StyleSheet {
           (i > runStart &&
               (buckets[layers[i].bucket].source !=
                       buckets[layers[runStart].bucket].source ||
-                  layers[i].spills != layers[runStart].spills))) {
+                  layers[i].spills != layers[runStart].spills ||
+                  layers[i].heat != null ||
+                  layers[runStart].heat != null))) {
         closeRun(i);
       }
     }

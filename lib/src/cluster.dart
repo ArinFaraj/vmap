@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'dart:typed_data';
+
+import 'expr.dart';
 
 /// How a GeoJSON source gathers its points into clusters, as its `cluster`
 /// options say.
@@ -7,6 +10,7 @@ class ClusterOptions {
     this.radius = 50,
     this.maxZoom = 17,
     this.minPoints = 2,
+    this.properties = const {},
   });
 
   /// How close points are gathered, in pixels of a 512 pixel tile.
@@ -18,7 +22,35 @@ class ClusterOptions {
   /// The fewest points that make a cluster.
   final int minPoints;
 
-  String get signature => '$radius|$maxZoom|$minPoints';
+  /// `clusterProperties`: for each name, how a cluster works its value out
+  /// from its points, as the style wrote it.
+  final Map<String, Object?> properties;
+
+  String get signature =>
+      '$radius|$maxZoom|$minPoints|${jsonEncode(properties)}';
+}
+
+/// One of a clustered source's `clusterProperties`: [map] reads a point's
+/// value and [reduce] adds a value to what the cluster has so far.
+class _Tally {
+  _Tally(this.name, Object? json) {
+    final parts = json is List ? json : const <Object?>[];
+    final first = parts.isEmpty ? null : parts.first;
+    map = compileExpr(parts.length > 1 ? parts[1] : null);
+    reduce = compileExpr(
+      first is String
+          ? [
+              first,
+              ['accumulated'],
+              ['get', name],
+            ]
+          : first,
+    );
+  }
+
+  final String name;
+  late final Expr map;
+  late final Expr reduce;
 }
 
 /// A point of a clustered source at one zoom: a cluster, or a point of the
@@ -38,7 +70,10 @@ class ClusterPoint {
 /// Points gathered into clusters for every zoom, each zoom built from the
 /// one below it the way supercluster does.
 class PointClusters {
-  PointClusters(List<ClusterPoint> points, this.options) {
+  PointClusters(List<ClusterPoint> points, this.options)
+    : _tallies = [
+        for (final e in options.properties.entries) _Tally(e.key, e.value),
+      ] {
     _levels = List.filled(options.maxZoom + 2, const []);
     _levels[options.maxZoom + 1] = points;
     for (var z = options.maxZoom; z >= 0; z--) {
@@ -48,7 +83,31 @@ class PointClusters {
 
   final ClusterOptions options;
   late final List<List<ClusterPoint>> _levels;
+  final List<_Tally> _tallies;
+  final EvalContext _context = EvalContext();
   int _nextId = 1;
+
+  Object? _valueOf(ClusterPoint p, _Tally tally) {
+    if (p.props['cluster'] == true) return p.props[tally.name];
+    _context.props = p.props;
+    return tally.map(_context);
+  }
+
+  Map<String, Object?> _tally(ClusterPoint first, List<ClusterPoint> rest) {
+    final out = <String, Object?>{};
+    for (final tally in _tallies) {
+      var total = _valueOf(first, tally);
+      for (final p in rest) {
+        final value = _valueOf(p, tally);
+        _context
+          ..accumulated = total
+          ..props = {tally.name: value};
+        total = tally.reduce(_context);
+      }
+      out[tally.name] = total;
+    }
+    return out;
+  }
 
   /// What a tile at zoom [z] shows.
   List<ClusterPoint> at(int z) => _levels[z.clamp(0, options.maxZoom + 1)];
@@ -96,6 +155,9 @@ class PointClusters {
       final id = _nextId++;
       out.add(
         ClusterPoint(x / count, y / count, count, {
+          ...?(_tallies.isEmpty
+              ? null
+              : _tally(p, [for (final j in near) from[j]])),
           r'$id': id,
           'cluster': true,
           'cluster_id': id,
