@@ -28,6 +28,10 @@ without a new frame. The numbers are from vmap 0.3.0 and vector_map_tiles
   and 6.4 to 8.2 ms on the raster thread in later single lap runs of version
   0.3.2. A frame has 8.3 ms at 120 Hz. 120 Hz itself has not been measured:
   the phone held both apps at 60 Hz.
+- Version 0.5.1, with rotation, every source, pins and bent road names in,
+  ran one cached lap of the tour with 0 of 1390 frames skipped. Its slowest
+  1 percent of frames took 5.9 ms on the UI thread and 5.9 ms on the raster
+  thread, and 79 frames took more than 8 ms in total. Still at 60 Hz.
 - vector_map_tiles lost its frames in long gaps while waiting for tiles to be
   rendered, not in slow frames of its own.
 - vmap's process used about 440 to 490 MB. vector_map_tiles' memory was not
