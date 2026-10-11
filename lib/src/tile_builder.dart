@@ -81,7 +81,7 @@ class BuiltTile {
     for (var i = 0; i < labels.length; i++) {
       final l = labels[i];
       l.key = l.line != null || l.spaced || l.text.isEmpty
-          ? 'r|$z/$x/$y|$i'
+          ? 'r|$z/$x/$y|${l.layer}|$i'
           : 'p|${l.layer}|${l.text}|${((tx + l.x / tileExtent * span) * 1024).floor()}|${((ty + l.y / tileExtent * span) * 1024).floor()}';
     }
   }
@@ -177,16 +177,20 @@ class _Group {
 
 /// Turns one vector tile into the meshes and labels a style asks for.
 class TileBuilder {
-  TileBuilder(this.sheet) {
+  /// Builds the tiles of the style's source number [source].
+  TileBuilder(this.sheet, {this.source = 0}) {
     for (var i = 0; i < sheet.buckets.length; i++) {
+      if (sheet.buckets[i].source != source) continue;
       (_buckets[sheet.buckets[i].sourceLayer] ??= []).add(i);
     }
     for (var i = 0; i < sheet.symbols.length; i++) {
+      if (sheet.symbols[i].source != source) continue;
       (_symbols[sheet.symbols[i].sourceLayer] ??= []).add(i);
     }
   }
 
   final StyleSheet sheet;
+  final int source;
   final Map<String, List<int>> _buckets = {};
   final Map<String, List<int>> _symbols = {};
   final EvalContext _context = EvalContext();
@@ -203,8 +207,14 @@ class TileBuilder {
 
   /// [maxZoom] is the deepest zoom the source has tiles for; a tile at that
   /// zoom is drawn at every zoom beyond it.
-  BuiltTile build(Uint8List bytes, int z, {int maxZoom = 14}) {
-    final tile = MvtTile.decode(bytes);
+  BuiltTile build(Uint8List bytes, int z, {int maxZoom = 14}) =>
+      buildLayers(MvtTile.decode(bytes).layers.values, z, maxZoom: maxZoom);
+
+  BuiltTile buildLayers(
+    Iterable<TileLayer> tileLayers,
+    int z, {
+    int maxZoom = 14,
+  }) {
     final plain = List<_Group?>.filled(sheet.buckets.length, null);
     final varied = <String, _Group>{};
     final variantCount = List<int>.filled(sheet.buckets.length, 0);
@@ -240,7 +250,7 @@ class TileBuilder {
       return group;
     }
 
-    for (final layer in tile.layers.values) {
+    for (final layer in tileLayers) {
       final buckets = [
         for (final b in _buckets[layer.name] ?? const <int>[])
           if (drawnAt(sheet.buckets[b].minZoom, sheet.buckets[b].maxZoom)) b,

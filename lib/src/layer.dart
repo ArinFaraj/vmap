@@ -3,7 +3,11 @@ import 'package:flutter_map/flutter_map.dart';
 
 import 'engine.dart';
 import 'labels.dart';
+
+import 'package:latlong2/latlong.dart';
+
 import 'pins.dart';
+import 'query.dart';
 import 'style.dart';
 import 'worker.dart';
 
@@ -31,6 +35,7 @@ class VmapLayer extends StatefulWidget {
     this.style = VmapStyle.light,
     this.markers = const [],
     this.pins,
+    this.overlay,
     this.textStyle,
     this.markerTextStyle,
     this.cacheDirectory,
@@ -44,6 +49,7 @@ class VmapLayer extends StatefulWidget {
     : style = VmapStyle.light,
       markers = const [],
       pins = null,
+      overlay = null,
       textStyle = null,
       markerTextStyle = null,
       cacheDirectory = null,
@@ -63,6 +69,9 @@ class VmapLayer extends StatefulWidget {
   /// [VmapPins.standard] covers the usual kinds of place.
   final VmapPins? pins;
 
+  /// Sources and layers of your own, drawn with the style.
+  final VmapOverlay? overlay;
+
   /// The font of every label: family and fallbacks. Sizes and colours come
   /// from the style.
   final TextStyle? textStyle;
@@ -77,11 +86,17 @@ class VmapLayer extends StatefulWidget {
   final String userAgentPackageName;
 
   @override
-  State<VmapLayer> createState() => _VmapLayerState();
+  State<VmapLayer> createState() => VmapLayerState();
 }
 
-class _VmapLayerState extends State<VmapLayer> {
+/// Reached through a `GlobalKey<VmapLayerState>` on the layer.
+class VmapLayerState extends State<VmapLayer> {
   VmapEngine? _owned;
+
+  /// What the map shows at [point]: the features the style draws within
+  /// [radius] logical pixels of it, topmost first.
+  Future<List<VmapFeature>> featuresAt(LatLng point, {double radius = 6}) =>
+      _engine.featuresAt(point, radius: radius);
 
   VmapEngine get _engine => widget.engine ?? _owned!;
 
@@ -101,6 +116,7 @@ class _VmapLayerState extends State<VmapLayer> {
         style: widget.style,
         text: _text,
         pins: widget.pins,
+        overlay: widget.overlay,
         source: TileSourceConfig(
           cacheDirectory: widget.cacheDirectory,
           userAgent: widget.userAgentPackageName,
@@ -117,6 +133,7 @@ class _VmapLayerState extends State<VmapLayer> {
     owned
       ..style = widget.style
       ..pins = widget.pins
+      ..overlay = widget.overlay
       ..text = _text;
     if (!_sameMarkers(oldWidget.markers, widget.markers)) {
       owned.markers = widget.markers;

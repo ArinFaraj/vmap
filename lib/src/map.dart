@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 import 'gestures.dart';
 import 'layer.dart';
 import 'pins.dart';
+import 'query.dart';
 import 'style.dart';
 
 /// A whole map in one widget: a [FlutterMap] with a [VmapLayer], the markers
@@ -24,6 +25,7 @@ class VmapMap extends StatefulWidget {
     this.controller,
     this.markers = const [],
     this.pins,
+    this.overlay,
     this.textStyle,
     this.markerTextStyle,
     this.cacheDirectory,
@@ -31,6 +33,7 @@ class VmapMap extends StatefulWidget {
     this.backgroundColor,
     this.onTap,
     this.onLongPress,
+    this.onFeatureTap,
     this.onPositionChanged,
     this.children = const [],
     super.key,
@@ -58,6 +61,9 @@ class VmapMap extends StatefulWidget {
 
   /// Draws places of interest as round pins instead of the style's icons.
   final VmapPins? pins;
+
+  /// Sources and layers of your own, drawn with the style.
+  final VmapOverlay? overlay;
   final TextStyle? textStyle;
   final TextStyle? markerTextStyle;
   final String? cacheDirectory;
@@ -67,6 +73,11 @@ class VmapMap extends StatefulWidget {
   final Color? backgroundColor;
   final void Function(LatLng point)? onTap;
   final void Function(LatLng point)? onLongPress;
+
+  /// Called after a tap with what the map shows there, topmost first: roads,
+  /// buildings, places, and the features of your own overlay. The list is
+  /// empty for a tap on nothing. It arrives a moment after [onTap].
+  final void Function(LatLng point, List<VmapFeature> features)? onFeatureTap;
   final void Function(MapCamera camera, bool byGesture)? onPositionChanged;
 
   /// More flutter_map layers, drawn above the markers.
@@ -78,6 +89,7 @@ class VmapMap extends StatefulWidget {
 
 class _VmapMapState extends State<VmapMap> {
   MapController? _owned;
+  final _layer = GlobalKey<VmapLayerState>();
 
   MapController get _controller =>
       widget.controller ?? (_owned ??= MapController());
@@ -91,6 +103,7 @@ class _VmapMapState extends State<VmapMap> {
   @override
   Widget build(BuildContext context) {
     final onTap = widget.onTap;
+    final onFeatureTap = widget.onFeatureTap;
     final onLongPress = widget.onLongPress;
     return VmapGestures(
       controller: _controller,
@@ -106,7 +119,14 @@ class _VmapMapState extends State<VmapMap> {
           minZoom: widget.minZoom,
           maxZoom: widget.maxZoom,
           backgroundColor: widget.backgroundColor ?? const Color(0xFFE0E0E0),
-          onTap: onTap == null ? null : (_, point) => onTap(point),
+          onTap: onTap == null && onFeatureTap == null
+              ? null
+              : (_, point) async {
+                  onTap?.call(point);
+                  if (onFeatureTap == null) return;
+                  final found = await _layer.currentState?.featuresAt(point);
+                  if (mounted && found != null) onFeatureTap(point, found);
+                },
           onLongPress: onLongPress == null
               ? null
               : (_, point) => onLongPress(point),
@@ -117,9 +137,11 @@ class _VmapMapState extends State<VmapMap> {
         ),
         children: [
           VmapLayer(
+            key: _layer,
             style: widget.style,
             markers: widget.markers,
             pins: widget.pins,
+            overlay: widget.overlay,
             textStyle: widget.textStyle,
             markerTextStyle: widget.markerTextStyle,
             cacheDirectory: widget.cacheDirectory,

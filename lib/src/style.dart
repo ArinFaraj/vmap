@@ -83,6 +83,45 @@ class VmapStyle {
   );
 }
 
+/// Sources and layers of your own, drawn with the style: a route, a set of
+/// points, an area. Both are written as a MapLibre style writes them.
+///
+/// A GeoJSON source is read again when its `data` is a different object, so
+/// build a new document to change what is shown, and keep the overlay itself
+/// between builds.
+class VmapOverlay {
+  const VmapOverlay({this.sources = const {}, this.layers = const []});
+
+  /// By name, for example `{'route': {'type': 'geojson', 'data': {...}}}`.
+  final Map<String, Object?> sources;
+
+  /// Drawn above the style's layers, in order. A layer with a `before` entry
+  /// naming a style layer is drawn just under that layer instead.
+  final List<Map<String, Object?>> layers;
+
+  /// [document] with these sources and layers added.
+  Map<String, Object?> applyTo(Map<String, Object?> document) {
+    if (sources.isEmpty && layers.isEmpty) return document;
+    final merged = [...(document['layers'] as List?) ?? const <Object?>[]];
+    for (final layer in layers) {
+      final before = layer['before'];
+      final at = before == null
+          ? -1
+          : merged.indexWhere((l) => l is Map && l['id'] == before);
+      if (at < 0) {
+        merged.add(layer);
+      } else {
+        merged.insert(at, layer);
+      }
+    }
+    return {
+      ...document,
+      'sources': {...(document['sources'] as Map?) ?? const {}, ...sources},
+      'layers': merged,
+    };
+  }
+}
+
 abstract final class Tone {
   static const background = 0;
   static const residential = 1;
@@ -199,6 +238,7 @@ enum BucketKind { fill, line, circle }
 /// Style layers that select the same features share it.
 class Bucket {
   Bucket(
+    this.source,
     this.sourceLayer,
     this.filter,
     this.kind, {
@@ -208,6 +248,8 @@ class Bucket {
     this.variantKeys = const [],
   });
 
+  /// Index into the style's sources.
+  final int source;
   final String sourceLayer;
   final bool Function(EvalContext) filter;
   final BucketKind kind;
@@ -231,6 +273,7 @@ class Bucket {
 /// A fill, line or circle layer of the style, in drawing order.
 class PaintLayer {
   PaintLayer({
+    required this.id,
     required this.bucket,
     required this.kind,
     required this.minZoom,
@@ -246,6 +289,8 @@ class PaintLayer {
     this.perFeature = false,
   });
 
+  /// The layer's name in the style.
+  final String id;
   final int bucket;
   final BucketKind kind;
   final double minZoom;
@@ -276,6 +321,8 @@ class PaintLayer {
 /// A text and icon layer of the style.
 class SymbolLayer {
   SymbolLayer({
+    required this.id,
+    required this.source,
     required this.sourceLayer,
     required this.filter,
     required this.minZoom,
@@ -309,6 +356,10 @@ class SymbolLayer {
     required this.textFit,
   });
 
+  final String id;
+
+  /// Index into the style's sources.
+  final int source;
   final String sourceLayer;
   final bool Function(EvalContext) filter;
   final double minZoom;
@@ -361,6 +412,47 @@ class SymbolLayer {
   final bool textFit;
 }
 
+/// Where features come from: vector tiles, or GeoJSON cut into tiles here.
+class VectorSource {
+  VectorSource({
+    required this.name,
+    required this.geoJson,
+    required this.tileJsonUrl,
+    required this.tiles,
+    required this.maxZoom,
+    required this.data,
+    required this.signature,
+  });
+
+  final String name;
+  final bool geoJson;
+
+  /// A TileJSON address, or the tile address itself.
+  final String? tileJsonUrl;
+  final String? tiles;
+  final int? maxZoom;
+
+  /// A GeoJSON document, or the address of one.
+  final Object? data;
+
+  /// Equal for two sources that give the same tiles.
+  final String signature;
+}
+
+/// A stretch of the style drawn in one go: one raster layer, or consecutive
+/// paint layers of one source.
+class StyleRun {
+  const StyleRun.raster(this.raster) : source = -1, first = 0, end = 0;
+  const StyleRun.vector(this.source, this.first, this.end) : raster = -1;
+
+  final int raster;
+  final int source;
+
+  /// The paint layers from [first] up to [end].
+  final int first;
+  final int end;
+}
+
 /// A style document compiled for drawing.
 class StyleSheet {
   StyleSheet._(
@@ -368,9 +460,8 @@ class StyleSheet {
     this.buckets,
     this.layers,
     this.symbols,
-    this.tileJsonUrl,
-    this.tiles,
-    this.maxZoom,
+    this.sources,
+    this.runs,
     this.zoomOffset,
     this.shape,
     this.sprite,
@@ -382,11 +473,10 @@ class StyleSheet {
   final List<PaintLayer> layers;
   final List<SymbolLayer> symbols;
 
-  /// Where the vector tiles come from: a TileJSON address, or the tile
-  /// address itself.
-  final String? tileJsonUrl;
-  final String? tiles;
-  final int? maxZoom;
+  final List<VectorSource> sources;
+
+  /// The order things are drawn in.
+  final List<StyleRun> runs;
   final double zoomOffset;
 
   /// Equal for two styles whose tiles are built the same way, so a change of
@@ -396,7 +486,7 @@ class StyleSheet {
   /// The address of the sprite sheet, without `.json` or `.png`.
   final String? sprite;
 
-  /// Raster layers, drawn under the vector ones.
+  /// Raster layers, each drawn where [runs] puts it.
   final List<RasterLayer> rasters;
 
   static StyleSheet compile(
@@ -406,18 +496,34 @@ class StyleSheet {
   }) {
     final sources = (json['sources'] as Map?) ?? const {};
     final rawLayers = (json['layers'] as List?) ?? const [];
-    final uses = <Object?, int>{};
-    for (final l in rawLayers) {
-      if (l is Map && (sources[l['source']] as Map?)?['type'] == 'vector') {
-        uses[l['source']] = (uses[l['source']] ?? 0) + 1;
-      }
-    }
-    Object? sourceName;
-    for (final e in uses.entries) {
-      if (sourceName == null || e.value > uses[sourceName]!) sourceName = e.key;
-    }
-    final source = (sources[sourceName] as Map?) ?? const {};
-    final tiles = source['tiles'];
+    final vectorSources = <VectorSource>[];
+    final sourceIndex = <Object?, int?>{};
+    int? sourceOf(Object? name) => sourceIndex.putIfAbsent(name, () {
+      final from = sources[name];
+      if (from is! Map) return null;
+      final geoJson = from['type'] == 'geojson';
+      if (!geoJson && from['type'] != 'vector') return null;
+      final tiles = from['tiles'];
+      final direct = tiles is List && tiles.isNotEmpty
+          ? tiles.first as String?
+          : null;
+      final data = from['data'];
+      vectorSources.add(
+        VectorSource(
+          name: '$name',
+          geoJson: geoJson,
+          tileJsonUrl: geoJson ? null : from['url'] as String?,
+          tiles: direct,
+          maxZoom: asNumber(from['maxzoom'])?.toInt(),
+          data: data,
+          signature: geoJson
+              ? 'g|${data is String ? data : identityHashCode(data)}'
+              : 'v|${from['url']}|$direct',
+        ),
+      );
+      return vectorSources.length - 1;
+    });
+    final rasterAt = <int>[];
 
     Expr background = (_) => null;
     final buckets = <Bucket>[];
@@ -429,6 +535,7 @@ class StyleSheet {
 
     for (final raw in rawLayers) {
       if (raw is! Map) continue;
+      final id = '${raw['id'] ?? ''}';
       final type = raw['type'];
       final paint = (raw['paint'] as Map?) ?? const {};
       final layout = (raw['layout'] as Map?) ?? const {};
@@ -449,6 +556,7 @@ class StyleSheet {
         final from = sources[raw['source']];
         if (from is! Map || from['type'] != 'raster') continue;
         final direct = from['tiles'];
+        rasterAt.add(layers.length);
         rasters.add(
           RasterLayer(
             tileJsonUrl: from['url'] as String?,
@@ -464,8 +572,11 @@ class StyleSheet {
         );
         continue;
       }
-      final sourceLayer = raw['source-layer'];
-      if (raw['source'] != sourceName || sourceLayer is! String) continue;
+      final src = sourceOf(raw['source']);
+      if (src == null) continue;
+      final named = raw['source-layer'];
+      if (named is! String && !vectorSources[src].geoJson) continue;
+      final sourceLayer = named is String ? named : '';
       final filter = raw['filter'];
 
       if (type == 'symbol') {
@@ -490,6 +601,8 @@ class StyleSheet {
         final anchor = layout['text-anchor'];
         symbols.add(
           SymbolLayer(
+            id: id,
+            source: src,
             sourceLayer: sourceLayer,
             filter: compileFilter(filter),
             minZoom: minZoom,
@@ -528,6 +641,7 @@ class StyleSheet {
         shape.write(
           jsonEncode([
             's',
+            src,
             sourceLayer,
             filter,
             field,
@@ -562,6 +676,7 @@ class StyleSheet {
         final keys = reads.toList()..sort();
         final key = jsonEncode([
           kind.index,
+          src,
           sourceLayer,
           filter,
           caps,
@@ -572,6 +687,7 @@ class StyleSheet {
         final index = bucketIndex.putIfAbsent(key, () {
           buckets.add(
             Bucket(
+              src,
               sourceLayer,
               compileFilter(filter),
               kind,
@@ -614,6 +730,7 @@ class StyleSheet {
         final ring = paint['circle-stroke-width'];
         layers.add(
           PaintLayer(
+            id: id,
             bucket: bucketFor(kind, names),
             kind: kind,
             minZoom: minZoom,
@@ -653,6 +770,7 @@ class StyleSheet {
         if (paint['line-pattern'] != null) continue;
         layers.add(
           PaintLayer(
+            id: id,
             bucket: bucketFor(
               kind,
               names,
@@ -676,6 +794,7 @@ class StyleSheet {
       final image = paint['fill-pattern'];
       layers.add(
         PaintLayer(
+          id: id,
           bucket: bucketFor(kind, names),
           kind: kind,
           minZoom: minZoom,
@@ -691,6 +810,7 @@ class StyleSheet {
         final edgeNames = reads(const ['fill-outline-color', 'fill-opacity']);
         layers.add(
           PaintLayer(
+            id: id,
             bucket: bucketFor(BucketKind.line, edgeNames, outline: true),
             kind: BucketKind.line,
             minZoom: minZoom,
@@ -704,15 +824,43 @@ class StyleSheet {
       }
     }
 
+    final runs = <StyleRun>[];
+    var nextRaster = 0;
+    var runStart = 0;
+    void closeRun(int end) {
+      if (end > runStart) {
+        runs.add(
+          StyleRun.vector(
+            buckets[layers[runStart].bucket].source,
+            runStart,
+            end,
+          ),
+        );
+      }
+      runStart = end;
+    }
+
+    for (var i = 0; i <= layers.length; i++) {
+      while (nextRaster < rasterAt.length && rasterAt[nextRaster] == i) {
+        closeRun(i);
+        runs.add(StyleRun.raster(nextRaster++));
+      }
+      if (i == layers.length ||
+          (i > runStart &&
+              buckets[layers[i].bucket].source !=
+                  buckets[layers[runStart].bucket].source)) {
+        closeRun(i);
+      }
+    }
+
     final sprite = json['sprite'];
     return StyleSheet._(
       background,
       buckets,
       layers,
       symbols,
-      source['url'] as String?,
-      tiles is List && tiles.isNotEmpty ? tiles.first as String? : null,
-      asNumber(source['maxzoom'])?.toInt(),
+      vectorSources,
+      runs,
       zoomOffset,
       shape.toString(),
       switch (sprite) {

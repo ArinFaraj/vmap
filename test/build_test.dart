@@ -209,7 +209,7 @@ void main() {
 
     test('layers that select the same features share one mesh', () {
       final sheet = StyleSheet.compile(style);
-      expect(sheet.tileJsonUrl, 'https://example.org/planet');
+      expect(sheet.sources.single.tileJsonUrl, 'https://example.org/planet');
       expect(sheet.layers, hasLength(3));
       expect(sheet.buckets, hasLength(2));
       expect(sheet.layers[0].bucket, sheet.layers[1].bucket);

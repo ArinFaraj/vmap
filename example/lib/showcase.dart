@@ -78,6 +78,78 @@ class MapLook {
 
 final _nameKeys = _names.split(',');
 
+/// A walk through the old town and the square in front of the citadel, to
+/// show an overlay of the app's own data.
+const _overlay = VmapOverlay(
+  sources: {
+    'walk': {
+      'type': 'geojson',
+      'data': {
+        'type': 'FeatureCollection',
+        'features': [
+          {
+            'type': 'Feature',
+            'properties': {'name': 'Evening walk'},
+            'geometry': {
+              'type': 'LineString',
+              'coordinates': [
+                [44.00530, 36.19300],
+                [44.00680, 36.19030],
+                [44.00866, 36.18900],
+                [44.00947, 36.18855],
+                [44.00830, 36.18734],
+                [44.00840, 36.18658],
+                [44.00883, 36.18300],
+              ],
+            },
+          },
+          {
+            'type': 'Feature',
+            'properties': {'name': 'Meeting point'},
+            'geometry': {
+              'type': 'Polygon',
+              'coordinates': [
+                [
+                  [44.00900, 36.18880],
+                  [44.01010, 36.18880],
+                  [44.01010, 36.18800],
+                  [44.00900, 36.18800],
+                  [44.00900, 36.18880],
+                ],
+              ],
+            },
+          },
+        ],
+      },
+    },
+  },
+  layers: [
+    {
+      'id': 'walk-area',
+      'type': 'fill',
+      'source': 'walk',
+      'filter': ['==', r'$type', 'Polygon'],
+      'paint': {'fill-color': '#1A73E8', 'fill-opacity': 0.18},
+    },
+    {
+      'id': 'walk-casing',
+      'type': 'line',
+      'source': 'walk',
+      'filter': ['==', r'$type', 'LineString'],
+      'layout': {'line-cap': 'round'},
+      'paint': {'line-color': '#ffffff', 'line-width': 8},
+    },
+    {
+      'id': 'walk-line',
+      'type': 'line',
+      'source': 'walk',
+      'filter': ['==', r'$type', 'LineString'],
+      'layout': {'line-cap': 'round'},
+      'paint': {'line-color': '#1A73E8', 'line-width': 5},
+    },
+  ],
+);
+
 MapLook _openFreeMap(String label, String name, {bool dark = false}) => MapLook(
   label,
   VmapStyle.url(
@@ -116,6 +188,7 @@ class ShowcaseApp extends StatefulWidget {
 class _ShowcaseAppState extends State<ShowcaseApp> {
   final _map = MapController();
   final _boundary = GlobalKey();
+  final _messenger = GlobalKey<ScaffoldMessengerState>();
   int? _place = _selected < 0 ? null : _selected;
   int _look = _initialLook();
 
@@ -210,6 +283,25 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
               style: look.style,
               markers: markers,
               pins: _pins ? VmapPins.standard : null,
+              overlay: const bool.fromEnvironment('OVERLAY') ? _overlay : null,
+              onFeatureTap: (_, features) {
+                if (features.isEmpty) return;
+                final top = features.first;
+                final name =
+                    top.properties['name:en'] ?? top.properties['name'];
+                _messenger.currentState
+                  ?..clearSnackBars()
+                  ..showSnackBar(
+                    SnackBar(
+                      behavior: SnackBarBehavior.floating,
+                      duration: const Duration(seconds: 2),
+                      content: Text(
+                        '${name ?? top.properties['class'] ?? top.sourceLayer}'
+                        '  (${top.layers.first})',
+                      ),
+                    ),
+                  );
+              },
               cacheDirectory: widget.cacheDirectory,
               userAgentPackageName: 'dev.vmap.bench',
               textStyle: const TextStyle(
@@ -274,6 +366,7 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
       );
     }
     return MaterialApp(
+      scaffoldMessengerKey: _messenger,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: scheme,

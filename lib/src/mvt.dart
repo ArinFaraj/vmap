@@ -5,6 +5,23 @@ const int mvtPoint = 1;
 const int mvtLine = 2;
 const int mvtPolygon = 3;
 
+/// One feature of a tile, whatever the tile was read from.
+abstract interface class TileFeature {
+  int get type;
+
+  Map<String, Object?> allTags(TileLayer layer);
+
+  /// Appends this feature's rings to [out]. A point feature yields one ring
+  /// holding every point.
+  void readGeometry(GeometrySink out);
+}
+
+abstract interface class TileLayer {
+  String get name;
+  int get extent;
+  List<TileFeature> get features;
+}
+
 class MvtTile {
   MvtTile(this.layers);
 
@@ -28,13 +45,16 @@ class MvtTile {
   }
 }
 
-class MvtLayer {
+class MvtLayer implements TileLayer {
   MvtLayer._(this.name, this.extent, this.keys, this.values, this.features);
 
+  @override
   final String name;
+  @override
   final int extent;
   final List<String> keys;
   final List<Object?> values;
+  @override
   final List<MvtFeature> features;
 
   int keyIndex(String key) => keys.indexOf(key);
@@ -98,7 +118,7 @@ class MvtLayer {
   }
 }
 
-class MvtFeature {
+class MvtFeature implements TileFeature {
   MvtFeature._(
     this._bytes,
     this.type,
@@ -109,6 +129,7 @@ class MvtFeature {
   );
 
   final Uint8List _bytes;
+  @override
   final int type;
   final int _tagsStart;
   final int _tagsEnd;
@@ -156,7 +177,9 @@ class MvtFeature {
     return null;
   }
 
-  Map<String, Object?> allTags(MvtLayer layer) {
+  @override
+  Map<String, Object?> allTags(TileLayer layer) {
+    layer as MvtLayer;
     final out = <String, Object?>{};
     final r = _Reader(_bytes, _tagsStart, _tagsEnd);
     while (r.hasMore) {
@@ -167,8 +190,7 @@ class MvtFeature {
     return out;
   }
 
-  /// Appends this feature's rings to [out]. A point feature yields one ring
-  /// holding every point.
+  @override
   void readGeometry(GeometrySink out) {
     final r = _Reader(_bytes, _geomStart, _geomEnd);
     var x = 0;
@@ -219,14 +241,16 @@ class GeometrySink {
 
   void beginRing() => ringStarts.add(coordCount >> 1);
 
-  void add(int x, int y) {
+  void add(int x, int y) => addPoint(x.toDouble(), y.toDouble());
+
+  void addPoint(double x, double y) {
     if (coordCount + 2 > coords.length) {
       final grown = Float64List(coords.length * 2)
         ..setRange(0, coordCount, coords);
       coords = grown;
     }
-    coords[coordCount++] = x.toDouble();
-    coords[coordCount++] = y.toDouble();
+    coords[coordCount++] = x;
+    coords[coordCount++] = y;
   }
 
   void end() => ringStarts.add(coordCount >> 1);

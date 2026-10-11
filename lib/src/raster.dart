@@ -26,7 +26,7 @@ class RasterTiles {
     if (_template == null && layer.tileJsonUrl != null) _resolve();
   }
 
-  final RasterLayer layer;
+  RasterLayer layer;
   final String? cacheDirectory;
   final String userAgent;
   final void Function() onLoaded;
