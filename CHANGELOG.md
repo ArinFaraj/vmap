@@ -1,3 +1,15 @@
+## 0.17.0
+
+- Runs on the web. Files, requests and workers sit behind one platform
+  layer, and the numbers that needed 64 bits no longer do. In a browser
+  there is no disk cache (the browser keeps its own), tiles are built on the
+  page's thread, and a PMTiles archive has to be at an `https://` address.
+- `clusterExpansionZoom`, `clusterChildren` and `clusterLeaves` on the
+  layer's state and on the engine, for zooming in on a tapped cluster or
+  listing what is in it.
+- `VmapLayer.engine` takes `minZoom` and `maxZoom`.
+- A failed load reports an `HttpFailure` with the status and the address.
+
 ## 0.16.0
 
 - Dashed lines are drawn in their own colour. They came out white on some

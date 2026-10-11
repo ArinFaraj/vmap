@@ -107,7 +107,7 @@ class MvtLayer implements TileLayer {
           value = r.varint();
         case 48:
           final v = r.varint();
-          value = (v >>> 1) ^ -(v & 1);
+          value = v.isEven ? v ~/ 2 : -((v + 1) ~/ 2);
         case 56:
           value = r.varint() != 0;
         default:
@@ -220,8 +220,8 @@ class MvtFeature implements TileFeature {
         for (var i = 0; i < count; i++) {
           final dx = r.varint();
           final dy = r.varint();
-          x += (dx >>> 1) ^ -(dx & 1);
-          y += (dy >>> 1) ^ -(dy & 1);
+          x += _zigzag(dx);
+          y += _zigzag(dy);
           if (!isPoint) out.beginRing();
           out.add(x, y);
         }
@@ -229,8 +229,8 @@ class MvtFeature implements TileFeature {
         for (var i = 0; i < count; i++) {
           final dx = r.varint();
           final dy = r.varint();
-          x += (dx >>> 1) ^ -(dx & 1);
-          y += (dy >>> 1) ^ -(dy & 1);
+          x += _zigzag(dx);
+          y += _zigzag(dy);
           out.add(x, y);
         }
       }
@@ -271,6 +271,11 @@ class GeometrySink {
   void end() => ringStarts.add(coordCount >> 1);
 }
 
+/// Written without an exclusive or with a negative number, which comes out
+/// unsigned in JavaScript.
+@pragma('vm:prefer-inline')
+int _zigzag(int v) => (v & 1) == 0 ? v >>> 1 : -(v >>> 1) - 1;
+
 class _Reader {
   _Reader(this.bytes, this.pos, this.end);
 
@@ -280,14 +285,21 @@ class _Reader {
 
   bool get hasMore => pos < end;
 
+  /// The first four bytes by shifting, which is quick, and the rest by
+  /// multiplying: a shift keeps only 32 bits in JavaScript.
   int varint() {
     var result = 0;
-    var shift = 0;
-    while (true) {
+    for (var shift = 0; shift < 28; shift += 7) {
       final b = bytes[pos++];
       result |= (b & 0x7f) << shift;
       if (b < 0x80) return result;
-      shift += 7;
+    }
+    var scale = 0x10000000;
+    while (true) {
+      final b = bytes[pos++];
+      result += (b & 0x7f) * scale;
+      if (b < 0x80) return result;
+      scale *= 128;
     }
   }
 

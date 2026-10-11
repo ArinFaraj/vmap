@@ -1,7 +1,6 @@
-import 'dart:io';
 import 'dart:typed_data';
 
-import 'net.dart';
+import 'platform.dart';
 
 /// Reads tiles out of a PMTiles archive, version 3: one file holding a whole
 /// tile set, read a slice at a time from a web server or from disk.
@@ -10,7 +9,7 @@ import 'net.dart';
 /// path, for example `pmtiles://https://example.org/world.pmtiles` or
 /// `pmtiles:///data/world.pmtiles`.
 class PmTiles {
-  PmTiles(String address, {HttpClient? client, this.headers = const {}})
+  PmTiles(String address, {Net? client, this.headers = const {}})
     : _where = address.substring(scheme.length),
       _client = client,
       _ownsClient = client == null;
@@ -22,9 +21,9 @@ class PmTiles {
 
   final String _where;
   final Map<String, String> headers;
-  HttpClient? _client;
+  Net? _client;
   final bool _ownsClient;
-  RandomAccessFile? _file;
+  FileSlices? _file;
   Future<_Header>? _header;
   final Map<int, List<_Entry>> _leaves = {};
 
@@ -53,7 +52,7 @@ class PmTiles {
         return _unpack(bytes, header.tilePacking);
       }
       entries = _leaves[entry.offset] ??= _directory(
-        _unpack(
+        await _unpack(
           await _read(header.leavesAt + entry.offset, entry.length),
           header.innerPacking,
         ),
@@ -64,17 +63,19 @@ class PmTiles {
   }
 
   void close() {
-    _file?.closeSync();
+    _file?.close();
     _file = null;
-    if (_ownsClient) _client?.close(force: true);
+    if (_ownsClient) _client?.close();
   }
 
   /// A tile's number in the archive: tiles of all shallower zooms first,
   /// then along a Hilbert curve through its own zoom.
   static int tileId(int z, int x, int y) {
     var id = 0;
+    var tiles = 1;
     for (var i = 0; i < z; i++) {
-      id += 1 << (2 * i);
+      id += tiles;
+      tiles *= 4;
     }
     var px = x, py = y;
     for (var s = z == 0 ? 0 : 1 << (z - 1); s > 0; s >>= 1) {
@@ -115,14 +116,17 @@ class PmTiles {
       throw const FormatException('Not a PMTiles version 3 archive');
     }
     final data = ByteData.sublistView(head);
-    int at(int offset) => data.getUint64(offset, Endian.little);
+    // Read as two halves: JavaScript has no 64 bit whole numbers.
+    int at(int offset) =>
+        data.getUint32(offset, Endian.little) +
+        data.getUint32(offset + 4, Endian.little) * 0x100000000;
     final rootAt = at(8), rootLength = at(16);
     final innerPacking = head[97];
     final root = rootAt + rootLength <= head.length
         ? Uint8List.sublistView(head, rootAt, rootAt + rootLength)
         : await _read(rootAt, rootLength);
     return _Header(
-      root: _directory(_unpack(root, innerPacking)),
+      root: _directory(await _unpack(root, innerPacking)),
       leavesAt: at(40),
       tilesAt: at(56),
       innerPacking: innerPacking,
@@ -132,9 +136,12 @@ class PmTiles {
     );
   }
 
-  static Uint8List _unpack(Uint8List bytes, int packing) => switch (packing) {
+  static Future<Uint8List> _unpack(
+    Uint8List bytes,
+    int packing,
+  ) async => switch (packing) {
     0 || 1 => bytes,
-    2 => Uint8List.fromList(gzip.decode(bytes)),
+    2 => await gunzip(bytes),
     _ => throw const FormatException(
       'The PMTiles archive is packed with brotli or zstd; only gzip is read',
     ),
@@ -145,13 +152,14 @@ class PmTiles {
   /// deeper directory instead of a tile.
   static List<_Entry> _directory(Uint8List bytes) {
     var p = 0;
+    // By multiplying: a shift keeps only 32 bits in JavaScript.
     int varint() {
-      var value = 0, shift = 0;
+      var value = 0, scale = 1;
       while (true) {
         final b = bytes[p++];
-        value |= (b & 0x7f) << shift;
+        value += (b & 0x7f) * scale;
         if (b < 0x80) return value;
-        shift += 7;
+        scale *= 128;
       }
     }
 
@@ -181,28 +189,18 @@ class PmTiles {
   }
 
   Future<Uint8List> _read(int offset, int length) async {
-    if (!_remote) {
-      final file = _file ??= await File(_where).open();
-      await file.setPosition(offset);
-      return file.read(length);
+    if (!_remote) return (_file ??= FileSlices(_where)).read(offset, length);
+    final reply = await (_client ??= Net()).get(_where, {
+      ...headers,
+      'range': 'bytes=$offset-${offset + length - 1}',
+      'accept-encoding': 'identity',
+    }, timeout: const Duration(seconds: 30));
+    if (reply.status != 206 && reply.status != 200) {
+      throw HttpFailure(reply.status, _where);
     }
-    final request = await openGet(_client ??= HttpClient(), _where, headers);
-    request.headers
-      ..set('range', 'bytes=$offset-${offset + length - 1}')
-      ..set('accept-encoding', 'identity');
-    final response = await request.close().timeout(const Duration(seconds: 20));
-    if (response.statusCode != 206 && response.statusCode != 200) {
-      await response.drain<void>();
-      throw HttpException(
-        'HTTP ${response.statusCode}',
-        uri: Uri.parse(_where),
-      );
-    }
-    final builder = BytesBuilder(copy: false);
-    await response.forEach(builder.add).timeout(const Duration(seconds: 30));
-    final bytes = builder.takeBytes();
+    final bytes = reply.bytes;
     // A server that ignores the range sends the whole file.
-    return response.statusCode == 200 && bytes.length > length
+    return reply.status == 200 && bytes.length > length
         ? Uint8List.sublistView(
             bytes,
             offset,

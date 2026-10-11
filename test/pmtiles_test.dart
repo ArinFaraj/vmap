@@ -94,7 +94,7 @@ void main() {
     expect(await archive.tile(1, 0, 1), [9, 9]);
     expect(await archive.tile(1, 1, 1), isEmpty);
     expect(await archive.tile(2, 0, 0), isEmpty);
-  });
+  }, testOn: 'vm');
 
   test('only archives are taken for archives', () {
     expect(PmTiles.handles('pmtiles://https://example.org/a.pmtiles'), isTrue);

@@ -343,7 +343,7 @@ class TileSource {
       if (!tile.prepared) continue;
       final ax = x >> dz;
       final ay = y >> dz;
-      final key = (ancestor.z << 50) | ((ax & 0x1ffffff) << 25) | ay;
+      final key = tileKey(ancestor.z, ax, ay);
       final big = tileSize * (1 << dz);
       final draw = fallbackByKey[key] ??= () {
         final d = TileDraw(

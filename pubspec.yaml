@@ -1,6 +1,6 @@
 name: vmap
 description: A vector tile layer for flutter_map that draws any MapLibre style with the Flutter canvas.
-version: 0.16.0
+version: 0.17.0
 publish_to: none
 
 environment:
@@ -13,6 +13,7 @@ dependencies:
     sdk: flutter
   flutter_map: ^8.3.0
   latlong2: ">=0.9.0 <0.11.0"
+  web: ^1.1.0
 
 dev_dependencies:
   flutter_lints: ^6.0.0

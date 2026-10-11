@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -10,6 +8,8 @@ import 'expr.dart';
 import 'pmtiles.dart';
 import 'style.dart';
 import 'net.dart';
+import 'platform.dart';
+import 'worker.dart' show tileKey;
 
 class _RasterTile {
   ui.Image? image;
@@ -72,9 +72,7 @@ class RasterTiles {
   static const int _maxTiles = 48;
   static const int _maxLoading = 4;
 
-  late final HttpClient _client = HttpClient()
-    ..userAgent = userAgent
-    ..maxConnectionsPerHost = 4;
+  late final Net _client = Net(userAgent: userAgent, perHost: 4);
   final Map<int, _RasterTile> _tiles = {};
   final ui.Paint _paint = ui.Paint()..filterQuality = ui.FilterQuality.low;
   final Stopwatch _clock = Stopwatch()..start();
@@ -86,12 +84,12 @@ class RasterTiles {
 
   Future<void> _resolve() async {
     try {
-      final request = await openGet(_client, layer.tileJsonUrl!, headers);
-      final response = await request.close().timeout(
-        const Duration(seconds: 10),
+      final reply = await _client.get(
+        layer.tileJsonUrl!,
+        headers,
+        timeout: const Duration(seconds: 10),
       );
-      final json =
-          jsonDecode(await utf8.decodeStream(response)) as Map<String, dynamic>;
+      final json = jsonDecode(utf8.decode(reply.bytes)) as Map<String, dynamic>;
       final deepest = json['maxzoom'];
       if (deepest is num) _maxZoom = deepest.toInt();
       _template = tileTemplate(json['tiles']);
@@ -135,7 +133,7 @@ class RasterTiles {
       ..colorFilter = layer.adjust?.filter(context);
     for (var y = y0; y <= y1; y++) {
       for (var x = x0; x <= x1; x++) {
-        final key = (z << 50) | ((x % n) << 25) | y;
+        final key = tileKey(z, x % n, y);
         final tile = _tiles[key] ??= _RasterTile();
         tile.usedFrame = _frame;
         final image = tile.image;
@@ -184,21 +182,16 @@ class RasterTiles {
       final archive = _archive;
       final file = cacheDirectory == null || (archive?.local ?? false)
           ? null
-          : File(
-              '$cacheDirectory/raster-${template.hashCode.toRadixString(36)}/$z/$x/$y',
-            );
+          : '$cacheDirectory/raster-${template.hashCode.toRadixString(36)}/$z/$x/$y';
       Uint8List bytes;
-      if (file != null && file.existsSync()) {
-        bytes = await file.readAsBytes();
+      if (file != null && fileExists(file)) {
+        bytes = await readFile(file);
       } else if (archive != null) {
         bytes = await archive.tile(z, x, y);
-        if (bytes.isEmpty) throw const HttpException('No such tile');
-        if (file != null) {
-          await file.parent.create(recursive: true);
-          await file.writeAsBytes(bytes);
-        }
+        if (bytes.isEmpty) throw HttpFailure(404, template);
+        if (file != null) await writeFile(file, bytes);
       } else {
-        final (url, response) = await getTile(
+        final (url, reply) = await getTile(
           _client,
           template,
           z,
@@ -206,20 +199,9 @@ class RasterTiles {
           layer.cover.row(z, y),
           headers,
         );
-        if (response.statusCode != 200) {
-          await response.drain<void>();
-          throw HttpException(
-            'HTTP ${response.statusCode}',
-            uri: Uri.parse(url),
-          );
-        }
-        final builder = BytesBuilder(copy: false);
-        await response.forEach(builder.add);
-        bytes = builder.takeBytes();
-        if (file != null) {
-          await file.parent.create(recursive: true);
-          await file.writeAsBytes(bytes);
-        }
+        if (reply.status != 200) throw HttpFailure(reply.status, url);
+        bytes = reply.bytes;
+        if (file != null) await writeFile(file, bytes);
       }
       final codec = await ui.instantiateImageCodec(bytes);
       final frame = await codec.getNextFrame();
@@ -266,7 +248,7 @@ class RasterTiles {
   _RasterTile? _beside(int z, int x, int y) {
     final n = 1 << z;
     if (y < 0 || y >= n) return null;
-    return _tiles[(z << 50) | ((x % n) << 25) | y];
+    return _tiles[tileKey(z, x % n, y)];
   }
 
   /// The two rows along the top and bottom and the two columns along the
@@ -367,7 +349,7 @@ class RasterTiles {
       shadow.r, shadow.g, shadow.b, shadow.a, //
       light.r, light.g, light.b, light.a,
     ];
-    final shaded = await Isolate.run(
+    final shaded = await runAside(
       () => shadeHeights(
         pixels,
         width,
@@ -396,7 +378,7 @@ class RasterTiles {
   void close() {
     _closed = true;
     _archive?.close();
-    _client.close(force: true);
+    _client.close();
     for (final t in _tiles.values) {
       t.image?.dispose();
     }

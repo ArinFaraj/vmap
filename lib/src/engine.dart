@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -22,7 +21,7 @@ import 'style.dart';
 import 'tile_builder.dart';
 import 'tiles.dart';
 import 'worker.dart';
-import 'net.dart';
+import 'platform.dart';
 
 class VmapStats {
   int tilesDrawn = 0;
@@ -156,14 +155,10 @@ class VmapEngine extends ChangeNotifier {
     final directory = source.cacheDirectory;
     if (directory != null) {
       final tiles = {for (final s in _sources) s.pool.cacheName};
-      try {
-        await for (final entry in Directory(directory).list()) {
-          final name = entry.uri.pathSegments.lastWhere((s) => s.isNotEmpty);
-          if (_kept.hasMatch(name) || tiles.contains(name)) {
-            await entry.delete(recursive: true);
-          }
-        }
-      } on FileSystemException catch (_) {}
+      await deleteCached(
+        directory,
+        (name) => _kept.hasMatch(name) || tiles.contains(name),
+      );
     }
     if (!_disposed) reload();
   }
@@ -186,11 +181,9 @@ class VmapEngine extends ChangeNotifier {
     return color == null ? null : ui.Color(color.toArgb());
   }
 
-  File? _styleFile(String url) => source.cacheDirectory == null
+  String? _styleFile(String url) => source.cacheDirectory == null
       ? null
-      : File(
-          '${source.cacheDirectory}/style-${url.hashCode.toRadixString(36)}.json',
-        );
+      : '${source.cacheDirectory}/style-${url.hashCode.toRadixString(36)}.json';
 
   /// Uses the style right away when it is at hand. One named by address is
   /// drawn from the copy kept from the last run while the current one
@@ -207,34 +200,26 @@ class VmapEngine extends ChangeNotifier {
     final file = _styleFile(url);
     String? remembered;
     try {
-      if (file != null && file.existsSync()) {
-        remembered = await file.readAsString();
+      if (file != null && fileExists(file)) {
+        remembered = utf8.decode(await readFile(file));
         if (_disposed || wanted != _style) return;
         _apply(jsonDecode(remembered) as Map<String, Object?>, wanted);
       }
     } catch (_) {
       remembered = null;
     }
-    final client = HttpClient()..userAgent = source.userAgent;
+    final client = Net(userAgent: source.userAgent);
     try {
-      final request = await openGet(
-        client,
+      final reply = await client.get(
         url,
         source.headers,
-      ).timeout(const Duration(seconds: 10));
-      final response = await request.close().timeout(
-        const Duration(seconds: 10),
+        timeout: const Duration(seconds: 10),
       );
-      if (response.statusCode != 200) {
-        throw HttpException('HTTP ${response.statusCode}', uri: Uri.parse(url));
-      }
-      final body = await utf8.decodeStream(response);
+      if (reply.status != 200) throw HttpFailure(reply.status, url);
+      final body = utf8.decode(reply.bytes);
       if (_disposed || wanted != _style || body == remembered) return;
       _apply(jsonDecode(body) as Map<String, Object?>, wanted);
-      if (file != null) {
-        await file.parent.create(recursive: true);
-        await file.writeAsString(body);
-      }
+      if (file != null) await writeFile(file, reply.bytes);
     } catch (e) {
       if (wanted == _style && !_disposed) onError?.call(e);
       if (remembered == null && wanted == _style && !_disposed) {
@@ -533,6 +518,60 @@ class VmapEngine extends ChangeNotifier {
     found.sort((a, b) => b.$1 - a.$1);
     return [for (final f in found) f.$2];
   }
+
+  TilePool? _clustered(String source) {
+    for (final s in _sources) {
+      if (s.def.name == source && s.def.cluster != null) return s.pool;
+    }
+    return null;
+  }
+
+  /// The map zoom at which cluster [clusterId] of the clustered GeoJSON
+  /// source named [source] comes apart, for zooming in on a tapped cluster.
+  /// Null when there is no such cluster.
+  Future<double?> clusterExpansionZoom(String source, int clusterId) async {
+    final found = await _clustered(source)?.cluster('zoom', clusterId);
+    final zoom = found == null || found.isEmpty ? null : found.first as int?;
+    return zoom == null ? null : zoom + 1.0;
+  }
+
+  /// What cluster [clusterId] comes apart into at its expansion zoom.
+  Future<List<VmapClusterMember>> clusterChildren(
+    String source,
+    int clusterId,
+  ) async => _members(await _clustered(source)?.cluster('children', clusterId));
+
+  /// The points of the data inside cluster [clusterId], [limit] of them
+  /// starting at [offset].
+  Future<List<VmapClusterMember>> clusterLeaves(
+    String source,
+    int clusterId, {
+    int limit = 10,
+    int offset = 0,
+  }) async => _members(
+    await _clustered(source)
+        ?.cluster('leaves', clusterId, limit: limit, offset: offset),
+  );
+
+  static List<VmapClusterMember> _members(List<Object?>? found) => [
+    for (final member in found ?? const <Object?>[])
+      if (member case [
+        final double x,
+        final double y,
+        final Map<Object?, Object?> props,
+      ])
+        VmapClusterMember(
+          latitude: math.atan(_sinh(math.pi * (1 - 2 * y))) * 180 / math.pi,
+          longitude: x * 360 - 180,
+          id: props[r'$id'],
+          properties: {
+            for (final e in props.entries)
+              if (e.key != r'$id') e.key! as String: e.value,
+          },
+        ),
+  ];
+
+  static double _sinh(double v) => (math.exp(v) - math.exp(-v)) / 2;
 
   void _requestFrame() {
     if (_framePending || _disposed) return;

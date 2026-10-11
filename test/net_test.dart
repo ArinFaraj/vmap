@@ -1,3 +1,6 @@
+@TestOn('vm')
+library;
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -53,7 +56,7 @@ void main() {
         ..write('tile')
         ..close();
     });
-    final client = HttpClient();
+    final client = Net();
     addTearDown(client.close);
     final template =
         'http://127.0.0.1:${bad.port}/{z}/{x}/{y} '
@@ -61,8 +64,8 @@ void main() {
     final (url, response) = await getTile(client, template, 3, 1, 1, const {
       'x-key': 'secret',
     });
-    expect(response.statusCode, 200);
-    expect(await utf8.decodeStream(response), 'tile');
+    expect(response.status, 200);
+    expect(utf8.decode(response.bytes), 'tile');
     expect(url, 'http://127.0.0.1:${good.port}/3/1/1');
     expect(asked, ['bad', 'good secret']);
   });
@@ -73,7 +76,7 @@ void main() {
         ..statusCode = 503
         ..close();
     });
-    final client = HttpClient();
+    final client = Net();
     addTearDown(client.close);
     final (_, response) = await getTile(
       client,
@@ -83,8 +86,7 @@ void main() {
       1,
       const {},
     );
-    expect(response.statusCode, 503);
-    await response.drain<void>();
+    expect(response.status, 503);
   });
 
   test(
@@ -122,7 +124,7 @@ void main() {
       addTearDown(engine.dispose);
       await loaded.future.timeout(const Duration(seconds: 5));
       expect(keys, ['Bearer token']);
-      expect(errors.single, isA<HttpException>());
+      expect(errors.single, isA<HttpFailure>());
       expect(engine.error, isNotNull);
 
       fail = false;

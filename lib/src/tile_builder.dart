@@ -1,9 +1,9 @@
-import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'expr.dart';
 import 'mvt.dart';
+import 'platform.dart';
 import 'style.dart';
 import 'tessellate.dart';
 
@@ -100,21 +100,12 @@ class BuiltTile {
       for (final m in meshes)
         [
           m.bucket,
-          TransferableTypedData.fromList([m.chunk.positions]),
-          if (m.chunk.extrusions case final e?)
-            TransferableTypedData.fromList([e])
-          else
-            null,
-          TransferableTypedData.fromList([m.chunk.indices]),
-          if (m.chunk.distances case final d?)
-            TransferableTypedData.fromList([d])
-          else
-            null,
+          pack(m.chunk.positions),
+          if (m.chunk.extrusions case final e?) pack(e) else null,
+          pack(m.chunk.indices),
+          if (m.chunk.distances case final d?) pack(d) else null,
           m.props,
-          if (m.chunk.offsets case final o?)
-            TransferableTypedData.fromList([o])
-          else
-            null,
+          if (m.chunk.offsets case final o?) pack(o) else null,
         ],
     ],
     [
@@ -144,11 +135,11 @@ class BuiltTile {
         BuiltMesh(
           parts[0] as int,
           MeshChunk(
-            (parts[1] as TransferableTypedData).materialize().asFloat32List(),
-            (parts[2] as TransferableTypedData?)?.materialize().asFloat32List(),
-            (parts[3] as TransferableTypedData).materialize().asUint16List(),
-            (parts[4] as TransferableTypedData?)?.materialize().asFloat32List(),
-            (parts[6] as TransferableTypedData?)?.materialize().asFloat32List(),
+            unpackFloats(parts[1]! as Object),
+            _floats(parts[2]),
+            unpackShorts(parts[3]! as Object),
+            _floats(parts[4]),
+            _floats(parts[6]),
           ),
           (parts[5] as Map?)?.cast<String, Object?>(),
         ),
@@ -778,3 +769,6 @@ class TileBuilder {
     return BuiltLabel(layer, base + 9 - lengthBonus, text, mx, my, line);
   }
 }
+
+Float32List? _floats(Object? packed) =>
+    packed == null ? null : unpackFloats(packed);

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'platform.dart';
 import 'expr.dart';
 import 'sprites.dart';
 import 'style.dart';
@@ -35,7 +36,7 @@ class LayerShaders {
       ..[12] = -(origin.dx % (image.width * stretch))
       ..[13] = -(origin.dy % (image.height * stretch));
     final shader = ui.ImageShader(
-      image,
+      forShader(image),
       ui.TileMode.repeated,
       ui.TileMode.repeated,
       _matrix,
@@ -132,7 +133,7 @@ class LayerShaders {
       ..[0] = stretch
       ..[5] = along ? 1 / image.height : stretch;
     final shader = ui.ImageShader(
-      image,
+      forShader(image),
       ui.TileMode.repeated,
       along ? ui.TileMode.clamp : ui.TileMode.repeated,
       _matrix,

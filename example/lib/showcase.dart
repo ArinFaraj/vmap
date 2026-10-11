@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -568,7 +569,8 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
         ],
       ),
     );
-    final desktop = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+    final desktop =
+        !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
     if (desktop) {
       screen = ColoredBox(
         color: const Color(0xFF202124),

@@ -33,6 +33,28 @@ class VmapFeature {
       'VmapFeature($source/$sourceLayer $id $layers $properties)';
 }
 
+/// What a cluster of a clustered source holds: a smaller cluster, or one of
+/// the points of the data.
+class VmapClusterMember {
+  const VmapClusterMember({
+    required this.latitude,
+    required this.longitude,
+    required this.properties,
+    this.id,
+  });
+
+  final double latitude;
+  final double longitude;
+  final Map<String, Object?> properties;
+  final Object? id;
+
+  /// It is a cluster itself, with a `cluster_id` to ask about in turn.
+  bool get isCluster => properties['cluster'] == true;
+
+  @override
+  String toString() => 'VmapClusterMember($latitude, $longitude $properties)';
+}
+
 /// State an app gives one feature, which the style reads with
 /// `['feature-state', name]` in a paint property: the way to highlight what
 /// was tapped without rebuilding anything.

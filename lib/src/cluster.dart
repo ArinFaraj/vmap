@@ -65,6 +65,12 @@ class ClusterPoint {
   /// How many points of the data it stands for.
   final int count;
   final Map<String, Object?> props;
+
+  /// What a cluster was gathered from, one zoom deeper than [zoom].
+  List<ClusterPoint>? children;
+
+  /// The deepest zoom a cluster is still one point at.
+  int zoom = 0;
 }
 
 /// Points gathered into clusters for every zoom, each zoom built from the
@@ -86,6 +92,35 @@ class PointClusters {
   final List<_Tally> _tallies;
   final EvalContext _context = EvalContext();
   int _nextId = 1;
+  final Map<int, ClusterPoint> _byId = {};
+
+  /// The zoom at which cluster [id] comes apart, or null when there is no
+  /// such cluster.
+  int? expansionZoom(int id) {
+    final cluster = _byId[id];
+    return cluster == null ? null : cluster.zoom + 1;
+  }
+
+  /// What cluster [id] comes apart into, one zoom deeper.
+  List<ClusterPoint> children(int id) => _byId[id]?.children ?? const [];
+
+  /// The points of the data in cluster [id], [limit] of them from [offset].
+  List<ClusterPoint> leaves(int id, {int limit = 10, int offset = 0}) {
+    final out = <ClusterPoint>[];
+    var skipped = 0;
+    void walk(ClusterPoint point) {
+      if (out.length >= limit) return;
+      final below = point.children;
+      if (below != null) {
+        below.forEach(walk);
+      } else if (skipped++ >= offset) {
+        out.add(point);
+      }
+    }
+
+    children(id).forEach(walk);
+    return out;
+  }
 
   Object? _valueOf(ClusterPoint p, _Tally tally) {
     if (p.props['cluster'] == true) return p.props[tally.name];
@@ -116,7 +151,7 @@ class PointClusters {
     final reach = options.radius / (512 * (1 << z));
     final cells = <int, List<int>>{};
     int cell(double x, double y) =>
-        ((x / reach).floor() << 26) | ((y / reach).floor() & 0x3ffffff);
+        (x / reach).floor() * 0x4000000 + (y / reach).floor();
     for (var i = 0; i < from.length; i++) {
       (cells[cell(from[i].x, from[i].y)] ??= []).add(i);
     }
@@ -154,20 +189,23 @@ class PointClusters {
       }
       final id = _nextId++;
       out.add(
-        ClusterPoint(x / count, y / count, count, {
-          ...?(_tallies.isEmpty
-              ? null
-              : _tally(p, [for (final j in near) from[j]])),
-          r'$id': id,
-          'cluster': true,
-          'cluster_id': id,
-          'point_count': count,
-          'point_count_abbreviated': count >= 10000
-              ? '${(count / 1000).round()}k'
-              : count >= 1000
-              ? '${(count / 100).round() / 10}k'
-              : count,
-        }),
+        _byId[id] =
+            ClusterPoint(x / count, y / count, count, {
+                ...?(_tallies.isEmpty
+                    ? null
+                    : _tally(p, [for (final j in near) from[j]])),
+                r'$id': id,
+                'cluster': true,
+                'cluster_id': id,
+                'point_count': count,
+                'point_count_abbreviated': count >= 10000
+                    ? '${(count / 1000).round()}k'
+                    : count >= 1000
+                    ? '${(count / 100).round() / 10}k'
+                    : count,
+              })
+              ..children = [p, for (final j in near) from[j]]
+              ..zoom = z,
       );
     }
     return out;

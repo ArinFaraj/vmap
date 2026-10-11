@@ -1,9 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'cluster.dart';
 import 'geojson.dart';
 import 'mvt.dart';
 import 'query.dart';
@@ -11,6 +10,7 @@ import 'pmtiles.dart';
 import 'style.dart';
 import 'tile_builder.dart';
 import 'net.dart';
+import 'platform.dart';
 
 class TileId {
   const TileId(this.z, this.x, this.y);
@@ -26,11 +26,15 @@ class TileId {
       other is TileId && other.z == z && other.x == x && other.y == y;
 
   @override
-  int get hashCode => (z << 50) | (x << 25) | y;
+  int get hashCode => tileKey(z, x, y);
 
   @override
   String toString() => '$z/$x/$y';
 }
+
+/// One number for a tile down to zoom 22. It stays under the 53 bits a
+/// number has in JavaScript.
+int tileKey(int z, int x, int y) => (z * 0x400000 + x) * 0x400000 + y;
 
 /// How tiles are fetched and kept.
 class TileSourceConfig {
@@ -127,11 +131,9 @@ class TilePool {
   /// The folder under the cache directory that holds this source's tiles.
   String? get cacheName => _template?.hashCode.toRadixString(36);
 
-  File? get _templateFile => config.cacheDirectory == null
+  String? get _templateFile => config.cacheDirectory == null
       ? null
-      : File(
-          '${config.cacheDirectory}/source-${_def.tileJsonUrl.hashCode.toRadixString(36)}.txt',
-        );
+      : '${config.cacheDirectory}/source-${_def.tileJsonUrl.hashCode.toRadixString(36)}.txt';
 
   /// Starts on the address remembered from the last run, so tiles on disk
   /// show without waiting for the network, and asks the server for the
@@ -162,8 +164,8 @@ class TilePool {
       }
       final file = _templateFile;
       String? remembered;
-      if (file != null && file.existsSync()) {
-        final saved = file.readAsStringSync().split('\n');
+      if (file != null && fileExists(file)) {
+        final saved = utf8.decode(await readFile(file)).split('\n');
         remembered = saved.first;
         if (saved.length > 1) maxZoom = int.tryParse(saved[1]) ?? maxZoom;
       }
@@ -216,53 +218,46 @@ class TilePool {
   }
 
   Future<_Worker> _spawnWorker(int index, String template) async {
-    final inbox = ReceivePort();
-    final isolate = await Isolate.spawn(_workerMain, [
-      inbox.sendPort,
-      template,
-      config.cacheDirectory,
-      config.userAgent,
-      style,
-      nameKeys,
-      sheet.zoomOffset,
-      source,
-      config.headers,
-    ], debugName: 'vmap-tiles-$source-$index');
-    final ready = Completer<SendPort>();
-    final worker = _Worker(isolate, inbox);
-    inbox.listen((message) {
-      if (message is SendPort) {
-        ready.complete(message);
-      } else if (message case [final int job, 'q', final List<Object?> found]) {
-        _queries.remove(job)?.complete(found);
-      } else {
-        _onResult(worker, message as List);
-      }
-    });
-    worker.port = await ready.future;
+    final worker = _Worker();
+    worker.link = await startWorker(
+      _workerMain,
+      [
+        template,
+        config.cacheDirectory,
+        config.userAgent,
+        style,
+        nameKeys,
+        sheet.zoomOffset,
+        source,
+        config.headers,
+      ],
+      (message) {
+        if (message case [final int job, 'q', final List<Object?> found]) {
+          _queries.remove(job)?.complete(found);
+        } else {
+          _onResult(worker, message! as List);
+        }
+      },
+      debugName: 'vmap-tiles-$source-$index',
+    );
     return worker;
   }
 
   Future<String> _fetchTemplate() async {
-    final client = HttpClient()..userAgent = config.userAgent;
+    final client = Net(userAgent: config.userAgent);
     try {
-      final request = await openGet(
-        client,
+      final reply = await client.get(
         _def.tileJsonUrl!,
         config.headers,
-      ).timeout(const Duration(seconds: 10));
-      final response = await request.close().timeout(
-        const Duration(seconds: 10),
+        timeout: const Duration(seconds: 10),
       );
-      final json =
-          jsonDecode(await utf8.decodeStream(response)) as Map<String, dynamic>;
+      final json = jsonDecode(utf8.decode(reply.bytes)) as Map<String, dynamic>;
       final template = tileTemplate(json['tiles'])!;
       final deepest = json['maxzoom'];
       if (deepest is num) maxZoom = deepest.toInt();
       final file = _templateFile;
       if (file != null) {
-        await file.parent.create(recursive: true);
-        await file.writeAsString('$template\n$maxZoom');
+        await writeFile(file, utf8.encode('$template\n$maxZoom'));
       }
       return template;
     } finally {
@@ -272,9 +267,9 @@ class TilePool {
 
   bool _onDisk(TileId id) {
     if (_notOnDisk.contains(id)) return false;
-    final found = File(
+    final found = fileExists(
       _tileCachePath(config.cacheDirectory!, _template!, id.z, id.x, id.y),
-    ).existsSync();
+    );
     if (!found) _notOnDisk.add(id);
     return found;
   }
@@ -295,7 +290,7 @@ class TilePool {
       _inflight[job] = id;
       _inflightIds.add(id);
       free.busy++;
-      free.port.send([job, id.z, id.x, id.y, maxZoom]);
+      free.link.send([job, id.z, id.x, id.y, maxZoom]);
     }
   }
 
@@ -330,22 +325,23 @@ class TilePool {
     double py,
     double radius,
     double styleZoom,
-  ) async {
+  ) => _ask([id.z, id.x, id.y, 'q', px, py, radius, styleZoom]);
+
+  /// Asks a clustered source about cluster [id]: its `zoom` of expansion,
+  /// its `children` or its `leaves`.
+  Future<List<Object?>> cluster(
+    String what,
+    int id, {
+    int limit = 0,
+    int offset = 0,
+  }) => _ask([0, 0, 0, 'c', what, id, limit, offset]);
+
+  Future<List<Object?>> _ask(List<Object?> question) async {
     await _starting;
     if (_workers.isEmpty || _closed) return const [];
     final job = _nextJob++;
     final done = _queries[job] = Completer();
-    _workers.first.port.send([
-      job,
-      id.z,
-      id.x,
-      id.y,
-      'q',
-      px,
-      py,
-      radius,
-      styleZoom,
-    ]);
+    _workers.first.link.send([job, ...question]);
     return done.future.timeout(
       const Duration(seconds: 10),
       onTimeout: () {
@@ -369,40 +365,35 @@ class TilePool {
 }
 
 class _Worker {
-  _Worker(this.isolate, this.inbox);
-
-  final Isolate isolate;
-  final ReceivePort inbox;
-  late SendPort port;
+  late final Worker link;
   int busy = 0;
 
-  void close() {
-    inbox.close();
-    isolate.kill(priority: Isolate.immediate);
-  }
+  void close() => link.close();
 }
+
+List<Object?> _members(List<ClusterPoint>? points) => [
+  for (final p in points ?? const <ClusterPoint>[]) [p.x, p.y, p.props],
+];
 
 String _tileCachePath(String directory, String template, int z, int x, int y) =>
     '$directory/${template.hashCode.toRadixString(36)}/$z/$x/$y.pbf';
 
-Future<void> _workerMain(List<Object?> init) async {
-  final out = init[0]! as SendPort;
-  final template = init[1]! as String;
-  final cacheDirectory = init[2] as String?;
-  final client = HttpClient()
-    ..userAgent = init[3]! as String
-    ..maxConnectionsPerHost = 4
-    ..connectionTimeout = const Duration(seconds: 10);
+Future<void> _workerMain(
+  List<Object?> init,
+  void Function(Object? message) send,
+  Stream<Object?> inbox,
+) async {
+  final template = init[0]! as String;
+  final cacheDirectory = init[1] as String?;
+  final client = Net(userAgent: init[2]! as String, perHost: 4);
   final sheet = StyleSheet.compile(
-    (init[4]! as Map).cast<String, Object?>(),
-    nameKeys: (init[5] as List?)?.cast<String>(),
-    zoomOffset: init[6]! as double,
+    (init[3]! as Map).cast<String, Object?>(),
+    nameKeys: (init[4] as List?)?.cast<String>(),
+    zoomOffset: init[5]! as double,
   );
-  final source = init[7]! as int;
-  final headers = (init[8]! as Map).cast<String, String>();
+  final source = init[6]! as int;
+  final headers = (init[7]! as Map).cast<String, String>();
   final builder = TileBuilder(sheet, source: source);
-  final inbox = ReceivePort();
-  out.send(inbox.sendPort);
 
   Future<GeoJsonTiles>? geoJson;
   if (sheet.sources[source].geoJson) {
@@ -420,12 +411,9 @@ Future<void> _workerMain(List<Object?> init) async {
         );
       }
       try {
-        final request = await openGet(client, data, headers);
-        final response = await request.close().timeout(
-          const Duration(seconds: 20),
-        );
+        final reply = await client.get(data, headers);
         return GeoJsonTiles(
-          jsonDecode(await utf8.decodeStream(response)),
+          jsonDecode(utf8.decode(reply.bytes)),
           cluster: cluster,
           promoteId: promoteId,
           generateId: generateId,
@@ -447,7 +435,7 @@ Future<void> _workerMain(List<Object?> init) async {
 
   Future<Uint8List> fetch(int z, int x, int y) async {
     if (!cover.has(z, x, y)) return Uint8List(0);
-    final key = (z << 50) | (x << 25) | y;
+    final key = tileKey(z, x, y);
     final kept = recent.remove(key);
     if (kept != null) {
       recent[key] = kept;
@@ -458,11 +446,11 @@ Future<void> _workerMain(List<Object?> init) async {
       if (recent.length > 24) recent.remove(recent.keys.first);
     }
 
-    File? file;
+    String? file;
     if (cacheDirectory != null && !(archive?.local ?? false)) {
-      file = File(_tileCachePath(cacheDirectory, template, z, x, y));
-      if (file.existsSync()) {
-        final bytes = await file.readAsBytes();
+      file = _tileCachePath(cacheDirectory, template, z, x, y);
+      if (fileExists(file)) {
+        final bytes = await readFile(file);
         remember(bytes);
         return bytes;
       }
@@ -471,12 +459,7 @@ Future<void> _workerMain(List<Object?> init) async {
       remember(bytes);
       final target = file;
       if (target == null) return;
-      unawaited(
-        target.parent
-            .create(recursive: true)
-            .then((_) => target.writeAsBytes(bytes))
-            .then<void>((_) {}, onError: (_) {}),
-      );
+      unawaited(writeFile(target, bytes).then<void>((_) {}, onError: (_) {}));
     }
 
     if (archive != null) {
@@ -484,7 +467,7 @@ Future<void> _workerMain(List<Object?> init) async {
       keep(bytes);
       return bytes;
     }
-    final (url, response) = await getTile(
+    final (url, reply) = await getTile(
       client,
       template,
       z,
@@ -492,19 +475,10 @@ Future<void> _workerMain(List<Object?> init) async {
       cover.row(z, y),
       headers,
     );
-    if (response.statusCode == 204 || response.statusCode == 404) {
-      await response.drain<void>();
-      return Uint8List(0);
-    }
-    if (response.statusCode != 200) {
-      await response.drain<void>();
-      throw HttpException('HTTP ${response.statusCode}', uri: Uri.parse(url));
-    }
-    final builder = BytesBuilder(copy: false);
-    await response.forEach(builder.add).timeout(const Duration(seconds: 30));
-    final bytes = builder.takeBytes();
-    keep(bytes);
-    return bytes;
+    if (reply.status == 204 || reply.status == 404) return Uint8List(0);
+    if (reply.status != 200) throw HttpFailure(reply.status, url);
+    keep(reply.bytes);
+    return reply.bytes;
   }
 
   Future<Iterable<TileLayer>> layersOf(int z, int x, int y) async {
@@ -521,10 +495,28 @@ Future<void> _workerMain(List<Object?> init) async {
     final z = m[1]! as int;
     final x = m[2]! as int;
     final y = m[3]! as int;
+    if (m[4] == 'c') {
+      unawaited(() async {
+        final clusters = (await geoJson)?.clusters;
+        final id = m[6]! as int;
+        send([
+          job,
+          'q',
+          switch (m[5]) {
+            'zoom' => [clusters?.expansionZoom(id)],
+            'children' => _members(clusters?.children(id)),
+            _ => _members(
+              clusters?.leaves(id, limit: m[7]! as int, offset: m[8]! as int),
+            ),
+          },
+        ]);
+      }());
+      continue;
+    }
     if (m[4] == 'q') {
       unawaited(() async {
         try {
-          out.send([
+          send([
             job,
             'q',
             queryTile(
@@ -538,7 +530,7 @@ Future<void> _workerMain(List<Object?> init) async {
             ),
           ]);
         } catch (_) {
-          out.send([job, 'q', const <Object?>[]]);
+          send([job, 'q', const <Object?>[]]);
         }
       }());
       continue;
@@ -550,9 +542,9 @@ Future<void> _workerMain(List<Object?> init) async {
             ? BuiltTile(const [], const [])
             : (builder.buildLayers(layers, z, x: x, y: y, maxZoom: m[4]! as int)
                 ..keyLabels(z, x, y, grid: geoJson == null ? 1024 : 1 << 24));
-        out.send([job, tile.toMessage()]);
+        send([job, tile.toMessage()]);
       } catch (e) {
-        out.send([job, null, '$e']);
+        send([job, null, '$e']);
       }
     }());
   }

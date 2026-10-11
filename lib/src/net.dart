@@ -1,15 +1,6 @@
-import 'dart:io';
+import 'platform.dart';
 
-/// Opens a GET of [url] that carries [headers].
-Future<HttpClientRequest> openGet(
-  HttpClient client,
-  String url,
-  Map<String, String> headers,
-) async {
-  final request = await client.getUrl(Uri.parse(url));
-  headers.forEach(request.headers.set);
-  return request;
-}
+export 'platform.dart' show HttpFailure, Net, Reply;
 
 /// The addresses a source lists for its tiles, as one template. `{s}` in an
 /// address stands for the hosts a, b and c.
@@ -42,8 +33,8 @@ List<String> tileUrls(String template, int z, int x, int row) {
 
 /// Asks each address of [template] for a tile until one answers that it has
 /// it or that there is none. The last answer or error stands when all fail.
-Future<(String, HttpClientResponse)> getTile(
-  HttpClient client,
+Future<(String, Reply)> getTile(
+  Net client,
   String template,
   int z,
   int x,
@@ -54,15 +45,11 @@ Future<(String, HttpClientResponse)> getTile(
   for (var i = 0; ; i++) {
     final last = i == urls.length - 1;
     try {
-      final request = await openGet(client, urls[i], headers);
-      final response = await request.close().timeout(
-        const Duration(seconds: 20),
-      );
-      final status = response.statusCode;
+      final reply = await client.get(urls[i], headers);
+      final status = reply.status;
       if (last || status == 200 || status == 204 || status == 404) {
-        return (urls[i], response);
+        return (urls[i], reply);
       }
-      await response.drain<void>();
     } catch (_) {
       if (last) rethrow;
     }

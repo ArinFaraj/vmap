@@ -40,6 +40,9 @@ real style: `line-pattern`, SDF icons and polygon labels.
 
 ## How it draws
 
+On the web, steps 1 and 4 below run on the page's own thread, a tile at a time
+between frames, because a browser gives Dart no isolates.
+
 1. Worker isolates download each tile, decode it, run the style's filters,
    triangulate polygons with earcut and turn roads into strips that can be
    widened to any width. Layers that select the same features share one mesh.

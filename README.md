@@ -27,7 +27,7 @@ dependencies:
   vmap:
     git:
       url: https://github.com/ArinFaraj/vmap.git
-      ref: v0.16.0
+      ref: v0.17.0
 ```
 
 ## Quick start
@@ -279,6 +279,18 @@ VmapOverlay(
 )
 ```
 
+Tapping a cluster finds it like any other feature. Ask the layer, through a
+`GlobalKey<VmapLayerState>`, where it comes apart and move there, or list
+what it holds:
+
+```dart
+final layer = layerKey.currentState!;
+final id = feature.properties['cluster_id']! as int;
+final zoom = await layer.clusterExpansionZoom('shops', id);
+if (zoom != null) mapController.move(tapped, zoom);
+final shops = await layer.clusterLeaves('shops', id, limit: 20);
+```
+
 ## What is under a tap
 
 ```dart
@@ -408,8 +420,11 @@ table, the caveats and how to run it are in
 
 - No 3D: buildings are flat and the map does not pitch.
 - Fonts come from the app, not from the style's glyph server.
-- Run so far on one Android phone and on macOS. iOS, web and low end devices
-  are untested.
+- On the web there is no disk cache, tiles are built on the page's thread
+  instead of on workers, and a PMTiles archive has to be at an `https://`
+  address. It has been run in Chrome, with CanvasKit.
+- Run so far on one Android phone, on macOS and in Chrome. iOS and low end
+  devices are untested.
 
 The full list of what is read from a style, and how the renderer works, is in
 [doc/style-support.md](doc/style-support.md).

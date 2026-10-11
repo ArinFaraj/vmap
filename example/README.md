@@ -34,3 +34,5 @@ file.
 
 `tool/readme_images.py` composes the pictures in the README from `SHOT`
 screenshots.
+
+In a browser: `flutter run -d chrome -t lib/main_web.dart`.

@@ -1,9 +1,8 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'net.dart';
+import 'platform.dart';
 
 /// One image of a sprite sheet.
 class SpriteImage {
@@ -78,12 +77,10 @@ class SpriteSheet {
         : '$cacheDirectory/sprite-${url.hashCode.toRadixString(36)}';
     if (base != null) {
       try {
-        final index = File('$base.json');
-        final picture = File('$base.png');
-        if (index.existsSync() && picture.existsSync()) {
+        if (fileExists('$base.json') && fileExists('$base.png')) {
           final sheet = await _decode(
-            await index.readAsString(),
-            await picture.readAsBytes(),
+            utf8.decode(await readFile('$base.json')),
+            await readFile('$base.png'),
           );
           _download(url, userAgent, headers, base).ignore();
           return sheet;
@@ -103,7 +100,7 @@ class SpriteSheet {
     final query = url.indexOf('?');
     final stem = query < 0 ? url : url.substring(0, query);
     final tail = query < 0 ? '' : url.substring(query);
-    final client = HttpClient()..userAgent = userAgent;
+    final client = Net(userAgent: userAgent);
     try {
       for (final density in const ['@2x', '']) {
         try {
@@ -112,9 +109,8 @@ class SpriteSheet {
           if (index == null || picture == null) continue;
           final text = utf8.decode(index);
           if (saveAs != null) {
-            await File('$saveAs.json').parent.create(recursive: true);
-            await File('$saveAs.json').writeAsString(text);
-            await File('$saveAs.png').writeAsBytes(picture);
+            await writeFile('$saveAs.json', index);
+            await writeFile('$saveAs.png', picture);
           }
           return (text, picture);
         } catch (_) {}
@@ -126,23 +122,12 @@ class SpriteSheet {
   }
 
   static Future<Uint8List?> _get(
-    HttpClient client,
+    Net client,
     Map<String, String> headers,
     String url,
   ) async {
-    final request = await openGet(
-      client,
-      url,
-      headers,
-    ).timeout(const Duration(seconds: 10));
-    final response = await request.close().timeout(const Duration(seconds: 10));
-    if (response.statusCode != 200) {
-      await response.drain<void>();
-      return null;
-    }
-    final bytes = BytesBuilder(copy: false);
-    await response.forEach(bytes.add).timeout(const Duration(seconds: 20));
-    return bytes.takeBytes();
+    final reply = await client.get(url, headers);
+    return reply.status == 200 ? reply.bytes : null;
   }
 
   static Future<SpriteSheet> _decode(String index, Uint8List picture) async {

@@ -58,6 +58,32 @@ void main() {
     expect(names, ['a', 'b', 'c', 'far']);
   });
 
+  test('a cluster says where it comes apart and what is in it', () {
+    final clusters = tiles.clusters!;
+    final id =
+        _shown(tiles, 2).firstWhere((p) => p['cluster'] == true)['cluster_id']!
+            as int;
+    final zoom = clusters.expansionZoom(id)!;
+    expect(zoom, greaterThan(2));
+    expect(
+      _shown(tiles, zoom - 1).where((p) => p['cluster_id'] == id),
+      hasLength(1),
+    );
+    expect(_shown(tiles, zoom).where((p) => p['cluster_id'] == id), isEmpty);
+
+    final children = clusters.children(id);
+    expect(children.length, greaterThan(1));
+    expect(children.fold<int>(0, (sum, c) => sum + c.count), 3);
+
+    final names = [for (final p in clusters.leaves(id)) p.props['name']]
+      ..sort();
+    expect(names, ['a', 'b', 'c']);
+    expect(clusters.leaves(id, limit: 2), hasLength(2));
+    expect(clusters.leaves(id, offset: 2), hasLength(1));
+    expect(clusters.expansionZoom(9999), isNull);
+    expect(clusters.leaves(9999), isEmpty);
+  });
+
   test('every zoom accounts for every point', () {
     final clusters = PointClusters([
       for (var i = 0; i < 500; i++)

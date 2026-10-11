@@ -31,6 +31,9 @@ class GeoJsonTiles {
   final List<ClusterPoint> _loose = [];
   PointClusters? _clusters;
 
+  /// The clusters of the source's points, when it gathers them.
+  PointClusters? get clusters => _clusters;
+
   /// Kept around a tile so lines and outlines do not end at its edge.
   static const double _buffer = 128;
 

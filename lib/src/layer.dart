@@ -52,21 +52,23 @@ class VmapLayer extends StatefulWidget {
 
   /// Draws with an engine the app owns, for reading its stats or keeping
   /// loaded tiles across pages.
-  const VmapLayer.engine(VmapEngine this.engine, {super.key})
-    : style = VmapStyle.light,
-      markers = const [],
-      pins = null,
-      overlay = null,
-      featureStates = const [],
-      curvedLabels = true,
-      textStyle = null,
-      markerTextStyle = null,
-      cacheDirectory = null,
-      headers = const {},
-      onError = null,
-      minZoom = 0,
-      maxZoom = double.infinity,
-      userAgentPackageName = 'unknown';
+  const VmapLayer.engine(
+    VmapEngine this.engine, {
+    this.minZoom = 0,
+    this.maxZoom = double.infinity,
+    super.key,
+  }) : style = VmapStyle.light,
+       markers = const [],
+       pins = null,
+       overlay = null,
+       featureStates = const [],
+       curvedLabels = true,
+       textStyle = null,
+       markerTextStyle = null,
+       cacheDirectory = null,
+       headers = const {},
+       onError = null,
+       userAgentPackageName = 'unknown';
 
   final VmapEngine? engine;
 
@@ -132,6 +134,25 @@ class VmapLayerState extends State<VmapLayer> {
   /// [radius] logical pixels of it, topmost first.
   Future<List<VmapFeature>> featuresAt(LatLng point, {double radius = 6}) =>
       _engine.featuresAt(point, radius: radius);
+
+  /// The map zoom at which a cluster of a clustered GeoJSON source comes
+  /// apart, for zooming in on a tapped cluster.
+  Future<double?> clusterExpansionZoom(String source, int clusterId) =>
+      _engine.clusterExpansionZoom(source, clusterId);
+
+  /// What a cluster comes apart into at its expansion zoom.
+  Future<List<VmapClusterMember>> clusterChildren(
+    String source,
+    int clusterId,
+  ) => _engine.clusterChildren(source, clusterId);
+
+  /// The points of the data inside a cluster.
+  Future<List<VmapClusterMember>> clusterLeaves(
+    String source,
+    int clusterId, {
+    int limit = 10,
+    int offset = 0,
+  }) => _engine.clusterLeaves(source, clusterId, limit: limit, offset: offset);
 
   /// The credit the style's sources ask for, once the style has loaded.
   List<String> get attributions => _engine.attributions;
