@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'builtin_style.dart';
 import 'cluster.dart';
 import 'expr.dart';
+import 'tessellate.dart';
 
 /// Which map style to draw: a MapLibre style document, or the style that
 /// ships with the package.
@@ -248,6 +249,8 @@ class Bucket {
     this.caps = false,
     this.dashed = false,
     this.outline = false,
+    this.offset = false,
+    this.join = LineJoin.miter,
     this.variantKeys = const [],
   });
 
@@ -263,6 +266,10 @@ class Bucket {
 
   /// The edges of polygons only, a pixel wide, so corners need no rounding.
   final bool outline;
+
+  /// Keeps what each vertex needs to draw the line beside its centre line.
+  final bool offset;
+  final LineJoin join;
 
   /// The feature properties the paint of its layers reads. Features are
   /// split into one mesh per combination of their values.
@@ -284,6 +291,7 @@ class PaintLayer {
     required this.color,
     required this.opacity,
     this.width,
+    this.offset,
     this.dash,
     this.pattern,
     this.strokeColor,
@@ -305,6 +313,10 @@ class PaintLayer {
 
   /// A line's total width or a circle's diameter, in logical pixels.
   final Expr? width;
+
+  /// How far to the right of its centre line a line is drawn, in logical
+  /// pixels.
+  final Expr? offset;
 
   /// Lengths of dashes and gaps in turn, in line widths.
   final Float64List? dash;
@@ -428,6 +440,7 @@ class SymbolLayer {
     required this.iconOpacity,
     required this.iconColor,
     required this.iconRotate,
+    required this.textRotate,
     required this.anchor,
     required this.offsetX,
     required this.offsetY,
@@ -480,6 +493,9 @@ class SymbolLayer {
 
   /// In degrees.
   final double iconRotate;
+
+  /// Degrees a point's text is turned clockwise.
+  final double textRotate;
 
   /// Which part of the text sits on the anchor point: `center`, `top`,
   /// `bottom-left` and so on.
@@ -600,9 +616,16 @@ class StyleSheet {
     this.shape,
     this.sprite,
     this.rasters,
+    this.backgroundPattern,
+    this.backgroundOpacity,
   );
 
   final Expr background;
+
+  /// The name of the sprite image repeated over the background, when the
+  /// style asks for one.
+  final Expr? backgroundPattern;
+  final Expr backgroundOpacity;
   final List<Bucket> buckets;
   final List<PaintLayer> layers;
   final List<SymbolLayer> symbols;
@@ -682,6 +705,8 @@ class StyleSheet {
     final rasterAt = <int>[];
 
     Expr background = (_) => null;
+    Expr? backgroundPattern;
+    Expr backgroundOpacity = (_) => 1;
     final buckets = <Bucket>[];
     final bucketIndex = <String, int>{};
     final layers = <PaintLayer>[];
@@ -703,6 +728,9 @@ class StyleSheet {
       if (type == 'background') {
         final color = compileExpr(paint['background-color']);
         final opacity = compileExpr(paint['background-opacity'] ?? 1);
+        final picture = paint['background-pattern'];
+        backgroundPattern = picture == null ? null : compileText(picture);
+        backgroundOpacity = opacity;
         background = (c) {
           final v = Rgba.of(color(c));
           final o = asNumber(opacity(c)) ?? 1;
@@ -828,6 +856,7 @@ class StyleSheet {
             iconOpacity: compileExpr(paint['icon-opacity'] ?? 1),
             iconColor: compileExpr(paint['icon-color'] ?? '#000000'),
             iconRotate: asNumber(layout['icon-rotate']) ?? 0,
+            textRotate: asNumber(layout['text-rotate']) ?? 0,
             anchor: anchor is String ? anchor : 'center',
             offsetX: offset.$1,
             offsetY: offset.$2,
@@ -889,6 +918,8 @@ class StyleSheet {
         bool caps = false,
         bool dashed = false,
         bool outline = false,
+        bool offset = false,
+        LineJoin join = LineJoin.miter,
       }) {
         final keys = reads.toList()..sort();
         final key = jsonEncode([
@@ -899,6 +930,8 @@ class StyleSheet {
           caps,
           dashed,
           outline,
+          offset,
+          join.index,
           keys,
         ]);
         final index = bucketIndex.putIfAbsent(key, () {
@@ -911,6 +944,8 @@ class StyleSheet {
               caps: caps,
               dashed: dashed,
               outline: outline,
+              offset: offset,
+              join: join,
               variantKeys: keys,
             ),
           );
@@ -999,7 +1034,9 @@ class StyleSheet {
           'line-opacity',
           'line-width',
           'line-gap-width',
+          'line-offset',
         ]);
+        final beside = paint['line-offset'];
         final dash = _dash(paint['line-dasharray']);
         final own = compileExpr(paint['line-width'] ?? 1);
         final gap = paint['line-gap-width'];
@@ -1022,6 +1059,12 @@ class StyleSheet {
                   picture == null &&
                   layout['line-cap'] == 'round',
               dashed: dash != null || picture != null,
+              offset: beside != null,
+              join: switch (layout['line-join']) {
+                'round' => LineJoin.round,
+                'bevel' => LineJoin.bevel,
+                _ => LineJoin.miter,
+              },
             ),
             kind: kind,
             minZoom: minZoom,
@@ -1029,6 +1072,7 @@ class StyleSheet {
             color: compileExpr(picture == null ? color : '#ffffff'),
             opacity: compileExpr(opacity),
             width: width,
+            offset: beside == null ? null : compileExpr(beside),
             dash: picture == null ? dash : null,
             pattern: picture == null ? null : compileText(picture),
             perFeature: names.isNotEmpty,
@@ -1121,6 +1165,8 @@ class StyleSheet {
         _ => null,
       },
       rasters,
+      backgroundPattern,
+      backgroundOpacity,
     );
   }
 

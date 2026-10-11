@@ -59,7 +59,7 @@ Map<String, Object?> builtInStyle(
         ['==', r'$type', 'LineString'],
         ?filter,
       ],
-      'layout': {'line-cap': caps ? 'round' : 'butt'},
+      'layout': {'line-cap': caps ? 'round' : 'butt', 'line-join': 'round'},
       'paint': {'line-color': tone(color), 'line-width': width},
     });
   }

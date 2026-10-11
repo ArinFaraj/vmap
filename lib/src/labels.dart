@@ -800,6 +800,8 @@ class LabelEngine {
       final beside = c.source.layer < 0;
       final symbol = beside ? null : symbols[c.source.layer];
       if (c.source.spaced && c.hasText && _nearSameRoad(st, world)) continue;
+      final spin = (symbol?.textRotate ?? 0) * math.pi / 180;
+      st.screenAngle = spin;
       _project(st.worldX, st.worldY, world, origin);
       final sx = _px;
       final sy = _py;
@@ -814,6 +816,11 @@ class LabelEngine {
         if (anchor.startsWith('bottom')) ty -= textH / 2;
         if (anchor.endsWith('left')) tx += textW / 2;
         if (anchor.endsWith('right')) tx -= textW / 2;
+        if (spin != 0) {
+          final cos = math.cos(spin);
+          final sin = math.sin(spin);
+          (tx, ty) = (tx * cos - ty * sin, tx * sin + ty * cos);
+        }
       }
 
       var icon = st.icon;
@@ -892,7 +899,7 @@ class LabelEngine {
             fy = ay * ((symbol.offsetY * fontSize).abs() + textH / 2);
           }
           if (!(symbol!.textOverlaps) &&
-              _collides(sx + fx, sy + fy, textW, textH, 0)) {
+              _collides(sx + fx, sy + fy, textW, textH, spin)) {
             continue;
           }
           st
@@ -905,7 +912,7 @@ class LabelEngine {
         if (obstacles.isEmpty) {
           textFits =
               (symbol?.textOverlaps ?? false) ||
-              !_collides(sx + tx, sy + ty, textW, textH, 0);
+              !_collides(sx + tx, sy + ty, textW, textH, spin);
           st
             ..dx = tx
             ..dy = ty;
@@ -944,7 +951,7 @@ class LabelEngine {
             if (hasIcon && k > 1) break;
             final fx = k == 1 ? ox : ox + shiftX;
             final fy = k == 1 ? oy : oy + shiftY;
-            if (_collides(sx + fx, sy + fy, textW, textH, 0)) continue;
+            if (_collides(sx + fx, sy + fy, textW, textH, spin)) continue;
             st
               ..dx = fx
               ..dy = fy;
@@ -975,7 +982,7 @@ class LabelEngine {
         showIcon = iconFits;
       }
       if (!showText && !showIcon) continue;
-      if (showText) _addBoxes(sx + st.dx, sy + st.dy, textW, textH, 0);
+      if (showText) _addBoxes(sx + st.dx, sy + st.dy, textW, textH, spin);
       if (showIcon && !fitted) {
         _addBoxes(sx + st.iconDx, sy + st.iconDy, st.iconW, st.iconH, 0);
       }

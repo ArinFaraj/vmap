@@ -10,8 +10,17 @@ const int _maxVertices = 65000;
 /// re-widening takes more than a fraction of a frame.
 const int _chunkVertices = 16000;
 
+/// How a line turns a corner.
+enum LineJoin { round, bevel, miter, none }
+
 class MeshChunk {
-  MeshChunk(this.positions, this.extrusions, this.indices, [this.distances]);
+  MeshChunk(
+    this.positions,
+    this.extrusions,
+    this.indices, [
+    this.distances,
+    this.offsets,
+  ]);
 
   final Float32List positions;
 
@@ -24,14 +33,25 @@ class MeshChunk {
   /// across the line from 0 to 1: the texture coordinates dashes and line
   /// patterns are drawn by. Null when not asked for.
   final Float32List? distances;
+
+  /// Per-vertex direction a line moves in when it is drawn beside its centre
+  /// line: the drawn position gains `offset * distance`. Null when not asked
+  /// for.
+  final Float32List? offsets;
 }
 
 class _Buffers {
-  _Buffers(this.withExtrusions, {this.withDistances = false});
+  _Buffers(
+    this.withExtrusions, {
+    this.withDistances = false,
+    this.withOffsets = false,
+  });
 
   final bool withExtrusions;
   final bool withDistances;
+  final bool withOffsets;
   Float32List dst = Float32List(0);
+  Float32List off = Float32List(0);
   Float32List pos = Float32List(2048);
   Float32List ext = Float32List(0);
   Uint16List idx = Uint16List(4096);
@@ -63,6 +83,10 @@ class _Buffers {
       dst = Float32List(math.max(needPos, pos.length))
         ..setRange(0, vertexCount * 2, dst);
     }
+    if (withOffsets && needPos > off.length) {
+      off = Float32List(math.max(needPos, pos.length))
+        ..setRange(0, vertexCount * 2, off);
+    }
   }
 
   void flush() {
@@ -73,6 +97,10 @@ class _Buffers {
       ext[vertexCount * 2] = 0;
       ext[vertexCount * 2 + 1] = 0;
       if (withDistances) dst[vertexCount * 2] = 0;
+      if (withOffsets) {
+        off[vertexCount * 2] = 0;
+        off[vertexCount * 2 + 1] = 0;
+      }
       vertexCount++;
     }
     if (indexCount > 0) {
@@ -90,6 +118,11 @@ class _Buffers {
           withDistances
               ? Float32List.fromList(
                   Float32List.sublistView(dst, 0, vertexCount * 2),
+                )
+              : null,
+          withOffsets
+              ? Float32List.fromList(
+                  Float32List.sublistView(off, 0, vertexCount * 2),
                 )
               : null,
         ),
@@ -140,14 +173,22 @@ class FillMesher {
 }
 
 /// Turns polylines into triangles. Gentle bends share mitred vertices, sharp
-/// ones get a round fan, and ends get round caps. Every vertex keeps the
-/// centre-line point and an offset vector, so one mesh serves any stroke
-/// width.
+/// ones are joined the way [join] says, and ends get round caps. Every vertex
+/// keeps the centre-line point and an offset vector, so one mesh serves any
+/// stroke width.
 class LineMesher {
-  LineMesher({bool distances = false})
-    : _b = _Buffers(true, withDistances: distances);
+  LineMesher({
+    bool distances = false,
+    bool offsets = false,
+    this.join = LineJoin.round,
+  }) : _b = _Buffers(true, withDistances: distances, withOffsets: offsets);
 
   final _Buffers _b;
+  final LineJoin join;
+
+  /// The direction the vertices being added move in for a line offset.
+  double _ox = 0;
+  double _oy = 0;
 
   /// How far along the current line the vertices being added are.
   double _along = 0;
@@ -156,8 +197,13 @@ class LineMesher {
   static const int _fanVertices = 7;
   static const int _maxPoints = 4000;
 
-  /// Bends turning less than this (as a cosine) are mitred.
-  static const double _miterCos = 0.5;
+  /// Bends turning less than this (as a cosine) are mitred. A mitre join
+  /// reaches as far as MapLibre's default limit of twice the line's width.
+  double _miterCos(LineJoin join) => switch (join) {
+    LineJoin.miter => -0.5,
+    LineJoin.bevel => 0.8,
+    _ => 0.5,
+  };
 
   Float64List _pts = Float64List(512);
 
@@ -167,15 +213,17 @@ class LineMesher {
     int end,
     double minDistance, {
     bool caps = true,
-    bool joins = true,
+    LineJoin? join,
   }) {
+    join ??= this.join;
     if (end - start < 2) return;
     if (end - start > _maxPoints) {
       final mid = start + _maxPoints - 1;
-      addLine(coords, start, mid + 1, minDistance, caps: caps, joins: joins);
-      addLine(coords, mid, end, minDistance, caps: caps, joins: joins);
+      addLine(coords, start, mid + 1, minDistance, caps: caps, join: join);
+      addLine(coords, mid, end, minDistance, caps: caps, join: join);
       return;
     }
+    final miterCos = _miterCos(join);
     if ((end - start) * 2 > _pts.length) _pts = Float64List((end - start) * 4);
     final pts = _pts;
     final minSq = minDistance * minDistance;
@@ -202,6 +250,8 @@ class LineMesher {
     dx /= len;
     dy /= len;
     _along = 0;
+    _ox = -dy;
+    _oy = dx;
     var segment = len;
     if (caps) _fan(pts[0], pts[1], -dy, dx, math.pi, 1);
     var left = _vertex(pts[0], pts[1], -dy, dx, 0);
@@ -212,6 +262,8 @@ class LineMesher {
       final y = pts[i * 2 + 1];
       _along += segment;
       if (i == n - 1) {
+        _ox = -dy;
+        _oy = dx;
         final l = _vertex(x, y, -dy, dx, 0);
         final r = _vertex(x, y, dy, -dx, 1);
         _quad(left, right, l, r);
@@ -225,7 +277,10 @@ class LineMesher {
       ex /= len;
       ey /= len;
       final dot = dx * ex + dy * ey;
-      if (dot > _miterCos) {
+      final reach = math.min(1 / (1 + dot), 2.0);
+      _ox = (-dy - ey) * reach;
+      _oy = (dx + ex) * reach;
+      if (dot > miterCos) {
         final k = 1 / (1 + dot);
         final mx = (-dy - ey) * k;
         final my = (dx + ex) * k;
@@ -238,7 +293,7 @@ class LineMesher {
         final l = _vertex(x, y, -dy, dx, 0);
         final r = _vertex(x, y, dy, -dx, 1);
         _quad(left, right, l, r);
-        if (joins) {
+        if (join != LineJoin.none) {
           final cross = dx * ey - dy * ex;
           final side = cross > 0 ? -1.0 : 1.0;
           _fan(
@@ -248,6 +303,7 @@ class LineMesher {
             dx * side,
             math.atan2(cross.abs(), dot),
             cross > 0 ? 1 : -1,
+            flat: join != LineJoin.round,
           );
         }
         left = _vertex(x, y, -ey, ex, 0);
@@ -278,9 +334,10 @@ class LineMesher {
     double ex,
     double ey,
     double angle,
-    int direction,
-  ) {
-    final steps = math.max(1, (angle / _arcStep).ceil());
+    int direction, {
+    bool flat = false,
+  }) {
+    final steps = flat ? 1 : math.max(1, (angle / _arcStep).ceil());
     final v = _vertex(cx, cy, 0, 0);
     final step = angle / steps * direction;
     for (var j = 0; j <= steps; j++) {
@@ -311,6 +368,10 @@ class LineMesher {
     if (_b.withDistances) {
       _b.dst[o] = _along;
       _b.dst[o + 1] = across;
+    }
+    if (_b.withOffsets) {
+      _b.off[o] = _ox;
+      _b.off[o + 1] = _oy;
     }
     _b.vertexCount = v + 1;
     return v;

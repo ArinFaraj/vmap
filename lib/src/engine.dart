@@ -507,6 +507,19 @@ class VmapEngine extends ChangeNotifier {
         _paint..color = ui.Color(background.toArgb()),
       );
     }
+    if (sheet.backgroundPattern?.call(_context) case final String name) {
+      final shader = _shaders.backdrop(name, _sprites, camera.origin);
+      if (shader != null) {
+        final opacity = asNumber(sheet.backgroundOpacity(_context)) ?? 1;
+        canvas.drawRect(
+          ui.Offset.zero & size,
+          _paint
+            ..color = ui.Color.fromRGBO(255, 255, 255, opacity.clamp(0, 1))
+            ..shader = shader,
+        );
+        _paint.shader = null;
+      }
+    }
     for (var i = 0; i < sheet.layers.length; i++) {
       final layer = sheet.layers[i];
       _colors[i] = 0;
@@ -784,7 +797,12 @@ class VmapEngine extends ChangeNotifier {
                 );
             }
             canvas.drawVertices(
-              _stroke(m, p, width / 2 / scale),
+              _stroke(
+                m,
+                p,
+                width / 2 / scale,
+                (asNumber(layer.offset?.call(_context)) ?? 0) / scale,
+              ),
               ui.BlendMode.srcOver,
               _paint,
             );
@@ -871,21 +889,26 @@ class VmapEngine extends ChangeNotifier {
 
   /// The mesh widened for [pass]. A width a few percent off is kept when the
   /// frame's budget is spent, and corrected on a later frame.
-  ui.Vertices _stroke(TileMesh mesh, int pass, double halfWidth) {
+  ui.Vertices _stroke(
+    TileMesh mesh,
+    int pass,
+    double halfWidth,
+    double offset,
+  ) {
     final current = mesh.existing(pass);
     if (current != null) {
       final ratio = halfWidth / current.halfWidth;
-      final exact = ratio > 0.96 && ratio < 1.04;
-      if (exact) return current.vertices;
+      final moved = (offset - current.offset).abs() / halfWidth;
+      if (ratio > 0.96 && ratio < 1.04 && moved < 0.08) return current.vertices;
       final slack = _zooming ? 0.22 : 0;
-      if ((ratio > 1 - slack && ratio < 1 + slack) ||
+      if ((ratio > 1 - slack && ratio < 1 + slack && moved < slack * 2) ||
           _prepSpent >= _prepBudgetMicros) {
         _stale = true;
         return current.vertices;
       }
     }
     final started = _clock.elapsedMicroseconds;
-    final vertices = mesh.build(pass, halfWidth);
+    final vertices = mesh.build(pass, halfWidth, offset);
     final spent = _clock.elapsedMicroseconds - started;
     _prepSpent += spent;
     stats

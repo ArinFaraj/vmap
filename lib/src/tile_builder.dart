@@ -107,6 +107,10 @@ class BuiltTile {
           else
             null,
           m.props,
+          if (m.chunk.offsets case final o?)
+            TransferableTypedData.fromList([o])
+          else
+            null,
         ],
     ],
     [
@@ -139,6 +143,7 @@ class BuiltTile {
             (parts[2] as TransferableTypedData?)?.materialize().asFloat32List(),
             (parts[3] as TransferableTypedData).materialize().asUint16List(),
             (parts[4] as TransferableTypedData?)?.materialize().asFloat32List(),
+            (parts[6] as TransferableTypedData?)?.materialize().asFloat32List(),
           ),
           (parts[5] as Map?)?.cast<String, Object?>(),
         ),
@@ -330,7 +335,11 @@ class TileBuilder {
             }
             continue;
           }
-          final mesher = group.line ??= LineMesher(distances: bucket.dashed);
+          final mesher = group.line ??= LineMesher(
+            distances: bucket.dashed,
+            offsets: bucket.offset,
+            join: bucket.join,
+          );
           for (var r = 0; r < _sink.ringCount; r++) {
             final start = _sink.ringStart(r);
             final end = _sink.ringEnd(r);
@@ -358,7 +367,7 @@ class TileBuilder {
               count + 1,
               lineTolerance,
               caps: false,
-              joins: !bucket.outline,
+              join: bucket.outline ? LineJoin.none : null,
             );
           }
         }

@@ -10,10 +10,11 @@ import 'tile_builder.dart';
 import 'worker.dart';
 
 class MeshStroke {
-  MeshStroke(this.pass, this.halfWidth, this.vertices);
+  MeshStroke(this.pass, this.halfWidth, this.offset, this.vertices);
 
   final int pass;
   final double halfWidth;
+  final double offset;
   final ui.Vertices vertices;
 }
 
@@ -27,6 +28,7 @@ class TileMesh {
       points = null,
       _base = null,
       _ext = null,
+      _off = null,
       _along = null,
       _indices = null;
 
@@ -35,6 +37,7 @@ class TileMesh {
       points = chunk.positions,
       _base = null,
       _ext = null,
+      _off = null,
       _along = null,
       _indices = null;
 
@@ -50,6 +53,10 @@ class TileMesh {
         chunk.extrusions!.offsetInBytes,
         chunk.positions.length >> 2,
       ),
+      _off = chunk.offsets?.buffer.asFloat32x4List(
+        chunk.offsets!.offsetInBytes,
+        chunk.positions.length >> 2,
+      ),
       _indices = chunk.indices;
 
   final ui.Vertices? fill;
@@ -62,6 +69,7 @@ class TileMesh {
   final Float32List? _along;
   final Float32x4List? _base;
   final Float32x4List? _ext;
+  final Float32x4List? _off;
   final Uint16List? _indices;
   final List<MeshStroke> _strokes = [];
 
@@ -74,9 +82,9 @@ class TileMesh {
     return null;
   }
 
-  /// Widens the line mesh to [halfWidth] tile units for [pass], replacing
-  /// whatever width that pass had.
-  ui.Vertices build(int pass, double halfWidth) {
+  /// Widens the line mesh to [halfWidth] tile units for [pass], [offset] tile
+  /// units to the right of its centre line, replacing whatever that pass had.
+  ui.Vertices build(int pass, double halfWidth, [double offset = 0]) {
     for (var i = 0; i < _strokes.length; i++) {
       if (_strokes[i].pass == pass) {
         _strokes.removeAt(i).vertices.dispose();
@@ -89,8 +97,16 @@ class TileMesh {
     if (_scratch.length < n) _scratch = Float32x4List(n);
     final out = _scratch;
     final w = Float32x4.splat(halfWidth);
-    for (var i = 0; i < n; i++) {
-      out[i] = base[i] + ext[i] * w;
+    final off = _off;
+    if (off == null || offset == 0) {
+      for (var i = 0; i < n; i++) {
+        out[i] = base[i] + ext[i] * w;
+      }
+    } else {
+      final o = Float32x4.splat(offset);
+      for (var i = 0; i < n; i++) {
+        out[i] = base[i] + ext[i] * w + off[i] * o;
+      }
     }
     final vertices = ui.Vertices.raw(
       ui.VertexMode.triangles,
@@ -98,7 +114,7 @@ class TileMesh {
       indices: _indices,
       textureCoordinates: _along,
     );
-    _strokes.add(MeshStroke(pass, halfWidth, vertices));
+    _strokes.add(MeshStroke(pass, halfWidth, offset, vertices));
     return vertices;
   }
 

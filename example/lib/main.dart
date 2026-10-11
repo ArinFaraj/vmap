@@ -145,7 +145,13 @@ class _BenchAppState extends State<BenchApp>
   final boundary = GlobalKey();
   static final names = nameKeys.isEmpty ? null : nameKeys.split(',');
   late final engine = VmapEngine(
-    style: styleName.isEmpty
+    style: flags['style_file'] != null
+        ? VmapStyle.json(
+            jsonDecode(File(flags['style_file']!).readAsStringSync())
+                as Map<String, Object?>,
+            nameKeys: names,
+          )
+        : styleName.isEmpty
         ? VmapStyle.builtIn(
             palette: dark ? VmapPalette.dark : VmapPalette.light,
             nameKeys: names,

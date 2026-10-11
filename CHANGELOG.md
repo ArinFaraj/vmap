@@ -1,3 +1,14 @@
+## 0.10.0
+
+- `line-join`: bevel and miter corners beside the round ones. A line with no
+  `line-join` now has miter corners, which is the default of the style
+  specification. Until now every corner was round.
+- `line-offset`: a line drawn to one side of where it runs.
+- `text-rotate` for the text of a point.
+- `background-pattern`.
+- The benchmark app reads `style_file=<path on the device>` from
+  `flags.txt`, so a lap can run with any style without a rebuild.
+
 ## 0.9.0
 
 - Heatmaps follow their whole colour ramp. Points add up to a density the

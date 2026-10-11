@@ -28,8 +28,9 @@ and prints both summaries.
 
 `tool/quick_bench.sh` runs one lap again with the app already installed. It
 writes `flags.txt` into the app's external files directory, which the app
-reads at start: `laps=1` sets the number of laps and `labels=off` hides the
-labels.
+reads at start: `laps=1` sets the number of laps, `labels=off` hides the
+labels, and `style_file=<path on the device>` draws a style document from a
+file.
 
 `tool/readme_images.py` composes the pictures in the README from `SHOT`
 screenshots.

@@ -15,6 +15,38 @@ class LayerShaders {
     ..[10] = 1
     ..[15] = 1;
 
+  ui.ImageShader? _backdrop;
+
+  /// The sprite image [name] repeated over the whole view, held to the
+  /// world pixel at [origin] so it moves with the map. Null while the sprite
+  /// sheet has not loaded or has no such image.
+  ui.ImageShader? backdrop(
+    String name,
+    SpriteSheet? sprites,
+    ui.Offset origin,
+  ) {
+    final image = sprites?.pattern(name);
+    if (image == null) return null;
+    final stretch = 1 / sprites!.entries[name]!.pixelRatio;
+    _matrix
+      ..[0] = stretch
+      ..[5] = stretch
+      ..[12] = -(origin.dx % (image.width * stretch))
+      ..[13] = -(origin.dy % (image.height * stretch));
+    final shader = ui.ImageShader(
+      image,
+      ui.TileMode.repeated,
+      ui.TileMode.repeated,
+      _matrix,
+      filterQuality: ui.FilterQuality.low,
+    );
+    _matrix
+      ..[12] = 0
+      ..[13] = 0;
+    _backdrop?.dispose();
+    return _backdrop = shader;
+  }
+
   /// Drops the shaders made for the last frame. Their sizes follow the zoom,
   /// so few survive a frame of a moving map.
   void startFrame() {
@@ -101,6 +133,7 @@ class LayerShaders {
 
   void dispose() {
     startFrame();
+    _backdrop?.dispose();
     for (final i in _dashImages.values) {
       i.dispose();
     }

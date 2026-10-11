@@ -32,6 +32,13 @@ without a new frame. The numbers are from vmap 0.3.0 and vector_map_tiles
   ran one cached lap of the tour with 0 of 1390 frames skipped. Its slowest
   1 percent of frames took 5.9 ms on the UI thread and 5.9 ms on the raster
   thread, and 79 frames took more than 8 ms in total. Still at 60 Hz.
+- Version 0.9.0 ran one cached lap of the same tour with 0 of 1383 frames
+  skipped. Its slowest 1 percent of frames took 6.8 ms on the UI thread and
+  6.5 ms on the raster thread, and 122 frames took more than 8 ms in total.
+  Still at 60 Hz.
+- A heatmap layer of 300 points in view cost 0.2 to 0.5 ms more per frame on
+  the UI thread and nothing measurable on the raster thread: two laps with
+  the layer and two without, in the same style.
 - vector_map_tiles lost its frames in long gaps while waiting for tiles to be
   rendered, not in slow frames of its own.
 - vmap's process used about 440 to 490 MB. vector_map_tiles' memory was not
