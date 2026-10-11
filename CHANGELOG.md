@@ -1,3 +1,13 @@
+## 0.13.0
+
+- `text-padding` and `icon-padding`: how much room a label keeps clear of
+  the others.
+- `text-line-height` and `text-justify` for names of several lines.
+- `text-halo-blur`: a halo with a soft edge.
+- `text-ignore-placement`. `icon-ignore-placement` now means what the
+  specification says: the icon takes no room from other labels. It used to
+  be read as `icon-allow-overlap`.
+
 ## 0.12.0
 
 - `text-size` and `icon-size` may read the feature's properties, so a city

@@ -774,6 +774,10 @@ class LabelEngine {
       final c = st.candidate;
       final isRoad = c.source.line != null;
       _bind(c);
+      final layer = c.source.layer < 0 ? null : symbols[c.source.layer];
+      final textPad = layer?.textPadding ?? _boxPad;
+      final iconPad = layer?.iconPadding ?? _boxPad;
+      _pad = textPad;
       final fontSize = _size(c.source.layer, styleZoom);
       if (c.source.props != null && c.hasText) {
         final ink = _ink(symbols[c.source.layer]).hashCode;
@@ -823,7 +827,7 @@ class LabelEngine {
         if (turn < -math.pi / 2) turn += math.pi;
         st.screenAngle = turn;
         if (st.curve != null) {
-          final reach = (textH + room) / 2 + _boxPad;
+          final reach = (textH + room) / 2 + _pad;
           if (_curveHits(st, world, origin, textW, textH, reach, add: false)) {
             continue;
           }
@@ -1015,6 +1019,7 @@ class LabelEngine {
         }
       }
       final fitted = pin == null && (symbol?.textFit ?? false);
+      _pad = iconPad;
       final iconFits =
           hasIcon &&
           ((symbol?.iconOverlaps ?? false) ||
@@ -1036,8 +1041,12 @@ class LabelEngine {
         showIcon = iconFits;
       }
       if (!showText && !showIcon) continue;
-      if (showText) _addBoxes(sx + st.dx, sy + st.dy, textW, textH, spin);
-      if (showIcon && !fitted) {
+      if (showText && !(symbol?.textIgnored ?? false)) {
+        _pad = textPad;
+        _addBoxes(sx + st.dx, sy + st.dy, textW, textH, spin);
+      }
+      if (showIcon && !fitted && !(symbol?.iconIgnored ?? false)) {
+        _pad = iconPad;
         _addBoxes(sx + st.iconDx, sy + st.iconDy, st.iconW, st.iconH, 0);
       }
       st
@@ -1267,19 +1276,22 @@ class LabelEngine {
 
   static const double _boxPad = 3;
 
+  /// Clear space around the box being weighed or added.
+  double _pad = _boxPad;
+
   bool _collides(double sx, double sy, double w, double h, double angle) {
     if (angle == 0) {
       return _hits(
-        sx - w / 2 - _boxPad,
-        sy - h / 2 - _boxPad,
-        sx + w / 2 + _boxPad,
-        sy + h / 2 + _boxPad,
+        sx - w / 2 - _pad,
+        sy - h / 2 - _pad,
+        sx + w / 2 + _pad,
+        sy + h / 2 + _pad,
       );
     }
     final count = math.max(1, (w / h).ceil());
     final cosA = math.cos(angle);
     final sinA = math.sin(angle);
-    final r = h / 2 + _boxPad;
+    final r = h / 2 + _pad;
     for (var i = 0; i < count; i++) {
       final d = count == 1 ? 0.0 : -w / 2 + h / 2 + (w - h) * i / (count - 1);
       final x = sx + cosA * d;
@@ -1292,17 +1304,17 @@ class LabelEngine {
   void _addBoxes(double sx, double sy, double w, double h, double angle) {
     if (angle == 0) {
       _addBox(
-        sx - w / 2 - _boxPad,
-        sy - h / 2 - _boxPad,
-        sx + w / 2 + _boxPad,
-        sy + h / 2 + _boxPad,
+        sx - w / 2 - _pad,
+        sy - h / 2 - _pad,
+        sx + w / 2 + _pad,
+        sy + h / 2 + _pad,
       );
       return;
     }
     final count = math.max(1, (w / h).ceil());
     final cosA = math.cos(angle);
     final sinA = math.sin(angle);
-    final r = h / 2 + _boxPad;
+    final r = h / 2 + _pad;
     for (var i = 0; i < count; i++) {
       final d = count == 1 ? 0.0 : -w / 2 + h / 2 + (w - h) * i / (count - 1);
       final x = sx + cosA * d;
@@ -1401,8 +1413,12 @@ class LabelEngine {
     // A marker's name hugs its marker: lines are flush on the side the text
     // starts from, which is the side the marker is on.
     final align = !beside
-        ? ui.TextAlign.center
+        ? (symbol?.justify ?? ui.TextAlign.center)
         : (_isRtl(label) ? ui.TextAlign.right : ui.TextAlign.left);
+    final lineHeight = symbol?.lineHeight ?? 1.15;
+    final haloBlur = symbol == null
+        ? 0.0
+        : (asNumber(symbol.haloBlur(_context)) ?? 0).clamp(0.0, haloWidth);
     final builder =
         ui.ParagraphBuilder(
             ui.ParagraphStyle(
@@ -1413,7 +1429,7 @@ class LabelEngine {
               maxLines: isRoad ? 1 : 3,
               fontFamily: text.fontFamily,
               fontSize: fontSize,
-              height: 1.15,
+              height: lineHeight,
             ),
           )
           ..pushStyle(
@@ -1426,7 +1442,7 @@ class LabelEngine {
               fontVariations: [ui.FontVariation('wght', weight.toDouble())],
               fontStyle: italic ? ui.FontStyle.italic : ui.FontStyle.normal,
               letterSpacing: (symbol?.letterSpacing ?? 0) * fontSize,
-              height: 1.15,
+              height: lineHeight,
             ),
           )
           ..addText(label);
@@ -1451,7 +1467,10 @@ class LabelEngine {
           ..colorFilter = ui.ColorFilter.mode(
             ui.Color(halo),
             ui.BlendMode.srcIn,
-          ),
+          )
+          ..imageFilter = haloBlur > 0
+              ? ui.ImageFilter.blur(sigmaX: haloBlur / 2, sigmaY: haloBlur / 2)
+              : null,
       );
       for (final offset in _haloOffsets) {
         canvas.drawParagraph(paragraph, at + offset * (haloWidth / 1.5));

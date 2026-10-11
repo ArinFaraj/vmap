@@ -435,6 +435,13 @@ class SymbolLayer {
     required this.italic,
     required this.uppercase,
     required this.letterSpacing,
+    required this.haloBlur,
+    this.lineHeight,
+    this.justify = ui.TextAlign.center,
+    this.textPadding,
+    this.iconPadding,
+    this.textIgnored = false,
+    this.iconIgnored = false,
     required this.maxWidth,
     required this.iconSize,
     required this.iconOpacity,
@@ -485,6 +492,25 @@ class SymbolLayer {
 
   /// In ems.
   final double letterSpacing;
+
+  /// The height of a line of text in ems. Null for the package's own.
+  final double? lineHeight;
+
+  /// The side the lines of a text of several lines are flush on.
+  final ui.TextAlign justify;
+
+  /// Clear space kept around the text and the icon where labels are
+  /// weighed against each other, in logical pixels. Null for the package's
+  /// own.
+  final double? textPadding;
+  final double? iconPadding;
+
+  /// The text or icon takes no room from the labels placed after it.
+  final bool textIgnored;
+  final bool iconIgnored;
+
+  /// How far the edge of the halo fades out, in logical pixels.
+  final Expr haloBlur;
   final double maxWidth;
   final Expr iconSize;
   final Expr iconOpacity;
@@ -842,6 +868,7 @@ class StyleSheet {
           'text-opacity',
           'text-halo-color',
           'text-halo-width',
+          'text-halo-blur',
           'icon-color',
           'icon-opacity',
         ]) {
@@ -869,6 +896,17 @@ class StyleSheet {
             italic: font.contains('italic') || font.contains('oblique'),
             uppercase: layout['text-transform'] == 'uppercase',
             letterSpacing: asNumber(layout['text-letter-spacing']) ?? 0,
+            lineHeight: asNumber(layout['text-line-height']),
+            justify: switch (layout['text-justify']) {
+              'left' => ui.TextAlign.left,
+              'right' => ui.TextAlign.right,
+              _ => ui.TextAlign.center,
+            },
+            textPadding: asNumber(layout['text-padding']),
+            iconPadding: asNumber(layout['icon-padding']),
+            textIgnored: layout['text-ignore-placement'] == true,
+            iconIgnored: layout['icon-ignore-placement'] == true,
+            haloBlur: compileExpr(paint['text-halo-blur'] ?? 0),
             maxWidth: asNumber(layout['text-max-width']) ?? 10,
             iconSize: compileExpr(layout['icon-size'] ?? 1),
             iconOpacity: compileExpr(paint['icon-opacity'] ?? 1),
@@ -880,9 +918,7 @@ class StyleSheet {
             offsetY: offset.$2,
             textOptional: layout['text-optional'] == true,
             iconOptional: layout['icon-optional'] == true,
-            iconOverlaps:
-                layout['icon-allow-overlap'] == true ||
-                layout['icon-ignore-placement'] == true,
+            iconOverlaps: layout['icon-allow-overlap'] == true,
             textOverlaps: layout['text-allow-overlap'] == true,
             spacing: spacing.toDouble(),
             textUpright: textUpright,

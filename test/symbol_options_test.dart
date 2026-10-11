@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/expr.dart';
 import 'package:vmap/src/geojson.dart';
@@ -135,6 +137,36 @@ void main() {
     expect(symbol.iconAnchor, 'bottom');
     expect(symbol.iconOffsetX, 3);
     expect(symbol.iconOffsetY, -4);
+  });
+
+  test('a symbol layer reads how its text is set and weighed', () {
+    final plain = _sheet({}).symbols.single;
+    expect(plain.lineHeight, isNull);
+    expect(plain.justify, TextAlign.center);
+    expect(plain.textPadding, isNull);
+    expect(plain.textIgnored, isFalse);
+    expect(plain.iconOverlaps, isFalse);
+    expect(plain.haloBlur(EvalContext()), 0);
+
+    final set = _sheet(
+      {
+        'text-line-height': 1.6,
+        'text-justify': 'left',
+        'text-padding': 10,
+        'icon-padding': 0,
+        'text-ignore-placement': true,
+        'icon-ignore-placement': true,
+      },
+      {'text-halo-blur': 1},
+    ).symbols.single;
+    expect(set.lineHeight, 1.6);
+    expect(set.justify, TextAlign.left);
+    expect(set.textPadding, 10);
+    expect(set.iconPadding, 0);
+    expect(set.textIgnored, isTrue);
+    expect(set.iconIgnored, isTrue);
+    expect(set.iconOverlaps, isFalse);
+    expect(set.haloBlur(EvalContext()), 1);
   });
 
   test('a symbol layer with one anchor tries no others', () {

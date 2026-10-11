@@ -11,8 +11,8 @@
 | Hillshade | Mapbox and Terrarium heights, exaggeration, shadow and highlight colours, light direction |
 | Heatmap | radius, weight, intensity, opacity and `heatmap-color` |
 | Circles | radius, colour, opacity, the stroke's width, colour and opacity, `circle-translate` |
-| Text | field, size, font weight and slant, colour, halo, letter spacing, max width, transform, anchor, offset, `text-rotate`, `text-variable-anchor` with `text-radial-offset`, `text-optional`, `text-allow-overlap` |
-| Icons | `icon-image` from the style's sprite sheet (the `@2x` sheet when there is one), size, rotation, opacity, `icon-color` for SDF icons, `icon-anchor`, `icon-offset`, `icon-optional`, `icon-allow-overlap`, `icon-text-fit` |
+| Text | field, size, font weight and slant, colour, halo and `text-halo-blur`, letter spacing, line height, justify, max width, transform, anchor, offset, `text-rotate`, `text-variable-anchor` with `text-radial-offset`, `text-optional`, `text-allow-overlap`, `text-ignore-placement`, `text-padding` |
+| Icons | `icon-image` from the style's sprite sheet (the `@2x` sheet when there is one), size, rotation, opacity, `icon-color` for SDF icons, `icon-anchor`, `icon-offset`, `icon-optional`, `icon-allow-overlap`, `icon-ignore-placement`, `icon-padding`, `icon-text-fit` |
 | Placement | `symbol-placement` point and line, `symbol-spacing`, text along a road and bent along its curves, labels for polygons, shields and arrows repeated along a line, `minzoom`, `maxzoom`, `visibility` |
 | Expressions | `interpolate` (linear, exponential and cubic-bezier), `step`, `match`, `case`, `coalesce`, `let`, `var`, `get`, `has`, `id`, `feature-state`, `zoom`, `geometry-type`, `typeof`, comparisons, `all`, `any`, `!`, `concat`, `slice`, `index-of`, `to-string`, `to-rgba`, maths and trigonometry, and the legacy `stops` functions and filters |
 
