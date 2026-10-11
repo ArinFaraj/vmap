@@ -1,3 +1,14 @@
+## 0.7.0
+
+- PMTiles: a source whose address starts with `pmtiles://` is read from one
+  archive file, over HTTP range requests or from the device, for vector,
+  raster and hillshade sources. A file on the device makes an offline map.
+- Raster layers read `raster-hue-rotate`, `raster-saturation`,
+  `raster-contrast` and `raster-brightness-min` and `-max`.
+- `fill-translate`, `line-translate` and `circle-translate`.
+- `promoteId` on a source and `generateId` on a GeoJSON source, so features
+  without an id of their own can be given state.
+
 ## 0.6.1
 
 - Hillshade tiles meet without a line: each is shaded with the heights of

@@ -3,13 +3,14 @@
 | | |
 | --- | --- |
 | Layers | `background`, `fill`, `line`, `circle`, `symbol`, `raster`, `hillshade`, `heatmap`. `fill-extrusion` is drawn flat |
-| Sources | any number of `vector`, `geojson`, `raster` and `raster-dem` sources. Tiles by TileJSON `url` or `tiles` template, GeoJSON inline or by address, with `cluster`, `clusterRadius`, `clusterMaxZoom` and `clusterMinPoints` |
+| Sources | any number of `vector`, `geojson`, `raster` and `raster-dem` sources. Tiles by TileJSON `url` or `tiles` template, GeoJSON inline or by address, with `cluster`, `clusterRadius`, `clusterMaxZoom` and `clusterMinPoints`. `pmtiles://` archives over HTTP or on disk. `promoteId`, and `generateId` for GeoJSON |
 | Order | layers are drawn in the style's order, across sources and with raster layers where the style puts them |
-| Fills | colour, opacity, `fill-outline-color`, `fill-pattern` |
-| Lines | colour, opacity, width, gap width, round caps, `line-dasharray`, `line-pattern` |
+| Fills | colour, opacity, `fill-outline-color`, `fill-pattern`, `fill-translate` |
+| Raster | opacity, `raster-hue-rotate`, `raster-saturation`, `raster-contrast`, `raster-brightness-min` and `-max` |
+| Lines | colour, opacity, width, gap width, round caps, `line-dasharray`, `line-pattern`, `line-translate` |
 | Hillshade | Mapbox and Terrarium heights, exaggeration, shadow and highlight colours, light direction |
 | Heatmap | radius, weight, intensity, opacity, and the low and top colours of `heatmap-color` |
-| Circles | radius, colour, opacity, and the stroke's width, colour and opacity |
+| Circles | radius, colour, opacity, the stroke's width, colour and opacity, `circle-translate` |
 | Text | field, size, font weight and slant, colour, halo, letter spacing, max width, transform, anchor, offset, `text-optional`, `text-allow-overlap` |
 | Icons | `icon-image` from the style's sprite sheet (the `@2x` sheet when there is one), size, rotation, opacity, `icon-color` for SDF icons, `icon-optional`, `icon-allow-overlap`, `icon-text-fit` |
 | Placement | `symbol-placement` point and line, `symbol-spacing`, text along a road and bent along its curves, labels for polygons, shields and arrows repeated along a line, `minzoom`, `maxzoom`, `visibility` |

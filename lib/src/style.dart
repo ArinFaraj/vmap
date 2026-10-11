@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'builtin_style.dart';
 import 'cluster.dart';
@@ -288,6 +290,7 @@ class PaintLayer {
     this.strokeWidth,
     this.strokeOpacity,
     this.heat,
+    this.translate,
     this.perFeature = false,
   });
 
@@ -317,6 +320,10 @@ class PaintLayer {
 
   /// Set for a heatmap layer, whose points are drawn as glows that add up.
   final HeatPaint? heat;
+
+  /// How far the layer is drawn from its place, as x and y in logical
+  /// pixels.
+  final Expr? translate;
 
   /// The paint reads feature properties, so it is worked out per mesh.
   final bool perFeature;
@@ -454,6 +461,8 @@ class VectorSource {
     required this.data,
     required this.signature,
     this.cluster,
+    this.promoteId,
+    this.generateId = false,
   });
 
   final String name;
@@ -469,6 +478,21 @@ class VectorSource {
 
   /// Set when a GeoJSON source asks for its points to be clustered.
   final ClusterOptions? cluster;
+
+  /// The source's `promoteId`: the property used as a feature's id, as one
+  /// name or as a name per source layer.
+  final Object? promoteId;
+
+  /// A GeoJSON source numbers its features in order, as `generateId` asks.
+  final bool generateId;
+
+  /// The property that is the id of the features in [sourceLayer], or null
+  /// when they keep the id they come with.
+  String? idKey(String sourceLayer) => switch (promoteId) {
+    final String name => name,
+    final Map<Object?, Object?> names => names[sourceLayer] as String?,
+    _ => null,
+  };
 
   /// Equal for two sources that give the same tiles.
   final String signature;
@@ -563,10 +587,13 @@ class StyleSheet {
           maxZoom: maxZoom,
           data: data,
           cluster: cluster,
+          promoteId: from['promoteId'],
+          generateId: from['generateId'] == true,
           signature: geoJson
               ? 'g|${data is String ? data : identityHashCode(data)}'
-                    '|${cluster?.signature}'
-              : 'v|${from['url']}|$direct',
+                    '|${cluster?.signature}|${from['promoteId']}'
+                    '|${from['generateId']}'
+              : 'v|${from['url']}|$direct|${from['promoteId']}',
         ),
       );
       return vectorSources.length - 1;
@@ -587,6 +614,8 @@ class StyleSheet {
       final type = raw['type'];
       final paint = (raw['paint'] as Map?) ?? const {};
       final layout = (raw['layout'] as Map?) ?? const {};
+      final moved = paint['${raw['type']}-translate'];
+      final translate = moved == null ? null : compileExpr(moved);
       if (layout['visibility'] == 'none') continue;
       final minZoom = asNumber(raw['minzoom']) ?? 0;
       final maxZoom = asNumber(raw['maxzoom']) ?? 30;
@@ -620,6 +649,28 @@ class StyleSheet {
             minZoom: minZoom,
             maxZoom: maxZoom,
             opacity: compileExpr(relief ? 1 : paint['raster-opacity'] ?? 1),
+            adjust:
+                relief ||
+                    !paint.keys.any(
+                      (k) =>
+                          k == 'raster-hue-rotate' ||
+                          k == 'raster-saturation' ||
+                          k == 'raster-contrast' ||
+                          k == 'raster-brightness-min' ||
+                          k == 'raster-brightness-max',
+                    )
+                ? null
+                : RasterAdjust(
+                    hueRotate: compileExpr(paint['raster-hue-rotate'] ?? 0),
+                    saturation: compileExpr(paint['raster-saturation'] ?? 0),
+                    contrast: compileExpr(paint['raster-contrast'] ?? 0),
+                    brightnessMin: compileExpr(
+                      paint['raster-brightness-min'] ?? 0,
+                    ),
+                    brightnessMax: compileExpr(
+                      paint['raster-brightness-max'] ?? 1,
+                    ),
+                  ),
             relief: !relief
                 ? null
                 : ReliefPaint(
@@ -793,6 +844,7 @@ class StyleSheet {
         layers.add(
           PaintLayer(
             id: id,
+            translate: translate,
             bucket: bucketFor(kind, names),
             kind: kind,
             minZoom: minZoom,
@@ -839,6 +891,7 @@ class StyleSheet {
         layers.add(
           PaintLayer(
             id: id,
+            translate: translate,
             bucket: bucketFor(kind, names),
             kind: kind,
             minZoom: minZoom,
@@ -879,6 +932,7 @@ class StyleSheet {
         layers.add(
           PaintLayer(
             id: id,
+            translate: translate,
             bucket: bucketFor(
               kind,
               names,
@@ -907,6 +961,7 @@ class StyleSheet {
       layers.add(
         PaintLayer(
           id: id,
+          translate: translate,
           bucket: bucketFor(kind, names),
           kind: kind,
           minZoom: minZoom,
@@ -923,6 +978,7 @@ class StyleSheet {
         layers.add(
           PaintLayer(
             id: id,
+            translate: translate,
             bucket: bucketFor(BucketKind.line, edgeNames, outline: true),
             kind: BucketKind.line,
             minZoom: minZoom,
@@ -1067,6 +1123,108 @@ class ReliefPaint {
   final double direction;
 }
 
+/// How a raster layer changes the colours of its pictures: `raster-hue-rotate`,
+/// `raster-saturation`, `raster-contrast` and the two ends of
+/// `raster-brightness`.
+class RasterAdjust {
+  RasterAdjust({
+    required this.hueRotate,
+    required this.saturation,
+    required this.contrast,
+    required this.brightnessMin,
+    required this.brightnessMax,
+  });
+
+  final Expr hueRotate;
+  final Expr saturation;
+  final Expr contrast;
+  final Expr brightnessMin;
+  final Expr brightnessMax;
+
+  String? _key;
+  ui.ColorFilter? _filter;
+
+  /// The colour filter for the zoom in [context], or null when it changes
+  /// nothing.
+  ui.ColorFilter? filter(EvalContext context) {
+    final hue = (asNumber(hueRotate(context)) ?? 0).toDouble();
+    final sat = (asNumber(saturation(context)) ?? 0).clamp(-1.0, 1.0);
+    final con = (asNumber(contrast(context)) ?? 0).clamp(-1.0, 1.0);
+    final low = (asNumber(brightnessMin(context)) ?? 0).clamp(0.0, 1.0);
+    final high = (asNumber(brightnessMax(context)) ?? 1).clamp(0.0, 1.0);
+    final key = '$hue|$sat|$con|$low|$high';
+    if (key == _key) return _filter;
+    _key = key;
+    if (hue == 0 && sat == 0 && con == 0 && low == 0 && high == 1) {
+      return _filter = null;
+    }
+    return _filter = ui.ColorFilter.matrix(
+      rasterColorMatrix(
+        hue,
+        sat.toDouble(),
+        con.toDouble(),
+        low.toDouble(),
+        high.toDouble(),
+      ),
+    );
+  }
+}
+
+/// The colour matrix MapLibre's raster shader works out to: the hue turned
+/// by [hue] degrees, then saturation, contrast, and brightness stretched
+/// between [low] and [high].
+List<double> rasterColorMatrix(
+  double hue,
+  double saturation,
+  double contrast,
+  double low,
+  double high,
+) {
+  final angle = hue * math.pi / 180;
+  final c = math.cos(angle), s = math.sin(angle);
+  // Rows of the matrix that turns a colour around the grey axis.
+  var m = <List<double>>[
+    [
+      (2 * c + 1) / 3,
+      (-math.sqrt(3) * s - c + 1) / 3,
+      (math.sqrt(3) * s - c + 1) / 3,
+    ],
+    [
+      (math.sqrt(3) * s - c + 1) / 3,
+      (2 * c + 1) / 3,
+      (-math.sqrt(3) * s - c + 1) / 3,
+    ],
+    [
+      (-math.sqrt(3) * s - c + 1) / 3,
+      (math.sqrt(3) * s - c + 1) / 3,
+      (2 * c + 1) / 3,
+    ],
+  ];
+  final grey = saturation > 0 ? 1 - 1 / (1.001 - saturation) : -saturation;
+  final sharp = contrast > 0 ? 1 / (1 - contrast) : 1 + contrast;
+  // Saturation pulls each channel towards the mean of the three.
+  m = [
+    for (var row = 0; row < 3; row++)
+      [
+        for (var col = 0; col < 3; col++)
+          m[row][col] * (1 - grey) +
+              (m[0][col] + m[1][col] + m[2][col]) / 3 * grey,
+      ],
+  ];
+  final scale = sharp * (high - low);
+  final offset = ((0.5 * (1 - sharp)) * (high - low) + low) * 255;
+  return [
+    for (var row = 0; row < 3; row++) ...[
+      m[row][0] * scale,
+      m[row][1] * scale,
+      m[row][2] * scale,
+      0,
+      offset,
+    ],
+    0, 0, 0, 1, 0, //
+  ];
+}
+
 /// A layer of picture tiles.
 class RasterLayer {
   RasterLayer({
@@ -1078,10 +1236,14 @@ class RasterLayer {
     required this.maxZoom,
     required this.opacity,
     this.relief,
+    this.adjust,
   });
 
   /// Set for a hillshade layer, whose tiles hold heights to be shaded.
   final ReliefPaint? relief;
+
+  /// Set when the layer changes the colours of its pictures.
+  final RasterAdjust? adjust;
   final String? tileJsonUrl;
   final String? tiles;
   final double tileSize;

@@ -94,12 +94,16 @@ List<List<Object?>> queryTile(
     final x = px / scale;
     final y = py / scale;
     final reach = radius / scale;
+    final from = sheet.sources[source];
+    final idKey = from.geoJson ? null : from.idKey(layer.name);
     for (final f in layer.features) {
       sink.clear();
       f.readGeometry(sink);
       if (!_hit(f.type, sink, x, y, reach)) continue;
+      final tags = f.allTags(layer);
+      if (idKey != null && tags[idKey] != null) tags[r'$id'] = tags[idKey];
       context
-        ..props = f.allTags(layer)
+        ..props = tags
         ..geometryType = switch (f.type) {
           mvtPoint => 'Point',
           mvtLine => 'LineString',

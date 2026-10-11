@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'geojson.dart';
 import 'mvt.dart';
 import 'query.dart';
+import 'pmtiles.dart';
 import 'style.dart';
 import 'tile_builder.dart';
 
@@ -128,10 +129,21 @@ class TilePool {
   /// current one meanwhile.
   Future<void> _start() async {
     try {
-      final direct = _def.geoJson ? 'geojson' : _def.tiles;
+      final direct = _def.geoJson
+          ? 'geojson'
+          : _def.tiles ??
+                (PmTiles.handles(_def.tileJsonUrl) ? _def.tileJsonUrl : null);
       if (direct != null || _def.tileJsonUrl == null) {
         if (direct == null) {
           throw StateError('The source ${_def.name} has no tiles');
+        }
+        if (PmTiles.handles(direct) && _def.maxZoom == null) {
+          final archive = PmTiles(direct);
+          try {
+            maxZoom = await archive.maxZoom;
+          } finally {
+            archive.close();
+          }
         }
         _template = direct;
         _confirmed = true;
@@ -383,8 +395,17 @@ Future<void> _workerMain(List<Object?> init) async {
   if (sheet.sources[source].geoJson) {
     final data = sheet.sources[source].data;
     final cluster = sheet.sources[source].cluster;
+    final promoteId = sheet.sources[source].idKey('');
+    final generateId = sheet.sources[source].generateId;
     geoJson = () async {
-      if (data is! String) return GeoJsonTiles(data, cluster: cluster);
+      if (data is! String) {
+        return GeoJsonTiles(
+          data,
+          cluster: cluster,
+          promoteId: promoteId,
+          generateId: generateId,
+        );
+      }
       try {
         final request = await client.getUrl(Uri.parse(data));
         final response = await request.close().timeout(
@@ -393,12 +414,18 @@ Future<void> _workerMain(List<Object?> init) async {
         return GeoJsonTiles(
           jsonDecode(await utf8.decodeStream(response)),
           cluster: cluster,
+          promoteId: promoteId,
+          generateId: generateId,
         );
       } catch (_) {
         return GeoJsonTiles(null);
       }
     }();
   }
+
+  final archive = PmTiles.handles(template)
+      ? PmTiles(template, client: client)
+      : null;
 
   /// The bytes of the tiles built last, which a lookup reads again.
   final recent = <int, Uint8List>{};
@@ -416,13 +443,30 @@ Future<void> _workerMain(List<Object?> init) async {
     }
 
     File? file;
-    if (cacheDirectory != null) {
+    if (cacheDirectory != null && !(archive?.local ?? false)) {
       file = File(_tileCachePath(cacheDirectory, template, z, x, y));
       if (file.existsSync()) {
         final bytes = await file.readAsBytes();
         remember(bytes);
         return bytes;
       }
+    }
+    void keep(Uint8List bytes) {
+      remember(bytes);
+      final target = file;
+      if (target == null) return;
+      unawaited(
+        target.parent
+            .create(recursive: true)
+            .then((_) => target.writeAsBytes(bytes))
+            .then<void>((_) {}, onError: (_) {}),
+      );
+    }
+
+    if (archive != null) {
+      final bytes = await archive.tile(z, x, y);
+      keep(bytes);
+      return bytes;
     }
     final url = template
         .replaceFirst('{z}', '$z')
@@ -441,15 +485,7 @@ Future<void> _workerMain(List<Object?> init) async {
     final builder = BytesBuilder(copy: false);
     await response.forEach(builder.add).timeout(const Duration(seconds: 30));
     final bytes = builder.takeBytes();
-    remember(bytes);
-    if (file != null) {
-      unawaited(
-        file.parent
-            .create(recursive: true)
-            .then((_) => file!.writeAsBytes(bytes))
-            .then<void>((_) {}, onError: (_) {}),
-      );
-    }
+    keep(bytes);
     return bytes;
   }
 

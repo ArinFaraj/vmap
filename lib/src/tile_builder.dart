@@ -269,9 +269,15 @@ class TileBuilder {
       ];
       if (buckets.isEmpty && symbols.isEmpty) continue;
       final scale = tileExtent / layer.extent;
+      final from = source < sheet.sources.length ? sheet.sources[source] : null;
+      final idKey = from == null || from.geoJson
+          ? null
+          : from.idKey(layer.name);
       for (final f in layer.features) {
+        final tags = f.allTags(layer);
+        if (idKey != null && tags[idKey] != null) tags[r'$id'] = tags[idKey];
         context
-          ..props = f.allTags(layer)
+          ..props = tags
           ..geometryType = switch (f.type) {
             mvtPoint => 'Point',
             mvtLine => 'LineString',

@@ -9,12 +9,23 @@ import 'tile_builder.dart' show tileExtent;
 class GeoJsonTiles {
   /// With [cluster], the points of [data] are gathered into clusters and
   /// only its lines and polygons are kept as they are.
-  GeoJsonTiles(Object? data, {ClusterOptions? cluster})
-    : _clustering = cluster != null {
+  GeoJsonTiles(
+    Object? data, {
+    ClusterOptions? cluster,
+    this.promoteId,
+    this.generateId = false,
+  }) : _clustering = cluster != null {
     _read(data);
     if (cluster != null) _clusters = PointClusters(_loose, cluster);
   }
 
+  /// The property that is each feature's id, in place of its own `id`.
+  final String? promoteId;
+
+  /// Features are numbered in the order they are read, in place of their
+  /// own `id`.
+  final bool generateId;
+  int _count = 0;
   final List<_Feature> _features = [];
   final bool _clustering;
   final List<ClusterPoint> _loose = [];
@@ -37,8 +48,12 @@ class GeoJsonTiles {
           if (properties is Map)
             for (final e in properties.entries) '${e.key}': e.value,
         };
-        final id = json['id'];
-        if (id != null) props.putIfAbsent(r'$id', () => id);
+        final id = generateId
+            ? _count++
+            : promoteId != null
+            ? props[promoteId]
+            : json['id'];
+        if (id != null) props[r'$id'] = id;
         _geometry(json['geometry'], props);
       default:
         _geometry(json, const {});

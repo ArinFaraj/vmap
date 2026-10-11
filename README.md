@@ -27,7 +27,7 @@ dependencies:
   vmap:
     git:
       url: https://github.com/ArinFaraj/vmap.git
-      ref: v0.6.1
+      ref: v0.7.0
 ```
 
 ## Quick start
@@ -78,6 +78,30 @@ The style decides the look and where the tiles come from. Light and dark
 versions of one style switch without reloading a tile.
 
 ![One style from a country down to a street](doc/images/zooms.png)
+
+### Tiles from one file
+
+A source whose address starts with `pmtiles://` is read from a
+[PMTiles](https://docs.protomaps.com/pmtiles/) archive: a whole tile set in
+one file, on any web server that answers range requests or on the device
+itself. It works for vector, raster and hillshade sources.
+
+```dart
+'sources': {
+  'city': {
+    'type': 'vector',
+    'url': 'pmtiles://https://example.org/city.pmtiles',
+  },
+  'offline': {
+    'type': 'vector',
+    'url': 'pmtiles:///data/user/0/my.app/files/region.pmtiles',
+  },
+}
+```
+
+An archive on the device needs no network at all, which is the way to ship
+a map that works offline. Archives packed with gzip are read; brotli and
+zstd are not.
 
 ## Pins
 
@@ -302,7 +326,9 @@ VmapMap(
 ```
 
 The feature needs an id: the `id` of a GeoJSON feature, or the id its vector
-tile carries. A layer painted this way is drawn one feature at a time, so
+tile carries. `'promoteId': 'some_property'` on the source uses a property
+as the id instead, and `'generateId': true` on a GeoJSON source numbers its
+features. A layer painted this way is drawn one feature at a time, so
 keep it for layers with hundreds of features in view, not tens of thousands.
 
 ## Fonts and language

@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'expr.dart';
+import 'pmtiles.dart';
 import 'style.dart';
 
 class _RasterTile {
@@ -35,10 +36,24 @@ class RasterTiles {
     required this.cacheDirectory,
     required this.userAgent,
     required this.onLoaded,
-  }) : _template = layer.tiles,
+  }) : _template =
+           layer.tiles ??
+           (PmTiles.handles(layer.tileJsonUrl) ? layer.tileJsonUrl : null),
        _maxZoom = layer.sourceMaxZoom ?? 22 {
-    if (_template == null && layer.tileJsonUrl != null) _resolve();
+    if (PmTiles.handles(_template)) {
+      final archive = _archive = PmTiles(_template!, client: _client);
+      if (layer.sourceMaxZoom == null) {
+        archive.maxZoom.then((deepest) {
+          _maxZoom = deepest;
+          if (!_closed) onLoaded();
+        }, onError: (_) {});
+      }
+    } else if (_template == null && layer.tileJsonUrl != null) {
+      _resolve();
+    }
   }
+
+  PmTiles? _archive;
 
   RasterLayer layer;
   final String? cacheDirectory;
@@ -105,7 +120,8 @@ class RasterTiles {
     final lap = shaded ? 0.0 : 0.5;
     _paint
       ..color = ui.Color.fromRGBO(255, 255, 255, opacity)
-      ..isAntiAlias = !shaded;
+      ..isAntiAlias = !shaded
+      ..colorFilter = layer.adjust?.filter(context);
     for (var y = y0; y <= y1; y++) {
       for (var x = x0; x <= x1; x++) {
         final key = (z << 50) | ((x % n) << 25) | y;
@@ -153,7 +169,8 @@ class RasterTiles {
     _loading++;
     try {
       final template = _template!;
-      final file = cacheDirectory == null
+      final archive = _archive;
+      final file = cacheDirectory == null || (archive?.local ?? false)
           ? null
           : File(
               '$cacheDirectory/raster-${template.hashCode.toRadixString(36)}/$z/$x/$y',
@@ -161,6 +178,13 @@ class RasterTiles {
       Uint8List bytes;
       if (file != null && file.existsSync()) {
         bytes = await file.readAsBytes();
+      } else if (archive != null) {
+        bytes = await archive.tile(z, x, y);
+        if (bytes.isEmpty) throw const HttpException('No such tile');
+        if (file != null) {
+          await file.parent.create(recursive: true);
+          await file.writeAsBytes(bytes);
+        }
       } else {
         final url = template
             .replaceFirst('{z}', '$z')
@@ -355,6 +379,7 @@ class RasterTiles {
 
   void close() {
     _closed = true;
+    _archive?.close();
     _client.close(force: true);
     for (final t in _tiles.values) {
       t.image?.dispose();

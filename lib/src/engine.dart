@@ -731,6 +731,16 @@ class VmapEngine extends ChangeNotifier {
         shader = _shaders.of(layer, width, scale, _context, _sprites);
         if (shader == null && (layer.pattern != null)) continue;
       }
+      final moved = layer.translate?.call(_context);
+      final shifted = moved is List && moved.length == 2;
+      if (shifted) {
+        canvas
+          ..save()
+          ..translate(
+            (asNumber(moved[0]) ?? 0) / scale,
+            (asNumber(moved[1]) ?? 0) / scale,
+          );
+      }
       for (final m in meshes) {
         if (layer.perFeature) {
           _context
@@ -813,6 +823,7 @@ class VmapEngine extends ChangeNotifier {
           ..props = const {}
           ..state = const {};
       }
+      if (shifted) canvas.restore();
     }
     canvas.restore();
     return draws;
