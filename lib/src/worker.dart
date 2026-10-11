@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'style.dart';
 import 'tile_builder.dart';
 
 class TileId {
@@ -26,56 +27,56 @@ class TileId {
   String toString() => '$z/$x/$y';
 }
 
-/// Where tiles come from and how they are read.
+/// How tiles are fetched and kept.
 class TileSourceConfig {
   const TileSourceConfig({
-    this.tileJsonUrl = 'https://tiles.openfreemap.org/planet',
-    this.nameKeys = const ['name'],
     this.cacheDirectory,
     this.userAgent = 'vmap',
     this.workers = 2,
-    this.linesAsPolylines = false,
   });
-
-  final String tileJsonUrl;
-  final List<String> nameKeys;
 
   /// Downloaded tiles are kept here between runs. Null disables the disk
   /// cache.
   final String? cacheDirectory;
   final String userAgent;
   final int workers;
-
-  /// Stroke roads as paths on the raster thread instead of as triangles
-  /// widened on the UI thread.
-  final bool linesAsPolylines;
 }
 
-typedef TileLoaded = void Function(
-  TileId id,
-  List<String> nameKeys,
-  BuiltTile tile,
-);
+typedef TileLoaded = void Function(TileId id, BuiltTile tile);
 typedef TileFailed = void Function(TileId id, Object error);
 
 /// Downloads, decodes and tessellates tiles on background isolates, so none of
 /// it runs on the UI thread.
 class TilePool {
-  TilePool(this.config, {required this.onLoaded, required this.onFailed}) {
+  TilePool(
+    this.config, {
+    required this.style,
+    required this.nameKeys,
+    required this.sheet,
+    required this.onLoaded,
+    required this.onFailed,
+  }) : maxZoom = sheet.maxZoom ?? 14 {
     _starting = _start();
   }
 
   final TileSourceConfig config;
+
+  /// The style document the workers build tiles for, and its compiled form.
+  final Map<String, Object?> style;
+  final List<String>? nameKeys;
+  final StyleSheet sheet;
+
+  /// The deepest zoom the source has tiles for.
+  int maxZoom;
   final TileLoaded onLoaded;
   final TileFailed onFailed;
 
   static const int _perWorker = 3;
 
   final List<_Worker> _workers = [];
-  final Map<int, (TileId, List<String>)> _inflight = {};
+  final Map<int, TileId> _inflight = {};
   final Set<TileId> _inflightIds = {};
   List<TileId> _wanted = const [];
-  List<String> _nameKeys = const ['name'];
   int _nextJob = 0;
   bool _closed = false;
   Future<void>? _starting;
@@ -89,9 +90,8 @@ class TilePool {
 
   /// Tiles to load, most urgent first. Replaces the previous list; tiles
   /// already being fetched are left to finish.
-  void want(List<TileId> ids, List<String> nameKeys) {
+  void want(List<TileId> ids) {
     _wanted = ids;
-    _nameKeys = nameKeys;
     _starting ??= _start();
     _dispatch();
   }
@@ -108,17 +108,31 @@ class TilePool {
 
   File? get _templateFile => config.cacheDirectory == null
       ? null
-      : File('${config.cacheDirectory}/tilejson.url');
+      : File(
+          '${config.cacheDirectory}/source-${sheet.tileJsonUrl.hashCode.toRadixString(36)}.txt',
+        );
 
   /// Starts on the address remembered from the last run, so tiles on disk
   /// show without waiting for the network, and asks the server for the
   /// current one meanwhile.
   Future<void> _start() async {
     try {
+      final direct = sheet.tiles;
+      if (direct != null || sheet.tileJsonUrl == null) {
+        if (direct == null) throw StateError('The style has no vector source');
+        _template = direct;
+        _confirmed = true;
+        await _spawnWorkers(direct);
+        _dispatch();
+        return;
+      }
       final file = _templateFile;
-      final remembered = file != null && file.existsSync()
-          ? file.readAsStringSync()
-          : null;
+      String? remembered;
+      if (file != null && file.existsSync()) {
+        final saved = file.readAsStringSync().split('\n');
+        remembered = saved.first;
+        if (saved.length > 1) maxZoom = int.tryParse(saved[1]) ?? maxZoom;
+      }
       if (remembered != null) {
         _template = remembered;
         await _spawnWorkers(remembered);
@@ -173,6 +187,9 @@ class TilePool {
       template,
       config.cacheDirectory,
       config.userAgent,
+      style,
+      nameKeys,
+      sheet.zoomOffset,
     ], debugName: 'vmap-tiles-$index');
     final ready = Completer<SendPort>();
     final worker = _Worker(isolate, inbox);
@@ -191,7 +208,7 @@ class TilePool {
     final client = HttpClient()..userAgent = config.userAgent;
     try {
       final request = await client
-          .getUrl(Uri.parse(config.tileJsonUrl))
+          .getUrl(Uri.parse(sheet.tileJsonUrl!))
           .timeout(const Duration(seconds: 10));
       final response = await request.close().timeout(
         const Duration(seconds: 10),
@@ -199,10 +216,12 @@ class TilePool {
       final json =
           jsonDecode(await utf8.decodeStream(response)) as Map<String, dynamic>;
       final template = (json['tiles'] as List).first as String;
+      final deepest = json['maxzoom'];
+      if (deepest is num) maxZoom = deepest.toInt();
       final file = _templateFile;
       if (file != null) {
         await file.parent.create(recursive: true);
-        await file.writeAsString(template);
+        await file.writeAsString('$template\n$maxZoom');
       }
       return template;
     } finally {
@@ -232,25 +251,17 @@ class TilePool {
       }
       if (free == null) return;
       final job = _nextJob++;
-      _inflight[job] = (id, _nameKeys);
+      _inflight[job] = id;
       _inflightIds.add(id);
       free.busy++;
-      free.port.send([
-        job,
-        id.z,
-        id.x,
-        id.y,
-        _nameKeys,
-        config.linesAsPolylines,
-      ]);
+      free.port.send([job, id.z, id.x, id.y, maxZoom]);
     }
   }
 
   void _onResult(_Worker worker, List<Object?> message) {
     worker.busy--;
-    final job = _inflight.remove(message[0]! as int);
-    if (job == null || _closed) return;
-    final (id, nameKeys) = job;
+    final id = _inflight.remove(message[0]! as int);
+    if (id == null || _closed) return;
     _inflightIds.remove(id);
     _wanted = [
       for (final w in _wanted)
@@ -261,7 +272,7 @@ class TilePool {
       onFailed(id, message[2] ?? 'unknown');
     } else {
       final started = _clock.elapsedMicroseconds;
-      onLoaded(id, nameKeys, BuiltTile.fromMessage(payload as List<Object?>));
+      onLoaded(id, BuiltTile.fromMessage(payload as List<Object?>));
       final spent = _clock.elapsedMicroseconds - started;
       if (spent > maxUnpackMicros) maxUnpackMicros = spent;
     }
@@ -302,7 +313,13 @@ Future<void> _workerMain(List<Object?> init) async {
     ..userAgent = init[3]! as String
     ..maxConnectionsPerHost = 4
     ..connectionTimeout = const Duration(seconds: 10);
-  final builders = <String, TileBuilder>{};
+  final builder = TileBuilder(
+    StyleSheet.compile(
+      (init[4]! as Map).cast<String, Object?>(),
+      nameKeys: (init[5] as List?)?.cast<String>(),
+      zoomOffset: init[6]! as double,
+    ),
+  );
   final inbox = ReceivePort();
   out.send(inbox.sendPort);
 
@@ -344,16 +361,12 @@ Future<void> _workerMain(List<Object?> init) async {
     final m = message as List<Object?>;
     final job = m[0]! as int;
     final z = m[1]! as int;
-    final nameKeys = (m[4]! as List).cast<String>();
     unawaited(() async {
       try {
         final bytes = await fetch(z, m[2]! as int, m[3]! as int);
-        final asPolylines = m[5]! as bool;
-        final builder = builders['$asPolylines|${nameKeys.join('|')}'] ??=
-            TileBuilder(nameKeys, linesAsPolylines: asPolylines);
         final tile = bytes.isEmpty
             ? BuiltTile(const [], const [])
-            : builder.build(bytes, z);
+            : builder.build(bytes, z, maxZoom: m[4]! as int);
         out.send([job, tile.toMessage()]);
       } catch (e) {
         out.send([job, null, '$e']);

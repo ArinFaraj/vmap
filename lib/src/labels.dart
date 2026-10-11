@@ -2,20 +2,54 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show listEquals;
+
+import 'expr.dart';
 import 'style.dart';
 import 'tile_builder.dart';
 
-/// Font used for every map label. The colours come from the palette.
-class VmapLabelFont {
-  const VmapLabelFont({
+/// How text on the map is set. Sizes and colours of map labels come from the
+/// style; the name beside a marker is the app's own.
+class VmapTextStyle {
+  const VmapTextStyle({
     this.fontFamily,
     this.fontFamilyFallback,
-    this.sizeScale = 1,
+    this.scale = 1,
+    this.markerSize = 12.5,
+    this.markerWeight = 600,
+    this.markerColor,
   });
 
   final String? fontFamily;
   final List<String>? fontFamilyFallback;
-  final double sizeScale;
+
+  /// Multiplies every label's size.
+  final double scale;
+  final double markerSize;
+  final int markerWeight;
+
+  /// Null picks a blue that reads on the style's background.
+  final ui.Color? markerColor;
+
+  @override
+  bool operator ==(Object other) =>
+      other is VmapTextStyle &&
+      other.fontFamily == fontFamily &&
+      listEquals(other.fontFamilyFallback, fontFamilyFallback) &&
+      other.scale == scale &&
+      other.markerSize == markerSize &&
+      other.markerWeight == markerWeight &&
+      other.markerColor == markerColor;
+
+  @override
+  int get hashCode => Object.hash(
+    fontFamily,
+    Object.hashAll(fontFamilyFallback ?? const []),
+    scale,
+    markerSize,
+    markerWeight,
+    markerColor,
+  );
 }
 
 class LabelCandidate {
@@ -25,7 +59,7 @@ class LabelCandidate {
       lineLength = _length(source.line);
 
   final String key;
-  late final String spriteKey = '${source.labelClass}|${source.text}';
+  late final String spriteKey = '${source.layer}|${source.text}';
 
   /// Whether the text reads right to left, so its first letter is at its
   /// right edge.
@@ -66,9 +100,20 @@ class LabelCandidate {
 /// A label drawn once into an image, shared by every label with the same
 /// text and class.
 class _Sprite {
-  _Sprite(this.image, this.width, this.height, this.textWidth, this.textHeight);
+  _Sprite(
+    this.image,
+    this.width,
+    this.height,
+    this.textWidth,
+    this.textHeight,
+    this.fontSize,
+  );
 
   final ui.Image image;
+
+  /// The size the text was drawn at. The image is scaled while the label's
+  /// size stays close to it.
+  final double fontSize;
   final double width;
   final double height;
   final double textWidth;
@@ -92,6 +137,12 @@ class _LabelState {
   double worldY = 0;
   double angle = 0;
 
+  /// The label's size now over the size its image was drawn at.
+  double scale = 1;
+
+  /// The image is too far from the label's size and wants drawing again.
+  bool resize = false;
+
   /// Where the label sits relative to its anchor, in screen pixels, after
   /// stepping aside for a reserved area.
   double dx = 0;
@@ -103,9 +154,23 @@ class _LabelState {
 /// Chooses which labels show, fades them, and draws them. Text is laid out by
 /// the engine's own text stack, so joined scripts shape correctly.
 class LabelEngine {
-  LabelEngine(this.font);
+  LabelEngine(this.text);
 
-  VmapLabelFont font;
+  VmapTextStyle text;
+  List<SymbolLayer> symbols = const [];
+  double zoomOffset = 0;
+  final EvalContext _context = EvalContext();
+
+  double _size(int layer, double styleZoom) {
+    if (layer < 0) return text.markerSize * text.scale;
+    _context.zoom = styleZoom;
+    return (asNumber(symbols[layer].size(_context)) ?? 16) * text.scale;
+  }
+
+  bool _inRange(int layer, double styleZoom) =>
+      layer < 0 ||
+      (styleZoom >= symbols[layer].minZoom &&
+          styleZoom < symbols[layer].maxZoom);
 
   static const double _fadeSeconds = 0.2;
   static const double _haloPad = 4;
@@ -200,7 +265,7 @@ class LabelEngine {
     ui.Canvas canvas, {
     required Iterable<List<LabelCandidate>> sources,
     required int sourcesKey,
-    required VmapPalette palette,
+    required int background,
     required double zoom,
     required ui.Offset origin,
     required ui.Size size,
@@ -239,9 +304,13 @@ class LabelEngine {
     var rasterized = 0;
     final rasterStart = _clock.elapsedMicroseconds;
     for (final st in _frameStates) {
-      if (st.sprite?.dropped ?? false) st.sprite = null;
-      if (!st.placed || st.sprite != null || st.seenPass != _pass) continue;
-      final cached = _sprites[st.candidate.spriteKey];
+      if (st.sprite?.dropped ?? false) {
+        st.sprite = _sprites[st.candidate.spriteKey];
+      }
+      if (!st.placed || st.seenPass != _pass) continue;
+      if (st.sprite != null && !st.resize) continue;
+      var cached = _sprites[st.candidate.spriteKey];
+      if (identical(cached, st.sprite)) cached = null;
       if (cached == null &&
           rasterized > 0 &&
           _clock.elapsedMicroseconds - rasterStart > rasterBudgetMicros) {
@@ -249,7 +318,10 @@ class LabelEngine {
         break;
       }
       st
-        ..sprite = cached ?? _rasterize(st, palette, devicePixelRatio)
+        ..sprite =
+            cached ??
+            _rasterize(st, zoom - 1 + zoomOffset, background, devicePixelRatio)
+        ..resize = false
         ..roadFitKey = -1;
       _placeAgain = true;
       if (cached == null) rasterized++;
@@ -257,17 +329,18 @@ class LabelEngine {
 
     lastRasterMicros = _clock.elapsedMicroseconds - rasterStart;
     _lastZoom = zoom;
-    final styleZoom = zoom - 1;
+    final styleZoom = zoom - 1 + zoomOffset;
     var animating = pending;
     final step = dt / _fadeSeconds;
     _dead.clear();
     for (final entry in _states.entries) {
       final st = entry.value;
       final seen = st.seenPass == _pass;
-      if (st.sprite?.dropped ?? false) st.sprite = null;
+      if (st.sprite?.dropped ?? false) {
+        st.sprite = _sprites[st.candidate.spriteKey];
+      }
       final sprite = st.sprite;
-      final cls = LabelClasses.all[st.candidate.source.labelClass];
-      final inRange = styleZoom >= cls.minZoom && styleZoom <= cls.maxZoom;
+      final inRange = _inRange(st.candidate.source.layer, styleZoom);
       final target = seen && inRange && st.placed && sprite != null ? 1.0 : 0.0;
       if (st.opacity < target) {
         st.opacity = math.min(1, st.opacity + step);
@@ -288,22 +361,25 @@ class LabelEngine {
       final sx = st.worldX * world - origin.dx + st.dx;
       final sy = st.worldY * world - origin.dy + st.dy;
       final turn = st.angle - rotation;
+      final w = sprite.width * st.scale;
+      final h = sprite.height * st.scale;
+      final source = ui.Rect.fromLTWH(
+        0,
+        0,
+        image.width.toDouble(),
+        image.height.toDouble(),
+      );
       if (turn == 0) {
         final left =
-            ((sx - sprite.width / 2) * devicePixelRatio).roundToDouble() /
+            ((sx - w / 2) * devicePixelRatio).roundToDouble() /
             devicePixelRatio;
         final top =
-            ((sy - sprite.height / 2) * devicePixelRatio).roundToDouble() /
+            ((sy - h / 2) * devicePixelRatio).roundToDouble() /
             devicePixelRatio;
         canvas.drawImageRect(
           image,
-          ui.Rect.fromLTWH(
-            0,
-            0,
-            image.width.toDouble(),
-            image.height.toDouble(),
-          ),
-          ui.Rect.fromLTWH(left, top, sprite.width, sprite.height),
+          source,
+          ui.Rect.fromLTWH(left, top, w, h),
           _imagePaint,
         );
       } else {
@@ -313,18 +389,8 @@ class LabelEngine {
           ..rotate(turn)
           ..drawImageRect(
             image,
-            ui.Rect.fromLTWH(
-              0,
-              0,
-              image.width.toDouble(),
-              image.height.toDouble(),
-            ),
-            ui.Rect.fromLTWH(
-              -sprite.width / 2,
-              -sprite.height / 2,
-              sprite.width,
-              sprite.height,
-            ),
+            source,
+            ui.Rect.fromLTWH(-w / 2, -h / 2, w, h),
             _imagePaint,
           )
           ..restore();
@@ -347,13 +413,12 @@ class LabelEngine {
   ) {
     _pass++;
     _placeAgain = false;
-    final styleZoom = zoom - 1;
+    final styleZoom = zoom - 1 + zoomOffset;
     final states = _frameStates..clear();
     const margin = 60.0;
     for (final list in sources) {
       for (final c in list) {
-        final cls = LabelClasses.all[c.source.labelClass];
-        if (styleZoom < cls.minZoom || styleZoom > cls.maxZoom) continue;
+        if (!_inRange(c.source.layer, styleZoom)) continue;
         final sx = c.worldX * world - origin.dx;
         final sy = c.worldY * world - origin.dy;
         if (sx < -margin ||
@@ -388,13 +453,18 @@ class LabelEngine {
         continue;
       }
       final c = st.candidate;
-      final cls = LabelClasses.all[c.source.labelClass];
-      final isRoad = c.source.kind == LabelKind.road;
-      final fontSize = cls.size * font.sizeScale;
+      final isRoad = c.source.line != null;
+      final fontSize = _size(c.source.layer, styleZoom);
       if (st.sprite?.dropped ?? false) st.sprite = null;
       final sprite = st.sprite ??= _sprites[c.spriteKey];
-      final textW = sprite?.textWidth ?? c.source.text.length * fontSize * 0.55;
-      final textH = sprite?.textHeight ?? fontSize * 1.35;
+      st.scale = sprite == null ? 1 : fontSize / sprite.fontSize;
+      if (st.scale < 0.87 || st.scale > 1.15) st.resize = true;
+      final textW = sprite == null
+          ? c.source.text.length * fontSize * 0.55
+          : sprite.textWidth * st.scale;
+      final textH = sprite == null
+          ? fontSize * 1.35
+          : sprite.textHeight * st.scale;
 
       st.placed = false;
       if (isRoad) {
@@ -418,11 +488,11 @@ class LabelEngine {
       final sx = st.worldX * world - origin.dx;
       final sy = st.worldY * world - origin.dy;
       if (!isRoad && obstacles.isNotEmpty) {
-        final beside = c.source.labelClass == LabelClasses.marker;
+        final beside = c.source.layer < 0;
         var down = textH / 2 + _obstacleReach;
         var across = textW / 2 + _obstacleReach;
         if (beside) {
-          final own = c.source.priority + 1000;
+          final own = c.source.priority + 1000000;
           down = textH / 2 + obstacles[own].$4 / 2 + 2;
           across = textW / 2 + obstacles[own].$3 / 2 + 4;
           _ownBox = own * 4;
@@ -467,9 +537,7 @@ class LabelEngine {
       } else {
         final room = !isRoad
             ? 0.0
-            : (c.source.labelClass == LabelClasses.roadMinor
-                  ? _minorRoadRoom
-                  : _majorRoadRoom);
+            : (fontSize <= 12.5 ? _minorRoadRoom : _majorRoadRoom);
         if (_collides(sx, sy, textW + room, textH + room, st.angle)) continue;
         _addBoxes(sx, sy, textW + room, textH + room, st.angle);
         st
@@ -646,49 +714,82 @@ class LabelEngine {
     return false;
   }
 
-  /// Draws the label once into an image. The halo is a stack of soft
-  /// shadows, so the text is laid out a single time.
-  _Sprite _rasterize(_LabelState st, VmapPalette palette, double dpr) {
+  /// Draws the label once into an image. The halo is the text redrawn in the
+  /// halo colour around itself, so the text is laid out a single time.
+  _Sprite _rasterize(
+    _LabelState st,
+    double styleZoom,
+    int background,
+    double dpr,
+  ) {
     final source = st.candidate.source;
-    final cls = LabelClasses.all[source.labelClass];
-    final text = cls.uppercase ? source.text.toUpperCase() : source.text;
-    final fontSize = cls.size * font.sizeScale;
-    final isRoad = source.kind == LabelKind.road;
+    final beside = source.layer < 0;
+    final symbol = beside ? null : symbols[source.layer];
+    _context.zoom = styleZoom;
+    final fontSize = _size(source.layer, styleZoom);
+    final isRoad = source.line != null;
+    final label = symbol?.uppercase ?? false
+        ? source.text.toUpperCase()
+        : source.text;
+    final dark =
+        (background >> 16 & 255) * 0.3 +
+            (background >> 8 & 255) * 0.59 +
+            (background & 255) * 0.11 <
+        128;
+    final int color;
+    final int? halo;
+    final double haloWidth;
+    final int weight;
+    if (symbol == null) {
+      color = text.markerColor?.toARGB32() ?? (dark ? 0xFF58B9F5 : 0xFF0073BF);
+      halo = background;
+      haloWidth = 1.5;
+      weight = text.markerWeight;
+    } else {
+      color = (Rgba.of(symbol.color(_context)) ?? Rgba.black).toArgb(
+        asNumber(symbol.opacity(_context)) ?? 1,
+      );
+      haloWidth = (asNumber(symbol.haloWidth(_context)) ?? 0).clamp(0, 2);
+      halo = haloWidth > 0
+          ? Rgba.of(symbol.haloColor(_context))?.toArgb()
+          : null;
+      weight = symbol.weight;
+    }
+    final italic = symbol?.italic ?? false;
+    final maxWidthEm = isRoad ? 60.0 : (symbol?.maxWidth ?? 9);
     // A marker's name hugs its marker: lines are flush on the side the text
     // starts from, which is the side the marker is on.
-    final beside = source.labelClass == LabelClasses.marker;
     final align = !beside
         ? ui.TextAlign.center
-        : (_isRtl(text) ? ui.TextAlign.right : ui.TextAlign.left);
+        : (_isRtl(label) ? ui.TextAlign.right : ui.TextAlign.left);
     final builder =
         ui.ParagraphBuilder(
             ui.ParagraphStyle(
               textAlign: align,
-              textDirection: _isRtl(text)
+              textDirection: _isRtl(label)
                   ? ui.TextDirection.rtl
                   : ui.TextDirection.ltr,
               maxLines: isRoad ? 1 : 3,
-              fontFamily: font.fontFamily,
+              fontFamily: text.fontFamily,
               fontSize: fontSize,
               height: 1.15,
             ),
           )
           ..pushStyle(
             ui.TextStyle(
-              color: ui.Color(palette.colors[cls.tone]),
+              color: ui.Color(color),
               fontSize: fontSize,
-              fontFamily: font.fontFamily,
-              fontFamilyFallback: font.fontFamilyFallback,
-              fontWeight:
-                  ui.FontWeight.values[(cls.weight ~/ 100 - 1).clamp(0, 8)],
-              fontVariations: [ui.FontVariation('wght', cls.weight.toDouble())],
-              fontStyle: cls.italic ? ui.FontStyle.italic : ui.FontStyle.normal,
-              letterSpacing: cls.letterSpacing,
+              fontFamily: text.fontFamily,
+              fontFamilyFallback: text.fontFamilyFallback,
+              fontWeight: ui.FontWeight.values[(weight ~/ 100 - 1).clamp(0, 8)],
+              fontVariations: [ui.FontVariation('wght', weight.toDouble())],
+              fontStyle: italic ? ui.FontStyle.italic : ui.FontStyle.normal,
+              letterSpacing: (symbol?.letterSpacing ?? 0) * fontSize,
               height: 1.15,
             ),
           )
-          ..addText(text);
-    final layoutWidth = cls.maxWidthEm * fontSize;
+          ..addText(label);
+    final layoutWidth = maxWidthEm * fontSize;
     final paragraph = builder.build()
       ..layout(ui.ParagraphConstraints(width: layoutWidth));
     final textW = math.max(1, paragraph.longestLine).ceilToDouble();
@@ -701,22 +802,22 @@ class LabelEngine {
       ui.TextAlign.right => _haloPad + textW - layoutWidth,
       _ => _haloPad + textW / 2 - layoutWidth / 2,
     }, _haloPad);
-    final canvas = ui.Canvas(recorder)
-      ..scale(dpr)
-      ..saveLayer(
+    final canvas = ui.Canvas(recorder)..scale(dpr);
+    if (halo != null) {
+      canvas.saveLayer(
         null,
         ui.Paint()
           ..colorFilter = ui.ColorFilter.mode(
-            ui.Color(palette.colors[Tone.halo]),
+            ui.Color(halo),
             ui.BlendMode.srcIn,
           ),
       );
-    for (final offset in _haloOffsets) {
-      canvas.drawParagraph(paragraph, at + offset);
+      for (final offset in _haloOffsets) {
+        canvas.drawParagraph(paragraph, at + offset * (haloWidth / 1.5));
+      }
+      canvas.restore();
     }
-    canvas
-      ..restore()
-      ..drawParagraph(paragraph, at);
+    canvas.drawParagraph(paragraph, at);
     final picture = recorder.endRecording();
     final sprite = _Sprite(
       picture.toImageSync(pixelW, pixelH),
@@ -724,10 +825,14 @@ class LabelEngine {
       pixelH / dpr,
       textW,
       textH,
+      fontSize,
     )..usedPass = _pass;
     picture.dispose();
     paragraph.dispose();
-    _sprites['${source.labelClass}|${source.text}'] = sprite;
+    _sprites.remove(st.candidate.spriteKey)
+      ?..dropped = true
+      ..image.dispose();
+    _sprites[st.candidate.spriteKey] = sprite;
     return sprite;
   }
 }

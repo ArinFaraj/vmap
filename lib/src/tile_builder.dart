@@ -2,6 +2,7 @@ import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'expr.dart';
 import 'mvt.dart';
 import 'style.dart';
 import 'tessellate.dart';
@@ -9,34 +10,28 @@ import 'tessellate.dart';
 const double tileExtent = 4096;
 
 class BuiltMesh {
-  BuiltMesh(this.group, this.chunk, {this.isPolyline = false});
+  BuiltMesh(this.bucket, this.chunk);
 
-  final int group;
+  /// Index into the style's buckets.
+  final int bucket;
   final MeshChunk chunk;
-
-  /// True when [chunk] holds raw polylines rather than triangles.
-  final bool isPolyline;
 }
 
 class BuiltLabel {
-  BuiltLabel(
-    this.kind,
-    this.labelClass,
-    this.priority,
-    this.text,
-    this.x,
-    this.y,
-    this.line,
-  );
+  BuiltLabel(this.layer, this.priority, this.text, this.x, this.y, this.line);
 
-  final int kind;
-  final int labelClass;
+  /// Index into the style's symbol layers. Negative for a label the app
+  /// supplies.
+  final int layer;
+
+  /// Lower wins a collision.
   final int priority;
   final String text;
   final double x;
   final double y;
 
-  /// The road's centre line as x,y pairs in tile units. Null for point labels.
+  /// The line the text runs along, as x,y pairs in tile units. Null for point
+  /// labels.
   final Float32List? line;
 }
 
@@ -52,7 +47,7 @@ class BuiltTile {
     [
       for (final m in meshes)
         [
-          m.isPolyline ? -1 - m.group : m.group,
+          m.bucket,
           TransferableTypedData.fromList([m.chunk.positions]),
           if (m.chunk.extrusions case final e?)
             TransferableTypedData.fromList([e])
@@ -62,8 +57,7 @@ class BuiltTile {
         ],
     ],
     [
-      for (final l in labels)
-        [l.kind, l.labelClass, l.priority, l.text, l.x, l.y, l.line],
+      for (final l in labels) [l.layer, l.priority, l.text, l.x, l.y, l.line],
     ],
   ];
 
@@ -71,11 +65,9 @@ class BuiltTile {
     final meshes = <BuiltMesh>[];
     for (final m in message[0]! as List) {
       final parts = m as List;
-      final tag = parts[0] as int;
       meshes.add(
         BuiltMesh(
-          tag < 0 ? -1 - tag : tag,
-          isPolyline: tag < 0,
+          parts[0] as int,
           MeshChunk(
             (parts[1] as TransferableTypedData).materialize().asFloat32List(),
             (parts[2] as TransferableTypedData?)?.materialize().asFloat32List(),
@@ -91,11 +83,10 @@ class BuiltTile {
         BuiltLabel(
           parts[0] as int,
           parts[1] as int,
-          parts[2] as int,
-          parts[3] as String,
+          parts[2] as String,
+          parts[3] as double,
           parts[4] as double,
-          parts[5] as double,
-          parts[6] as Float32List?,
+          parts[5] as Float32List?,
         ),
       );
     }
@@ -103,197 +94,141 @@ class BuiltTile {
   }
 }
 
+/// Turns one vector tile into the meshes and labels a style asks for.
 class TileBuilder {
-  TileBuilder(this.nameKeys, {this.linesAsPolylines = false});
+  TileBuilder(this.sheet) {
+    for (var i = 0; i < sheet.buckets.length; i++) {
+      (_buckets[sheet.buckets[i].sourceLayer] ??= []).add(i);
+    }
+    for (var i = 0; i < sheet.symbols.length; i++) {
+      (_symbols[sheet.symbols[i].sourceLayer] ??= []).add(i);
+    }
+  }
 
-  /// Emit lines as raw polylines for path stroking instead of triangles.
-  final bool linesAsPolylines;
-
-  /// Feature properties tried in order for a label's text.
-  final List<String> nameKeys;
-
+  final StyleSheet sheet;
+  final Map<String, List<int>> _buckets = {};
+  final Map<String, List<int>> _symbols = {};
+  final EvalContext _context = EvalContext();
   final GeometrySink _sink = GeometrySink();
   Float64List _ring = Float64List(4096);
   final List<int> _holes = [];
 
-  BuiltTile build(Uint8List bytes, int z) {
+  /// [maxZoom] is the deepest zoom the source has tiles for; a tile at that
+  /// zoom is drawn at every zoom beyond it.
+  BuiltTile build(Uint8List bytes, int z, {int maxZoom = 14}) {
     final tile = MvtTile.decode(bytes);
-    final fills = List<FillMesher?>.filled(Group.fillCount, null);
-    final lines = List<LineMesher?>.filled(Group.count, null);
-    final polylines_ = List<PolylineCollector?>.filled(Group.count, null);
+    final fills = <int, FillMesher>{};
+    final lines = <int, LineMesher>{};
     final labels = <BuiltLabel>[];
-    final overzoomed = z >= 14;
-    final lineTolerance = overzoomed ? 0.75 : 2.0;
-    final ringTolerance = overzoomed ? 0.0 : 2.0;
+    final deepest = z >= maxZoom;
+    final lineTolerance = deepest ? 0.75 : 2.0;
+    final ringTolerance = deepest ? 0.0 : 2.0;
+    final styleZoom = z + sheet.zoomOffset;
+    bool drawnAt(double minZoom, double maxZoom) =>
+        maxZoom > styleZoom && (deepest || minZoom < styleZoom + 1);
+    final context = _context..zoom = styleZoom;
 
-    FillMesher fill(int group) => fills[group] ??= FillMesher();
-    LineMesher line(int group) => lines[group] ??= LineMesher();
-
-    void polygons(
-      String layerName,
-      int Function(MvtLayer layer, MvtFeature f) classify, {
-      required List<String> keys,
-    }) {
-      final layer = tile.layers[layerName];
-      if (layer == null) return;
-      _keyCache = [for (final k in keys) layer.keyIndex(k)];
+    for (final layer in tile.layers.values) {
+      final buckets = [
+        for (final b in _buckets[layer.name] ?? const <int>[])
+          if (drawnAt(sheet.buckets[b].minZoom, sheet.buckets[b].maxZoom)) b,
+      ];
+      final symbols = [
+        for (final s in _symbols[layer.name] ?? const <int>[])
+          if (drawnAt(sheet.symbols[s].minZoom, sheet.symbols[s].maxZoom)) s,
+      ];
+      if (buckets.isEmpty && symbols.isEmpty) continue;
       final scale = tileExtent / layer.extent;
       for (final f in layer.features) {
-        if (f.type != mvtPolygon) continue;
-        final group = classify(layer, f);
-        if (group < 0) continue;
-        _sink.clear();
-        f.readGeometry(_sink);
-        _addPolygons(fill(group), scale, ringTolerance);
-      }
-    }
+        context
+          ..props = f.allTags(layer)
+          ..geometryType = switch (f.type) {
+            mvtPoint => 'Point',
+            mvtLine => 'LineString',
+            _ => 'Polygon',
+          };
+        var read = false;
+        var pending = scale;
+        void geometry() {
+          if (read) return;
+          read = true;
+          _sink.clear();
+          f.readGeometry(_sink);
+        }
 
-    void polylines(
-      String layerName,
-      int Function(MvtLayer layer, MvtFeature f) classify, {
-      required List<String> keys,
-      bool caps = true,
-    }) {
-      final layer = tile.layers[layerName];
-      if (layer == null) return;
-      _keyCache = [for (final k in keys) layer.keyIndex(k)];
-      final scale = tileExtent / layer.extent;
-      for (final f in layer.features) {
-        if (f.type != mvtLine) continue;
-        final group = classify(layer, f);
-        if (group < 0) continue;
-        _sink.clear();
-        f.readGeometry(_sink);
-        if (scale != 1) _scaleSink(scale);
-        if (linesAsPolylines) {
-          final collector = polylines_[group] ??= PolylineCollector();
-          for (var r = 0; r < _sink.ringCount; r++) {
-            collector.addLine(
-              _sink.coords,
-              _sink.ringStart(r),
-              _sink.ringEnd(r),
-              lineTolerance,
-            );
+        for (final b in buckets) {
+          final bucket = sheet.buckets[b];
+          if (bucket.isLine ? f.type == mvtPoint : f.type != mvtPolygon) {
+            continue;
           }
-          continue;
+          if (!bucket.filter(context)) continue;
+          geometry();
+          if (!bucket.isLine) {
+            _addPolygons(fills[b] ??= FillMesher(), pending, ringTolerance);
+            continue;
+          }
+          if (pending != 1) {
+            _scaleSink(pending);
+            pending = 1;
+          }
+          final mesher = lines[b] ??= LineMesher();
+          for (var r = 0; r < _sink.ringCount; r++) {
+            final start = _sink.ringStart(r);
+            final end = _sink.ringEnd(r);
+            if (f.type == mvtLine) {
+              mesher.addLine(
+                _sink.coords,
+                start,
+                end,
+                lineTolerance,
+                caps: bucket.caps,
+              );
+              continue;
+            }
+            final count = end - start;
+            if (count < 3) continue;
+            if (_ring.length < (count + 1) * 2) {
+              _ring = Float64List((count + 1) * 4);
+            }
+            _ring.setRange(0, count * 2, _sink.coords, start * 2);
+            _ring[count * 2] = _ring[0];
+            _ring[count * 2 + 1] = _ring[1];
+            mesher.addLine(_ring, 0, count + 1, lineTolerance, caps: false);
+          }
         }
-        final mesher = line(group);
-        for (var r = 0; r < _sink.ringCount; r++) {
-          mesher.addLine(
-            _sink.coords,
-            _sink.ringStart(r),
-            _sink.ringEnd(r),
-            lineTolerance,
-            caps: caps,
-          );
+
+        for (final s in symbols) {
+          if (f.type == mvtPolygon) continue;
+          final symbol = sheet.symbols[s];
+          if (!symbol.filter(context)) continue;
+          final text = symbol.text(context) as String;
+          if (text.isEmpty) continue;
+          final along = '${symbol.placement(context)}'.startsWith('line');
+          if (along != (f.type == mvtLine)) continue;
+          geometry();
+          if (pending != 1) {
+            _scaleSink(pending);
+            pending = 1;
+          }
+          final base = (sheet.symbols.length - 1 - s) * 4096;
+          final label = along
+              ? _lineLabel(s, base, text)
+              : _pointLabel(s, base, text, context.props['rank']);
+          if (label != null) labels.add(label);
         }
       }
     }
-
-    polygons('landuse', keys: const ['class'], (l, f) {
-      return switch (f.tag(l, _keyCache[0])) {
-        'residential' ||
-        'suburb' ||
-        'neighbourhood' ||
-        'quarter' => Group.residential,
-        'commercial' || 'retail' || 'industrial' => Group.commercial,
-        'school' || 'university' || 'college' || 'kindergarten' => Group.school,
-        'hospital' => Group.hospital,
-        'cemetery' => Group.grass,
-        'pitch' || 'stadium' || 'playground' || 'track' => Group.pitch,
-        _ => -1,
-      };
-    });
-    polygons('landcover', keys: const ['class'], (l, f) {
-      return switch (f.tag(l, _keyCache[0])) {
-        'grass' || 'wetland' => Group.grass,
-        'wood' => Group.wood,
-        'sand' => Group.sand,
-        _ => -1,
-      };
-    });
-    polygons('park', keys: const [], (l, f) => Group.park);
-    polygons('water', keys: const [], (l, f) => Group.water);
-    polygons('aeroway', keys: const ['class'], (l, f) {
-      final c = f.tag(l, _keyCache[0]);
-      return c == 'runway' || c == 'taxiway' || c == 'apron'
-          ? Group.aeroway
-          : -1;
-    });
-    polygons('transportation', keys: const ['class'], (l, f) {
-      return f.tag(l, _keyCache[0]) == 'path' ? Group.pedestrian : -1;
-    });
-    polygons('building', keys: const [], (l, f) => Group.building);
-
-    polylines('waterway', keys: const ['brunnel'], (l, f) {
-      return f.tag(l, _keyCache[0]) == 'tunnel' ? -1 : Group.waterway;
-    });
-    polylines('aeroway', keys: const ['class'], (l, f) {
-      return switch (f.tag(l, _keyCache[0])) {
-        'runway' => Group.runway,
-        'taxiway' => Group.taxiway,
-        _ => -1,
-      };
-    });
-    polylines('transportation', keys: const ['class', 'brunnel', 'ramp'], (
-      l,
-      f,
-    ) {
-      var group = switch (f.tag(l, _keyCache[0])) {
-        'motorway' => Group.motorway,
-        'trunk' => Group.trunk,
-        'primary' => Group.primary,
-        'secondary' || 'tertiary' => Group.secondary,
-        'minor' => Group.minor,
-        'service' || 'track' => Group.service,
-        'path' => Group.path,
-        'rail' || 'transit' => Group.rail,
-        _ => -1,
-      };
-      if (group < 0) return -1;
-      if (f.tag(l, _keyCache[2]) == 1 &&
-          (group == Group.motorway || group == Group.trunk)) {
-        group = Group.primary;
-      }
-      return f.tag(l, _keyCache[1]) == 'bridge'
-          ? group + Group.bridgeOffset
-          : group;
-    });
-    polylines(
-      'boundary',
-      keys: const ['admin_level', 'maritime'],
-      caps: false,
-      (l, f) {
-        if (f.tag(l, _keyCache[1]) == 1) return -1;
-        final level = f.tag(l, _keyCache[0]);
-        if (level is! int) return -1;
-        if (level <= 2) return Group.boundaryCountry;
-        return level <= 4 ? Group.boundaryRegion : -1;
-      },
-    );
-
-    _placeLabels(tile, labels);
-    _roadLabels(tile, labels);
-    _waterLabels(tile, labels);
 
     final meshes = <BuiltMesh>[];
-    for (var g = 0; g < Group.fillCount; g++) {
-      for (final chunk in fills[g]?.finish() ?? const <MeshChunk>[]) {
-        meshes.add(BuiltMesh(g, chunk));
-      }
-    }
-    for (var g = Group.fillCount; g < Group.count; g++) {
-      for (final chunk in lines[g]?.finish() ?? const <MeshChunk>[]) {
-        meshes.add(BuiltMesh(g, chunk));
-      }
-      for (final chunk in polylines_[g]?.finish() ?? const <MeshChunk>[]) {
-        meshes.add(BuiltMesh(g, chunk, isPolyline: true));
+    for (var b = 0; b < sheet.buckets.length; b++) {
+      final chunks = fills[b]?.finish() ?? lines[b]?.finish();
+      if (chunks == null) continue;
+      for (final chunk in chunks) {
+        meshes.add(BuiltMesh(b, chunk));
       }
     }
     return BuiltTile(meshes, labels);
   }
-
-  List<int> _keyCache = const [];
 
   void _scaleSink(double scale) {
     final c = _sink.coords;
@@ -373,167 +308,63 @@ class TileBuilder {
     flush();
   }
 
-  String? _name(MvtLayer layer, MvtFeature f, List<int> keyIndices) {
-    for (final k in keyIndices) {
-      final v = f.tag(layer, k);
-      if (v is String && v.isNotEmpty) return v;
-    }
-    return null;
+  BuiltLabel? _pointLabel(int layer, int base, String text, Object? rank) {
+    if (_sink.coordCount < 2) return null;
+    final x = _sink.coords[0];
+    final y = _sink.coords[1];
+    if (x < 0 || y < 0 || x >= tileExtent || y >= tileExtent) return null;
+    return BuiltLabel(
+      layer,
+      base + (rank is int ? rank.clamp(0, 99) : 50),
+      text,
+      x,
+      y,
+      null,
+    );
   }
 
-  void _placeLabels(MvtTile tile, List<BuiltLabel> out) {
-    final layer = tile.layers['place'];
-    if (layer == null) return;
-    final names = [for (final k in nameKeys) layer.keyIndex(k)];
-    final classKey = layer.keyIndex('class');
-    final rankKey = layer.keyIndex('rank');
-    final capitalKey = layer.keyIndex('capital');
-    final scale = tileExtent / layer.extent;
-    for (final f in layer.features) {
-      if (f.type != mvtPoint) continue;
-      final labelClass = switch (f.tag(layer, classKey)) {
-        'country' => LabelClasses.country,
-        'state' || 'province' => LabelClasses.state,
-        'city' =>
-          f.tag(layer, capitalKey) == 2
-              ? LabelClasses.capital
-              : LabelClasses.city,
-        'town' => LabelClasses.town,
-        'village' || 'hamlet' || 'isolated_dwelling' => LabelClasses.village,
-        'suburb' || 'quarter' => LabelClasses.suburb,
-        'neighbourhood' => LabelClasses.neighbourhood,
-        _ => -1,
-      };
-      if (labelClass < 0) continue;
-      final text = _name(layer, f, names);
-      if (text == null) continue;
-      _sink.clear();
-      f.readGeometry(_sink);
-      if (_sink.coordCount < 2) continue;
-      final x = _sink.coords[0] * scale;
-      final y = _sink.coords[1] * scale;
-      if (x < 0 || y < 0 || x >= tileExtent || y >= tileExtent) continue;
-      final rank = f.tag(layer, rankKey);
-      final priority =
-          LabelClasses.all[labelClass].priority +
-          (rank is int ? rank.clamp(0, 99) : 50);
-      out.add(
-        BuiltLabel(LabelKind.place, labelClass, priority, text, x, y, null),
-      );
+  /// Labels the feature's longest line, anchored at its middle.
+  BuiltLabel? _lineLabel(int layer, int base, String text) {
+    final c = _sink.coords;
+    var best = -1;
+    var bestLength = 0.0;
+    for (var r = 0; r < _sink.ringCount; r++) {
+      var length = 0.0;
+      for (var i = _sink.ringStart(r) + 1; i < _sink.ringEnd(r); i++) {
+        final dx = c[i * 2] - c[i * 2 - 2];
+        final dy = c[i * 2 + 1] - c[i * 2 - 1];
+        length += math.sqrt(dx * dx + dy * dy);
+      }
+      if (length > bestLength) {
+        bestLength = length;
+        best = r;
+      }
     }
-  }
-
-  void _waterLabels(MvtTile tile, List<BuiltLabel> out) {
-    final layer = tile.layers['water_name'];
-    if (layer == null) return;
-    final names = [for (final k in nameKeys) layer.keyIndex(k)];
-    final scale = tileExtent / layer.extent;
-    for (final f in layer.features) {
-      if (f.type != mvtPoint) continue;
-      final text = _name(layer, f, names);
-      if (text == null) continue;
-      _sink.clear();
-      f.readGeometry(_sink);
-      if (_sink.coordCount < 2) continue;
-      final x = _sink.coords[0] * scale;
-      final y = _sink.coords[1] * scale;
-      if (x < 0 || y < 0 || x >= tileExtent || y >= tileExtent) continue;
-      out.add(
-        BuiltLabel(
-          LabelKind.water,
-          LabelClasses.water,
-          LabelClasses.all[LabelClasses.water].priority,
-          text,
-          x,
-          y,
-          null,
-        ),
-      );
+    if (best < 0 || bestLength < 160) return null;
+    final start = _sink.ringStart(best);
+    final count = _sink.ringEnd(best) - start;
+    final line = Float32List(count * 2);
+    for (var i = 0; i < count * 2; i++) {
+      line[i] = c[start * 2 + i];
     }
-  }
-
-  void _roadLabels(MvtTile tile, List<BuiltLabel> out) {
-    final layer = tile.layers['transportation_name'];
-    if (layer == null) return;
-    final names = [for (final k in nameKeys) layer.keyIndex(k)];
-    final classKey = layer.keyIndex('class');
-    final scale = tileExtent / layer.extent;
-    for (final f in layer.features) {
-      if (f.type != mvtLine) continue;
-      final roadClass = f.tag(layer, classKey);
-      final int labelClass;
-      final int classRank;
-      switch (roadClass) {
-        case 'motorway' || 'trunk':
-          labelClass = LabelClasses.roadMajor;
-          classRank = 0;
-        case 'primary':
-          labelClass = LabelClasses.roadMajor;
-          classRank = 10;
-        case 'secondary' || 'tertiary':
-          labelClass = LabelClasses.roadMajor;
-          classRank = 20;
-        case 'minor' || 'service' || 'track':
-          labelClass = LabelClasses.roadMinor;
-          classRank = 0;
-        default:
-          continue;
+    var walked = 0.0;
+    var mx = line[0].toDouble();
+    var my = line[1].toDouble();
+    final half = bestLength / 2;
+    for (var i = 1; i < count; i++) {
+      final dx = line[i * 2] - line[i * 2 - 2];
+      final dy = line[i * 2 + 1] - line[i * 2 - 1];
+      final seg = math.sqrt(dx * dx + dy * dy);
+      if (walked + seg >= half) {
+        final t = seg == 0 ? 0.0 : (half - walked) / seg;
+        mx = line[i * 2 - 2] + dx * t;
+        my = line[i * 2 - 1] + dy * t;
+        break;
       }
-      final text = _name(layer, f, names);
-      if (text == null) continue;
-      _sink.clear();
-      f.readGeometry(_sink);
-      final c = _sink.coords;
-      var best = -1;
-      var bestLength = 0.0;
-      for (var r = 0; r < _sink.ringCount; r++) {
-        var length = 0.0;
-        for (var i = _sink.ringStart(r) + 1; i < _sink.ringEnd(r); i++) {
-          final dx = c[i * 2] - c[i * 2 - 2];
-          final dy = c[i * 2 + 1] - c[i * 2 - 1];
-          length += math.sqrt(dx * dx + dy * dy);
-        }
-        if (length > bestLength) {
-          bestLength = length;
-          best = r;
-        }
-      }
-      if (best < 0 || bestLength * scale < 160) continue;
-      final start = _sink.ringStart(best);
-      final count = _sink.ringEnd(best) - start;
-      final line = Float32List(count * 2);
-      for (var i = 0; i < count * 2; i++) {
-        line[i] = c[start * 2 + i] * scale;
-      }
-      var walked = 0.0;
-      var mx = line[0].toDouble();
-      var my = line[1].toDouble();
-      final half = bestLength * scale / 2;
-      for (var i = 1; i < count; i++) {
-        final dx = line[i * 2] - line[i * 2 - 2];
-        final dy = line[i * 2 + 1] - line[i * 2 - 1];
-        final seg = math.sqrt(dx * dx + dy * dy);
-        if (walked + seg >= half) {
-          final t = seg == 0 ? 0.0 : (half - walked) / seg;
-          mx = line[i * 2 - 2] + dx * t;
-          my = line[i * 2 - 1] + dy * t;
-          break;
-        }
-        walked += seg;
-      }
-      if (mx < 0 || my < 0 || mx >= tileExtent || my >= tileExtent) continue;
-      final lengthBonus = (bestLength * scale / 80).clamp(0, 9).toInt();
-      out.add(
-        BuiltLabel(
-          LabelKind.road,
-          labelClass,
-          LabelClasses.all[labelClass].priority + classRank + 9 - lengthBonus,
-          text,
-          mx,
-          my,
-          line,
-        ),
-      );
+      walked += seg;
     }
+    if (mx < 0 || my < 0 || mx >= tileExtent || my >= tileExtent) return null;
+    final lengthBonus = (bestLength / 80).clamp(0, 9).toInt();
+    return BuiltLabel(layer, base + 9 - lengthBonus, text, mx, my, line);
   }
 }

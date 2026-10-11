@@ -2,12 +2,140 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_map/flutter_map.dart';
 
 import 'engine.dart';
+import 'labels.dart';
+import 'style.dart';
+import 'worker.dart';
 
-/// A flutter_map layer that draws vector tiles with [engine].
-class VmapLayer extends StatelessWidget {
-  const VmapLayer({required this.engine, super.key});
+/// A flutter_map [Marker] with a name the map writes beside it, placed so it
+/// never covers another label.
+class NamedMarker extends Marker {
+  const NamedMarker({
+    required this.name,
+    required super.point,
+    required super.child,
+    super.key,
+    super.width,
+    super.height,
+    super.alignment,
+    super.rotate,
+  });
 
-  final VmapEngine engine;
+  final String name;
+}
+
+/// A flutter_map layer that draws vector tiles. Put it where a `TileLayer`
+/// would go.
+class VmapLayer extends StatefulWidget {
+  const VmapLayer({
+    this.style = VmapStyle.light,
+    this.markers = const [],
+    this.textStyle,
+    this.markerTextStyle,
+    this.cacheDirectory,
+    this.userAgentPackageName = 'unknown',
+    super.key,
+  }) : engine = null;
+
+  /// Draws with an engine the app owns, for reading its stats or keeping
+  /// loaded tiles across pages.
+  const VmapLayer.engine(VmapEngine this.engine, {super.key})
+    : style = VmapStyle.light,
+      markers = const [],
+      textStyle = null,
+      markerTextStyle = null,
+      cacheDirectory = null,
+      userAgentPackageName = 'unknown';
+
+  final VmapEngine? engine;
+
+  /// A MapLibre style, by address or as JSON, or one of the built in ones.
+  final VmapStyle style;
+
+  /// The markers drawn above the map: pass the list given to `MarkerLayer`.
+  /// Map labels keep clear of them, and a [NamedMarker] gets its name written
+  /// beside it.
+  final List<Marker> markers;
+
+  /// The font of every label: family and fallbacks. Sizes and colours come
+  /// from the style.
+  final TextStyle? textStyle;
+
+  /// Size, weight and colour of the names beside markers.
+  final TextStyle? markerTextStyle;
+
+  /// Downloaded tiles and styles are kept here between runs.
+  final String? cacheDirectory;
+
+  /// Sent to the tile server as the user agent, as `TileLayer` does.
+  final String userAgentPackageName;
+
+  @override
+  State<VmapLayer> createState() => _VmapLayerState();
+}
+
+class _VmapLayerState extends State<VmapLayer> {
+  VmapEngine? _owned;
+
+  VmapEngine get _engine => widget.engine ?? _owned!;
+
+  VmapTextStyle get _text => VmapTextStyle(
+    fontFamily: widget.textStyle?.fontFamily,
+    fontFamilyFallback: widget.textStyle?.fontFamilyFallback,
+    markerSize: widget.markerTextStyle?.fontSize ?? 12.5,
+    markerWeight: widget.markerTextStyle?.fontWeight?.value ?? 600,
+    markerColor: widget.markerTextStyle?.color,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.engine == null) {
+      _owned = VmapEngine(
+        style: widget.style,
+        text: _text,
+        source: TileSourceConfig(
+          cacheDirectory: widget.cacheDirectory,
+          userAgent: widget.userAgentPackageName,
+        ),
+      )..markers = widget.markers;
+    }
+  }
+
+  @override
+  void didUpdateWidget(VmapLayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final owned = _owned;
+    if (owned == null) return;
+    owned
+      ..style = widget.style
+      ..text = _text;
+    if (!_sameMarkers(oldWidget.markers, widget.markers)) {
+      owned.markers = widget.markers;
+    }
+  }
+
+  static bool _sameMarkers(List<Marker> a, List<Marker> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final x = a[i], y = b[i];
+      if (x.point != y.point ||
+          x.width != y.width ||
+          x.height != y.height ||
+          x.alignment != y.alignment ||
+          (x is NamedMarker ? x.name : null) !=
+              (y is NamedMarker ? y.name : null)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  @override
+  void dispose() {
+    _owned?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -17,7 +145,7 @@ class VmapLayer extends StatelessWidget {
         child: CustomPaint(
           size: camera.size,
           painter: _VmapPainter(
-            engine,
+            _engine,
             VmapCamera(
               zoom: camera.zoom,
               origin: camera.pixelOrigin,

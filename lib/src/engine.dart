@@ -1,17 +1,20 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter_map/flutter_map.dart' show Marker;
 
+import 'expr.dart';
 import 'labels.dart';
+import 'layer.dart' show NamedMarker;
 import 'style.dart';
 import 'tessellate.dart';
 import 'tile_builder.dart';
 import 'worker.dart';
-
-const int _maxDataZoom = 14;
 
 class VmapCamera {
   const VmapCamera({
@@ -47,14 +50,12 @@ class _Mesh {
         chunk.positions,
         indices: chunk.indices,
       ),
-      path = null,
       _base = null,
       _ext = null,
       _indices = null;
 
   _Mesh.line(MeshChunk chunk)
     : fill = null,
-      path = null,
       _base = chunk.positions.buffer.asFloat32x4List(
         chunk.positions.offsetInBytes,
         chunk.positions.length >> 2,
@@ -65,30 +66,7 @@ class _Mesh {
       ),
       _indices = chunk.indices;
 
-  _Mesh.polyline(MeshChunk chunk)
-    : fill = null,
-      path = _buildPath(chunk),
-      _base = null,
-      _ext = null,
-      _indices = null;
-
-  static ui.Path _buildPath(MeshChunk chunk) {
-    final path = ui.Path();
-    final pos = chunk.positions;
-    var o = 0;
-    for (final count in chunk.indices) {
-      path.moveTo(pos[o], pos[o + 1]);
-      o += 2;
-      for (var i = 1; i < count; i++) {
-        path.lineTo(pos[o], pos[o + 1]);
-        o += 2;
-      }
-    }
-    return path;
-  }
-
   final ui.Vertices? fill;
-  final ui.Path? path;
   final Float32x4List? _base;
   final Float32x4List? _ext;
   final Uint16List? _indices;
@@ -140,33 +118,40 @@ class _Mesh {
 }
 
 class _Tile {
-  _Tile(this.id, BuiltTile built) : _built = built;
+  _Tile(this.id, BuiltTile built, this.sheet)
+    : _built = built,
+      groups = List.filled(sheet.buckets.length, null);
 
   final TileId id;
+  final StyleSheet sheet;
   BuiltTile? _built;
-  final List<List<_Mesh>?> groups = List.filled(Group.count, null);
+  final List<List<_Mesh>?> groups;
   final List<LabelCandidate> labels = [];
   int usedFrame = 0;
 
   bool get prepared => _step < 0;
 
-  /// 0 uploads the geometry, 1..passes widen one pass each, then labels.
+  /// 0 uploads the geometry, 1..layers widen one line layer each, then
+  /// labels.
   int _step = 0;
   int _uploaded = 0;
 
-  /// Uploads the geometry and widens every line for [styleZoom], so the first
+  /// Uploads the geometry and widens every line to [widths], so the first
   /// frame that draws this tile has nothing left to compute. Works in steps
   /// and returns once [clock] passes [deadline]; call again to continue.
-  void prepare(double styleZoom, double scale, Stopwatch clock, int deadline) {
+  void prepare(
+    Float64List widths,
+    double scale,
+    Stopwatch clock,
+    int deadline,
+  ) {
     final built = _built!;
     if (_step == 0) {
       while (_uploaded < built.meshes.length) {
         if (_uploaded > 0 && clock.elapsedMicroseconds > deadline) return;
         final m = built.meshes[_uploaded++];
-        (groups[m.group] ??= []).add(
-          m.isPolyline
-              ? _Mesh.polyline(m.chunk)
-              : Group.isLine(m.group)
+        (groups[m.bucket] ??= []).add(
+          sheet.buckets[m.bucket].isLine
               ? _Mesh.line(m.chunk)
               : _Mesh.fill(m.chunk),
         );
@@ -174,16 +159,15 @@ class _Tile {
       _step = 1;
       if (clock.elapsedMicroseconds > deadline) return;
     }
-    while (_step <= passes.length) {
+    while (_step <= sheet.layers.length) {
       final p = _step - 1;
-      final pass = passes[p];
-      final width = pass.width;
-      final meshes = groups[pass.group];
+      final layer = sheet.layers[p];
+      final meshes = groups[layer.bucket];
       _step++;
-      if (width == null || meshes == null) continue;
-      final halfWidth = width.at(styleZoom) / 2 / scale;
+      if (!layer.isLine || meshes == null || widths[p] <= 0) continue;
+      final halfWidth = widths[p] / 2 / scale;
       for (final m in meshes) {
-        if (m.path == null) m.build(p, halfWidth);
+        m.build(p, halfWidth);
       }
       if (clock.elapsedMicroseconds > deadline) return;
     }
@@ -192,9 +176,9 @@ class _Tile {
     final ty = id.y * span;
     for (var i = 0; i < built.labels.length; i++) {
       final l = built.labels[i];
-      final key = l.kind == LabelKind.road
+      final key = l.line != null
           ? 'r|$id|$i'
-          : 'p|${l.text}|${((tx + l.x / tileExtent * span) * 1024).floor()}|${((ty + l.y / tileExtent * span) * 1024).floor()}';
+          : 'p|${l.layer}|${l.text}|${((tx + l.x / tileExtent * span) * 1024).floor()}|${((ty + l.y / tileExtent * span) * 1024).floor()}';
       labels.add(LabelCandidate(key, l, tx, ty, span));
     }
     _built = null;
@@ -219,47 +203,6 @@ class _Draw {
   final double top;
   final double size;
   List<ui.Rect>? clips;
-}
-
-/// Something the app draws above the map at a place, with an optional name
-/// for the map to show beside it.
-class VmapMarker {
-  const VmapMarker(
-    this.latitude,
-    this.longitude, {
-    this.label,
-    this.width = 40,
-    this.height = 40,
-    this.dx = 0,
-    this.dy = 0,
-  });
-
-  final double latitude;
-  final double longitude;
-  final String? label;
-
-  /// The marker's size on screen, which labels stay out of.
-  final double width;
-  final double height;
-
-  /// How far the marker's centre is drawn from its place, in screen pixels.
-  final double dx;
-  final double dy;
-
-  @override
-  bool operator ==(Object other) =>
-      other is VmapMarker &&
-      other.latitude == latitude &&
-      other.longitude == longitude &&
-      other.label == label &&
-      other.width == width &&
-      other.height == height &&
-      other.dx == dx &&
-      other.dy == dy;
-
-  @override
-  int get hashCode =>
-      Object.hash(latitude, longitude, label, width, height, dx, dy);
 }
 
 class VmapStats {
@@ -306,64 +249,175 @@ class VmapStats {
 /// Owns the tiles and labels and draws one frame of the map for a camera.
 class VmapEngine extends ChangeNotifier {
   VmapEngine({
-    TileSourceConfig source = const TileSourceConfig(),
-    this._palette = VmapPalette.light,
-    VmapLabelFont font = const VmapLabelFont(),
+    this._style = VmapStyle.light,
+    this.source = const TileSourceConfig(),
+    VmapTextStyle text = const VmapTextStyle(),
     this.maxCachedTiles = 56,
     this.showLabels = true,
-  }) : _labels = LabelEngine(font) {
-    _pool = TilePool(source, onLoaded: _onLoaded, onFailed: _onFailed);
-    _nameKeys = source.nameKeys;
+  }) : _labels = LabelEngine(text) {
+    _loadStyle();
   }
 
+  final TileSourceConfig source;
   final int maxCachedTiles;
   bool showLabels;
-  late final TilePool _pool;
+  TilePool? _pool;
+  StyleSheet? _sheet;
   final LabelEngine _labels;
   final Map<TileId, _Tile> _tiles = {};
   final Map<TileId, int> _failedAt = {};
   final ui.Paint _paint = ui.Paint()..isAntiAlias = true;
-  final ui.Paint _strokePaint = ui.Paint()
-    ..isAntiAlias = true
-    ..style = ui.PaintingStyle.stroke
-    ..strokeCap = ui.StrokeCap.round
-    ..strokeJoin = ui.StrokeJoin.round;
   final VmapStats stats = VmapStats();
-  late List<String> _nameKeys;
-  VmapPalette _palette;
+  final EvalContext _context = EvalContext();
+  VmapStyle _style;
+  Int32List _colors = Int32List(0);
+  Float64List _widths = Float64List(0);
   int _frame = 0;
   int _lastPaintMicros = 0;
   bool _framePending = false;
   bool _disposed = false;
   final Stopwatch _clock = Stopwatch()..start();
 
-  /// Markers the app draws above the map. Labels keep clear of each one, and
-  /// a marker's own name is placed beside it ahead of every map label; when
-  /// there is no room the name hides and the marker stays.
-  set markers(List<VmapMarker> value) {
+  /// What went wrong loading the style or the tile source, if anything.
+  Object? get error => _styleError ?? _pool?.startError;
+  Object? _styleError;
+
+  VmapStyle get style => _style;
+  set style(VmapStyle value) {
+    if (value == _style) return;
+    _style = value;
+    _loadStyle();
+  }
+
+  /// The style's background colour, once the style has loaded.
+  ui.Color? get backgroundColor {
+    final sheet = _sheet;
+    if (sheet == null) return null;
+    final color = Rgba.of(sheet.background(_context));
+    return color == null ? null : ui.Color(color.toArgb());
+  }
+
+  File? _styleFile(String url) => source.cacheDirectory == null
+      ? null
+      : File(
+          '${source.cacheDirectory}/style-${url.hashCode.toRadixString(36)}.json',
+        );
+
+  /// Uses the style right away when it is at hand. One named by address is
+  /// drawn from the copy kept from the last run while the current one
+  /// downloads.
+  Future<void> _loadStyle() async {
+    final wanted = _style;
+    _styleError = null;
+    final document = wanted.document;
+    if (document != null) {
+      _apply(document, wanted);
+      return;
+    }
+    final url = wanted.url!;
+    final file = _styleFile(url);
+    String? remembered;
+    try {
+      if (file != null && file.existsSync()) {
+        remembered = await file.readAsString();
+        if (_disposed || wanted != _style) return;
+        _apply(jsonDecode(remembered) as Map<String, Object?>, wanted);
+      }
+    } catch (_) {
+      remembered = null;
+    }
+    final client = HttpClient()..userAgent = source.userAgent;
+    try {
+      final request = await client
+          .getUrl(Uri.parse(url))
+          .timeout(const Duration(seconds: 10));
+      final response = await request.close().timeout(
+        const Duration(seconds: 10),
+      );
+      if (response.statusCode != 200) {
+        throw HttpException('HTTP ${response.statusCode}', uri: Uri.parse(url));
+      }
+      final body = await utf8.decodeStream(response);
+      if (_disposed || wanted != _style || body == remembered) return;
+      _apply(jsonDecode(body) as Map<String, Object?>, wanted);
+      if (file != null) {
+        await file.parent.create(recursive: true);
+        await file.writeAsString(body);
+      }
+    } catch (e) {
+      if (remembered == null && wanted == _style && !_disposed) {
+        _styleError = e;
+        notifyListeners();
+      }
+    } finally {
+      client.close();
+    }
+  }
+
+  void _apply(Map<String, Object?> document, VmapStyle from) {
+    final sheet = StyleSheet.compile(
+      document,
+      nameKeys: from.nameKeys,
+      zoomOffset: from.zoomOffset,
+    );
+    final rebuild =
+        _sheet == null ||
+        _sheet!.shape != sheet.shape ||
+        _sheet!.tileJsonUrl != sheet.tileJsonUrl ||
+        _sheet!.tiles != sheet.tiles;
+    _sheet = sheet;
+    _colors = Int32List(sheet.layers.length);
+    _widths = Float64List(sheet.layers.length);
+    _labels
+      ..symbols = sheet.symbols
+      ..zoomOffset = sheet.zoomOffset
+      ..clear();
+    if (rebuild) {
+      _pool?.close();
+      for (final t in _tiles.values) {
+        t.dispose();
+      }
+      _tiles.clear();
+      _failedAt.clear();
+      _pool = TilePool(
+        source,
+        style: document,
+        nameKeys: from.nameKeys,
+        sheet: sheet,
+        onLoaded: _onLoaded,
+        onFailed: _onFailed,
+      );
+    }
+    notifyListeners();
+  }
+
+  /// Markers the app draws above the map with a `MarkerLayer`. Map labels
+  /// keep clear of each one, and a [NamedMarker]'s name is placed beside it
+  /// ahead of every map label; when there is no room the name hides and the
+  /// marker stays.
+  set markers(List<Marker> value) {
     final areas = <(double, double, double, double, double, double)>[];
     _markerLabels.clear();
     for (var i = 0; i < value.length; i++) {
       final m = value[i];
-      final lat = m.latitude * math.pi / 180;
-      final wx = (m.longitude + 180) / 360;
+      final lat = m.point.latitude * math.pi / 180;
+      final wx = (m.point.longitude + 180) / 360;
       final wy =
           (1 - math.log(math.tan(lat) + 1 / math.cos(lat)) / math.pi) / 2;
-      areas.add((wx, wy, m.width, m.height, m.dx, m.dy));
-      final label = m.label;
-      if (label == null || label.isEmpty) continue;
+      areas.add((
+        wx,
+        wy,
+        m.width,
+        m.height,
+        (m.alignment?.x ?? 0) * m.width / 2,
+        (m.alignment?.y ?? 0) * m.height / 2,
+      ));
+      final name = m is NamedMarker ? m.name : null;
+      if (name == null || name.isEmpty) continue;
       _markerLabels.add(
         LabelCandidate(
-          'm|$i|$label',
-          BuiltLabel(
-            LabelKind.place,
-            LabelClasses.marker,
-            -1000 + i,
-            label,
-            0,
-            0,
-            null,
-          ),
+          'm|$i|$name',
+          BuiltLabel(-1, -1000000 + i, name, 0, 0, null),
           wx,
           wy,
           0,
@@ -376,41 +430,18 @@ class VmapEngine extends ChangeNotifier {
 
   final List<LabelCandidate> _markerLabels = [];
 
-  VmapPalette get palette => _palette;
-  set palette(VmapPalette value) {
-    if (identical(value, _palette)) return;
-    _palette = value;
-    _labels.clear();
-    notifyListeners();
-  }
-
-  set font(VmapLabelFont value) {
+  set text(VmapTextStyle value) {
+    if (value == _labels.text) return;
     _labels
-      ..font = value
+      ..text = value
       ..clear();
     notifyListeners();
   }
 
-  /// Feature properties tried in order for label text, for example
-  /// `['name:en', 'name:latin', 'name']`.
-  List<String> get nameKeys => _nameKeys;
-  set nameKeys(List<String> value) {
-    if (listEquals(value, _nameKeys)) return;
-    _nameKeys = value;
-    _labels.clear();
-    for (final t in _tiles.values) {
-      t.dispose();
-    }
-    _tiles.clear();
-    notifyListeners();
-  }
-
-  Object? get sourceError => _pool.startError;
-
-  void _onLoaded(TileId id, List<String> nameKeys, BuiltTile built) {
-    if (_disposed || !listEquals(nameKeys, _nameKeys)) return;
+  void _onLoaded(TileId id, BuiltTile built) {
+    if (_disposed) return;
     _tiles[id]?.dispose();
-    _tiles[id] = _Tile(id, built)..usedFrame = _frame;
+    _tiles[id] = _Tile(id, built, _sheet!)..usedFrame = _frame;
     _failedAt.remove(id);
     notifyListeners();
   }
@@ -443,13 +474,34 @@ class VmapEngine extends ChangeNotifier {
     _lastPaintMicros = now;
 
     final size = camera.size;
-    canvas.drawRect(
-      ui.Offset.zero & size,
-      _paint..color = ui.Color(_palette.colors[Tone.background]),
-    );
+    final sheet = _sheet;
+    final pool = _pool;
+    if (sheet == null || pool == null) return;
+    final dataZoom = camera.zoom - 1;
+    final styleZoom = dataZoom + sheet.zoomOffset;
+    _context.zoom = styleZoom;
+    final background = Rgba.of(sheet.background(_context));
+    if (background != null) {
+      canvas.drawRect(
+        ui.Offset.zero & size,
+        _paint..color = ui.Color(background.toArgb()),
+      );
+    }
+    for (var i = 0; i < sheet.layers.length; i++) {
+      final layer = sheet.layers[i];
+      _colors[i] = 0;
+      _widths[i] = 0;
+      if (styleZoom < layer.minZoom || styleZoom >= layer.maxZoom) continue;
+      final color = Rgba.of(layer.color(_context));
+      if (color == null) continue;
+      _colors[i] = color.toArgb(
+        (asNumber(layer.opacity(_context)) ?? 1) * layer.coverage,
+      );
+      if (layer.isLine) _widths[i] = asNumber(layer.width!(_context)) ?? 0;
+    }
+    _maxDataZoom = pool.maxZoom;
 
-    final styleZoom = camera.zoom - 1;
-    final tz = styleZoom.floor().clamp(0, _maxDataZoom);
+    final tz = dataZoom.floor().clamp(0, _maxDataZoom);
     final tileSize = 256.0 * math.pow(2, camera.zoom - tz);
     final n = 1 << tz;
     final x0 = (camera.origin.dx / tileSize).floor();
@@ -479,7 +531,7 @@ class VmapEngine extends ChangeNotifier {
         final tile = _tiles[id];
         if (tile != null) {
           tile.usedFrame = _frame;
-          if (!tile.prepared) _prepare(tile, styleZoom, tileSize / tileExtent);
+          if (!tile.prepared) _prepare(tile, tileSize / tileExtent);
           if (tile.prepared) {
             _ideal.add(_Draw(tile, left, top, tileSize));
             continue;
@@ -499,10 +551,10 @@ class VmapEngine extends ChangeNotifier {
     if (!waiting) _prepareBackdrop(camera.zoom);
     var triangles = 0;
     for (final d in _fallback) {
-      triangles += _drawTile(canvas, d, styleZoom);
+      triangles += _drawTile(canvas, d);
     }
     for (final d in _ideal) {
-      triangles += _drawTile(canvas, d, styleZoom);
+      triangles += _drawTile(canvas, d);
     }
 
     var animating = false;
@@ -519,7 +571,7 @@ class VmapEngine extends ChangeNotifier {
                   .map((d) => Object.hash(d.tile.id, d.tile.labels.length)),
             ) ^
             _markerLabels.length,
-        palette: _palette,
+        background: background?.toArgb() ?? 0xFFFFFFFF,
         zoom: camera.zoom,
         origin: camera.origin,
         size: size,
@@ -572,7 +624,7 @@ class VmapEngine extends ChangeNotifier {
       ..tilesDrawn = _ideal.length
       ..fallbackTiles = _fallback.length
       ..tilesCached = _tiles.length
-      ..maxUnpackMicros = _pool.maxUnpackMicros
+      ..maxUnpackMicros = pool.maxUnpackMicros
       ..labelStates = _labels.stateCount
       ..labelSprites = _labels.spriteCount
       ..tilesLoading = _missing.length
@@ -660,7 +712,7 @@ class VmapEngine extends ChangeNotifier {
     }
     _wantAhead(tz, camera, size);
     if (_wanted.isNotEmpty || _hadWanted) {
-      _pool.want(List.of(_wanted), _nameKeys);
+      _pool!.want(List.of(_wanted));
     }
     _hadWanted = _wanted.isNotEmpty;
   }
@@ -710,7 +762,7 @@ class VmapEngine extends ChangeNotifier {
     });
   }
 
-  int _drawTile(ui.Canvas canvas, _Draw d, double styleZoom) {
+  int _drawTile(ui.Canvas canvas, _Draw d) {
     final scale = d.size / tileExtent;
     canvas.save();
     final clips = d.clips;
@@ -732,52 +784,35 @@ class VmapEngine extends ChangeNotifier {
       ..translate(d.left, d.top)
       ..scale(scale);
     final groups = d.tile.groups;
-    final colors = _palette.colors;
-    var triangles = 0;
-    for (var p = 0; p < passes.length; p++) {
-      final pass = passes[p];
-      final meshes = groups[pass.group];
-      if (meshes == null ||
-          styleZoom < pass.minZoom ||
-          styleZoom > pass.maxZoom) {
-        continue;
-      }
-      var color = colors[pass.tone];
-      if (pass.fadeIn > 0) {
-        final t = (styleZoom - pass.minZoom) / pass.fadeIn;
-        if (t < 1) {
-          color = (color & 0x00ffffff) | (((color >>> 24) * t).round() << 24);
-        }
-      }
+    final layers = d.tile.sheet.layers;
+    var draws = 0;
+    for (var p = 0; p < layers.length; p++) {
+      final color = _colors[p];
+      if (color >>> 24 == 0) continue;
+      final layer = layers[p];
+      final meshes = groups[layer.bucket];
+      if (meshes == null) continue;
       _paint.color = ui.Color(color);
-      final width = pass.width;
-      if (width == null) {
+      if (!layer.isLine) {
         for (final m in meshes) {
           canvas.drawVertices(m.fill!, ui.BlendMode.srcOver, _paint);
-          triangles++;
+          draws++;
         }
-      } else {
-        final halfWidth = width.at(styleZoom) / 2 / scale;
-        for (final m in meshes) {
-          final path = m.path;
-          if (path != null) {
-            _strokePaint
-              ..color = _paint.color
-              ..strokeWidth = halfWidth * 2;
-            canvas.drawPath(path, _strokePaint);
-          } else {
-            canvas.drawVertices(
-              _stroke(m, p, halfWidth),
-              ui.BlendMode.srcOver,
-              _paint,
-            );
-          }
-          triangles++;
-        }
+        continue;
+      }
+      if (_widths[p] <= 0) continue;
+      final halfWidth = _widths[p] / 2 / scale;
+      for (final m in meshes) {
+        canvas.drawVertices(
+          _stroke(m, p, halfWidth),
+          ui.BlendMode.srcOver,
+          _paint,
+        );
+        draws++;
       }
     }
     canvas.restore();
-    return triangles;
+    return draws;
   }
 
   /// UI-thread time a frame may spend preparing tiles and re-widening lines
@@ -789,11 +824,13 @@ class VmapEngine extends ChangeNotifier {
   int _prepSpent = 0;
   bool _stale = false;
 
-  void _prepare(_Tile tile, double styleZoom, double scale) {
+  int _maxDataZoom = 14;
+
+  void _prepare(_Tile tile, double scale) {
     if (_prepSpent >= _prepBudgetMicros) return;
     final started = _clock.elapsedMicroseconds;
     tile.prepare(
-      styleZoom,
+      _widths,
       scale,
       _clock,
       started + _prepBudgetMicros - _prepSpent,
@@ -808,11 +845,7 @@ class VmapEngine extends ChangeNotifier {
     if (_prepSpent >= _prepBudgetMicros) return;
     for (final tile in _tiles.values) {
       if (tile.prepared) continue;
-      _prepare(
-        tile,
-        zoom - 1,
-        256.0 * math.pow(2, zoom - tile.id.z) / tileExtent,
-      );
+      _prepare(tile, 256.0 * math.pow(2, zoom - tile.id.z) / tileExtent);
       _stale = true;
       return;
     }
@@ -857,7 +890,7 @@ class VmapEngine extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    _pool.close();
+    _pool?.close();
     _labels.clear();
     for (final t in _tiles.values) {
       t.dispose();

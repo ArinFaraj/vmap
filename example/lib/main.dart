@@ -6,36 +6,31 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart' as vmt;
 import 'package:vmap/vmap.dart';
 
+import 'showcase.dart';
+
 const mode = String.fromEnvironment('MODE', defaultValue: 'ours');
 const tour = bool.fromEnvironment('TOUR');
 const dark = bool.fromEnvironment('DARK');
 const shotPath = String.fromEnvironment('SHOT');
 const startZoomTenths = int.fromEnvironment('ZOOM', defaultValue: 125);
-const nameKeys = String.fromEnvironment('NAMES', defaultValue: 'name');
-const linesAsPaths = bool.fromEnvironment('PATHS');
+const nameKeys = String.fromEnvironment('NAMES');
+
+/// An OpenFreeMap style name: liberty, positron, bright, dark or fiord. Empty
+/// draws vmap's built in style, and positron in vector_map_tiles.
+const styleName = String.fromEnvironment('STYLE');
+const vmapGestures = bool.fromEnvironment('GESTURES');
+
+/// Shows the engine's counters over a bare map instead of the showcase.
+const hud = bool.fromEnvironment('HUD');
 const record = bool.fromEnvironment('REC');
 const stress = bool.fromEnvironment('STRESS');
-
-const pins = [
-  LatLng(36.1911, 44.0092),
-  LatLng(36.2005, 44.0221),
-  LatLng(36.1802, 43.9948),
-  LatLng(36.2101, 43.9903),
-  LatLng(36.1925, 44.0125),
-];
-const pinNames = [
-  'بنکەی قەڵا',
-  'بنکەی ئازادی',
-  'بنکەی نەسیج',
-  'بنکەی عەنکاوە',
-  'بنکەی بازاڕ',
-];
 
 const erbil = LatLng(
   int.fromEnvironment('LAT', defaultValue: 36191113) / 1e6,
@@ -98,13 +93,23 @@ const _tourKeys = [
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final cache = '${(await getApplicationCacheDirectory()).path}/vmap';
+  if (Platform.isAndroid) {
+    try {
+      await FlutterDisplayMode.setHighRefreshRate();
+    } catch (_) {}
+  }
   vmt.Style? style;
   if (mode == 'vmt') {
     style = await vmt.StyleReader(
-      uri: 'https://tiles.openfreemap.org/styles/${dark ? 'dark' : 'positron'}',
+      uri:
+          'https://tiles.openfreemap.org/styles/${styleName.isEmpty ? (dark ? 'dark' : 'positron') : styleName}',
     ).read();
   }
-  runApp(BenchApp(cacheDirectory: cache, vmtStyle: style));
+  runApp(
+    tour || record || hud
+        ? BenchApp(cacheDirectory: cache, vmtStyle: style)
+        : ShowcaseApp(cacheDirectory: cache, vmtStyle: style),
+  );
 }
 
 class BenchApp extends StatefulWidget {
@@ -121,14 +126,23 @@ class _BenchAppState extends State<BenchApp>
     with SingleTickerProviderStateMixin {
   final controller = MapController();
   final boundary = GlobalKey();
+  static final names = nameKeys.isEmpty ? null : nameKeys.split(',');
   late final engine = VmapEngine(
+    style: styleName.isEmpty
+        ? VmapStyle.builtIn(
+            palette: dark ? VmapPalette.dark : VmapPalette.light,
+            nameKeys: names,
+          )
+        : VmapStyle.url(
+            'https://tiles.openfreemap.org/styles/$styleName',
+            zoomOffset: const int.fromEnvironment('ZOFF').toDouble(),
+            nameKeys: names,
+          ),
     source: TileSourceConfig(
       cacheDirectory: widget.cacheDirectory,
-      nameKeys: nameKeys.split(','),
-      linesAsPolylines: linesAsPaths,
+      userAgent: 'dev.vmap.bench',
     ),
-    palette: dark ? VmapPalette.dark : VmapPalette.light,
-    font: const VmapLabelFont(
+    text: const VmapTextStyle(
       fontFamily: 'GoogleSansFlex',
       fontFamilyFallback: ['Vazirmatn'],
     ),
@@ -146,17 +160,6 @@ class _BenchAppState extends State<BenchApp>
   void initState() {
     super.initState();
     ticker = createTicker(_tick);
-    if (!tour)
-      engine.markers = [
-        for (var i = 0; i < pins.length; i++)
-          VmapMarker(
-            pins[i].latitude,
-            pins[i].longitude,
-            label: pinNames[i],
-            width: 34,
-            height: 34,
-          ),
-      ];
     if (tour) {
       SchedulerBinding.instance.addTimingsCallback((timings) {
         if (lap >= 0 && lap < laps.length) laps[lap].addAll(timings);
@@ -275,7 +278,8 @@ class _BenchAppState extends State<BenchApp>
 
   void _report() {
     final out = {
-      'mode': linesAsPaths ? '$mode-paths' : mode,
+      'mode': mode,
+      'style': styleName.isEmpty ? 'default' : styleName,
       'refresh': ui.PlatformDispatcher.instance.views.first.display.refreshRate,
       'dpr': ui.PlatformDispatcher.instance.views.first.devicePixelRatio,
       for (var i = 0; i < laps.length; i++)
@@ -318,7 +322,7 @@ class _BenchAppState extends State<BenchApp>
               key: boundary,
               child: VmapGestures(
                 controller: controller,
-                enabled: mode == 'ours',
+                enabled: vmapGestures,
                 child: FlutterMap(
                   mapController: controller,
                   options: MapOptions(
@@ -330,7 +334,7 @@ class _BenchAppState extends State<BenchApp>
                         ? const Color(0xFF121212)
                         : const Color(0xFFF4F6F8),
                     interactionOptions: InteractionOptions(
-                      flags: mode == 'ours'
+                      flags: vmapGestures
                           ? InteractiveFlag.none
                           : InteractiveFlag.all & ~InteractiveFlag.rotate,
                     ),
@@ -345,22 +349,13 @@ class _BenchAppState extends State<BenchApp>
                       'vmt' => vmt.VectorTileLayer(
                         theme: widget.vmtStyle!.theme,
                         sprites: widget.vmtStyle!.sprites,
+                        tileOffset: const bool.fromEnvironment('VMT_512')
+                            ? vmt.TileOffset.mapbox
+                            : vmt.TileOffset.DEFAULT,
                         tileProviders: widget.vmtStyle!.providers,
                       ),
-                      _ => VmapLayer(engine: engine),
+                      _ => VmapLayer.engine(engine),
                     },
-                    if (mode == 'ours' && !tour)
-                      MarkerLayer(
-                        markers: [
-                          for (final p in pins)
-                            Marker(
-                              point: p,
-                              width: 30,
-                              height: 30,
-                              child: const _Pin(),
-                            ),
-                        ],
-                      ),
                   ],
                 ),
               ),
@@ -375,7 +370,7 @@ class _BenchAppState extends State<BenchApp>
                     final s = engine.stats;
                     return _Chip(
                       'tiles ${s.tilesDrawn}+${s.fallbackTiles} cached ${s.tilesCached} loading ${s.tilesLoading} draws ${s.drawCalls}'
-                      '${engine.sourceError == null ? '' : '\n${engine.sourceError}'}',
+                      '${engine.error == null ? '' : '\n${engine.error}'}',
                     );
                   },
                 ),
@@ -603,30 +598,4 @@ class _HudState extends State<_Hud> {
 
   @override
   Widget build(BuildContext context) => _Chip(text);
-}
-
-class _Pin extends StatelessWidget {
-  const _Pin();
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xFF0095E8),
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: dark ? const Color(0xFF1E1E1E) : Colors.white,
-          width: 3,
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x33000000),
-            blurRadius: 6,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: const Icon(Icons.fingerprint, color: Colors.white, size: 16),
-    );
-  }
 }
