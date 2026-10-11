@@ -166,6 +166,7 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
             point: places[i].point,
             width: 34,
             height: 34,
+            rotate: true,
             child: _PlacePin(
               category: places[i].category,
               selected: _place == i,
@@ -203,6 +204,7 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
               controller: _map,
               initialCenter: _centre,
               initialZoom: _zoomTenths / 10,
+              initialRotation: const int.fromEnvironment('ROT').toDouble(),
               backgroundColor: scheme.surface,
               onTap: (_) => _select(null),
               style: look.style,

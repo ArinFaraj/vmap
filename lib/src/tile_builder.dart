@@ -32,6 +32,7 @@ class BuiltLabel {
     this.icon = '',
     this.angle = 0,
     this.spaced = false,
+    this.turns = false,
   });
 
   /// Index into the style's symbol layers. Negative for a label the app
@@ -53,6 +54,9 @@ class BuiltLabel {
 
   /// How far the icon is turned, in radians.
   final double angle;
+
+  /// The icon's angle is measured on the map, so it turns with the map.
+  final bool turns;
 
   /// One of several placed along a line, which keeps its distance from
   /// others with the same text.
@@ -115,6 +119,7 @@ class BuiltTile {
           l.angle,
           l.spaced,
           l.key,
+          l.turns,
         ],
     ],
   ];
@@ -150,6 +155,7 @@ class BuiltTile {
           icon: parts[6] as String,
           angle: parts[7] as double,
           spaced: parts[8] as bool,
+          turns: parts[10] as bool,
         )..key = parts[9] as String,
       );
     }
@@ -380,6 +386,7 @@ class TileBuilder {
                     ? angle + symbol.iconRotate * math.pi / 180
                     : symbol.iconRotate * math.pi / 180,
                 spaced: true,
+                turns: turns,
               ),
             ),
           );

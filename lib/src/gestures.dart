@@ -18,6 +18,7 @@ class VmapGestures extends StatefulWidget {
     this.minZoom = 3,
     this.maxZoom = 19,
     this.enabled = true,
+    this.rotate = true,
     super.key,
   });
 
@@ -26,6 +27,9 @@ class VmapGestures extends StatefulWidget {
   final double minZoom;
   final double maxZoom;
   final bool enabled;
+
+  /// Two fingers turning turn the map.
+  final bool rotate;
 
   @override
   State<VmapGestures> createState() => _VmapGesturesState();
@@ -64,6 +68,13 @@ class _VmapGesturesState extends State<VmapGestures>
 
   Offset _focal = Offset.zero;
   double _spread = 1;
+  double _bearing = 0;
+
+  /// How far the fingers have turned since the pinch began. The map follows
+  /// once this passes [_turnSlop], so a plain pinch never turns it.
+  double _twist = 0;
+  bool _turning = false;
+  static const double _turnSlop = 0.2;
   double _pinchTravel = 0;
   Duration _pinchStart = Duration.zero;
   final List<(Duration, double)> _zoomSamples = [];
@@ -89,23 +100,37 @@ class _VmapGesturesState extends State<VmapGestures>
     super.dispose();
   }
 
-  void _apply(Offset pan, double zoomDelta, Offset focal) {
+  static Offset _turned(Offset o, double angle) {
+    if (angle == 0) return o;
+    final c = math.cos(angle);
+    final s = math.sin(angle);
+    return Offset(o.dx * c - o.dy * s, o.dx * s + o.dy * c);
+  }
+
+  /// Moves the map by [pan] screen pixels, then zooms and turns it around
+  /// [focal], so what is under the fingers stays under them.
+  void _apply(Offset pan, double zoomDelta, Offset focal, [double turn = 0]) {
     final camera = widget.controller.camera;
     final z0 = camera.zoom;
     final z1 = (z0 + zoomDelta).clamp(widget.minZoom, widget.maxZoom);
-    if (pan == Offset.zero && z1 == z0) return;
+    if (pan == Offset.zero && z1 == z0 && turn == 0) return;
     final f = focal - camera.nonRotatedSize.center(Offset.zero);
+    final r0 = camera.rotationRad;
+    final r1 = r0 + turn;
     final scale = math.pow(2.0, z1 - z0).toDouble();
-    final world = camera.projectAtZoom(camera.center, z0) + f - pan;
+    final world =
+        camera.projectAtZoom(camera.center, z0) + _turned(f - pan, -r0);
     final worldSize = 256.0 * math.pow(2.0, z1);
-    final centre = world * scale - f;
-    widget.controller.move(
-      camera.unprojectAtZoom(
-        Offset(centre.dx, centre.dy.clamp(0.0, worldSize)),
-        z1,
-      ),
+    final centre = world * scale - _turned(f, -r1);
+    final to = camera.unprojectAtZoom(
+      Offset(centre.dx, centre.dy.clamp(0.0, worldSize)),
       z1,
     );
+    if (turn == 0) {
+      widget.controller.move(to, z1);
+    } else {
+      widget.controller.moveAndRotate(to, z1, r1 * 180 / math.pi);
+    }
   }
 
   void _stopMotion() {
@@ -209,6 +234,9 @@ class _VmapGesturesState extends State<VmapGestures>
     final p = _pointers.values.toList();
     _focal = (p[0] + p[1]) / 2;
     _spread = math.max(1, (p[0] - p[1]).distance);
+    _bearing = (p[1] - p[0]).direction;
+    _twist = 0;
+    _turning = false;
     _pinchTravel = 0;
     _pinchStart = time;
     _pinchZoom = 0;
@@ -256,8 +284,21 @@ class _VmapGesturesState extends State<VmapGestures>
         final focal = (p[0] + p[1]) / 2;
         final spread = math.max(1.0, (p[0] - p[1]).distance);
         final dz = math.log(spread / _spread) / math.ln2;
-        _pinchTravel += (focal - _focal).distance + dz.abs() * 120;
-        _apply(focal - _focal, dz, focal);
+        final bearing = (p[1] - p[0]).direction;
+        var turn = bearing - _bearing;
+        if (turn > math.pi) turn -= 2 * math.pi;
+        if (turn < -math.pi) turn += 2 * math.pi;
+        _bearing = bearing;
+        if (!widget.rotate) {
+          turn = 0;
+        } else if (!_turning) {
+          _twist += turn;
+          turn = 0;
+          _turning = _twist.abs() > _turnSlop;
+        }
+        _pinchTravel +=
+            (focal - _focal).distance + dz.abs() * 120 + turn.abs() * 200;
+        _apply(focal - _focal, dz, focal, turn);
         _pinchZoom += dz;
         _focal = focal;
         _spread = spread;

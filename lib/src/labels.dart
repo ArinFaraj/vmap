@@ -139,7 +139,12 @@ class _LabelState {
   int sortKey = 0;
   double worldX = 0;
   double worldY = 0;
+
+  /// The angle of the road the text runs along, on the map and on the
+  /// screen. The second follows the map's rotation and never reads upside
+  /// down.
   double angle = 0;
+  double screenAngle = 0;
 
   /// The label's size now over the size its image was drawn at.
   double scale = 1;
@@ -304,6 +309,31 @@ class LabelEngine {
 
   double _lastZoom = 0;
 
+  double _rotation = 0;
+  double _placedRotation = 0;
+  double _cos = 1;
+  double _sin = 0;
+  double _cx = 0;
+  double _cy = 0;
+  double _px = 0;
+  double _py = 0;
+
+  /// Sets [_px] and [_py] to where a point of the world is on the screen,
+  /// with the map's rotation undone so labels can be laid out upright.
+  void _project(double wx, double wy, double world, ui.Offset origin) {
+    final x = wx * world - origin.dx;
+    final y = wy * world - origin.dy;
+    if (_rotation == 0) {
+      _px = x;
+      _py = y;
+      return;
+    }
+    final dx = x - _cx;
+    final dy = y - _cy;
+    _px = _cx + dx * _cos - dy * _sin;
+    _py = _cy + dx * _sin + dy * _cos;
+  }
+
   /// While the zoom is changing a label's image is stretched further before
   /// it is drawn again, and sharpened once the zoom rests.
   bool _zooming = false;
@@ -347,6 +377,11 @@ class LabelEngine {
     required bool zooming,
   }) {
     lastPlaceMicros = 0;
+    _rotation = rotation;
+    _cos = math.cos(rotation);
+    _sin = math.sin(rotation);
+    _cx = size.width / 2;
+    _cy = size.height / 2;
     if (_zooming && !zooming) _placeAgain = true;
     _zooming = zooming;
     final world = 256.0 * math.pow(2, zoom);
@@ -354,6 +389,7 @@ class LabelEngine {
     final moved =
         zoom != _placedZoom ||
         origin != _placedOrigin ||
+        rotation != _placedRotation ||
         sourcesKey != _placedSourcesKey;
     var pending = false;
     if (moved || _placeAgain) {
@@ -368,6 +404,7 @@ class LabelEngine {
         _placedAtMs = nowMs;
         _placedZoom = zoom;
         _placedOrigin = origin;
+        _placedRotation = rotation;
         _placedSourcesKey = sourcesKey;
       } else {
         pending = true;
@@ -411,6 +448,13 @@ class LabelEngine {
     var animating = pending;
     final step = dt / _fadeSeconds;
     statesWalked += _live.length;
+    if (rotation != 0) {
+      canvas
+        ..save()
+        ..translate(_cx, _cy)
+        ..rotate(-rotation)
+        ..translate(-_cx, -_cy);
+    }
     var kept = 0;
     for (var i = 0; i < _live.length; i++) {
       final st = _live[i];
@@ -456,8 +500,9 @@ class LabelEngine {
         );
         _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
         final extent = pins.size + pinPad * 2;
-        final px = st.worldX * world - origin.dx - extent / 2;
-        final py = st.worldY * world - origin.dy - extent / 2;
+        _project(st.worldX, st.worldY, world, origin);
+        final px = _px - extent / 2;
+        final py = _py - extent / 2;
         canvas.drawImageRect(
           image,
           ui.Rect.fromLTWH(
@@ -484,9 +529,11 @@ class LabelEngine {
         final fit =
             st.candidate.source.layer >= 0 &&
             symbols[st.candidate.source.layer].textFit;
-        final ix = st.worldX * world - origin.dx + (fit ? st.dx : 0);
-        final iy = st.worldY * world - origin.dy + (fit ? st.dy : 0);
-        final turn = st.candidate.source.angle - rotation;
+        _project(st.worldX, st.worldY, world, origin);
+        final ix = _px + (fit ? st.dx : 0);
+        final iy = _py + (fit ? st.dy : 0);
+        final from = st.candidate.source;
+        final turn = from.turns ? from.angle + rotation : from.angle;
         final area = ui.Rect.fromLTWH(
           -st.iconW / 2,
           -st.iconH / 2,
@@ -515,9 +562,10 @@ class LabelEngine {
       if (sprite == null || !wantsText) continue;
       final image = sprite.image;
       _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
-      final sx = st.worldX * world - origin.dx + st.dx;
-      final sy = st.worldY * world - origin.dy + st.dy;
-      final turn = st.angle - rotation;
+      _project(st.worldX, st.worldY, world, origin);
+      final sx = _px + st.dx;
+      final sy = _py + st.dy;
+      final turn = st.screenAngle;
       final w = sprite.width * st.scale;
       final h = sprite.height * st.scale;
       final source = ui.Rect.fromLTWH(
@@ -554,6 +602,7 @@ class LabelEngine {
       }
     }
     _live.length = kept;
+    if (rotation != 0) canvas.restore();
     return animating;
   }
 
@@ -574,8 +623,9 @@ class LabelEngine {
     for (final list in sources) {
       for (final c in list) {
         if (!_inRange(c.source.layer, styleZoom)) continue;
-        final sx = c.worldX * world - origin.dx;
-        final sy = c.worldY * world - origin.dy;
+        _project(c.worldX, c.worldY, world, origin);
+        final sx = _px;
+        final sy = _py;
         if (sx < -margin ||
             sy < -margin ||
             sx > size.width + margin ||
@@ -596,8 +646,9 @@ class LabelEngine {
     _boxCount = 0;
     _placedRoads.clear();
     for (final (wx, wy, w, h, shiftX, shiftY) in obstacles) {
-      final ox = wx * world - origin.dx + shiftX;
-      final oy = wy * world - origin.dy + shiftY;
+      _project(wx, wy, world, origin);
+      final ox = _px + shiftX;
+      final oy = _py + shiftY;
       _addBox(ox - w / 2, oy - h / 2, ox + w / 2, oy + h / 2);
     }
     final fitKey = (zoom * 3).round();
@@ -640,10 +691,16 @@ class LabelEngine {
         }
         if (!st.roadFits || _nearSameRoad(st, world)) continue;
         final room = fontSize <= 12.5 ? _minorRoadRoom : _majorRoadRoom;
-        final sx = st.worldX * world - origin.dx;
-        final sy = st.worldY * world - origin.dy;
-        if (_collides(sx, sy, textW + room, textH + room, st.angle)) continue;
-        _addBoxes(sx, sy, textW + room, textH + room, st.angle);
+        _project(st.worldX, st.worldY, world, origin);
+        final sx = _px;
+        final sy = _py;
+        var turn = (st.angle + _rotation) % (2 * math.pi);
+        if (turn > math.pi) turn -= 2 * math.pi;
+        if (turn > math.pi / 2) turn -= math.pi;
+        if (turn < -math.pi / 2) turn += math.pi;
+        st.screenAngle = turn;
+        if (_collides(sx, sy, textW + room, textH + room, turn)) continue;
+        _addBoxes(sx, sy, textW + room, textH + room, turn);
         st
           ..dx = 0
           ..dy = 0
@@ -660,12 +717,14 @@ class LabelEngine {
       st
         ..worldX = c.worldX
         ..worldY = c.worldY
-        ..angle = 0;
+        ..angle = 0
+        ..screenAngle = 0;
       final beside = c.source.layer < 0;
       final symbol = beside ? null : symbols[c.source.layer];
       if (c.source.spaced && c.hasText && _nearSameRoad(st, world)) continue;
-      final sx = st.worldX * world - origin.dx;
-      final sy = st.worldY * world - origin.dy;
+      _project(st.worldX, st.worldY, world, origin);
+      final sx = _px;
+      final sy = _py;
 
       var tx = 0.0;
       var ty = 0.0;

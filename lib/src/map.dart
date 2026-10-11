@@ -16,8 +16,10 @@ class VmapMap extends StatefulWidget {
   const VmapMap({
     required this.initialCenter,
     this.initialZoom = 13,
+    this.initialRotation = 0,
     this.minZoom = 3,
     this.maxZoom = 19,
+    this.rotate = true,
     this.style = VmapStyle.light,
     this.controller,
     this.markers = const [],
@@ -36,8 +38,14 @@ class VmapMap extends StatefulWidget {
 
   final LatLng initialCenter;
   final double initialZoom;
+
+  /// In degrees, clockwise.
+  final double initialRotation;
   final double minZoom;
   final double maxZoom;
+
+  /// Two fingers turning turn the map.
+  final bool rotate;
   final VmapStyle style;
 
   /// Moves and reads the map from outside. The widget makes its own when
@@ -88,11 +96,13 @@ class _VmapMapState extends State<VmapMap> {
       controller: _controller,
       minZoom: widget.minZoom,
       maxZoom: widget.maxZoom,
+      rotate: widget.rotate,
       child: FlutterMap(
         mapController: _controller,
         options: MapOptions(
           initialCenter: widget.initialCenter,
           initialZoom: widget.initialZoom,
+          initialRotation: widget.initialRotation,
           minZoom: widget.minZoom,
           maxZoom: widget.maxZoom,
           backgroundColor: widget.backgroundColor ?? const Color(0xFFE0E0E0),
