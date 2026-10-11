@@ -87,6 +87,13 @@ an image here where the ring took 28. Playing the straight stretch of a
 name in one piece instead of a slice at a time was tried first and changed
 nothing (363 frames skipped).
 
+Making every label an image with the stroked halo was tried after that. Two
+laps drew 72 and 88 frames a second with 128 and 56 frames skipped: fewer
+long gaps but fewer frames, and an image took 9 ms to make in that run
+against 2 ms in the ones above, on the same machine under the same kind of
+load. Text for the flat labels is kept because its cost does not swing
+like that.
+
 ### A worker for the tiles
 
 `VmapEngine.webWorker` moves tile building off the page's thread. One lap

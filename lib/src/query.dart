@@ -97,6 +97,9 @@ class VmapFeatureState {
 /// The features of [layers] within [radius] tile units of ([px], [py]) that a
 /// style layer of [source] draws at [styleZoom]. Each comes with the highest
 /// position among the layers drawing it, for ordering across tiles.
+///
+/// With [halfWidth] and [halfHeight] zero or more, it is the features that
+/// touch the box of that size around the point instead.
 List<List<Object?>> queryTile(
   Iterable<TileLayer> layers,
   StyleSheet sheet,
@@ -104,8 +107,11 @@ List<List<Object?>> queryTile(
   double px,
   double py,
   double radius,
-  double styleZoom,
-) {
+  double styleZoom, {
+  double halfWidth = -1,
+  double halfHeight = -1,
+}) {
+  final boxed = halfWidth >= 0 && halfHeight >= 0;
   final context = EvalContext()..zoom = styleZoom;
   final sink = GeometrySink();
   final found = <List<Object?>>[];
@@ -136,7 +142,17 @@ List<List<Object?>> queryTile(
     for (final f in layer.features) {
       sink.clear();
       f.readGeometry(sink);
-      if (!_hit(f.type, sink, x, y, reach)) continue;
+      final hit = boxed
+          ? _touches(
+              f.type,
+              sink,
+              x - halfWidth / scale,
+              y - halfHeight / scale,
+              x + halfWidth / scale,
+              y + halfHeight / scale,
+            )
+          : _hit(f.type, sink, x, y, reach);
+      if (!hit) continue;
       final tags = f.allTags(layer);
       if (idKey != null && tags[idKey] != null) tags[r'$id'] = tags[idKey];
       context
@@ -208,4 +224,77 @@ bool _hit(int type, GeometrySink sink, double x, double y, double reach) {
     }
   }
   return inside;
+}
+
+/// Whether a feature touches the box from ([l], [t]) to ([r], [b]): a point
+/// inside it, a line through it, or an area over any part of it.
+bool _touches(
+  int type,
+  GeometrySink sink,
+  double l,
+  double t,
+  double r,
+  double b,
+) {
+  final c = sink.coords;
+  bool within(double x, double y) => x >= l && x <= r && y >= t && y <= b;
+  if (type == mvtPoint) {
+    for (var i = 0; i < sink.coordCount; i += 2) {
+      if (within(c[i], c[i + 1])) return true;
+    }
+    return false;
+  }
+  // A side of the shape crosses a side of the box when each has its ends on
+  // opposite sides of the other.
+  bool crosses(
+    double ax,
+    double ay,
+    double bx,
+    double by,
+    double px,
+    double py,
+    double qx,
+    double qy,
+  ) {
+    double side(
+      double ox,
+      double oy,
+      double ux,
+      double uy,
+      double x,
+      double y,
+    ) => (ux - ox) * (y - oy) - (uy - oy) * (x - ox);
+    final d1 = side(px, py, qx, qy, ax, ay), d2 = side(px, py, qx, qy, bx, by);
+    final d3 = side(ax, ay, bx, by, px, py), d4 = side(ax, ay, bx, by, qx, qy);
+    return (d1 > 0) != (d2 > 0) && (d3 > 0) != (d4 > 0);
+  }
+
+  final closed = type == mvtPolygon;
+  var cornerInside = false;
+  for (var ring = 0; ring < sink.ringCount; ring++) {
+    final start = sink.ringStart(ring);
+    final end = sink.ringEnd(ring);
+    if (end - start < 2) continue;
+    var ax = c[closed ? end * 2 - 2 : start * 2];
+    var ay = c[closed ? end * 2 - 1 : start * 2 + 1];
+    for (var i = closed ? start : start + 1; i < end; i++) {
+      final bx = c[i * 2], by = c[i * 2 + 1];
+      if (within(ax, ay) ||
+          within(bx, by) ||
+          crosses(ax, ay, bx, by, l, t, r, t) ||
+          crosses(ax, ay, bx, by, r, t, r, b) ||
+          crosses(ax, ay, bx, by, r, b, l, b) ||
+          crosses(ax, ay, bx, by, l, b, l, t)) {
+        return true;
+      }
+      if (closed &&
+          (ay > t) != (by > t) &&
+          l < (bx - ax) * (t - ay) / (by - ay) + ax) {
+        cornerInside = !cornerInside;
+      }
+      ax = bx;
+      ay = by;
+    }
+  }
+  return cornerInside;
 }

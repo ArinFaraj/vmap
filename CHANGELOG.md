@@ -1,3 +1,11 @@
+## 0.24.0
+
+- `featuresIn(southWest, northEast)` on the layer's state and the engine:
+  the features the style draws that touch a box, topmost first. A box that
+  covers more than 16 tiles is read from shallower tiles.
+- Making every label an image in a browser was measured and not adopted;
+  the numbers are in doc/benchmark.md.
+
 ## 0.23.0
 
 - `text-translate` moves names along a line too, straight and bent.

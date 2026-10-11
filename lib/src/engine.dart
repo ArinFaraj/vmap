@@ -623,27 +623,110 @@ class VmapEngine extends ChangeNotifier {
             styleZoom,
           );
           for (final hit in hits) {
-            final h = hit! as List<Object?>;
-            found.add((
-              h[0]! as int,
-              VmapFeature(
-                source: s.def.name,
-                sourceLayer: h[1]! as String,
-                geometryType: h[2]! as String,
-                layers: (h[3]! as List).cast<String>(),
-                id: (h[4]! as Map)[r'$id'],
-                properties: {
-                  for (final e in (h[4]! as Map).entries)
-                    if (e.key != r'$id') e.key as String: e.value,
-                },
-              ),
-            ));
+            found.add(_feature(s.def.name, hit! as List<Object?>));
           }
         }(),
     ]);
     found.sort((a, b) => b.$1 - a.$1);
     return [for (final f in found) f.$2];
   }
+
+  static (int, VmapFeature) _feature(String source, List<Object?> h) => (
+    h[0]! as int,
+    VmapFeature(
+      source: source,
+      sourceLayer: h[1]! as String,
+      geometryType: h[2]! as String,
+      layers: (h[3]! as List).cast<String>(),
+      id: (h[4]! as Map)[r'$id'],
+      properties: {
+        for (final e in (h[4]! as Map).entries)
+          if (e.key != r'$id') e.key as String: e.value,
+      },
+    ),
+  );
+
+  static double _worldY(double latitude) {
+    final lat = latitude.clamp(-85.0511, 85.0511) * math.pi / 180;
+    return (1 - math.log(math.tan(lat) + 1 / math.cos(lat)) / math.pi) / 2;
+  }
+
+  /// What the map shows between [southWest] and [northEast]: the features
+  /// the style draws that touch the box, topmost first. It reads the tiles
+  /// again off the UI thread, so it answers a moment later.
+  ///
+  /// A feature with an id comes once. One without, lying over the edge of a
+  /// tile, comes once for each tile it is in. A
+  /// box much larger than the screen is read from shallower tiles, which
+  /// carry less.
+  Future<List<VmapFeature>> featuresIn(
+    LatLng southWest,
+    LatLng northEast,
+  ) async {
+    final camera = _camera;
+    final sheet = _sheet;
+    if (camera == null || sheet == null) return const [];
+    final west = (southWest.longitude + 180) / 360;
+    final east = (northEast.longitude + 180) / 360;
+    final north = _worldY(northEast.latitude);
+    final south = _worldY(southWest.latitude);
+    if (east < west || south < north) return const [];
+    final styleZoom = camera.zoom - 1 + sheet.zoomOffset;
+    final found = <String, (int, VmapFeature)>{};
+    await Future.wait([
+      for (final s in List.of(_sources))
+        () async {
+          var z = (camera.zoom - 1).floor().clamp(0, s.pool.maxZoom);
+          int tiles(int z) {
+            final n = 1 << z;
+            return ((east * n).floor() - (west * n).floor() + 1) *
+                ((south * n).floor() - (north * n).floor() + 1);
+          }
+
+          while (z > 0 && tiles(z) > _maxQueryTiles) {
+            z--;
+          }
+          final n = 1 << z;
+          final asked = <Future<void>>[];
+          for (var y = (north * n).floor(); y <= (south * n).floor(); y++) {
+            for (var x = (west * n).floor(); x <= (east * n).floor(); x++) {
+              if (x < 0 || y < 0 || x >= n || y >= n) continue;
+              asked.add(() async {
+                final hits = await s.pool.query(
+                  TileId(z, x, y),
+                  ((west + east) / 2 * n - x) * tileExtent,
+                  ((north + south) / 2 * n - y) * tileExtent,
+                  0,
+                  styleZoom,
+                  halfWidth: (east - west) / 2 * n * tileExtent,
+                  halfHeight: (south - north) / 2 * n * tileExtent,
+                );
+                for (final hit in hits) {
+                  final (order, feature) = _feature(
+                    s.def.name,
+                    hit! as List<Object?>,
+                  );
+                  // A feature lying over a tile edge is in both tiles, and
+                  // only an id tells its two halves from two features.
+                  final key = feature.id == null
+                      ? '${found.length}'
+                      : '${feature.source}|${feature.sourceLayer}|${feature.id}';
+                  final before = found[key];
+                  if (before == null || before.$1 < order) {
+                    found[key] = (order, feature);
+                  }
+                }
+              }());
+            }
+          }
+          await Future.wait(asked);
+        }(),
+    ]);
+    final sorted = found.values.toList()..sort((a, b) => b.$1 - a.$1);
+    return [for (final f in sorted) f.$2];
+  }
+
+  static const int _maxQueryTiles = 16;
 
   TilePool? _clustered(String source) {
     for (final s in _sources) {

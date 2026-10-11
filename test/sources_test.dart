@@ -114,4 +114,33 @@ void main() {
     expect(inArea.map((f) => (f[4]! as Map)['name']), contains('Area'));
     expect(queryTile(tiles.tile(0, 0, 0), sheet, 1, 100, 100, 8, 0), isEmpty);
   });
+
+  test('a lookup finds the features that touch a box', () {
+    final tiles = GeoJsonTiles(sheet.sources[1].data);
+    List<Object?> names(
+      double x,
+      double y,
+      double halfWidth,
+      double halfHeight,
+    ) => [
+      for (final f in queryTile(
+        tiles.tile(0, 0, 0),
+        sheet,
+        1,
+        x,
+        y,
+        0,
+        0,
+        halfWidth: halfWidth,
+        halfHeight: halfHeight,
+      ))
+        (f[4]! as Map)['name'],
+    ];
+    expect(names(2048, 2048, 20, 20), ['Route'], reason: 'a line through it');
+    expect(names(2330, 1750, 5, 5), ['Area'], reason: 'wholly inside an area');
+    expect(names(2330, 1750, 150, 150), ['Area'], reason: 'an area inside it');
+    expect(names(2200, 1900, 100, 200), unorderedEquals(['Route', 'Area']));
+    expect(names(100, 100, 50, 50), isEmpty);
+    expect(names(2048, 2100, 20, 20), isEmpty, reason: 'beside the line');
+  });
 }

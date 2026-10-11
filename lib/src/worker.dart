@@ -352,14 +352,28 @@ class TilePool {
   final Map<int, Completer<List<Object?>>> _queries = {};
 
   /// The features of tile [id] within [radius] tile units of ([px], [py])
-  /// that the style draws at [styleZoom].
+  /// that the style draws at [styleZoom], or with [halfWidth] and
+  /// [halfHeight] given, those touching the box of that size around it.
   Future<List<Object?>> query(
     TileId id,
     double px,
     double py,
     double radius,
-    double styleZoom,
-  ) => _ask([id.z, id.x, id.y, 'q', px, py, radius, styleZoom]);
+    double styleZoom, {
+    double halfWidth = -1,
+    double halfHeight = -1,
+  }) => _ask([
+    id.z,
+    id.x,
+    id.y,
+    'q',
+    px,
+    py,
+    radius,
+    styleZoom,
+    halfWidth,
+    halfHeight,
+  ]);
 
   /// Asks a clustered source about cluster [id]: its `zoom` of expansion,
   /// its `children` or its `leaves`.
@@ -564,6 +578,8 @@ Future<void> tileWorkerMain(
               m[6]! as double,
               m[7]! as double,
               m[8]! as double,
+              halfWidth: m[9]! as double,
+              halfHeight: m[10]! as double,
             ),
           ]);
         } catch (_) {

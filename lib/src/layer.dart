@@ -141,6 +141,11 @@ class VmapLayerState extends State<VmapLayer> {
   Future<List<VmapFeature>> featuresAt(LatLng point, {double radius = 6}) =>
       _engine.featuresAt(point, radius: radius);
 
+  /// What the map shows between [southWest] and [northEast]: the features
+  /// the style draws that touch the box, topmost first.
+  Future<List<VmapFeature>> featuresIn(LatLng southWest, LatLng northEast) =>
+      _engine.featuresIn(southWest, northEast);
+
   /// The map zoom at which a cluster of a clustered GeoJSON source comes
   /// apart, for zooming in on a tapped cluster.
   Future<double?> clusterExpansionZoom(String source, int clusterId) =>

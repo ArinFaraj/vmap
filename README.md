@@ -27,7 +27,7 @@ dependencies:
   vmap:
     git:
       url: https://github.com/ArinFaraj/vmap.git
-      ref: v0.23.0
+      ref: v0.24.0
 ```
 
 ## Quick start
@@ -333,6 +333,18 @@ comes from the tiles off the UI thread, so it arrives a moment after the tap.
 
 With your own `FlutterMap`, give the layer a `GlobalKey<VmapLayerState>` and
 call `key.currentState!.featuresAt(point)`.
+
+For everything in an area instead of at a point, for a selection box or a
+list of what is on screen:
+
+```dart
+final shown = await key.currentState!.featuresIn(southWest, northEast);
+```
+
+It returns what touches the box. A feature with an id comes once, the id
+being taken as its own within its source layer, the way feature state takes
+it. One without an id that lies over the edge of a tile comes once for each
+tile it is in.
 
 ### Highlighting it
 
