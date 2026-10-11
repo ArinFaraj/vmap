@@ -1,3 +1,16 @@
+## 0.17.2
+
+- Labels in the default JavaScript build no longer wait on images: each is
+  drawn as text every frame, with the halo as the text's stroked outline.
+  It flew the benchmark tour in Chrome at about 104 frames a second, where
+  0.17.0 managed 25 to 32. The `--wasm` build and every other platform draw
+  as they did in 0.17.0.
+- The 119 frames a second claimed for 0.17.1 did not hold up: later runs of
+  the same build gave 23 to 58, because making an image in a browser takes
+  longer the busier the machine is. Shared label pages are gone.
+- Text in a script whose font the browser fetches late is drawn once the
+  font arrives, where it used to stay as empty boxes.
+
 ## 0.17.1
 
 - Much faster in a browser. Making an image there costs milliseconds, and a

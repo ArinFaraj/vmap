@@ -166,6 +166,10 @@ class VmapLayerState extends State<VmapLayer> {
 
   VmapEngine get _engine => widget.engine ?? _owned!;
 
+  /// A browser fetches the font for a script the first time it is drawn,
+  /// and a phone can have its font changed while the app runs.
+  void _fontsChanged() => _engine.fontsChanged();
+
   VmapTextStyle get _text => VmapTextStyle(
     fontFamily: widget.textStyle?.fontFamily,
     fontFamilyFallback: widget.textStyle?.fontFamilyFallback,
@@ -195,6 +199,7 @@ class VmapLayerState extends State<VmapLayer> {
             ..markers = widget.markers
             ..featureStates = widget.featureStates;
     }
+    PaintingBinding.instance.systemFonts.addListener(_fontsChanged);
   }
 
   @override
@@ -236,6 +241,7 @@ class VmapLayerState extends State<VmapLayer> {
 
   @override
   void dispose() {
+    PaintingBinding.instance.systemFonts.removeListener(_fontsChanged);
     _owned?.dispose();
     super.dispose();
   }

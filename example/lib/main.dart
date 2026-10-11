@@ -242,6 +242,7 @@ class _BenchAppState extends State<BenchApp>
         'labels_rasterized': engine.stats.labelsRasterized,
         'label_layout_ms': engine.stats.labelLayoutMicros ~/ 1000,
         'label_image_ms': engine.stats.labelImageMicros ~/ 1000,
+        'label_images': engine.stats.labelImages,
         'labels_resized': engine.stats.labelsResized,
         'labels_evicted': engine.stats.labelsEvicted,
         'label_states_walked': engine.stats.labelStatesWalked,
@@ -340,7 +341,10 @@ class _BenchAppState extends State<BenchApp>
       ];
       const engineKeys = [
         'frames', 'paint_avg_us', 'label_total_ms', 'label_raster_total_ms', //
-        'labels_rasterized', 'label_layout_ms', 'label_image_ms',
+        'labels_rasterized',
+        'label_layout_ms',
+        'label_image_ms',
+        'label_images',
         'stroke_total_ms', 'tile_setup_total_ms', 'prep_max_us',
         'draw_max_us', 'unpack_max_us',
       ];

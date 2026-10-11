@@ -53,6 +53,7 @@ class VmapStats {
   int labelsRasterized = 0;
   int labelLayoutMicros = 0;
   int labelImageMicros = 0;
+  int labelImages = 0;
   int labelStatesWalked = 0;
   int labelsResized = 0;
   int labelsEvicted = 0;
@@ -450,6 +451,13 @@ class VmapEngine extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Draws every label again. Call it when a font has finished loading: a
+  /// label drawn before that keeps the boxes it was drawn with.
+  void fontsChanged() {
+    _labels.clear();
+    notifyListeners();
+  }
+
   set text(VmapTextStyle value) {
     if (value == _labels.text) return;
     _labels
@@ -752,6 +760,7 @@ class VmapEngine extends ChangeNotifier {
       ..labelsRasterized = _labels.rasterizedTotal
       ..labelLayoutMicros = _labels.layoutMicrosTotal
       ..labelImageMicros = _labels.imageMicrosTotal
+      ..labelImages = _labels.imagesTotal
       ..labelStatesWalked = _labels.statesWalked
       ..labelsResized = _labels.resizedTotal
       ..labelsEvicted = _labels.evictedTotal;

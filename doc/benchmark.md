@@ -51,19 +51,31 @@ without a new frame. The numbers are from vmap 0.3.0 and vector_map_tiles
 
 ## In a browser
 
-Chrome on a Mac with a 120 Hz screen, the same tour and style, two laps, the
-default JavaScript build. One run of each, so read the size of the change
-and not the last digit.
+Chrome on a Mac with a 120 Hz screen, the same tour and style, one lap. The
+Mac was busy with other work during every run here (a load of 17 to 26 on
+14 cores), so read the size of the change and not the last digit.
 
 | | frames a second | frames skipped | longest gap |
 |---|---|---|---|
-| a label image each (0.17.0) | 25 and 32 | 463 and 473 | 213 and 226 ms |
-| labels sharing pages (0.17.1) | 119 and 119 | 50 and 14 | 34 and 29 ms |
+| JavaScript build, a label image each (0.17.0) | 25 and 32 | 463 and 473 | 213 and 226 ms |
+| JavaScript build, labels as text (0.17.2) | 104 and 105 | 381 and 356 | 148 and 99 ms |
+| `--wasm` build, a label image each (0.17.2) | 107 and 68 | 299 and 248 | 76 and 77 ms |
 
-Making a label's image took 28 ms on average before and is under 1 ms a
-label now. The `--wasm` build ran the tour at 18 to 30 frames a second with
-or without shared pages; its time goes on the raster side and has not been
-looked into.
+In the JavaScript build an image of a label took 28 ms to make on average,
+and the cost rose with the load on the machine. 0.17.1 shared images between
+labels and measured 119 frames a second once; later runs of the same build
+gave 23 to 58, so that figure should not be relied on. Drawing the text
+itself needs no image at all.
+
+The `--wasm` build keeps an image for each label, which costs it nothing
+to make. Drawing every label as text ran its renderer out of memory, and
+turning its images into textures by reading their pixels back left some
+labels as noise and froze the tab twice in six runs, so neither is used.
+Both of its laps drew the same number of frames, about 2700 in 30 seconds,
+so the 68 is more likely the browser's frame times than the map. 0.17.1
+measured this build at 18 to 30, and why it differs has not been traced.
+
+The frames still skipped are mostly tiles being built on the page's thread.
 
 ## The comparison picture
 

@@ -81,8 +81,8 @@ class FileSlices {
 Future<Uint8List> gunzip(Uint8List bytes) async =>
     Uint8List.fromList(gzip.decode(bytes));
 
-/// Each label gets an image of its own: making one is cheap here.
-const bool sharedLabelImages = false;
+/// Labels are drawn into images once and the images drawn every frame.
+const bool directLabels = false;
 
 /// The image to make a shader of.
 ui.Image forShader(ui.Image image) => image;
