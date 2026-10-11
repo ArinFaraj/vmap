@@ -192,6 +192,7 @@ class GeoJsonTiles {
         continue;
       }
       final rings = <Float64List>[];
+      final metrics = f.type == mvtLine ? <double>[] : null;
       for (final ring in f.rings) {
         final local = Float64List(ring.length);
         for (var i = 0; i < ring.length; i += 2) {
@@ -202,13 +203,21 @@ class GeoJsonTiles {
           case mvtPoint:
             rings.add(local);
           case mvtLine:
-            _clipLine(local, rings);
+            final starts = <double>[];
+            final length = _clipLine(local, rings, starts);
+            for (final start in starts) {
+              metrics!
+                ..add(length == 0 ? 0 : start / length)
+                ..add(length == 0 ? 0 : 1 / length);
+            }
           default:
             final clipped = _clipRing(local);
             if (clipped.length >= 6) rings.add(clipped);
         }
       }
-      if (rings.isNotEmpty) out.add(_Clipped(f.type, f.props, rings));
+      if (rings.isNotEmpty) {
+        out.add(_Clipped(f.type, f.props, rings, metrics));
+      }
     }
     for (final p in _clusters?.at(z) ?? const <ClusterPoint>[]) {
       if (p.x < left - pad ||
@@ -231,17 +240,30 @@ class GeoJsonTiles {
   static const double _lo = -_buffer;
   static const double _hi = tileExtent + _buffer;
 
-  /// Cuts a line at the padded tile edge into the pieces inside it.
-  static void _clipLine(Float64List line, List<Float64List> into) {
+  /// Cuts a line at the padded tile edge into the pieces inside it, notes
+  /// in [starts] how far along the line each piece begins, and returns the
+  /// length of the whole line.
+  static double _clipLine(
+    Float64List line,
+    List<Float64List> into,
+    List<double> starts,
+  ) {
     var piece = <double>[];
+    var walked = 0.0, began = 0.0;
     void flush() {
-      if (piece.length >= 4) into.add(Float64List.fromList(piece));
+      if (piece.length >= 4) {
+        into.add(Float64List.fromList(piece));
+        starts.add(began);
+      }
       piece = <double>[];
     }
 
     for (var i = 2; i < line.length; i += 2) {
       final x0 = line[i - 2], y0 = line[i - 1];
       final dx = line[i] - x0, dy = line[i + 1] - y0;
+      final before = walked;
+      final length = math.sqrt(dx * dx + dy * dy);
+      walked += length;
       var t0 = 0.0, t1 = 1.0;
       var inside = true;
       void edge(double p, double q) {
@@ -276,6 +298,7 @@ class GeoJsonTiles {
       }
       if (t0 > 0 || piece.isEmpty) {
         flush();
+        began = before + length * t0;
         piece
           ..add(x0 + dx * t0)
           ..add(y0 + dy * t0);
@@ -286,6 +309,7 @@ class GeoJsonTiles {
       if (t1 < 1) flush();
     }
     flush();
+    return walked;
   }
 
   /// Cuts a polygon ring to the padded tile, keeping its winding.
@@ -365,8 +389,11 @@ class _Layer implements TileLayer {
   final List<TileFeature> features;
 }
 
-class _Clipped implements TileFeature {
-  _Clipped(this.type, this._props, this._rings);
+class _Clipped implements TileFeature, MeasuredFeature {
+  _Clipped(this.type, this._props, this._rings, [this.lineMetrics]);
+
+  @override
+  final List<double>? lineMetrics;
 
   @override
   final int type;

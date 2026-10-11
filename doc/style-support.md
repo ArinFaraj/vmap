@@ -7,7 +7,7 @@
 | Order | layers are drawn in the style's order, across sources and with raster layers where the style puts them |
 | Fills | colour, opacity, `fill-outline-color`, `fill-pattern`, `fill-translate` with `fill-translate-anchor` |
 | Raster | opacity, `raster-hue-rotate`, `raster-saturation`, `raster-contrast`, `raster-brightness-min` and `-max`, `raster-resampling`. An `image` source is one picture stretched between its four `coordinates` |
-| Lines | colour, opacity, width, gap width, `line-offset`, round caps, `line-join` round, bevel and miter, `line-dasharray` with butt, round and square dash caps, `line-blur`, `line-pattern`, `line-translate` with `line-translate-anchor` |
+| Lines | colour, opacity, width, gap width, `line-offset`, round caps, `line-join` round, bevel and miter, `line-dasharray` with butt, round and square dash caps, `line-blur`, `line-pattern`, `line-gradient` on a GeoJSON source, `line-translate` with `line-translate-anchor` |
 | Hillshade | Mapbox and Terrarium heights, exaggeration, shadow and highlight colours, `hillshade-accent-color` when the style names one, light direction |
 | Heatmap | radius, weight, intensity, opacity and `heatmap-color` |
 | Circles | radius, colour, opacity, the stroke's width, colour and opacity, `circle-translate` with `circle-translate-anchor` |
@@ -26,8 +26,9 @@ and halo and an icon's size, colour and opacity, and all of them may read
 
 - 3D: buildings are flat and the map does not pitch. Neither does
   flutter_map, which the camera comes from.
-- `line-gradient`, `video` sources, `icon-halo-blur`, and line patterns on
-  round caps.
+- `video` sources, `icon-halo-blur`, and line patterns on round caps.
+- `line-gradient` together with dashes, a pattern, `line-blur`, or a width
+  or colour read from the feature. The gradient is drawn alone.
 - `text-translate` for a name along a line, and a translate that changes
   with the zoom for text and icons: the style's number is read once.
 - `within` and `distance` in what `featuresAt` returns, and for lines a
@@ -39,8 +40,8 @@ and halo and an icon's size, colour and opacity, and all of them may read
 
 Checked on screen: several sources, GeoJSON, raster order, hillshade,
 heatmap, bent road names and rotation. Seen in a hand written style
-only: `image` sources, `line-blur` on dashes, the translate anchors and
-`text-max-angle`. Covered by tests only, not seen drawn: `line-pattern`,
+only: `image` sources, `line-blur` on dashes, `line-gradient`, the translate
+anchors and `text-max-angle`. Covered by tests only, not seen drawn: `line-pattern`,
 SDF icons and their halos, polygon labels and `hillshade-accent-color`.
 
 ## How it draws

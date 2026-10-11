@@ -303,6 +303,7 @@ class TileBuilder {
           };
         var read = false;
         var pending = scale;
+        final unit = scale;
         void geometry() {
           if (read) return;
           read = true;
@@ -377,12 +378,22 @@ class TileBuilder {
             final start = _sink.ringStart(r);
             final end = _sink.ringEnd(r);
             if (f.type == mvtLine) {
+              final shares = bucket.metered && f is MeasuredFeature
+                  ? (f as MeasuredFeature).lineMetrics
+                  : null;
+              final known = shares != null && shares.length > r * 2 + 1;
               mesher.addLine(
                 _sink.coords,
                 start,
                 end,
                 lineTolerance,
                 caps: bucket.caps,
+                shareBefore: known
+                    ? shares[r * 2]
+                    : bucket.metered
+                    ? 0
+                    : null,
+                sharePer: known ? shares[r * 2 + 1] / unit : 0,
               );
               continue;
             }

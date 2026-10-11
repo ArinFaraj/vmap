@@ -16,6 +16,15 @@ abstract interface class TileFeature {
   void readGeometry(GeometrySink out);
 }
 
+/// A feature that knows how far along its whole line each of its pieces
+/// starts, which `line-gradient` is drawn by.
+abstract interface class MeasuredFeature {
+  /// For each ring in turn: the share of the whole line that lies before
+  /// the ring, and the share one unit of the ring's length is. Null for a
+  /// feature that is not a line.
+  List<double>? get lineMetrics;
+}
+
 abstract interface class TileLayer {
   String get name;
   int get extent;

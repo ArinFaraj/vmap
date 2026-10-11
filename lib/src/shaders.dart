@@ -6,6 +6,7 @@ import 'platform.dart';
 import 'expr.dart';
 import 'sprites.dart';
 import 'style.dart';
+import 'tessellate.dart';
 
 /// The repeating pictures layers are drawn through: dashes and patterns.
 class LayerShaders {
@@ -83,10 +84,16 @@ class LayerShaders {
     int color,
   ) {
     final blur = layer.blur;
-    if (layer.dash == null && layer.pattern == null && blur == null) {
+    final gradient = layer.gradient;
+    if (layer.dash == null &&
+        layer.pattern == null &&
+        blur == null &&
+        gradient == null) {
       return null;
     }
-    final rgb = layer.pattern != null ? 0 : color & 0xFFFFFF;
+    final rgb = layer.pattern != null || gradient != null
+        ? 0
+        : color & 0xFFFFFF;
     final key = (layer, width, scale, rgb);
     final made = _shaders[key];
     if (made != null) return made;
@@ -98,7 +105,14 @@ class LayerShaders {
         : ((asNumber(blur(context)) ?? 0) / width * _blurSteps * 2)
               .round()
               .clamp(0, _blurSteps);
-    if (dash != null) {
+    if (gradient != null) {
+      final kept = _dashImages['g|${identityHashCode(layer)}'] ??= _DashImage(
+        _gradientImage(gradient, context),
+      );
+      kept.usedFrame = _frame;
+      image = kept.image;
+      stretch = 1;
+    } else if (dash != null) {
       if (width <= 0) return null;
       var total = 0.0;
       for (final d in dash) {
@@ -143,7 +157,7 @@ class LayerShaders {
       ..[5] = along ? 1 / image.height : stretch;
     final shader = ui.ImageShader(
       forShader(image),
-      ui.TileMode.repeated,
+      gradient != null ? ui.TileMode.clamp : ui.TileMode.repeated,
       along ? ui.TileMode.clamp : ui.TileMode.repeated,
       _matrix,
       filterQuality: ui.FilterQuality.low,
@@ -154,6 +168,29 @@ class LayerShaders {
   static const int _dashImageWidth = 256;
   static const int _blurSteps = 16;
   static const int _blurImageHeight = 64;
+
+  /// The colours [gradient] gives from the start of a line to its end, a
+  /// pixel for each of [LineMesher.shareSpan] steps.
+  ui.Image _gradientImage(Expr gradient, EvalContext context) {
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    final paint = ui.Paint();
+    const steps = LineMesher.shareSpan;
+    for (var i = 0; i < steps; i++) {
+      context.progress = i / (steps - 1);
+      final color = Rgba.of(gradient(context));
+      if (color == null) continue;
+      canvas.drawRect(
+        ui.Rect.fromLTWH(i + 0.0, 0, 1, 2),
+        paint..color = ui.Color(color.toArgb()),
+      );
+    }
+    context.progress = 0;
+    final picture = recorder.endRecording();
+    final image = picture.toImageSync(steps.toInt(), 2);
+    picture.dispose();
+    return image;
+  }
 
   /// A strip across a line of [rgb] that fades out over [reach] of the
   /// line's width at each edge.

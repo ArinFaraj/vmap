@@ -198,6 +198,14 @@ class LineMesher {
   /// How far along the current line the vertices being added are.
   double _along = 0;
 
+  /// Set while a line is added by its share of a longer line: the share
+  /// before it, and the share one unit of its length is.
+  double? _shareBefore;
+  double _sharePer = 0;
+
+  /// The width of the picture a line is drawn through by its share.
+  static const double shareSpan = 256;
+
   static const double _arcStep = math.pi / 5;
   static const int _fanVertices = 7;
   static const int _maxPoints = 4000;
@@ -219,15 +227,47 @@ class LineMesher {
     double minDistance, {
     bool caps = true,
     LineJoin? join,
+    double? shareBefore,
+    double sharePer = 0,
   }) {
     join ??= this.join;
     if (end - start < 2) return;
     if (end - start > _maxPoints) {
       final mid = start + _maxPoints - 1;
-      addLine(coords, start, mid + 1, minDistance, caps: caps, join: join);
-      addLine(coords, mid, end, minDistance, caps: caps, join: join);
+      var first = 0.0;
+      if (shareBefore != null) {
+        for (var i = start + 1; i <= mid; i++) {
+          final dx = coords[i * 2] - coords[i * 2 - 2];
+          final dy = coords[i * 2 + 1] - coords[i * 2 - 1];
+          first += math.sqrt(dx * dx + dy * dy);
+        }
+      }
+      addLine(
+        coords,
+        start,
+        mid + 1,
+        minDistance,
+        caps: caps,
+        join: join,
+        shareBefore: shareBefore,
+        sharePer: sharePer,
+      );
+      addLine(
+        coords,
+        mid,
+        end,
+        minDistance,
+        caps: caps,
+        join: join,
+        shareBefore: shareBefore == null
+            ? null
+            : shareBefore + first * sharePer,
+        sharePer: sharePer,
+      );
       return;
     }
+    _shareBefore = shareBefore;
+    _sharePer = sharePer;
     final miterCos = _miterCos(join);
     if ((end - start) * 2 > _pts.length) _pts = Float64List((end - start) * 4);
     final pts = _pts;
@@ -371,7 +411,10 @@ class LineMesher {
     _b.ext[o] = ex;
     _b.ext[o + 1] = ey;
     if (_b.withDistances) {
-      _b.dst[o] = _along;
+      final before = _shareBefore;
+      _b.dst[o] = before == null
+          ? _along
+          : (before + _along * _sharePer) * shareSpan;
       _b.dst[o + 1] = across;
     }
     if (_b.withOffsets) {

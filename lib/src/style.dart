@@ -252,6 +252,7 @@ class Bucket {
     this.outline = false,
     this.offset = false,
     this.edged = false,
+    this.metered = false,
     this.join = LineJoin.miter,
     this.variantKeys = const [],
   });
@@ -275,6 +276,10 @@ class Bucket {
   /// The rim of every cap and join counts as the line's edge, which a line
   /// that fades out towards its edges needs.
   final bool edged;
+
+  /// Each vertex keeps its share of the way along the whole line instead
+  /// of a distance, which a gradient along the line is drawn by.
+  final bool metered;
   final LineJoin join;
 
   /// The feature properties the paint of its layers reads. Features are
@@ -311,6 +316,7 @@ class PaintLayer {
     this.heat,
     this.translate,
     this.translateOnScreen = false,
+    this.gradient,
     this.perFeature = false,
   });
 
@@ -343,6 +349,10 @@ class PaintLayer {
   /// The name of the sprite image that fills the shape, or that is repeated
   /// along the line.
   final Expr? pattern;
+
+  /// `line-gradient`: the colour at each share of the way along a line,
+  /// read with `line-progress`.
+  final Expr? gradient;
 
   /// The ring around a circle.
   final Expr? strokeColor;
@@ -1102,6 +1112,7 @@ class StyleSheet {
         bool outline = false,
         bool offset = false,
         bool edged = false,
+        bool metered = false,
         LineJoin join = LineJoin.miter,
       }) {
         final keys = reads.toList()..sort();
@@ -1115,6 +1126,7 @@ class StyleSheet {
           outline,
           offset,
           edged,
+          metered,
           join.index,
           keys,
         ]);
@@ -1130,6 +1142,7 @@ class StyleSheet {
               outline: outline,
               offset: offset,
               edged: edged,
+              metered: metered,
               join: join,
               variantKeys: keys,
             ),
@@ -1235,7 +1248,10 @@ class StyleSheet {
               (asNumber(own(c)) ?? 1) * 2 + (asNumber(between(c)) ?? 0);
         }
         final picture = paint['line-pattern'];
-        final soft = blur != null && picture == null;
+        final ramp = dash == null && picture == null
+            ? paint['line-gradient']
+            : null;
+        final soft = blur != null && picture == null && ramp == null;
         layers.add(
           PaintLayer(
             id: id,
@@ -1248,8 +1264,9 @@ class StyleSheet {
                   dash == null &&
                   picture == null &&
                   layout['line-cap'] == 'round',
-              dashed: dash != null || picture != null || soft,
+              dashed: dash != null || picture != null || soft || ramp != null,
               edged: soft && dash == null,
+              metered: ramp != null,
               offset: beside != null,
               join: switch (layout['line-join']) {
                 'round' => LineJoin.round,
@@ -1260,7 +1277,10 @@ class StyleSheet {
             kind: kind,
             minZoom: minZoom,
             maxZoom: maxZoom,
-            color: compileExpr(picture == null ? color : '#ffffff'),
+            color: compileExpr(
+              picture == null && ramp == null ? color : '#ffffff',
+            ),
+            gradient: ramp == null ? null : compileExpr(ramp),
             opacity: compileExpr(opacity),
             width: width,
             offset: beside == null ? null : compileExpr(beside),

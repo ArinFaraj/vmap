@@ -1,3 +1,9 @@
+## 0.20.0
+
+- `line-gradient`: a line of a GeoJSON source coloured by how far along it
+  each point is, for a route that changes colour on the way. The colours
+  carry on across tile edges.
+
 ## 0.19.0
 
 - `downloadRegion` on the layer's state and on the engine fetches the tiles
