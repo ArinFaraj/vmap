@@ -57,7 +57,7 @@ class LabelCandidate {
   LabelCandidate(this.key, this.source, this.tileX, this.tileY, this.tileSpan)
     : worldX = tileX + source.x / tileExtent * tileSpan,
       worldY = tileY + source.y / tileExtent * tileSpan,
-      lineLength = _length(source.line);
+      _line = source.line;
 
   final String key;
   late final String spriteKey = '${source.layer}|${source.text}';
@@ -85,7 +85,8 @@ class LabelCandidate {
   final double tileSpan;
   final double worldX;
   final double worldY;
-  final double lineLength;
+  final Float32List? _line;
+  late final double lineLength = _length(_line);
 
   static double _length(Float32List? line) {
     if (line == null) return 0;
@@ -231,6 +232,10 @@ class LabelEngine {
 
   static const int _maxSprites = 1400;
 
+  /// A frame that spent this long placing labels draws no new text images;
+  /// they wait a frame, so the two costs never land on the same one.
+  static const int _heavyPlaceMicros = 800;
+
   final Map<String, _LabelState> _states = {};
   final Map<String, _Sprite> _sprites = {};
   final List<_LabelState> _frameStates = [];
@@ -353,8 +358,10 @@ class LabelEngine {
       var cached = _sprites[st.candidate.spriteKey];
       if (identical(cached, st.sprite)) cached = null;
       if (cached == null &&
-          rasterized > 0 &&
-          _clock.elapsedMicroseconds - rasterStart > rasterBudgetMicros) {
+          (lastPlaceMicros > _heavyPlaceMicros ||
+              (rasterized > 0 &&
+                  _clock.elapsedMicroseconds - rasterStart >
+                      rasterBudgetMicros))) {
         pending = true;
         break;
       }

@@ -90,8 +90,25 @@ const _tourKeys = [
   Key3(23, 36.191113, 44.009167, 12.5),
 ];
 
+/// Switches read at start from `flags.txt` in the app's external files
+/// directory, one `name=value` a line, so a run can be varied without a
+/// rebuild.
+final flags = <String, String>{};
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (Platform.isAndroid) {
+    try {
+      final dir = await getExternalStorageDirectory();
+      final file = File('${dir!.path}/flags.txt');
+      if (file.existsSync()) {
+        for (final line in file.readAsLinesSync()) {
+          final cut = line.indexOf('=');
+          if (cut > 0) flags[line.substring(0, cut)] = line.substring(cut + 1);
+        }
+      }
+    } catch (_) {}
+  }
   final cache = '${(await getApplicationCacheDirectory()).path}/vmap';
   if (Platform.isAndroid) {
     try {
@@ -146,10 +163,16 @@ class _BenchAppState extends State<BenchApp>
       fontFamily: 'GoogleSansFlex',
       fontFamilyFallback: ['Vazirmatn'],
     ),
+    showLabels: flags['labels'] != 'off',
   );
   late final Ticker ticker;
   final laps = <List<FrameTiming>>[
-    for (var i = 0; i < (wander ? 5 : 2); i++) [],
+    for (
+      var i = 0;
+      i < (int.tryParse(flags['laps'] ?? '') ?? (wander ? 5 : 2));
+      i++
+    )
+      [],
   ];
   int lap = -1;
   Duration lapStart = Duration.zero;
@@ -217,6 +240,15 @@ class _BenchAppState extends State<BenchApp>
         'draw_max_us': engine.stats.maxDrawMicros,
         'unpack_max_us': engine.stats.maxUnpackMicros,
         'rss_mb': ProcessInfo.currentRss >> 20,
+        'slow':
+            (engine.stats.slowPaints.toList()..sort(
+                  (a, b) =>
+                      int.parse(b.split('paint=')[1].split(' ')[0]) -
+                      int.parse(a.split('paint=')[1].split(' ')[0]),
+                ))
+                .take(10)
+                .toList(),
+        'draw_calls': engine.stats.drawCalls,
         'tiles': engine.stats.tilesCached,
         'label_states': engine.stats.labelStates,
         'label_sprites': engine.stats.labelSprites,

@@ -57,6 +57,10 @@ class BuiltLabel {
   /// One of several placed along a line, which keeps its distance from
   /// others with the same text.
   final bool spaced;
+
+  /// What makes this label the same label in another tile: its layer, text
+  /// and rough place for a point, its tile and number otherwise.
+  String key = '';
 }
 
 class BuiltTile {
@@ -64,6 +68,19 @@ class BuiltTile {
 
   final List<BuiltMesh> meshes;
   final List<BuiltLabel> labels;
+
+  /// Names every label for the tile at [z], [x], [y].
+  void keyLabels(int z, int x, int y) {
+    final span = 1 / (1 << z);
+    final tx = x * span;
+    final ty = y * span;
+    for (var i = 0; i < labels.length; i++) {
+      final l = labels[i];
+      l.key = l.line != null || l.spaced || l.text.isEmpty
+          ? 'r|$z/$x/$y|$i'
+          : 'p|${l.layer}|${l.text}|${((tx + l.x / tileExtent * span) * 1024).floor()}|${((ty + l.y / tileExtent * span) * 1024).floor()}';
+    }
+  }
 
   /// A sendable form whose buffers move between isolates without a copy on
   /// the receiving side.
@@ -97,6 +114,7 @@ class BuiltTile {
           l.icon,
           l.angle,
           l.spaced,
+          l.key,
         ],
     ],
   ];
@@ -132,7 +150,7 @@ class BuiltTile {
           icon: parts[6] as String,
           angle: parts[7] as double,
           spaced: parts[8] as bool,
-        ),
+        )..key = parts[9] as String,
       );
     }
     return BuiltTile(meshes, labels);

@@ -13,6 +13,9 @@ class MainActivity : FlutterActivity() {
         val fastest = display.supportedModes
             .filter { it.physicalWidth == current.physicalWidth && it.physicalHeight == current.physicalHeight }
             .maxByOrNull { it.refreshRate } ?: return
-        window.attributes = window.attributes.apply { preferredDisplayModeId = fastest.modeId }
+        window.attributes = window.attributes.apply {
+            preferredDisplayModeId = fastest.modeId
+            preferredRefreshRate = fastest.refreshRate
+        }
     }
 }

@@ -122,9 +122,10 @@ What this does and does not show:
 - vmap does more work per frame, because it redraws the vectors every frame:
   about 3 ms on the UI thread and 4 ms on the raster thread at the median,
   against 1 to 2 ms each for vector_map_tiles, which mostly draws finished
-  images. The slowest 1 percent of vmap's frames took 8.3 to 8.5 ms on the UI
-  thread and 7.1 to 7.7 ms on the raster thread, right at the 8.3 ms a frame
-  has at 120 Hz. 120 Hz itself has not been measured.
+  images. The slowest 1 percent of vmap's frames took 6.6 to 7.2 ms on the UI
+  thread and 6.4 to 8.2 ms on the raster thread in later single lap runs of
+  version 0.3.2, against the 8.3 ms a frame has at 120 Hz. 120 Hz itself has
+  not been measured: the phone held both apps at 60 Hz.
 - vector_map_tiles lost its frames in long gaps while waiting for tiles to be
   rendered, not in slow frames of its own.
 - vmap's process used about 440 to 490 MB. vector_map_tiles' memory was not
@@ -151,7 +152,7 @@ dependencies:
   vmap:
     git:
       url: https://github.com/ArinFaraj/vmap.git
-      ref: v0.3.1
+      ref: v0.3.2
 ```
 
 ## Use

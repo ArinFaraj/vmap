@@ -6,6 +6,10 @@ import 'package:dart_earcut/dart_earcut.dart';
 /// Indices are 16 bit, so a mesh is cut into chunks below this many vertices.
 const int _maxVertices = 65000;
 
+/// A mesh is cut once it holds this many vertices, so no single upload or
+/// re-widening takes more than a fraction of a frame.
+const int _chunkVertices = 16000;
+
 class MeshChunk {
   MeshChunk(this.positions, this.extrusions, this.indices, [this.distances]);
 
@@ -35,7 +39,7 @@ class _Buffers {
   final List<MeshChunk> chunks = [];
 
   void reserve(int vertices, int indices) {
-    if (vertexCount + vertices > _maxVertices) flush();
+    if (vertexCount > 0 && vertexCount + vertices > _chunkVertices) flush();
     reserveRaw(vertices);
     final needIdx = indexCount + indices;
     if (needIdx > idx.length) {

@@ -366,7 +366,8 @@ Future<void> _workerMain(List<Object?> init) async {
         final bytes = await fetch(z, m[2]! as int, m[3]! as int);
         final tile = bytes.isEmpty
             ? BuiltTile(const [], const [])
-            : builder.build(bytes, z, maxZoom: m[4]! as int);
+            : (builder.build(bytes, z, maxZoom: m[4]! as int)
+                ..keyLabels(z, m[2]! as int, m[3]! as int));
         out.send([job, tile.toMessage()]);
       } catch (e) {
         out.send([job, null, '$e']);

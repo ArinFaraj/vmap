@@ -1,3 +1,15 @@
+## 0.3.2
+
+- A frame that places labels draws no new text images, and a frame draws
+  about a millisecond of them at most, so the two costs never land together.
+  On the test phone the slowest 1 percent of UI frames went from about 8.5 ms
+  to about 7 ms.
+- Labels are named on the worker isolates and handed to the placer in steps.
+- Meshes are cut at 16000 vertices, so no single upload or re-widening is
+  long.
+- `tool/quick_bench.sh` reruns the tour on a device in half a minute without
+  a rebuild.
+
 ## 0.3.1
 
 - Label images are kept for 1400 labels instead of 500, so coming back to a

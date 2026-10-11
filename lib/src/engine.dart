@@ -157,6 +157,7 @@ class _Tile {
   /// labels.
   int _step = 0;
   int _uploaded = 0;
+  int _labelAt = 0;
 
   /// Uploads the geometry and widens every line to [widths], so the first
   /// frame that draws this tile has nothing left to compute. Works in steps
@@ -201,12 +202,10 @@ class _Tile {
     final span = 1 / (1 << id.z);
     final tx = id.x * span;
     final ty = id.y * span;
-    for (var i = 0; i < built.labels.length; i++) {
-      final l = built.labels[i];
-      final key = l.line != null || l.spaced || l.text.isEmpty
-          ? 'r|$id|$i'
-          : 'p|${l.layer}|${l.text}|${((tx + l.x / tileExtent * span) * 1024).floor()}|${((ty + l.y / tileExtent * span) * 1024).floor()}';
-      labels.add(LabelCandidate(key, l, tx, ty, span));
+    while (_labelAt < built.labels.length) {
+      final l = built.labels[_labelAt++];
+      labels.add(LabelCandidate(l.key, l, tx, ty, span));
+      if (_labelAt & 127 == 0 && clock.elapsedMicroseconds > deadline) return;
     }
     _built = null;
     _step = -1;
@@ -292,6 +291,7 @@ class VmapEngine extends ChangeNotifier {
 
   final TileSourceConfig source;
   final int maxCachedTiles;
+
   bool showLabels;
   TilePool? _pool;
   StyleSheet? _sheet;
@@ -681,7 +681,7 @@ class VmapEngine extends ChangeNotifier {
         rotation: camera.rotation,
         devicePixelRatio: camera.devicePixelRatio,
         dt: dt,
-        rasterBudgetMicros: math.max(300, _frameBudgetMicros - _prepSpent),
+        rasterBudgetMicros: _prepSpent > 1000 ? 1 : _labelBudgetMicros,
         zooming: _zooming,
       );
     }
@@ -1049,7 +1049,7 @@ class VmapEngine extends ChangeNotifier {
   /// UI-thread time a frame may spend preparing tiles and re-widening lines
   /// before the rest waits for the next frame.
   static const int _prepBudgetMicros = 1500;
-  static const int _frameBudgetMicros = 2200;
+  static const int _labelBudgetMicros = 1000;
   bool _zooming = false;
   double _lastZoom = 0;
   int _prepSpent = 0;
