@@ -27,7 +27,7 @@ dependencies:
   vmap:
     git:
       url: https://github.com/ArinFaraj/vmap.git
-      ref: v0.15.0
+      ref: v0.16.0
 ```
 
 ## Quick start
@@ -360,6 +360,26 @@ start draws from disk at once and checks the server in the background.
 ```dart
 VmapMap(cacheDirectory: '${cacheDir.path}/vmap')
 ```
+
+`clearCache()` on the layer's state deletes what the map kept there and
+loads it again. `reload()` loads again without deleting.
+
+## Servers that want a key
+
+`headers` go out with every request: the style, its tiles, sprites and
+archives. `onError` hears of anything that could not be loaded. The map keeps
+retrying on its own, so this is for logging or for telling the user.
+
+```dart
+VmapMap(
+  style: const VmapStyle.url('https://maps.example.org/style.json'),
+  headers: {'Authorization': 'Bearer $token'},
+  onError: (error) => log('map: $error'),
+)
+```
+
+A source that lists several `tiles` addresses has its tiles spread over
+them, and the next one is asked when one fails.
 
 ## Compared with vector_map_tiles
 

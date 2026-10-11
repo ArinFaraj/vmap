@@ -9,6 +9,7 @@ import 'dart:ui' as ui;
 import 'expr.dart';
 import 'pmtiles.dart';
 import 'style.dart';
+import 'net.dart';
 
 class _RasterTile {
   ui.Image? image;
@@ -36,12 +37,18 @@ class RasterTiles {
     required this.cacheDirectory,
     required this.userAgent,
     required this.onLoaded,
+    this.headers = const {},
+    this.onError,
   }) : _template =
            layer.tiles ??
            (PmTiles.handles(layer.tileJsonUrl) ? layer.tileJsonUrl : null),
        _maxZoom = layer.sourceMaxZoom ?? 22 {
     if (PmTiles.handles(_template)) {
-      final archive = _archive = PmTiles(_template!, client: _client);
+      final archive = _archive = PmTiles(
+        _template!,
+        client: _client,
+        headers: headers,
+      );
       if (layer.sourceMaxZoom == null) {
         archive.maxZoom.then((deepest) {
           _maxZoom = deepest;
@@ -58,7 +65,9 @@ class RasterTiles {
   RasterLayer layer;
   final String? cacheDirectory;
   final String userAgent;
+  final Map<String, String> headers;
   final void Function() onLoaded;
+  final void Function(Object error)? onError;
 
   static const int _maxTiles = 48;
   static const int _maxLoading = 4;
@@ -77,7 +86,7 @@ class RasterTiles {
 
   Future<void> _resolve() async {
     try {
-      final request = await _client.getUrl(Uri.parse(layer.tileJsonUrl!));
+      final request = await openGet(_client, layer.tileJsonUrl!, headers);
       final response = await request.close().timeout(
         const Duration(seconds: 10),
       );
@@ -85,9 +94,11 @@ class RasterTiles {
           jsonDecode(await utf8.decodeStream(response)) as Map<String, dynamic>;
       final deepest = json['maxzoom'];
       if (deepest is num) _maxZoom = deepest.toInt();
-      _template = (json['tiles'] as List).first as String;
+      _template = tileTemplate(json['tiles']);
       if (!_closed) onLoaded();
-    } catch (_) {}
+    } catch (e) {
+      if (!_closed) onError?.call(e);
+    }
   }
 
   /// Draws the tiles covering the view. [zoom] is the slippy-map zoom and
@@ -187,17 +198,20 @@ class RasterTiles {
           await file.writeAsBytes(bytes);
         }
       } else {
-        final url = template
-            .replaceFirst('{z}', '$z')
-            .replaceFirst('{x}', '$x')
-            .replaceFirst('{y}', '${layer.cover.row(z, y)}');
-        final request = await _client.getUrl(Uri.parse(url));
-        final response = await request.close().timeout(
-          const Duration(seconds: 20),
+        final (url, response) = await getTile(
+          _client,
+          template,
+          z,
+          x,
+          layer.cover.row(z, y),
+          headers,
         );
         if (response.statusCode != 200) {
           await response.drain<void>();
-          throw HttpException('HTTP ${response.statusCode}');
+          throw HttpException(
+            'HTTP ${response.statusCode}',
+            uri: Uri.parse(url),
+          );
         }
         final builder = BytesBuilder(copy: false);
         await response.forEach(builder.add);
@@ -236,8 +250,9 @@ class RasterTiles {
         tile.image = image;
         onLoaded();
       }
-    } catch (_) {
+    } catch (e) {
       tile.failedAtMs = _clock.elapsedMilliseconds;
+      if (!_closed) onError?.call(e);
     } finally {
       tile.loading = false;
       _loading--;

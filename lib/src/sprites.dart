@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'net.dart';
+
 /// One image of a sprite sheet.
 class SpriteImage {
   SpriteImage(
@@ -69,6 +71,7 @@ class SpriteSheet {
     String url, {
     String? cacheDirectory,
     String userAgent = 'vmap',
+    Map<String, String> headers = const {},
   }) async {
     final base = cacheDirectory == null
         ? null
@@ -82,18 +85,19 @@ class SpriteSheet {
             await index.readAsString(),
             await picture.readAsBytes(),
           );
-          _download(url, userAgent, base).ignore();
+          _download(url, userAgent, headers, base).ignore();
           return sheet;
         }
       } catch (_) {}
     }
-    final fetched = await _download(url, userAgent, base);
+    final fetched = await _download(url, userAgent, headers, base);
     return fetched == null ? null : _decode(fetched.$1, fetched.$2);
   }
 
   static Future<(String, Uint8List)?> _download(
     String url,
     String userAgent,
+    Map<String, String> headers,
     String? saveAs,
   ) async {
     final query = url.indexOf('?');
@@ -103,8 +107,8 @@ class SpriteSheet {
     try {
       for (final density in const ['@2x', '']) {
         try {
-          final index = await _get(client, '$stem$density.json$tail');
-          final picture = await _get(client, '$stem$density.png$tail');
+          final index = await _get(client, headers, '$stem$density.json$tail');
+          final picture = await _get(client, headers, '$stem$density.png$tail');
           if (index == null || picture == null) continue;
           final text = utf8.decode(index);
           if (saveAs != null) {
@@ -121,10 +125,16 @@ class SpriteSheet {
     }
   }
 
-  static Future<Uint8List?> _get(HttpClient client, String url) async {
-    final request = await client
-        .getUrl(Uri.parse(url))
-        .timeout(const Duration(seconds: 10));
+  static Future<Uint8List?> _get(
+    HttpClient client,
+    Map<String, String> headers,
+    String url,
+  ) async {
+    final request = await openGet(
+      client,
+      url,
+      headers,
+    ).timeout(const Duration(seconds: 10));
     final response = await request.close().timeout(const Duration(seconds: 10));
     if (response.statusCode != 200) {
       await response.drain<void>();

@@ -22,6 +22,7 @@ import 'style.dart';
 import 'tile_builder.dart';
 import 'tiles.dart';
 import 'worker.dart';
+import 'net.dart';
 
 class VmapStats {
   int tilesDrawn = 0;
@@ -126,6 +127,47 @@ class VmapEngine extends ChangeNotifier {
 
   Object? _styleError;
 
+  /// Told of every style, tile or sprite that could not be loaded. The map
+  /// keeps trying on its own; this is for the app to log or show.
+  void Function(Object error)? onError;
+
+  /// Loads the style and every tile again, from the cache where it has them.
+  void reload() {
+    for (final s in _sources) {
+      s.dispose();
+    }
+    _sources.clear();
+    for (final r in _rasters) {
+      r.close();
+    }
+    _rasters.clear();
+    _labels.clear();
+    _sheet = null;
+    _rasterKey = null;
+    _spriteUrl = null;
+    _loadStyle();
+  }
+
+  static final _kept = RegExp('^(style|sprite|raster|source)-');
+
+  /// Deletes what this map keeps in the cache directory, then loads it again
+  /// from the network. Other files in the directory are left alone.
+  Future<void> clearCache() async {
+    final directory = source.cacheDirectory;
+    if (directory != null) {
+      final tiles = {for (final s in _sources) s.pool.cacheName};
+      try {
+        await for (final entry in Directory(directory).list()) {
+          final name = entry.uri.pathSegments.lastWhere((s) => s.isNotEmpty);
+          if (_kept.hasMatch(name) || tiles.contains(name)) {
+            await entry.delete(recursive: true);
+          }
+        }
+      } on FileSystemException catch (_) {}
+    }
+    if (!_disposed) reload();
+  }
+
   VmapStyle get style => _style;
   set style(VmapStyle value) {
     if (value == _style) return;
@@ -175,9 +217,11 @@ class VmapEngine extends ChangeNotifier {
     }
     final client = HttpClient()..userAgent = source.userAgent;
     try {
-      final request = await client
-          .getUrl(Uri.parse(url))
-          .timeout(const Duration(seconds: 10));
+      final request = await openGet(
+        client,
+        url,
+        source.headers,
+      ).timeout(const Duration(seconds: 10));
       final response = await request.close().timeout(
         const Duration(seconds: 10),
       );
@@ -192,6 +236,7 @@ class VmapEngine extends ChangeNotifier {
         await file.writeAsString(body);
       }
     } catch (e) {
+      if (wanted == _style && !_disposed) onError?.call(e);
       if (remembered == null && wanted == _style && !_disposed) {
         _styleError = e;
         notifyListeners();
@@ -248,7 +293,9 @@ class VmapEngine extends ChangeNotifier {
               layer,
               cacheDirectory: source.cacheDirectory,
               userAgent: source.userAgent,
+              headers: source.headers,
               onLoaded: _requestFrame,
+              onError: (e) => onError?.call(e),
             ),
         ]);
     } else {
@@ -287,7 +334,10 @@ class VmapEngine extends ChangeNotifier {
         sheet: sheet,
         source: i,
         onLoaded: (id, built) => _onLoaded(made, id, built),
-        onFailed: (id, _) => made.failedAt[id] = _clock.elapsedMilliseconds,
+        onFailed: (id, error) {
+          made.failedAt[id] = _clock.elapsedMilliseconds;
+          onError?.call(error);
+        },
       );
       final before = byName[def.name];
       if (before != null) {
@@ -322,8 +372,11 @@ class VmapEngine extends ChangeNotifier {
         url,
         cacheDirectory: source.cacheDirectory,
         userAgent: source.userAgent,
+        headers: source.headers,
       );
-    } catch (_) {}
+    } catch (e) {
+      onError?.call(e);
+    }
     if (loaded == null) return;
     if (_disposed || url != _spriteUrl) {
       loaded.dispose();
@@ -750,7 +803,7 @@ class VmapEngine extends ChangeNotifier {
       }
       ui.ImageShader? shader;
       if (!layer.perFeature) {
-        shader = _shaders.of(layer, width, scale, _context, _sprites);
+        shader = _shaders.of(layer, width, scale, _context, _sprites, color);
         if (shader == null && (layer.pattern != null)) continue;
       }
       final moved = layer.translate?.call(_context);
@@ -775,7 +828,7 @@ class VmapEngine extends ChangeNotifier {
           if (layer.width != null) {
             width = asNumber(layer.width!(_context)) ?? 0;
           }
-          shader = _shaders.of(layer, width, scale, _context, _sprites);
+          shader = _shaders.of(layer, width, scale, _context, _sprites, color);
           if (shader == null && layer.pattern != null) continue;
         }
         switch (layer.kind) {
@@ -794,12 +847,8 @@ class VmapEngine extends ChangeNotifier {
                 ..shader = shader;
             } else {
               _paint
-                ..color = const ui.Color(0xFFFFFFFF)
-                ..shader = shader
-                ..colorFilter = ui.ColorFilter.mode(
-                  ui.Color(color),
-                  ui.BlendMode.srcIn,
-                );
+                ..color = ui.Color(color | 0xFFFFFF)
+                ..shader = shader;
             }
             canvas.drawVertices(
               _stroke(

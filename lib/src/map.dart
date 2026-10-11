@@ -32,6 +32,8 @@ class VmapMap extends StatefulWidget {
     this.markerTextStyle,
     this.cacheDirectory,
     this.userAgentPackageName = 'unknown',
+    this.headers = const {},
+    this.onError,
     this.backgroundColor,
     this.onTap,
     this.onLongPress,
@@ -77,6 +79,13 @@ class VmapMap extends StatefulWidget {
   final TextStyle? markerTextStyle;
   final String? cacheDirectory;
   final String userAgentPackageName;
+
+  /// Sent with every request the map makes, for a server that wants a key or
+  /// a token in a header. Read once, when the map is first built.
+  final Map<String, String> headers;
+
+  /// Told of every style, tile or sprite that could not be loaded.
+  final void Function(Object error)? onError;
 
   /// Shown where no tile has loaded yet.
   final Color? backgroundColor;
@@ -157,6 +166,8 @@ class _VmapMapState extends State<VmapMap> {
             markerTextStyle: widget.markerTextStyle,
             cacheDirectory: widget.cacheDirectory,
             userAgentPackageName: widget.userAgentPackageName,
+            headers: widget.headers,
+            onError: widget.onError,
           ),
           if (widget.markers.isNotEmpty) MarkerLayer(markers: widget.markers),
           ...widget.children,

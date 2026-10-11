@@ -8,8 +8,9 @@ import 'style.dart';
 
 /// The repeating pictures layers are drawn through: dashes and patterns.
 class LayerShaders {
-  final Map<String, ui.Image> _dashImages = {};
-  final Map<(PaintLayer, double, double), ui.ImageShader> _shaders = {};
+  final Map<String, _DashImage> _dashImages = {};
+  final Map<(PaintLayer, double, double, int), ui.ImageShader> _shaders = {};
+  int _frame = 0;
   final Float64List _matrix = Float64List(16)
     ..[5] = 1
     ..[10] = 1
@@ -54,20 +55,38 @@ class LayerShaders {
       s.dispose();
     }
     _shaders.clear();
+    if (_dashImages.length > _maxDashImages) {
+      _dashImages.removeWhere((_, d) {
+        if (d.usedFrame == _frame) return false;
+        d.image.dispose();
+        return true;
+      });
+    }
+    _frame++;
   }
 
-  /// The repeating picture a layer is drawn through: its dashes, or the
-  /// pattern that fills it. Null for a plain colour, and for a pattern whose
-  /// sprite sheet has not loaded.
+  static const int _maxDashImages = 48;
+
+  /// The repeating picture a layer is drawn through: its dashes in [color],
+  /// or the pattern that fills it. Null for a plain colour, and for a pattern
+  /// whose sprite sheet has not loaded.
+  ///
+  /// Dashes carry their colour because a colour filter on the paint does
+  /// not reach vertices drawn through a shader.
   ui.ImageShader? of(
     PaintLayer layer,
     double width,
     double scale,
     EvalContext context,
     SpriteSheet? sprites,
+    int color,
   ) {
-    if (layer.dash == null && layer.pattern == null) return null;
-    final key = (layer, width, scale);
+    final blur = layer.blur;
+    if (layer.dash == null && layer.pattern == null && blur == null) {
+      return null;
+    }
+    final rgb = layer.pattern != null ? 0 : color & 0xFFFFFF;
+    final key = (layer, width, scale, rgb);
     final made = _shaders[key];
     if (made != null) return made;
     final ui.Image image;
@@ -79,8 +98,24 @@ class LayerShaders {
       for (final d in dash) {
         total += d;
       }
-      image = _dashImages[dash.join(',')] ??= _dashImage(dash, total);
+      final kept =
+          _dashImages['${dash.join(',')}|${layer.dashCap.index}|$rgb'] ??=
+              _DashImage(_dashImage(dash, total, layer.dashCap, rgb));
+      kept.usedFrame = _frame;
+      image = kept.image;
       stretch = total * width / scale / image.width;
+    } else if (blur != null) {
+      if (width <= 0) return null;
+      final step = ((asNumber(blur(context)) ?? 0) / width * _blurSteps * 2)
+          .round()
+          .clamp(0, _blurSteps);
+      if (step == 0) return null;
+      final kept = _dashImages['b|$step|$rgb'] ??= _DashImage(
+        _blurImage(step / _blurSteps / 2, rgb),
+      );
+      kept.usedFrame = _frame;
+      image = kept.image;
+      stretch = 1;
     } else {
       final sheet = sprites;
       if (sheet == null) return null;
@@ -95,11 +130,7 @@ class LayerShaders {
     final along = layer.isLine;
     _matrix
       ..[0] = stretch
-      ..[5] = dash != null
-          ? 1
-          : along
-          ? 1 / image.height
-          : stretch;
+      ..[5] = along ? 1 / image.height : stretch;
     final shader = ui.ImageShader(
       image,
       ui.TileMode.repeated,
@@ -111,22 +142,73 @@ class LayerShaders {
   }
 
   static const int _dashImageWidth = 256;
+  static const int _blurSteps = 16;
+  static const int _blurImageHeight = 64;
 
-  /// One period of a dash pattern as a strip of white and clear.
-  ui.Image _dashImage(Float64List dash, double total) {
+  /// A strip across a line of [rgb] that fades out over [reach] of the
+  /// line's width at each edge.
+  ui.Image _blurImage(double reach, int rgb) {
+    final recorder = ui.PictureRecorder();
+    final solid = ui.Color(0xFF000000 | rgb);
+    final clear = ui.Color(rgb);
+    ui.Canvas(recorder).drawRect(
+      const ui.Rect.fromLTWH(0, 0, 2, _blurImageHeight + 0.0),
+      ui.Paint()
+        ..shader = ui.Gradient.linear(
+          ui.Offset.zero,
+          const ui.Offset(0, _blurImageHeight + 0.0),
+          [clear, solid, solid, clear],
+          [0, reach, 1 - reach, 1],
+        ),
+    );
+    final picture = recorder.endRecording();
+    final image = picture.toImageSync(2, _blurImageHeight);
+    picture.dispose();
+    return image;
+  }
+
+  /// One period of a dash pattern as a strip of [rgb] and clear, as tall as
+  /// the line is wide.
+  ui.Image _dashImage(Float64List dash, double total, DashCap cap, int rgb) {
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder);
-    final paint = ui.Paint()..color = const ui.Color(0xFFFFFFFF);
+    final paint = ui.Paint()..color = ui.Color(0xFF000000 | rgb);
+    final height = cap == DashCap.round ? 32.0 : 2.0;
+    final lineWidth = _dashImageWidth / total;
+    final reach = cap == DashCap.butt ? 0.0 : lineWidth / 2;
     var at = 0.0;
     for (var i = 0; i < dash.length; i++) {
       final length = dash[i] / total * _dashImageWidth;
       if (i.isEven) {
-        canvas.drawRect(ui.Rect.fromLTWH(at, 0, math.max(1, length), 2), paint);
+        // A dash that runs past one end of the strip comes back in at the
+        // other.
+        for (final shift in const [-1, 0, 1]) {
+          final rect = ui.Rect.fromLTWH(
+            at - reach + shift * _dashImageWidth,
+            0,
+            math.max(1, length + reach * 2),
+            height,
+          );
+          if (cap == DashCap.round) {
+            canvas.drawRRect(
+              ui.RRect.fromRectAndRadius(
+                rect,
+                ui.Radius.elliptical(
+                  math.min(reach, rect.width / 2),
+                  height / 2,
+                ),
+              ),
+              paint,
+            );
+          } else {
+            canvas.drawRect(rect, paint);
+          }
+        }
       }
       at += length;
     }
     final picture = recorder.endRecording();
-    final image = picture.toImageSync(_dashImageWidth, 2);
+    final image = picture.toImageSync(_dashImageWidth, height.toInt());
     picture.dispose();
     return image;
   }
@@ -134,8 +216,15 @@ class LayerShaders {
   void dispose() {
     startFrame();
     _backdrop?.dispose();
-    for (final i in _dashImages.values) {
-      i.dispose();
+    for (final d in _dashImages.values) {
+      d.image.dispose();
     }
   }
+}
+
+class _DashImage {
+  _DashImage(this.image);
+
+  final ui.Image image;
+  int usedFrame = 0;
 }

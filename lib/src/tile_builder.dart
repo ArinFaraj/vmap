@@ -379,6 +379,7 @@ class TileBuilder {
           final mesher = group.line ??= LineMesher(
             distances: bucket.dashed,
             offsets: bucket.offset,
+            edged: bucket.edged,
             join: bucket.join,
           );
           for (var r = 0; r < _sink.ringCount; r++) {

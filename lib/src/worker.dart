@@ -10,6 +10,7 @@ import 'query.dart';
 import 'pmtiles.dart';
 import 'style.dart';
 import 'tile_builder.dart';
+import 'net.dart';
 
 class TileId {
   const TileId(this.z, this.x, this.y);
@@ -36,6 +37,7 @@ class TileSourceConfig {
   const TileSourceConfig({
     this.cacheDirectory,
     this.userAgent = 'vmap',
+    this.headers = const {},
     this.workers = 2,
   });
 
@@ -43,6 +45,10 @@ class TileSourceConfig {
   /// cache.
   final String? cacheDirectory;
   final String userAgent;
+
+  /// Sent with every request for a style, its tiles and its pictures, for a
+  /// server that wants a key or a token in a header.
+  final Map<String, String> headers;
   final int workers;
 }
 
@@ -118,6 +124,9 @@ class TilePool {
   bool _confirmed = false;
   final Set<TileId> _notOnDisk = {};
 
+  /// The folder under the cache directory that holds this source's tiles.
+  String? get cacheName => _template?.hashCode.toRadixString(36);
+
   File? get _templateFile => config.cacheDirectory == null
       ? null
       : File(
@@ -138,7 +147,7 @@ class TilePool {
           throw StateError('The source ${_def.name} has no tiles');
         }
         if (PmTiles.handles(direct) && _def.maxZoom == null) {
-          final archive = PmTiles(direct);
+          final archive = PmTiles(direct, headers: config.headers);
           try {
             maxZoom = await archive.maxZoom;
           } finally {
@@ -217,6 +226,7 @@ class TilePool {
       nameKeys,
       sheet.zoomOffset,
       source,
+      config.headers,
     ], debugName: 'vmap-tiles-$source-$index');
     final ready = Completer<SendPort>();
     final worker = _Worker(isolate, inbox);
@@ -236,15 +246,17 @@ class TilePool {
   Future<String> _fetchTemplate() async {
     final client = HttpClient()..userAgent = config.userAgent;
     try {
-      final request = await client
-          .getUrl(Uri.parse(_def.tileJsonUrl!))
-          .timeout(const Duration(seconds: 10));
+      final request = await openGet(
+        client,
+        _def.tileJsonUrl!,
+        config.headers,
+      ).timeout(const Duration(seconds: 10));
       final response = await request.close().timeout(
         const Duration(seconds: 10),
       );
       final json =
           jsonDecode(await utf8.decodeStream(response)) as Map<String, dynamic>;
-      final template = (json['tiles'] as List).first as String;
+      final template = tileTemplate(json['tiles'])!;
       final deepest = json['maxzoom'];
       if (deepest is num) maxZoom = deepest.toInt();
       final file = _templateFile;
@@ -387,6 +399,7 @@ Future<void> _workerMain(List<Object?> init) async {
     zoomOffset: init[6]! as double,
   );
   final source = init[7]! as int;
+  final headers = (init[8]! as Map).cast<String, String>();
   final builder = TileBuilder(sheet, source: source);
   final inbox = ReceivePort();
   out.send(inbox.sendPort);
@@ -407,7 +420,7 @@ Future<void> _workerMain(List<Object?> init) async {
         );
       }
       try {
-        final request = await client.getUrl(Uri.parse(data));
+        final request = await openGet(client, data, headers);
         final response = await request.close().timeout(
           const Duration(seconds: 20),
         );
@@ -424,7 +437,7 @@ Future<void> _workerMain(List<Object?> init) async {
   }
 
   final archive = PmTiles.handles(template)
-      ? PmTiles(template, client: client)
+      ? PmTiles(template, client: client, headers: headers)
       : null;
 
   /// The bytes of the tiles built last, which a lookup reads again.
@@ -471,12 +484,14 @@ Future<void> _workerMain(List<Object?> init) async {
       keep(bytes);
       return bytes;
     }
-    final url = template
-        .replaceFirst('{z}', '$z')
-        .replaceFirst('{x}', '$x')
-        .replaceFirst('{y}', '${cover.row(z, y)}');
-    final request = await client.getUrl(Uri.parse(url));
-    final response = await request.close().timeout(const Duration(seconds: 20));
+    final (url, response) = await getTile(
+      client,
+      template,
+      z,
+      x,
+      cover.row(z, y),
+      headers,
+    );
     if (response.statusCode == 204 || response.statusCode == 404) {
       await response.drain<void>();
       return Uint8List(0);

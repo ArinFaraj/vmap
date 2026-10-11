@@ -43,6 +43,10 @@ class VmapLayer extends StatefulWidget {
     this.markerTextStyle,
     this.cacheDirectory,
     this.userAgentPackageName = 'unknown',
+    this.headers = const {},
+    this.onError,
+    this.minZoom = 0,
+    this.maxZoom = double.infinity,
     super.key,
   }) : engine = null;
 
@@ -58,6 +62,10 @@ class VmapLayer extends StatefulWidget {
       textStyle = null,
       markerTextStyle = null,
       cacheDirectory = null,
+      headers = const {},
+      onError = null,
+      minZoom = 0,
+      maxZoom = double.infinity,
       userAgentPackageName = 'unknown';
 
   final VmapEngine? engine;
@@ -98,6 +106,20 @@ class VmapLayer extends StatefulWidget {
   /// Sent to the tile server as the user agent, as `TileLayer` does.
   final String userAgentPackageName;
 
+  /// Sent with every request the map makes, for a server that wants a key or
+  /// a token in a header. Read once, when the layer is first built.
+  final Map<String, String> headers;
+
+  /// Told of every style, tile or sprite that could not be loaded. The map
+  /// keeps trying on its own; this is for the app to log or show.
+  final void Function(Object error)? onError;
+
+  /// The layer draws nothing, and asks for no tiles, below this zoom.
+  final double minZoom;
+
+  /// The layer draws nothing, and asks for no tiles, above this zoom.
+  final double maxZoom;
+
   @override
   State<VmapLayer> createState() => VmapLayerState();
 }
@@ -113,6 +135,13 @@ class VmapLayerState extends State<VmapLayer> {
 
   /// The credit the style's sources ask for, once the style has loaded.
   List<String> get attributions => _engine.attributions;
+
+  /// Loads the style and every tile again, from the cache where it has them.
+  void reload() => _engine.reload();
+
+  /// Deletes what the map keeps in the cache directory, then loads it again
+  /// from the network.
+  Future<void> clearCache() => _engine.clearCache();
 
   VmapEngine get _engine => widget.engine ?? _owned!;
 
@@ -138,8 +167,10 @@ class VmapLayerState extends State<VmapLayer> {
               source: TileSourceConfig(
                 cacheDirectory: widget.cacheDirectory,
                 userAgent: widget.userAgentPackageName,
+                headers: widget.headers,
               ),
             )
+            ..onError = widget.onError
             ..markers = widget.markers
             ..featureStates = widget.featureStates;
     }
@@ -155,6 +186,7 @@ class VmapLayerState extends State<VmapLayer> {
       ..pins = widget.pins
       ..overlay = widget.overlay
       ..curvedLabels = widget.curvedLabels
+      ..onError = widget.onError
       ..text = _text;
     if (!_sameMarkers(oldWidget.markers, widget.markers)) {
       owned.markers = widget.markers;
@@ -190,6 +222,9 @@ class VmapLayerState extends State<VmapLayer> {
   @override
   Widget build(BuildContext context) {
     final camera = MapCamera.of(context);
+    if (camera.zoom < widget.minZoom || camera.zoom > widget.maxZoom) {
+      return const SizedBox.shrink();
+    }
     return MobileLayerTransformer(
       child: RepaintBoundary(
         child: CustomPaint(

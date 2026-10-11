@@ -88,6 +88,51 @@ void main() {
     expect(moved.shape, isNot(plain.shape));
   });
 
+  test('the style reads dash caps and line-blur', () {
+    final dashed = _sheet(
+      {'line-cap': 'round'},
+      {
+        'line-dasharray': [2, 2],
+        'line-blur': 1,
+      },
+    );
+    expect(dashed.layers.single.dashCap, DashCap.round);
+    expect(dashed.layers.single.dash, [2, 2]);
+    expect(dashed.layers.single.blur, isNull);
+    expect(dashed.buckets.single.caps, isFalse);
+
+    final solid = _sheet(
+      {'line-cap': 'round'},
+      {
+        'line-dasharray': [12, 0],
+      },
+    );
+    expect(solid.layers.single.dash, isNull);
+    expect(solid.buckets.single.caps, isTrue);
+
+    final soft = _sheet({}, {'line-blur': 1});
+    expect(soft.layers.single.blur, isNotNull);
+    expect(soft.buckets.single.edged, isTrue);
+    expect(soft.buckets.single.dashed, isTrue);
+    expect(_sheet({}, {}).buckets.single.edged, isFalse);
+  });
+
+  test('the rim of a cap sits on the edge of a line that fades out', () {
+    MeshChunk capped({required bool edged}) => (LineMesher(
+      distances: true,
+      edged: edged,
+    )..addLine(Float64List.fromList([0, 0, 10, 0]), 0, 2, 0)).finish().single;
+    int onTheMiddle(MeshChunk chunk) => [
+      for (var i = 1; i < chunk.distances!.length; i += 2)
+        if (chunk.distances![i] == 0.5) i,
+    ].length;
+
+    expect(
+      onTheMiddle(capped(edged: false)),
+      greaterThan(onTheMiddle(capped(edged: true))),
+    );
+  });
+
   test('the style reads text-rotate and background-pattern', () {
     final sheet = StyleSheet.compile({
       'version': 8,

@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'net.dart';
+
 /// Reads tiles out of a PMTiles archive, version 3: one file holding a whole
 /// tile set, read a slice at a time from a web server or from disk.
 ///
@@ -8,7 +10,7 @@ import 'dart:typed_data';
 /// path, for example `pmtiles://https://example.org/world.pmtiles` or
 /// `pmtiles:///data/world.pmtiles`.
 class PmTiles {
-  PmTiles(String address, {HttpClient? client})
+  PmTiles(String address, {HttpClient? client, this.headers = const {}})
     : _where = address.substring(scheme.length),
       _client = client,
       _ownsClient = client == null;
@@ -19,6 +21,7 @@ class PmTiles {
       address != null && address.startsWith(scheme);
 
   final String _where;
+  final Map<String, String> headers;
   HttpClient? _client;
   final bool _ownsClient;
   RandomAccessFile? _file;
@@ -183,7 +186,7 @@ class PmTiles {
       await file.setPosition(offset);
       return file.read(length);
     }
-    final request = await (_client ??= HttpClient()).getUrl(Uri.parse(_where));
+    final request = await openGet(_client ??= HttpClient(), _where, headers);
     request.headers
       ..set('range', 'bytes=$offset-${offset + length - 1}')
       ..set('accept-encoding', 'identity');

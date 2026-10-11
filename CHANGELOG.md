@@ -1,3 +1,22 @@
+## 0.16.0
+
+- Dashed lines are drawn in their own colour. They came out white on some
+  renderers, which is what made the dark styles look full of dotted lines.
+- `line-cap` round and square shape the dashes too, as in MapLibre.
+- `line-blur`: a line with a soft edge.
+- A label halo wider than a pixel is filled in, with no gaps around thin
+  letters.
+- `headers` on the map, the layer and `TileSourceConfig`: sent with every
+  request for a style, its tiles, sprites and archives.
+- `onError` on the map, the layer and the engine tells the app of a style,
+  tile or sprite that could not be loaded.
+- `reload()` and `clearCache()` on the layer's state and on the engine.
+  `clearCache` deletes only what the map itself keeps in the directory.
+- A source that lists several `tiles` addresses spreads its tiles over them
+  and asks the next when one fails. `{s}` in an address stands for the
+  hosts a, b and c.
+- `minZoom` and `maxZoom` on `VmapLayer`.
+
 ## 0.15.0
 
 - A tile source's `bounds` and `minzoom`: tiles the source does not have

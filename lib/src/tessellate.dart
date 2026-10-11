@@ -180,11 +180,16 @@ class LineMesher {
   LineMesher({
     bool distances = false,
     bool offsets = false,
+    this.edged = false,
     this.join = LineJoin.round,
   }) : _b = _Buffers(true, withDistances: distances, withOffsets: offsets);
 
   final _Buffers _b;
   final LineJoin join;
+
+  /// The rim of a cap or join sits on the line's edge across its width
+  /// instead of on its middle.
+  final bool edged;
 
   /// The direction the vertices being added move in for a line offset.
   double _ox = 0;
@@ -344,7 +349,7 @@ class LineMesher {
       final a = step * j;
       final c = math.cos(a);
       final s = math.sin(a);
-      _vertex(cx, cy, ex * c - ey * s, ex * s + ey * c);
+      _vertex(cx, cy, ex * c - ey * s, ex * s + ey * c, edged ? 0 : 0.5);
     }
     final idx = _b.idx;
     var k = _b.indexCount;

@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'builtin_style.dart';
 import 'cluster.dart';
 import 'expr.dart';
+import 'net.dart';
 import 'tessellate.dart';
 
 /// Which map style to draw: a MapLibre style document, or the style that
@@ -250,6 +251,7 @@ class Bucket {
     this.dashed = false,
     this.outline = false,
     this.offset = false,
+    this.edged = false,
     this.join = LineJoin.miter,
     this.variantKeys = const [],
   });
@@ -269,6 +271,10 @@ class Bucket {
 
   /// Keeps what each vertex needs to draw the line beside its centre line.
   final bool offset;
+
+  /// The rim of every cap and join counts as the line's edge, which a line
+  /// that fades out towards its edges needs.
+  final bool edged;
   final LineJoin join;
 
   /// The feature properties the paint of its layers reads. Features are
@@ -279,6 +285,9 @@ class Bucket {
 
   bool get isLine => kind == BucketKind.line;
 }
+
+/// How the ends of a dash are drawn.
+enum DashCap { butt, round, square }
 
 /// A fill, line or circle layer of the style, in drawing order.
 class PaintLayer {
@@ -292,7 +301,9 @@ class PaintLayer {
     required this.opacity,
     this.width,
     this.offset,
+    this.blur,
     this.dash,
+    this.dashCap = DashCap.butt,
     this.pattern,
     this.strokeColor,
     this.strokeWidth,
@@ -318,8 +329,15 @@ class PaintLayer {
   /// pixels.
   final Expr? offset;
 
+  /// How far in from its edges a line fades out, in logical pixels.
+  final Expr? blur;
+
   /// Lengths of dashes and gaps in turn, in line widths.
   final Float64List? dash;
+
+  /// A round or square cap makes every dash half a line width longer at
+  /// each end.
+  final DashCap dashCap;
 
   /// The name of the sprite image that fills the shape, or that is repeated
   /// along the line.
@@ -748,10 +766,7 @@ class StyleSheet {
       if (from is! Map) return null;
       final geoJson = from['type'] == 'geojson';
       if (!geoJson && from['type'] != 'vector') return null;
-      final tiles = from['tiles'];
-      final direct = tiles is List && tiles.isNotEmpty
-          ? tiles.first as String?
-          : null;
+      final direct = tileTemplate(from['tiles']);
       final data = from['data'];
       final maxZoom = asNumber(from['maxzoom'])?.toInt();
       final cluster = geoJson && from['cluster'] == true
@@ -835,14 +850,11 @@ class StyleSheet {
             from['type'] != (relief ? 'raster-dem' : 'raster')) {
           continue;
         }
-        final direct = from['tiles'];
         rasterAt.add(layers.length);
         rasters.add(
           RasterLayer(
             tileJsonUrl: from['url'] as String?,
-            tiles: direct is List && direct.isNotEmpty
-                ? direct.first as String?
-                : null,
+            tiles: tileTemplate(from['tiles']),
             tileSize: asNumber(from['tileSize']) ?? 512,
             sourceMaxZoom: asNumber(from['maxzoom'])?.toInt(),
             cover: TileCover.of(from),
@@ -1035,6 +1047,7 @@ class StyleSheet {
         bool dashed = false,
         bool outline = false,
         bool offset = false,
+        bool edged = false,
         LineJoin join = LineJoin.miter,
       }) {
         final keys = reads.toList()..sort();
@@ -1047,6 +1060,7 @@ class StyleSheet {
           dashed,
           outline,
           offset,
+          edged,
           join.index,
           keys,
         ]);
@@ -1061,6 +1075,7 @@ class StyleSheet {
               dashed: dashed,
               outline: outline,
               offset: offset,
+              edged: edged,
               join: join,
               variantKeys: keys,
             ),
@@ -1153,6 +1168,7 @@ class StyleSheet {
           'line-offset',
         ]);
         final beside = paint['line-offset'];
+        final blur = paint['line-blur'];
         final dash = _dash(paint['line-dasharray']);
         final own = compileExpr(paint['line-width'] ?? 1);
         final gap = paint['line-gap-width'];
@@ -1163,6 +1179,7 @@ class StyleSheet {
               (asNumber(own(c)) ?? 1) * 2 + (asNumber(between(c)) ?? 0);
         }
         final picture = paint['line-pattern'];
+        final soft = blur != null && dash == null && picture == null;
         layers.add(
           PaintLayer(
             id: id,
@@ -1174,7 +1191,8 @@ class StyleSheet {
                   dash == null &&
                   picture == null &&
                   layout['line-cap'] == 'round',
-              dashed: dash != null || picture != null,
+              dashed: dash != null || picture != null || soft,
+              edged: soft,
               offset: beside != null,
               join: switch (layout['line-join']) {
                 'round' => LineJoin.round,
@@ -1189,7 +1207,13 @@ class StyleSheet {
             opacity: compileExpr(opacity),
             width: width,
             offset: beside == null ? null : compileExpr(beside),
+            blur: soft ? compileExpr(blur) : null,
             dash: picture == null ? dash : null,
+            dashCap: switch (layout['line-cap']) {
+              'round' => DashCap.round,
+              'square' => DashCap.square,
+              _ => DashCap.butt,
+            },
             pattern: picture == null ? null : compileText(picture),
             perFeature: names.isNotEmpty,
           ),

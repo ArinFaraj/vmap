@@ -1472,8 +1472,14 @@ class LabelEngine {
               ? ui.ImageFilter.blur(sigmaX: haloBlur / 2, sigmaY: haloBlur / 2)
               : null,
       );
-      for (final offset in _haloOffsets) {
-        canvas.drawParagraph(paragraph, at + offset * (haloWidth / 1.5));
+      // A ring of copies a pixel apart leaves no gap between the strokes of
+      // thin letters, which one ring of a wide halo does.
+      final rings = haloWidth.ceil();
+      for (var ring = 1; ring <= rings; ring++) {
+        final reach = haloWidth * ring / rings / 1.5;
+        for (final offset in _haloOffsets) {
+          canvas.drawParagraph(paragraph, at + offset * reach);
+        }
       }
       canvas.restore();
     }
