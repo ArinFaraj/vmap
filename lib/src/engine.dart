@@ -497,15 +497,7 @@ class VmapEngine extends ChangeNotifier {
       ));
       final name = m is NamedMarker ? m.name : null;
       if (name == null || name.isEmpty) continue;
-      _markerLabels.add(
-        LabelCandidate(
-          'm|$i|$name',
-          BuiltLabel(-1, -1000000 + i, name, 0, 0, null),
-          wx,
-          wy,
-          0,
-        ),
-      );
+      _markerLabels.add(LabelCandidate.marker(i, name, wx, wy));
     }
     _labels.obstacles = areas;
     notifyListeners();

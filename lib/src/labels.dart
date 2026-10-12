@@ -4,7 +4,9 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show listEquals;
 
+import 'collision_boxes.dart';
 import 'expr.dart';
+import 'label_view.dart';
 import 'label_path.dart';
 import 'platform.dart';
 import 'pins.dart';
@@ -58,11 +60,34 @@ class VmapTextStyle {
 
 class LabelCandidate {
   LabelCandidate(this.key, this.source, this.tileX, this.tileY, this.tileSpan)
-    : worldX = tileX + source.x / tileExtent * tileSpan,
+    : marker = null,
+      worldX = tileX + source.x / tileExtent * tileSpan,
       worldY = tileY + source.y / tileExtent * tileSpan,
       _line = source.line;
 
+  /// The name of marker number [marker], written beside it at [worldX],
+  /// [worldY] ahead of every map label.
+  LabelCandidate.marker(int this.marker, String name, this.worldX, this.worldY)
+    : key = 'm|$marker|$name',
+      source = BuiltLabel(-1, 0, name, 0, 0, null),
+      tileX = worldX,
+      tileY = worldY,
+      tileSpan = 0,
+      _line = null;
+
   final String key;
+
+  /// The number of the marker this names, in the order the markers were
+  /// given. Null for a label of the map.
+  final int? marker;
+
+  /// Lower is placed first. Markers' names come before every map label.
+  int get rank => switch (marker) {
+    final index? => _markersFirst + index,
+    null => source.priority,
+  };
+
+  static const int _markersFirst = -(1 << 30);
   late String spriteKey = '${source.layer}|${source.text}';
 
   /// The colours the text was last asked for in, when they come from the
@@ -306,16 +331,21 @@ class LabelEngine {
   double zoomOffset = 0;
   final EvalContext _context = EvalContext();
 
-  double _size(int layer, double styleZoom) {
-    if (layer < 0) return text.markerSize * text.scale;
+  /// The style layer that draws [c]. Null for a marker's name.
+  SymbolLayer? _symbolOf(LabelCandidate c) =>
+      c.marker == null ? symbols[c.source.layer] : null;
+
+  double _size(LabelCandidate c, double styleZoom) {
+    final symbol = _symbolOf(c);
+    if (symbol == null) return text.markerSize * text.scale;
     _context.zoom = styleZoom;
-    return (asNumber(symbols[layer].size(_context)) ?? 16) * text.scale;
+    return (asNumber(symbol.size(_context)) ?? 16) * text.scale;
   }
 
-  bool _inRange(int layer, double styleZoom) =>
-      layer < 0 ||
-      (styleZoom >= symbols[layer].minZoom &&
-          styleZoom < symbols[layer].maxZoom);
+  bool _inRange(LabelCandidate c, double styleZoom) => switch (_symbolOf(c)) {
+    null => true,
+    final symbol => styleZoom >= symbol.minZoom && styleZoom < symbol.maxZoom,
+  };
 
   static const double _fadeSeconds = 0.2;
   static const double _haloPad = 4;
@@ -398,8 +428,6 @@ class LabelEngine {
 
   /// The labels that are showing or fading, which is all a frame draws.
   final List<_LabelState> _live = [];
-  Float32List _boxes = Float32List(1024);
-  int _boxCount = 0;
   final List<_LabelState> _placedRoads = [];
   final ui.Paint _imagePaint = ui.Paint()
     ..filterQuality = ui.FilterQuality.medium;
@@ -417,9 +445,6 @@ class LabelEngine {
   List<(double, double, double, double, double, double)> _obstacles = const [];
   double _obstacleReach = 0;
 
-  /// The collision box of the marker whose own name is being placed, which
-  /// that name may sit flush against. -1 otherwise.
-  int _ownBox = -1;
   List<(double, double, double, double, double, double)> get obstacles =>
       _obstacles;
   set obstacles(List<(double, double, double, double, double, double)> value) {
@@ -433,14 +458,9 @@ class LabelEngine {
 
   double _lastZoom = 0;
 
-  double _rotation = 0;
+  final LabelView _view = LabelView();
+  final CollisionBoxes _boxes = CollisionBoxes();
   double _placedRotation = 0;
-  double _cos = 1;
-  double _sin = 0;
-  double _cx = 0;
-  double _cy = 0;
-  double _px = 0;
-  double _py = 0;
 
   /// A move of [by] logical pixels as the upright label frame sees it: one
   /// along the map's sides turns with the map.
@@ -449,25 +469,9 @@ class LabelEngine {
     final by = translate(_context..zoom = styleZoom);
     if (by is! List || by.length != 2) return (0, 0);
     final x = asNumber(by[0]) ?? 0, y = asNumber(by[1]) ?? 0;
-    return onScreen || _rotation == 0
+    return onScreen || _view.rotation == 0
         ? (x, y)
-        : (x * _cos - y * _sin, x * _sin + y * _cos);
-  }
-
-  /// Sets [_px] and [_py] to where a point of the world is on the screen,
-  /// with the map's rotation undone so labels can be laid out upright.
-  void _project(double wx, double wy, double world, ui.Offset origin) {
-    final x = wx * world - origin.dx;
-    final y = wy * world - origin.dy;
-    if (_rotation == 0) {
-      _px = x;
-      _py = y;
-      return;
-    }
-    final dx = x - _cx;
-    final dy = y - _cy;
-    _px = _cx + dx * _cos - dy * _sin;
-    _py = _cy + dx * _sin + dy * _cos;
+        : (x * _view.cos - y * _view.sin, x * _view.sin + y * _view.cos);
   }
 
   /// While the zoom is changing a label's image is stretched further before
@@ -496,6 +500,12 @@ class LabelEngine {
   int get spriteCount => _sprites.length;
 
   int get shown => _states.values.where((s) => s.opacity > 0).length;
+
+  /// The keys of the labels showing, for a test to read.
+  Set<String> get shownKeys => {
+    for (final st in _live)
+      if (st.opacity > 0) st.candidate.key,
+  };
 
   void clear() {
     for (final sprite in _sprites.values) {
@@ -526,14 +536,10 @@ class LabelEngine {
     required bool zooming,
   }) {
     lastPlaceMicros = 0;
-    _rotation = rotation;
-    _cos = math.cos(rotation);
-    _sin = math.sin(rotation);
-    _cx = size.width / 2;
-    _cy = size.height / 2;
+    final world = 256.0 * math.pow(2, zoom);
+    _view.frame(rotation: rotation, size: size, world: world, origin: origin);
     if (_zooming && !zooming) _placeAgain = true;
     _zooming = zooming;
-    final world = 256.0 * math.pow(2, zoom);
     final nowMs = _clock.elapsedMilliseconds;
     final moved =
         zoom != _placedZoom ||
@@ -600,9 +606,9 @@ class LabelEngine {
     if (rotation != 0) {
       canvas
         ..save()
-        ..translate(_cx, _cy)
+        ..translate(_view.cx, _view.cy)
         ..rotate(-rotation)
-        ..translate(-_cx, -_cy);
+        ..translate(-_view.cx, -_view.cy);
     }
     var kept = 0;
     for (var i = 0; i < _live.length; i++) {
@@ -612,7 +618,7 @@ class LabelEngine {
         st.sprite = _sprites[st.candidate.spriteKey];
       }
       final sprite = st.sprite;
-      final inRange = _inRange(st.candidate.source.layer, styleZoom);
+      final inRange = _inRange(st.candidate, styleZoom);
       final wantsText = st.candidate.hasText && st.showText;
       final target =
           seen && inRange && st.placed && (sprite != null || !wantsText)
@@ -649,9 +655,9 @@ class LabelEngine {
         );
         _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
         final extent = pins.size + pinPad * 2;
-        _project(st.worldX, st.worldY, world, origin);
-        final px = _px - extent / 2;
-        final py = _py - extent / 2;
+        _view.project(st.worldX, st.worldY);
+        final px = _view.x - extent / 2;
+        final py = _view.y - extent / 2;
         canvas.drawImageRect(
           image,
           ui.Rect.fromLTWH(
@@ -675,12 +681,11 @@ class LabelEngine {
           255,
           st.opacity * st.iconOpacity,
         );
-        final tinted = icon.sdf && st.candidate.source.layer >= 0;
+        final symbol = _symbolOf(st.candidate);
         ui.ColorFilter? fill, rim;
-        if (tinted) {
+        if (icon.sdf && symbol != null) {
           _context.zoom = styleZoom;
           _bind(st.candidate);
-          final symbol = symbols[st.candidate.source.layer];
           final by = st.iconW / icon.width;
           fill = _sdfFilter(
             Rgba.of(symbol.iconColor(_context)) ?? Rgba.black,
@@ -699,12 +704,10 @@ class LabelEngine {
             );
           }
         }
-        final fit =
-            st.candidate.source.layer >= 0 &&
-            symbols[st.candidate.source.layer].textFit;
-        _project(st.worldX, st.worldY, world, origin);
-        final ix = _px + (fit ? st.dx : st.iconDx);
-        final iy = _py + (fit ? st.dy : st.iconDy);
+        final fit = symbol?.textFit ?? false;
+        _view.project(st.worldX, st.worldY);
+        final ix = _view.x + (fit ? st.dx : st.iconDx);
+        final iy = _view.y + (fit ? st.dy : st.iconDy);
         final from = st.candidate.source;
         final turn = from.turns ? from.angle + rotation : from.angle;
         final area = ui.Rect.fromLTWH(
@@ -753,7 +756,7 @@ class LabelEngine {
         for (var j = 0; j < n; j++) {
           final i = flip ? n - 1 - j : j;
           final a = strips[i * 3 + 2] + rotation + (flip ? math.pi : 0);
-          _project(strips[i * 3], strips[i * 3 + 1], world, origin);
+          _view.project(strips[i * 3], strips[i * 3 + 1]);
           final left = j == 0 ? 0.0 : pad + j * slice - 0.5;
           final right = j == n - 1 ? pixelW : pad + (j + 1) * slice + 0.5;
           final anchorX = pad + (j + 0.5) * slice - left;
@@ -762,8 +765,10 @@ class LabelEngine {
           final ssin = math.sin(a) * k;
           transforms[j * 4] = scos;
           transforms[j * 4 + 1] = ssin;
-          transforms[j * 4 + 2] = _px + st.dx - scos * anchorX + ssin * anchorY;
-          transforms[j * 4 + 3] = _py + st.dy - ssin * anchorX - scos * anchorY;
+          transforms[j * 4 + 2] =
+              _view.x + st.dx - scos * anchorX + ssin * anchorY;
+          transforms[j * 4 + 3] =
+              _view.y + st.dy - ssin * anchorX - scos * anchorY;
           rects[j * 4] = left;
           rects[j * 4 + 1] = 0;
           rects[j * 4 + 2] = right;
@@ -780,9 +785,9 @@ class LabelEngine {
         );
         continue;
       }
-      _project(st.worldX, st.worldY, world, origin);
-      final sx = _px + st.dx;
-      final sy = _py + st.dy;
+      _view.project(st.worldX, st.worldY);
+      final sx = _view.x + st.dx;
+      final sy = _view.y + st.dy;
       final turn = st.screenAngle;
       final w = sprite.width * st.scale;
       final h = sprite.height * st.scale;
@@ -864,10 +869,10 @@ class LabelEngine {
     const margin = 60.0;
     for (final list in sources) {
       for (final c in list) {
-        if (!_inRange(c.source.layer, styleZoom)) continue;
-        _project(c.worldX, c.worldY, world, origin);
-        final sx = _px;
-        final sy = _py;
+        if (!_inRange(c, styleZoom)) continue;
+        _view.project(c.worldX, c.worldY);
+        final sx = _view.x;
+        final sy = _view.y;
         if (sx < -margin ||
             sy < -margin ||
             sx > size.width + margin ||
@@ -879,20 +884,23 @@ class LabelEngine {
         st
           ..seenPass = _pass
           ..candidate = c
-          ..sortKey = c.source.priority - (st.placed ? 45 : 0);
+          ..sortKey = c.rank - (st.placed ? 45 : 0);
         states.add(st);
       }
     }
     states.sort((a, b) => a.sortKey - b.sortKey);
 
-    _boxCount = 0;
+    _boxes.clear();
     _placedRoads.clear();
-    for (final (wx, wy, w, h, shiftX, shiftY) in obstacles) {
-      _project(wx, wy, world, origin);
-      final ox = _px + shiftX;
-      final oy = _py + shiftY;
-      _addBox(ox - w / 2, oy - h / 2, ox + w / 2, oy + h / 2);
-    }
+    final obstacleBoxes = [
+      for (final (wx, wy, w, h, shiftX, shiftY) in obstacles)
+        () {
+          _view.project(wx, wy);
+          final ox = _view.x + shiftX;
+          final oy = _view.y + shiftY;
+          return _boxes.add(ox - w / 2, oy - h / 2, ox + w / 2, oy + h / 2);
+        }(),
+    ];
     final fitKey = (zoom * 3).round();
     var considered = 0;
     for (final st in states) {
@@ -903,11 +911,11 @@ class LabelEngine {
       final c = st.candidate;
       final isRoad = c.source.line != null;
       _bind(c);
-      final layer = c.source.layer < 0 ? null : symbols[c.source.layer];
-      final textPad = layer?.textPadding ?? _boxPad;
-      final iconPad = layer?.iconPadding ?? _boxPad;
-      _pad = textPad;
-      final fontSize = _size(c.source.layer, styleZoom);
+      final layer = _symbolOf(c);
+      final textPad = layer?.textPadding ?? CollisionBoxes.defaultPad;
+      final iconPad = layer?.iconPadding ?? CollisionBoxes.defaultPad;
+      _boxes.pad = textPad;
+      final fontSize = _size(c, styleZoom);
       if (c.source.props != null && c.hasText) {
         final ink = _ink(symbols[c.source.layer]).hashCode;
         if (ink != c.ink) {
@@ -954,23 +962,25 @@ class LabelEngine {
                 layer.textTranslateOnScreen,
                 styleZoom,
               );
-        _project(st.worldX, st.worldY, world, origin);
-        final sx = _px + roadX;
-        final sy = _py + roadY;
-        var turn = (st.angle + _rotation) % (2 * math.pi);
+        _view.project(st.worldX, st.worldY);
+        final sx = _view.x + roadX;
+        final sy = _view.y + roadY;
+        var turn = (st.angle + _view.rotation) % (2 * math.pi);
         if (turn > math.pi) turn -= 2 * math.pi;
         if (turn > math.pi / 2) turn -= math.pi;
         if (turn < -math.pi / 2) turn += math.pi;
         st.screenAngle = turn;
         if (st.curve != null) {
-          final reach = (textH + room) / 2 + _pad;
+          final reach = (textH + room) / 2 + _boxes.pad;
           if (_curveHits(st, world, origin, textW, textH, reach, add: false)) {
             continue;
           }
           _curveHits(st, world, origin, textW, textH, reach, add: true);
         } else {
-          if (_collides(sx, sy, textW + room, textH + room, turn)) continue;
-          _addBoxes(sx, sy, textW + room, textH + room, turn);
+          if (_boxes.collides(sx, sy, textW + room, textH + room, turn)) {
+            continue;
+          }
+          _boxes.take(sx, sy, textW + room, textH + room, turn);
         }
         st
           ..dx = roadX
@@ -991,14 +1001,14 @@ class LabelEngine {
         ..angle = 0
         ..curve = null
         ..screenAngle = 0;
-      final beside = c.source.layer < 0;
-      final symbol = beside ? null : symbols[c.source.layer];
+      final beside = c.marker != null;
+      final symbol = _symbolOf(c);
       if (c.source.spaced && c.hasText && _nearSameRoad(st, world)) continue;
       final spin = (symbol?.textRotate ?? 0) * math.pi / 180;
       st.screenAngle = spin;
-      _project(st.worldX, st.worldY, world, origin);
-      final sx = _px;
-      final sy = _py;
+      _view.project(st.worldX, st.worldY);
+      final sx = _view.x;
+      final sy = _view.y;
 
       var tx = 0.0;
       var ty = 0.0;
@@ -1110,7 +1120,7 @@ class LabelEngine {
             fy = moveY + ay * ((symbol.offsetY * fontSize).abs() + textH / 2);
           }
           if (!(symbol!.textOverlaps) &&
-              _collides(sx + fx, sy + fy, textW, textH, spin)) {
+              _boxes.collides(sx + fx, sy + fy, textW, textH, spin)) {
             continue;
           }
           st
@@ -1123,7 +1133,7 @@ class LabelEngine {
         if (obstacles.isEmpty) {
           textFits =
               (symbol?.textOverlaps ?? false) ||
-              !_collides(sx + tx, sy + ty, textW, textH, spin);
+              !_boxes.collides(sx + tx, sy + ty, textW, textH, spin);
           st
             ..dx = tx
             ..dy = ty;
@@ -1133,10 +1143,10 @@ class LabelEngine {
           var shiftX = tx;
           var shiftY = ty;
           if (beside) {
-            final own = c.source.priority + 1000000;
+            final own = c.marker!;
             down = textH / 2 + obstacles[own].$4 / 2 + 2;
             across = textW / 2 + obstacles[own].$3 / 2 + 4;
-            _ownBox = own * 4;
+            _boxes.ignored = obstacleBoxes[own];
             shiftX = obstacles[own].$5;
             shiftY = obstacles[own].$6;
           }
@@ -1162,22 +1172,22 @@ class LabelEngine {
             if (hasIcon && k > 1) break;
             final fx = k == 1 ? ox : ox + shiftX;
             final fy = k == 1 ? oy : oy + shiftY;
-            if (_collides(sx + fx, sy + fy, textW, textH, spin)) continue;
+            if (_boxes.collides(sx + fx, sy + fy, textW, textH, spin)) continue;
             st
               ..dx = fx
               ..dy = fy;
             textFits = true;
           }
-          _ownBox = -1;
+          _boxes.ignored = null;
         }
       }
       final fitted = pin == null && (symbol?.textFit ?? false);
-      _pad = iconPad;
+      _boxes.pad = iconPad;
       final iconFits =
           hasIcon &&
           ((symbol?.iconOverlaps ?? false) ||
               fitted ||
-              !_collides(
+              !_boxes.collides(
                 sx + st.iconDx,
                 sy + st.iconDy,
                 st.iconW,
@@ -1195,12 +1205,12 @@ class LabelEngine {
       }
       if (!showText && !showIcon) continue;
       if (showText && !(symbol?.textIgnored ?? false)) {
-        _pad = textPad;
-        _addBoxes(sx + st.dx, sy + st.dy, textW, textH, spin);
+        _boxes.pad = textPad;
+        _boxes.take(sx + st.dx, sy + st.dy, textW, textH, spin);
       }
       if (showIcon && !fitted && !(symbol?.iconIgnored ?? false)) {
-        _pad = iconPad;
-        _addBoxes(sx + st.iconDx, sy + st.iconDy, st.iconW, st.iconH, 0);
+        _boxes.pad = iconPad;
+        _boxes.take(sx + st.iconDx, sy + st.iconDy, st.iconW, st.iconH, 0);
       }
       st
         ..showText = showText
@@ -1342,9 +1352,7 @@ class LabelEngine {
       ..curveMid = ((from + to) / 2 - before) * unit;
     final count = math.max(2, ((to - from) * unitPx / (textH * 0.7)).ceil());
     final strips = _layStrips(st, count, (to - from) / count * unit);
-    final limit = c.source.layer < 0
-        ? _maxBend
-        : symbols[c.source.layer].maxBend ?? _maxBend;
+    final limit = _symbolOf(c)?.maxBend ?? _maxBend;
     for (var i = 1; i < count; i++) {
       var turn = (strips[i * 3 + 2] - strips[i * 3 - 1]).abs();
       if (turn > math.pi) turn = 2 * math.pi - turn;
@@ -1390,10 +1398,20 @@ class LabelEngine {
     final count = _stripCount(textW, textH);
     final strips = _layStrips(st, count, textW / count / world);
     for (var i = 0; i < count * 3; i += 3) {
-      _project(strips[i], strips[i + 1], world, origin);
+      _view.project(strips[i], strips[i + 1]);
       if (add) {
-        _addBox(_px - reach, _py - reach, _px + reach, _py + reach);
-      } else if (_hits(_px - reach, _py - reach, _px + reach, _py + reach)) {
+        _boxes.add(
+          _view.x - reach,
+          _view.y - reach,
+          _view.x + reach,
+          _view.y + reach,
+        );
+      } else if (_boxes.hits(
+        _view.x - reach,
+        _view.y - reach,
+        _view.x + reach,
+        _view.y + reach,
+      )) {
         return true;
       }
     }
@@ -1426,79 +1444,6 @@ class LabelEngine {
       }
     }
     return false;
-  }
-
-  static const double _boxPad = 3;
-
-  /// Clear space around the box being weighed or added.
-  double _pad = _boxPad;
-
-  bool _collides(double sx, double sy, double w, double h, double angle) {
-    if (angle == 0) {
-      return _hits(
-        sx - w / 2 - _pad,
-        sy - h / 2 - _pad,
-        sx + w / 2 + _pad,
-        sy + h / 2 + _pad,
-      );
-    }
-    final count = math.max(1, (w / h).ceil());
-    final cosA = math.cos(angle);
-    final sinA = math.sin(angle);
-    final r = h / 2 + _pad;
-    for (var i = 0; i < count; i++) {
-      final d = count == 1 ? 0.0 : -w / 2 + h / 2 + (w - h) * i / (count - 1);
-      final x = sx + cosA * d;
-      final y = sy + sinA * d;
-      if (_hits(x - r, y - r, x + r, y + r)) return true;
-    }
-    return false;
-  }
-
-  void _addBoxes(double sx, double sy, double w, double h, double angle) {
-    if (angle == 0) {
-      _addBox(
-        sx - w / 2 - _pad,
-        sy - h / 2 - _pad,
-        sx + w / 2 + _pad,
-        sy + h / 2 + _pad,
-      );
-      return;
-    }
-    final count = math.max(1, (w / h).ceil());
-    final cosA = math.cos(angle);
-    final sinA = math.sin(angle);
-    final r = h / 2 + _pad;
-    for (var i = 0; i < count; i++) {
-      final d = count == 1 ? 0.0 : -w / 2 + h / 2 + (w - h) * i / (count - 1);
-      final x = sx + cosA * d;
-      final y = sy + sinA * d;
-      _addBox(x - r, y - r, x + r, y + r);
-    }
-  }
-
-  bool _hits(double l, double t, double r, double b) {
-    final boxes = _boxes;
-    for (var i = 0; i < _boxCount; i += 4) {
-      if (i == _ownBox) continue;
-      if (l < boxes[i + 2] &&
-          r > boxes[i] &&
-          t < boxes[i + 3] &&
-          b > boxes[i + 1]) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  void _addBox(double l, double t, double r, double b) {
-    if (_boxCount + 4 > _boxes.length) {
-      _boxes = Float32List(_boxes.length * 2)..setRange(0, _boxCount, _boxes);
-    }
-    _boxes[_boxCount++] = l;
-    _boxes[_boxCount++] = t;
-    _boxes[_boxCount++] = r;
-    _boxes[_boxCount++] = b;
   }
 
   /// Turns a distance field into a crisp shape in [tint]. The edge of the
@@ -1542,11 +1487,11 @@ class LabelEngine {
     double dpr,
   ) {
     final source = st.candidate.source;
-    final beside = source.layer < 0;
-    final symbol = beside ? null : symbols[source.layer];
+    final beside = st.candidate.marker != null;
+    final symbol = _symbolOf(st.candidate);
     _context.zoom = styleZoom;
     _bind(st.candidate);
-    final fontSize = _size(source.layer, styleZoom);
+    final fontSize = _size(st.candidate, styleZoom);
     final isRoad = source.line != null;
     final label = symbol?.uppercase ?? false
         ? source.text.toUpperCase()
