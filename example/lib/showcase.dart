@@ -72,6 +72,18 @@ const places = [
   Place('Adana Doner', Category.food, 36.18557, 44.00434),
 ];
 
+/// How places are marked: not at all, with the style's own icons, or with
+/// the package's round pins.
+enum PlaceIcons {
+  none('None'),
+  style('Style'),
+  custom('Custom');
+
+  const PlaceIcons(this.label);
+
+  final String label;
+}
+
 class MapLook {
   const MapLook(this.label, this.style, {this.dark = false});
 
@@ -376,7 +388,11 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
   int? _place = _selected < 0 ? null : _selected;
   int _look = _initialLook();
 
-  bool _showPins = _pins;
+  PlaceIcons _icons = _pins ? PlaceIcons.custom : PlaceIcons.style;
+
+  /// For each look, the ids of the style's layers that draw icons, found
+  /// once the style document is read.
+  final Map<int, List<String>> _iconLayers = {};
   bool _showPlaces = _selected >= 0;
   bool _route = _live || const bool.fromEnvironment('OVERLAY');
   bool _clusters = const bool.fromEnvironment('CLUSTER');
@@ -398,6 +414,51 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
       Future<void>.delayed(const Duration(seconds: 12), _capture);
     }
     if (_route) _startWalker();
+    _findIconLayers(_look);
+  }
+
+  /// Reads which layers of look [index] draw icons, so they can be hidden.
+  Future<void> _findIconLayers(int index) async {
+    if (_iconLayers.containsKey(index)) return;
+    final style = looks[index].style;
+    Map<String, Object?>? document = style.document;
+    if (document == null && style.url != null) {
+      final client = HttpClient();
+      try {
+        final request = await client.getUrl(Uri.parse(style.url!));
+        final response = await request.close();
+        document = jsonDecode(
+          await response.transform(utf8.decoder).join(),
+        ) as Map<String, Object?>;
+      } catch (_) {
+        return;
+      } finally {
+        client.close();
+      }
+    }
+    final ids = [
+      for (final layer in (document?['layers'] as List?) ?? const [])
+        if (layer case {
+          'id': final String id,
+          'type': 'symbol',
+          'layout': {'icon-image': _},
+        })
+          id,
+    ];
+    if (mounted) setState(() => _iconLayers[index] = ids);
+  }
+
+  /// Hides the style's icons when no icons are wanted.
+  List<VmapStyleEdit> get _styleEdits => _icons == PlaceIcons.none
+      ? [
+          for (final id in _iconLayers[_look] ?? const <String>[])
+            VmapStyleEdit.layout(id, 'icon-image', null),
+        ]
+      : const [];
+
+  void _setLook(int index) {
+    setState(() => _look = index);
+    _findIconLayers(index);
   }
 
   void _startWalker() {
@@ -530,7 +591,8 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
               onTap: (_) => _select(null),
               style: look.style,
               markers: markers,
-              pins: _showPins ? VmapPins.standard : null,
+              pins: _icons == PlaceIcons.custom ? VmapPins.standard : null,
+              styleEdits: _styleEdits,
               overlay: _overlayShown,
               featureStates: _featureStates,
               onFeatureTap: (_, features) {
@@ -578,51 +640,35 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _Toolbar(
+                  _TopBar(
                     look: _look,
-                    onLook: (i) => setState(() => _look = i),
-                    onNorth: _northUp,
-                    toggles: [
-                      _Toggle(
-                        'Pins',
-                        Icons.place_outlined,
-                        _showPins,
-                        (on) => setState(() => _showPins = on),
-                      ),
-                      _Toggle(
-                        'Places',
-                        Icons.storefront_outlined,
-                        _showPlaces,
-                        (on) => setState(() {
+                    onLook: _setLook,
+                    icons: _icons,
+                    onIcons: (mode) => setState(() => _icons = mode),
+                    layers: [
+                      _Layer('Demo places', _showPlaces, (on) {
+                        setState(() {
                           _showPlaces = on;
                           if (!on) _place = null;
-                        }),
-                      ),
-                      _Toggle(
-                        'Route',
-                        Icons.directions_walk,
-                        _route,
-                        _setRoute,
-                      ),
-                      _Toggle(
+                        });
+                      }),
+                      _Layer('Walking route', _route, _setRoute),
+                      _Layer(
                         'Clusters',
-                        Icons.bubble_chart_outlined,
                         _clusters,
                         (on) => setState(() => _clusters = on),
                       ),
-                      _Toggle(
-                        'Curved names',
-                        Icons.gesture,
+                      _Layer(
+                        'Curved road names',
                         _curved,
                         (on) => setState(() => _curved = on),
                       ),
-                      _Toggle('Rotate', Icons.screen_rotation_alt, _rotate, (
-                        on,
-                      ) {
+                      _Layer('Rotation', _rotate, (on) {
                         setState(() => _rotate = on);
                         if (!on) _northUp();
                       }),
                     ],
+                    onNorth: _northUp,
                   ),
                   const Spacer(),
                   if (selected != null) _PlaceCard(place: selected),
@@ -673,132 +719,198 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
   }
 }
 
-/// One switch in the toolbar.
-class _Toggle {
-  const _Toggle(this.label, this.icon, this.on, this.onChanged);
+/// One thing in the layers menu that can be switched on and off.
+class _Layer {
+  const _Layer(this.label, this.on, this.onChanged);
 
   final String label;
-  final IconData icon;
   final bool on;
   final ValueChanged<bool> onChanged;
 }
 
-/// The row along the top: the style menu, the switches, and north up.
-class _Toolbar extends StatelessWidget {
-  const _Toolbar({
+/// The bar along the top: the style, the place icons and the layers, each a
+/// menu that names its current value, and a button that turns north up.
+class _TopBar extends StatelessWidget {
+  const _TopBar({
     required this.look,
     required this.onLook,
+    required this.icons,
+    required this.onIcons,
+    required this.layers,
     required this.onNorth,
-    required this.toggles,
   });
 
   final int look;
   final ValueChanged<int> onLook;
+  final PlaceIcons icons;
+  final ValueChanged<PlaceIcons> onIcons;
+  final List<_Layer> layers;
   final VoidCallback onNorth;
-  final List<_Toggle> toggles;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final on = layers.where((l) => l.on).length;
     return Row(
       spacing: 8,
       children: [
         Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(vertical: 4),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerStart,
             child: Row(
-              spacing: 8,
+              spacing: 6,
               children: [
-                _StyleMenu(look: look, onLook: onLook),
-                for (final t in toggles)
-                  FilterChip(
-                    avatar: Icon(t.icon, size: 18),
-                    label: Text(t.label),
-                    selected: t.on,
-                    onSelected: t.onChanged,
-                    showCheckmark: false,
-                    elevation: 2,
-                    shadowColor: Colors.black26,
-                    backgroundColor: scheme.surfaceContainerLowest,
-                    selectedColor: scheme.primaryContainer,
-                    side: BorderSide.none,
-                    shape: const StadiumBorder(),
-                  ),
+                _Menu(
+                  label: looks[look].label,
+                  items: [
+                    for (var i = 0; i < looks.length; i++)
+                      _Choice(looks[i].label, i == look, () => onLook(i)),
+                  ],
+                ),
+                _Menu(
+                  prefix: 'Icons',
+                  label: icons.label,
+                  items: [
+                    for (final mode in PlaceIcons.values)
+                      _Choice(mode.label, mode == icons, () => onIcons(mode)),
+                  ],
+                ),
+                _Menu(
+                  prefix: 'Layers',
+                  label: '$on',
+                  items: [
+                    for (final layer in layers)
+                      CheckboxMenuButton(
+                        value: layer.on,
+                        closeOnActivate: false,
+                        onChanged: (value) => layer.onChanged(value ?? false),
+                        child: Text(layer.label),
+                      ),
+                  ],
+                ),
               ],
             ),
           ),
         ),
-        Material(
-          color: scheme.surfaceContainerLowest,
-          elevation: 2,
-          shadowColor: Colors.black26,
-          shape: const CircleBorder(),
-          child: IconButton(
-            tooltip: 'North up',
-            icon: const Icon(Icons.explore_outlined),
-            onPressed: onNorth,
-          ),
-        ),
+        _Round(icon: Icons.explore_outlined, onPressed: onNorth),
       ],
     );
   }
 }
 
-/// The current style, opening a list of every style to pick from.
-class _StyleMenu extends StatelessWidget {
-  const _StyleMenu({required this.look, required this.onLook});
+/// A menu entry that is one choice of several, ticked when it is the
+/// current one.
+class _Choice extends StatelessWidget {
+  const _Choice(this.label, this.selected, this.onPressed);
 
-  final int look;
-  final ValueChanged<int> onLook;
+  final String label;
+  final bool selected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => MenuItemButton(
+    onPressed: onPressed,
+    trailingIcon: selected
+        ? Icon(
+            Icons.check,
+            size: 18,
+            color: Theme.of(context).colorScheme.primary,
+          )
+        : const SizedBox(width: 18),
+    child: Text(label),
+  );
+}
+
+/// A pill that opens [items], reading "[prefix] [label]".
+class _Menu extends StatelessWidget {
+  const _Menu({required this.label, required this.items, this.prefix});
+
+  final String? prefix;
+  final String label;
+  final List<Widget> items;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return PopupMenuButton<int>(
-      initialValue: look,
-      onSelected: onLook,
-      tooltip: 'Map style',
-      itemBuilder: (_) => [
-        for (var i = 0; i < looks.length; i++)
-          PopupMenuItem(
-            value: i,
+    return MenuAnchor(
+      alignmentOffset: const Offset(0, 6),
+      style: MenuStyle(
+        backgroundColor: WidgetStatePropertyAll(scheme.surfaceContainerLowest),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(vertical: 6),
+        ),
+      ),
+      menuChildren: items,
+      builder: (context, controller, _) => Material(
+        color: scheme.surfaceContainerLowest,
+        elevation: 1.5,
+        shadowColor: Colors.black26,
+        shape: const StadiumBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () =>
+              controller.isOpen ? controller.close() : controller.open(),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 7, 6, 7),
             child: Row(
-              spacing: 10,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  looks[i].dark ? Icons.dark_mode_outlined : Icons.light_mode,
-                  size: 18,
+                if (prefix != null)
+                  Text(
+                    '$prefix ',
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.2,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.2,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onSurface,
+                  ),
                 ),
-                Text(looks[i].label),
+                Icon(
+                  Icons.arrow_drop_down_rounded,
+                  size: 20,
+                  color: scheme.onSurfaceVariant,
+                ),
               ],
             ),
           ),
-      ],
-      child: Material(
-        color: scheme.surfaceContainerLowest,
-        elevation: 2,
-        shadowColor: Colors.black26,
-        shape: const StadiumBorder(),
+        ),
+      ),
+    );
+  }
+}
+
+/// A round button that floats over the map.
+class _Round extends StatelessWidget {
+  const _Round({required this.icon, required this.onPressed});
+
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainerLowest,
+      elevation: 1.5,
+      shadowColor: Colors.black26,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onPressed,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 9, 10, 9),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            spacing: 6,
-            children: [
-              Icon(Icons.layers_outlined, size: 18, color: scheme.onSurface),
-              Text(
-                looks[look].label,
-                style: TextStyle(
-                  fontSize: 14,
-                  height: 1.2,
-                  fontWeight: FontWeight.w500,
-                  color: scheme.onSurface,
-                ),
-              ),
-              Icon(Icons.arrow_drop_down, size: 20, color: scheme.onSurface),
-            ],
-          ),
+          padding: const EdgeInsets.all(8),
+          child: Icon(icon, size: 20, color: scheme.onSurface),
         ),
       ),
     );
