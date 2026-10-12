@@ -64,7 +64,7 @@ void main() {
         '#333',
       ],
     });
-    expect(sheet.symbols.single.paintKeys, ['weight']);
+    expect(sheet.symbols.single.build.paintKeys, ['weight']);
     final built = TileBuilder(sheet)
         .buildLayers(GeoJsonTiles(_shops).tile(0, 0, 0), 0);
     final sent = BuiltTile.fromMessage(built.toMessage());
@@ -90,7 +90,7 @@ void main() {
         0.4,
       ],
     });
-    expect(sheet.symbols.single.paintKeys, [r'$id']);
+    expect(sheet.symbols.single.build.paintKeys, [r'$id']);
     expect(sheet.shape, isNot(_sheet({}).shape));
   });
 
@@ -114,7 +114,7 @@ void main() {
       ],
     });
     final symbol = sheet.symbols.single;
-    expect(symbol.paintKeys, ['weight']);
+    expect(symbol.build.paintKeys, ['weight']);
     final built = TileBuilder(sheet)
         .buildLayers(GeoJsonTiles(_shops).tile(0, 0, 0), 0);
     final sizes = {
@@ -126,7 +126,7 @@ void main() {
 
   test('a label of a layer with plain paint carries nothing', () {
     final sheet = _sheet({}, {'text-color': '#333'});
-    expect(sheet.symbols.single.paintKeys, isEmpty);
+    expect(sheet.symbols.single.build.paintKeys, isEmpty);
     final built = TileBuilder(sheet)
         .buildLayers(GeoJsonTiles(_shops).tile(0, 0, 0), 0);
     expect(built.labels.every((l) => l.props == null), isTrue);
@@ -180,7 +180,7 @@ void main() {
     final symbol = _sheet({'text-anchor': 'left'}).symbols.single;
     expect(symbol.anchors, isEmpty);
     expect(symbol.anchor, 'left');
-    expect(symbol.sortKey, isNull);
+    expect(symbol.build.sortKey, isNull);
   });
 
   test('the lower sort key is placed first', () {

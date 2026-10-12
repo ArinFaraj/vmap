@@ -323,18 +323,26 @@ class StyleCompiler {
     }
     _reads(layout['text-size'], paintKeys);
     _reads(layout['icon-size'], paintKeys);
-    final sortedKeys = paintKeys.toList()..sort();
+    final build = SymbolBuild({
+      'source': source,
+      'sourceLayer': sourceLayer,
+      'filter': filter,
+      'text': hasText ? field : null,
+      'icon': hasIcon ? image : null,
+      'placement': placement,
+      'spacing': spacing,
+      'textUpright': textUpright,
+      'iconUpright': iconUpright,
+      'minZoom': layer.minZoom,
+      'maxZoom': layer.maxZoom,
+      'sortKey': layout['symbol-sort-key'],
+      'iconRotate': asNumber(layout['icon-rotate']) ?? 0,
+      'paintKeys': paintKeys.toList()..sort(),
+    });
     _symbols.add(
       SymbolLayer(
         id: layer.id,
-        source: source,
-        sourceLayer: sourceLayer,
-        filter: compileFilter(filter),
-        minZoom: layer.minZoom,
-        maxZoom: layer.maxZoom,
-        text: hasText ? compileText(field) : (_) => '',
-        icon: hasIcon ? compileText(image) : null,
-        placement: compileExpr(placement),
+        build: build,
         size: compileExpr(layout['text-size'] ?? 16),
         color: compileExpr(paint['text-color'] ?? '#000000'),
         opacity: compileExpr(paint['text-opacity'] ?? 1),
@@ -359,7 +367,6 @@ class StyleCompiler {
         iconSize: compileExpr(layout['icon-size'] ?? 1),
         iconOpacity: compileExpr(paint['icon-opacity'] ?? 1),
         iconColor: compileExpr(paint['icon-color'] ?? '#000000'),
-        iconRotate: asNumber(layout['icon-rotate']) ?? 0,
         textRotate: asNumber(layout['text-rotate']) ?? 0,
         anchor: anchor is String ? anchor : 'center',
         offsetX: offset.$1,
@@ -368,9 +375,6 @@ class StyleCompiler {
         iconOptional: layout['icon-optional'] == true,
         iconOverlaps: layout['icon-allow-overlap'] == true,
         textOverlaps: layout['text-allow-overlap'] == true,
-        spacing: spacing.toDouble(),
-        textUpright: textUpright,
-        iconUpright: iconUpright,
         textFit: (layout['icon-text-fit'] ?? 'none') != 'none',
         anchors: anchors is List
             ? anchors.whereType<String>().toList()
@@ -379,8 +383,6 @@ class StyleCompiler {
         iconAnchor: iconAnchor is String ? iconAnchor : 'center',
         iconOffsetX: iconOffset.$1,
         iconOffsetY: iconOffset.$2,
-        sortKey: _maybe(layout['symbol-sort-key']),
-        paintKeys: sortedKeys,
         textTranslate: _maybe(paint['text-translate']),
         textTranslateOnScreen: paint['text-translate-anchor'] == 'viewport',
         iconHaloColor: _maybe(paint['icon-halo-color']),
@@ -394,27 +396,7 @@ class StyleCompiler {
         },
       ),
     );
-    // Everything the tile builder reads from the layer: a change to any of
-    // it builds the tiles again.
-    _shape.write(
-      jsonEncode([
-        's',
-        source,
-        sourceLayer,
-        filter,
-        field,
-        image,
-        placement,
-        spacing,
-        textUpright,
-        iconUpright,
-        layer.minZoom,
-        layer.maxZoom,
-        layout['symbol-sort-key'],
-        layout['icon-rotate'],
-        sortedKeys,
-      ]),
-    );
+    _shape.write(jsonEncode(['s', build.signature]));
   }
 
   void _addHeatmap(_VectorLayer vector) {

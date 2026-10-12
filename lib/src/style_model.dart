@@ -324,18 +324,76 @@ class HeatPaint {
   final List<double> stops;
 }
 
+/// What the tile builder reads from a symbol layer, made from the JSON it
+/// came from. [signature] is that JSON, so two layers that build the same
+/// labels have the same signature, and a change to anything the builder
+/// reads changes it.
+class SymbolBuild {
+  SymbolBuild(Map<String, Object?> json)
+    : signature = jsonEncode(json),
+      source = json['source']! as int,
+      sourceLayer = json['sourceLayer']! as String,
+      filter = compileFilter(json['filter']),
+      text = switch (json['text']) {
+        null => (_) => '',
+        final field => compileText(field),
+      },
+      icon = switch (json['icon']) {
+        null => null,
+        final image => compileText(image),
+      },
+      placement = compileExpr(json['placement']),
+      spacing = (json['spacing']! as num).toDouble(),
+      textUpright = json['textUpright'] == true,
+      iconUpright = json['iconUpright'] == true,
+      minZoom = (json['minZoom']! as num).toDouble(),
+      maxZoom = (json['maxZoom']! as num).toDouble(),
+      sortKey = switch (json['sortKey']) {
+        null => null,
+        final key => compileExpr(key),
+      },
+      iconRotate = (json['iconRotate']! as num).toDouble(),
+      paintKeys = (json['paintKeys']! as List).cast<String>();
+
+  final String signature;
+
+  /// Index into the style's sources.
+  final int source;
+  final String sourceLayer;
+  final bool Function(EvalContext) filter;
+  final Expr text;
+
+  /// The name of the sprite image, or null when the layer has none.
+  final Expr? icon;
+  final Expr placement;
+
+  /// Space between labels repeated along a line, in logical pixels.
+  final double spacing;
+
+  /// Text or icons along a line stay upright on the screen instead of
+  /// following the line.
+  final bool textUpright;
+  final bool iconUpright;
+  final double minZoom;
+  final double maxZoom;
+
+  /// `symbol-sort-key`: of two labels in this layer wanting the same room,
+  /// the one with the lower number gets it.
+  final Expr? sortKey;
+
+  /// In degrees.
+  final double iconRotate;
+
+  /// The feature properties the layer's colours, opacities and sizes read.
+  /// Each label carries its feature's values of them.
+  final List<String> paintKeys;
+}
+
 /// A text and icon layer of the style.
 class SymbolLayer {
   SymbolLayer({
     required this.id,
-    required this.source,
-    required this.sourceLayer,
-    required this.filter,
-    required this.minZoom,
-    required this.maxZoom,
-    required this.text,
-    required this.icon,
-    required this.placement,
+    required this.build,
     required this.size,
     required this.color,
     required this.opacity,
@@ -356,7 +414,6 @@ class SymbolLayer {
     required this.iconSize,
     required this.iconOpacity,
     required this.iconColor,
-    required this.iconRotate,
     required this.textRotate,
     required this.anchor,
     required this.offsetX,
@@ -365,17 +422,12 @@ class SymbolLayer {
     required this.iconOptional,
     required this.iconOverlaps,
     required this.textOverlaps,
-    required this.spacing,
-    required this.textUpright,
-    required this.iconUpright,
     required this.textFit,
     this.anchors = const [],
     this.radialOffset = 0,
     this.iconAnchor = 'center',
     this.iconOffsetX = 0,
     this.iconOffsetY = 0,
-    this.sortKey,
-    this.paintKeys = const [],
     this.textTranslate,
     this.textTranslateOnScreen = false,
     this.iconTranslate,
@@ -388,17 +440,15 @@ class SymbolLayer {
 
   final String id;
 
-  /// Index into the style's sources.
-  final int source;
-  final String sourceLayer;
-  final bool Function(EvalContext) filter;
-  final double minZoom;
-  final double maxZoom;
-  final Expr text;
+  /// Everything the tile builder reads from the layer.
+  final SymbolBuild build;
 
-  /// The name of the sprite image, or null when the layer has none.
-  final Expr? icon;
-  final Expr placement;
+  int get source => build.source;
+  String get sourceLayer => build.sourceLayer;
+  bool Function(EvalContext) get filter => build.filter;
+  double get minZoom => build.minZoom;
+  double get maxZoom => build.maxZoom;
+
   final Expr size;
   final Expr color;
   final Expr opacity;
@@ -436,9 +486,6 @@ class SymbolLayer {
   /// The colour of an icon that takes one.
   final Expr iconColor;
 
-  /// In degrees.
-  final double iconRotate;
-
   /// Degrees a point's text is turned clockwise.
   final double textRotate;
 
@@ -465,14 +512,6 @@ class SymbolLayer {
   final double iconOffsetX;
   final double iconOffsetY;
 
-  /// `symbol-sort-key`: of two labels in this layer wanting the same room,
-  /// the one with the lower number gets it.
-  final Expr? sortKey;
-
-  /// The feature properties the layer's colours, opacities and sizes read.
-  /// Each label carries its feature's values of them.
-  final List<String> paintKeys;
-
   /// How far the text and the icon are drawn from their place, in logical
   /// pixels, along the map's sides or the screen's.
   final Expr? textTranslate;
@@ -495,13 +534,6 @@ class SymbolLayer {
   final bool iconOptional;
   final bool iconOverlaps;
   final bool textOverlaps;
-
-  /// Distance between repeats along a line, in logical pixels.
-  final double spacing;
-
-  /// Along a line the text or icon stays upright instead of turning with it.
-  final bool textUpright;
-  final bool iconUpright;
 
   /// The icon is stretched to sit behind the text.
   final bool textFit;

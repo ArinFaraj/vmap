@@ -410,18 +410,18 @@ class TileBuilder {
 
         for (final s in symbols) {
           final symbol = sheet.symbols[s];
-          if (!symbol.filter(context)) continue;
-          final text = symbol.text(context) as String;
-          final icon = symbol.icon == null
+          if (!symbol.build.filter(context)) continue;
+          final text = symbol.build.text(context) as String;
+          final icon = symbol.build.icon == null
               ? ''
-              : symbol.icon!(context) as String;
+              : symbol.build.icon!(context) as String;
           if (text.isEmpty && icon.isEmpty) continue;
-          final along = '${symbol.placement(context)}'.startsWith('line');
+          final along = '${symbol.build.placement(context)}'.startsWith('line');
           final base = (sheet.symbols.length - 1 - s) * 4096;
           final order = _order(symbol, context);
-          final carried = symbol.paintKeys.isEmpty
+          final carried = symbol.build.paintKeys.isEmpty
               ? null
-              : {for (final k in symbol.paintKeys) k: context.props[k]};
+              : {for (final k in symbol.build.paintKeys) k: context.props[k]};
           if (f.type == mvtPolygon) {
             if (along) continue;
             scaled();
@@ -449,27 +449,27 @@ class TileBuilder {
             continue;
           }
           scaled();
-          if (along && text.isNotEmpty && !symbol.textUpright) {
+          if (along && text.isNotEmpty && !symbol.build.textUpright) {
             final label = _lineLabel(s, base, text);
             if (label != null) labels.add(label..props = carried);
             continue;
           }
-          final turns = along && text.isEmpty && !symbol.iconUpright;
+          final turns = along && text.isEmpty && !symbol.build.iconUpright;
           final deeper = math.max(0, (symbol.minZoom - styleZoom).ceil());
           _repeat(
-            along ? symbol.spacing * 8 / (1 << deeper) : double.infinity,
+            along ? symbol.build.spacing * 8 / (1 << deeper) : double.infinity,
             (x, y, angle) => labels.add(
               BuiltLabel(
                 s,
-                base + (symbol.sortKey == null ? 50 : order),
+                base + (symbol.build.sortKey == null ? 50 : order),
                 text,
                 x,
                 y,
                 null,
                 icon: icon,
                 angle: turns
-                    ? angle + symbol.iconRotate * math.pi / 180
-                    : symbol.iconRotate * math.pi / 180,
+                    ? angle + symbol.build.iconRotate * math.pi / 180
+                    : symbol.build.iconRotate * math.pi / 180,
                 spaced: true,
                 turns: turns,
               )..props = carried,
@@ -710,7 +710,7 @@ class TileBuilder {
 
   /// Where a label stands among its layer's own, lowest first.
   static int _order(SymbolLayer symbol, EvalContext context) {
-    final key = symbol.sortKey;
+    final key = symbol.build.sortKey;
     if (key != null) {
       final value = key(context);
       return value is num ? value.round().clamp(0, 4095) : 50;

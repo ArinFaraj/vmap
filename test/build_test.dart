@@ -228,7 +228,7 @@ void main() {
     test('name keys replace the names a style asks for', () {
       final sheet = StyleSheet.compile(style, nameKeys: ['name:en', 'name']);
       final props = {'name': 'Hewler', 'name:en': 'Erbil'};
-      expect(sheet.symbols.single.text(at(0, props)), 'Erbil');
+      expect(sheet.symbols.single.build.text(at(0, props)), 'Erbil');
       expect(sheet.shape, isNot(StyleSheet.compile(style).shape));
     });
   });
@@ -322,13 +322,13 @@ void main() {
       ]);
       expect(sheet.sprite, 'https://example.org/sprites/basic');
       final poi = sheet.symbols[0];
-      expect(poi.icon!(at(15, {'class': 'cafe'})), 'cafe');
+      expect(poi.build.icon!(at(15, {'class': 'cafe'})), 'cafe');
       expect(poi.iconSize(at(15)), 0.7);
       expect(poi.anchor, 'top');
       expect(poi.offsetY, 0.6);
       expect(poi.textOptional, isTrue);
-      expect(sheet.symbols[1].text(at(16)), '');
-      expect(sheet.symbols[1].icon!(at(16)), 'arrow');
+      expect(sheet.symbols[1].build.text(at(16)), '');
+      expect(sheet.symbols[1].build.icon!(at(16)), 'arrow');
     });
 
     test('circle, pattern and raster layers are kept', () {
