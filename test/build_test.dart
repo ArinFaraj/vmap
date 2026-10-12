@@ -213,7 +213,7 @@ void main() {
       expect(sheet.layers, hasLength(3));
       expect(sheet.buckets, hasLength(2));
       expect(sheet.layers[0].bucket, sheet.layers[1].bucket);
-      expect(sheet.layers[2].dash, [1, 3]);
+      expect((sheet.layers[2] as LineLayer).dash, [1, 3]);
       expect(sheet.buckets[sheet.layers[2].bucket].dashed, isTrue);
       expect(sheet.buckets[sheet.layers[0].bucket].dashed, isFalse);
       expect(sheet.symbols.single.weight, 700);
@@ -257,7 +257,7 @@ void main() {
       ]);
       expect(sheet.layers, hasLength(2));
       final edge = sheet.layers[1];
-      expect(edge.isLine, isTrue);
+      expect(edge, isA<LineLayer>());
       expect(edge.width!(at(15)), 1);
       expect(sheet.buckets[edge.bucket].outline, isTrue);
       expect(Rgba.of(edge.color(at(15)))!.toArgb(), 0xFF999999);
@@ -348,10 +348,9 @@ void main() {
       expect(sheet.rasters.single.tiles, contains('relief'));
       expect(sheet.rasters.single.sourceMaxZoom, 6);
       expect(sheet.layers[0].pattern!(at(12)), 'wetland');
-      final circle = sheet.layers[1];
-      expect(circle.kind, BucketKind.circle);
-      expect(circle.width!(at(12)), 8);
-      expect(circle.strokeWidth!(at(12)), 1);
+      final circle = sheet.layers[1] as CircleLayer;
+      expect(circle.width(at(12)), 8);
+      expect(circle.ring!.width(at(12)), 1);
     });
   });
 
@@ -361,7 +360,7 @@ void main() {
     expect(light.shape, dark.shape);
     expect(light.layers, isNotEmpty);
     expect(light.symbols, hasLength(14));
-    final casing = light.layers.firstWhere((l) => l.isLine && l.width != null);
-    expect(casing.width!(at(14)), isA<double>());
+    final casing = light.layers.whereType<LineLayer>().first;
+    expect(casing.width(at(14)), isA<double>());
   });
 }

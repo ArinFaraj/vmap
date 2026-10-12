@@ -65,7 +65,7 @@ void main() {
       ],
     });
     final plain = sheet({'line-color': '#f00'});
-    expect(plain.layers.single.gradient, isNull);
+    expect((plain.layers.single as LineLayer).gradient, isNull);
     expect(plain.buckets.single.metered, isFalse);
 
     final ramp = sheet({
@@ -79,7 +79,7 @@ void main() {
         '#fff',
       ],
     });
-    expect(ramp.layers.single.gradient, isNotNull);
+    expect((ramp.layers.single as LineLayer).gradient, isNotNull);
     expect(ramp.buckets.single.metered, isTrue);
     expect(ramp.buckets.single.dashed, isTrue);
   });

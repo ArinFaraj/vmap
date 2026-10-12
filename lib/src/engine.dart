@@ -816,8 +816,8 @@ class VmapEngine extends ChangeNotifier {
       final color = Rgba.of(layer.color(_context));
       if (color == null) continue;
       _colors[i] = color.toArgb(asNumber(layer.opacity(_context)) ?? 1);
-      if (layer.width != null) {
-        _widths[i] = asNumber(layer.width!(_context)) ?? 0;
+      if (layer.width case final width?) {
+        _widths[i] = asNumber(width(_context)) ?? 0;
       }
     }
     _shaders.startFrame();
@@ -854,7 +854,10 @@ class VmapEngine extends ChangeNotifier {
       }
       final s = _sources[run.source];
       final states = _states[s.def.name];
-      final heat = sheet.layers[run.first].heat;
+      final heat = switch (sheet.layers[run.first]) {
+        HeatmapLayer(:final heat) => heat,
+        _ => null,
+      };
       final shown = _colors[run.first] >>> 24;
       if (heat != null && (shown == 0 || _widths[run.first] <= 0)) continue;
       final onto = heat == null ? canvas : _heat.begin();
@@ -1014,7 +1017,7 @@ class VmapEngine extends ChangeNotifier {
     enter(
       clip:
           !layers[first].spills ||
-          (d.clips != null && layers[first].heat == null),
+          (d.clips != null && layers[first] is! HeatmapLayer),
     );
     final groups = d.tile.groups;
     var draws = 0;
@@ -1025,8 +1028,7 @@ class VmapEngine extends ChangeNotifier {
       if (meshes == null) continue;
       var color = _colors[p];
       var width = _widths[p];
-      final heat = layer.heat;
-      if (heat != null) {
+      if (layer case HeatmapLayer(:final heat)) {
         _heat.add(canvas, _context, heat, meshes, width / scale);
         draws++;
         continue;
@@ -1059,19 +1061,19 @@ class VmapEngine extends ChangeNotifier {
           if (own == null) continue;
           color = own.toArgb(asNumber(layer.opacity(_context)) ?? 1);
           if (color >>> 24 == 0) continue;
-          if (layer.width != null) {
-            width = asNumber(layer.width!(_context)) ?? 0;
+          if (layer.width case final own?) {
+            width = asNumber(own(_context)) ?? 0;
           }
           shader = _shaders.of(layer, width, scale, _context, _sprites, color);
           if (shader == null && layer.pattern != null) continue;
         }
-        switch (layer.kind) {
-          case BucketKind.fill:
+        switch (layer) {
+          case FillLayer():
             _paint
               ..color = ui.Color(color)
               ..shader = shader;
             canvas.drawVertices(m.fill!, ui.BlendMode.srcOver, _paint);
-          case BucketKind.line:
+          case LineLayer():
             if (width <= 0) continue;
             if (shader == null) {
               _paint.color = ui.Color(color);
@@ -1094,21 +1096,19 @@ class VmapEngine extends ChangeNotifier {
               ui.BlendMode.srcOver,
               _paint,
             );
-          case BucketKind.circle:
+          case CircleLayer(:final ring):
             if (width <= 0) continue;
-            final ring = layer.strokeWidth == null
+            final ringWidth = ring == null
                 ? 0.0
-                : asNumber(layer.strokeWidth!(_context)) ?? 0;
-            if (ring > 0) {
-              final ringColor = Rgba.of(layer.strokeColor!(_context));
+                : asNumber(ring.width(_context)) ?? 0;
+            if (ring != null && ringWidth > 0) {
+              final ringColor = Rgba.of(ring.color(_context));
               if (ringColor != null) {
                 _pointPaint
                   ..color = ui.Color(
-                    ringColor.toArgb(
-                      asNumber(layer.strokeOpacity!(_context)) ?? 1,
-                    ),
+                    ringColor.toArgb(asNumber(ring.opacity(_context)) ?? 1),
                   )
-                  ..strokeWidth = (width + ring * 2) / scale;
+                  ..strokeWidth = (width + ringWidth * 2) / scale;
                 canvas.drawRawPoints(
                   ui.PointMode.points,
                   m.points!,
@@ -1120,6 +1120,8 @@ class VmapEngine extends ChangeNotifier {
               ..color = ui.Color(color)
               ..strokeWidth = width / scale;
             canvas.drawRawPoints(ui.PointMode.points, m.points!, _pointPaint);
+          case HeatmapLayer():
+            continue;
         }
         draws++;
         if (shader != null) {

@@ -79,12 +79,12 @@ void main() {
     final plain = _sheet({}, {});
     expect(plain.buckets.single.join, LineJoin.miter);
     expect(plain.buckets.single.offset, isFalse);
-    expect(plain.layers.single.offset, isNull);
+    expect((plain.layers.single as LineLayer).offset, isNull);
 
     final moved = _sheet({'line-join': 'round'}, {'line-offset': 3});
     expect(moved.buckets.single.join, LineJoin.round);
     expect(moved.buckets.single.offset, isTrue);
-    expect(moved.layers.single.offset, isNotNull);
+    expect((moved.layers.single as LineLayer).offset, isNotNull);
     expect(moved.shape, isNot(plain.shape));
   });
 
@@ -96,9 +96,9 @@ void main() {
         'line-blur': 1,
       },
     );
-    expect(dashed.layers.single.dashCap, DashCap.round);
-    expect(dashed.layers.single.dash, [2, 2]);
-    expect(dashed.layers.single.blur, isNotNull);
+    expect((dashed.layers.single as LineLayer).dashCap, DashCap.round);
+    expect((dashed.layers.single as LineLayer).dash, [2, 2]);
+    expect((dashed.layers.single as LineLayer).blur, isNotNull);
     expect(dashed.buckets.single.edged, isFalse);
     expect(dashed.buckets.single.caps, isFalse);
 
@@ -108,11 +108,11 @@ void main() {
         'line-dasharray': [12, 0],
       },
     );
-    expect(solid.layers.single.dash, isNull);
+    expect((solid.layers.single as LineLayer).dash, isNull);
     expect(solid.buckets.single.caps, isTrue);
 
     final soft = _sheet({}, {'line-blur': 1});
-    expect(soft.layers.single.blur, isNotNull);
+    expect((soft.layers.single as LineLayer).blur, isNotNull);
     expect(soft.buckets.single.edged, isTrue);
     expect(soft.buckets.single.dashed, isTrue);
     expect(_sheet({}, {}).buckets.single.edged, isFalse);

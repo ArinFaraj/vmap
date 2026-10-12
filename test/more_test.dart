@@ -147,7 +147,7 @@ void main() {
       ],
     });
     expect(sheet.rasters.single.relief!.terrarium, isTrue);
-    expect(sheet.layers.single.heat, isNotNull);
+    expect(sheet.layers.single, isA<HeatmapLayer>());
     expect(sheet.runs.map((r) => r.raster), [0, -1]);
   });
 

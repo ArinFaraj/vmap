@@ -83,23 +83,20 @@ class LayerShaders {
     SpriteSheet? sprites,
     int color,
   ) {
-    final blur = layer.blur;
-    final gradient = layer.gradient;
-    if (layer.dash == null &&
-        layer.pattern == null &&
-        blur == null &&
-        gradient == null) {
+    final line = layer is LineLayer ? layer : null;
+    final blur = line?.blur;
+    final gradient = line?.gradient;
+    final dash = line?.dash;
+    final pattern = layer.pattern;
+    if (dash == null && pattern == null && blur == null && gradient == null) {
       return null;
     }
-    final rgb = layer.pattern != null || gradient != null
-        ? 0
-        : color & 0xFFFFFF;
+    final rgb = pattern != null || gradient != null ? 0 : color & 0xFFFFFF;
     final key = (layer, width, scale, rgb);
     final made = _shaders[key];
     if (made != null) return made;
     final ui.Image image;
     final double stretch;
-    final dash = layer.dash;
     final step = blur == null || width <= 0
         ? 0
         : ((asNumber(blur(context)) ?? 0) / width * _blurSteps * 2)
@@ -119,12 +116,12 @@ class LayerShaders {
         total += d;
       }
       final kept =
-          _dashImages['${dash.join(',')}|${layer.dashCap.index}|$step|$rgb'] ??=
+          _dashImages['${dash.join(',')}|${line!.dashCap.index}|$step|$rgb'] ??=
               _DashImage(
                 _dashImage(
                   dash,
                   total,
-                  layer.dashCap,
+                  line.dashCap,
                   rgb,
                   step / _blurSteps / 2,
                 ),
@@ -143,15 +140,15 @@ class LayerShaders {
     } else {
       final sheet = sprites;
       if (sheet == null) return null;
-      final name = layer.pattern!(context) as String;
+      final name = pattern!(context) as String;
       final found = sheet.pattern(name);
       if (found == null) return null;
       image = found;
-      stretch = layer.isLine
+      stretch = line != null
           ? width / scale / image.height
           : 1 / (sheet.entries[name]!.pixelRatio * scale);
     }
-    final along = layer.isLine;
+    final along = line != null;
     _matrix
       ..[0] = stretch
       ..[5] = along ? 1 / image.height : stretch;

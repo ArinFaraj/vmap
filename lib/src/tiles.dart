@@ -175,7 +175,7 @@ class LoadedTile {
       final layer = sheet.layers[p];
       final meshes = groups[layer.bucket];
       _step++;
-      if (!layer.isLine ||
+      if (layer is! LineLayer ||
           layer.perFeature ||
           meshes == null ||
           widths[p] <= 0) {
