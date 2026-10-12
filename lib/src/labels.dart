@@ -442,6 +442,12 @@ class LabelEngine {
   int evictedTotal = 0;
   int statesWalked = 0;
 
+  /// Starts the totals again from zero once the engine has added them up.
+  void clearTotals() {
+    rasterizedTotal = layoutMicrosTotal = imageMicrosTotal = imagesTotal =
+        resizedTotal = evictedTotal = statesWalked = 0;
+  }
+
   int get stateCount => _states.length;
   int get spriteCount => _sprites.length;
 

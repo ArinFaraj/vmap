@@ -71,6 +71,10 @@ class VmapStats {
         frames = 0;
     paintsOver4ms = paintsOver8ms = maxPrepMicros = maxPlaceMicros =
         maxLabelRasterMicros = maxDrawMicros = placeMicros = 0;
+    labelRasterMicros = labelsRasterized = labelLayoutMicros =
+        labelImageMicros = labelImages = labelStatesWalked = labelsResized =
+            labelsEvicted = maxUnpackMicros = 0;
+    slowPaints.clear();
   }
 }
 
@@ -902,7 +906,7 @@ class VmapEngine extends ChangeNotifier {
       fallback += s.fallback.length;
       cached += s.tiles.length;
       loading += s.missing.length;
-      unpack = math.max(unpack, s.pool.maxUnpackMicros);
+      unpack = math.max(unpack, s.pool.takeMaxUnpackMicros());
     }
     stats
       ..frames += 1
@@ -934,13 +938,14 @@ class VmapEngine extends ChangeNotifier {
     stats.placeMicros += _labels.lastPlaceMicros;
     stats
       ..labelRasterMicros += _labels.lastRasterMicros
-      ..labelsRasterized = _labels.rasterizedTotal
-      ..labelLayoutMicros = _labels.layoutMicrosTotal
-      ..labelImageMicros = _labels.imageMicrosTotal
-      ..labelImages = _labels.imagesTotal
-      ..labelStatesWalked = _labels.statesWalked
-      ..labelsResized = _labels.resizedTotal
-      ..labelsEvicted = _labels.evictedTotal;
+      ..labelsRasterized += _labels.rasterizedTotal
+      ..labelLayoutMicros += _labels.layoutMicrosTotal
+      ..labelImageMicros += _labels.imageMicrosTotal
+      ..labelImages += _labels.imagesTotal
+      ..labelStatesWalked += _labels.statesWalked
+      ..labelsResized += _labels.resizedTotal
+      ..labelsEvicted += _labels.evictedTotal;
+    _labels.clearTotals();
     if (labelsStarted - now - _prepSpent > stats.maxDrawMicros) {
       stats.maxDrawMicros = labelsStarted - now - _prepSpent;
     }
@@ -954,7 +959,7 @@ class VmapEngine extends ChangeNotifier {
       ..tilesDrawn = ideal
       ..fallbackTiles = fallback
       ..tilesCached = cached
-      ..maxUnpackMicros = unpack
+      ..maxUnpackMicros = math.max(stats.maxUnpackMicros, unpack)
       ..labelStates = _labels.stateCount
       ..labelSprites = _labels.spriteCount
       ..tilesLoading = loading

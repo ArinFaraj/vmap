@@ -104,8 +104,15 @@ class TilePool {
   Future<void>? _starting;
   Object? startError;
 
-  /// Longest the UI isolate spent unpacking one finished tile, in microseconds.
-  int maxUnpackMicros = 0;
+  /// Longest the UI isolate spent unpacking one finished tile, in
+  /// microseconds, since this was last read.
+  int takeMaxUnpackMicros() {
+    final longest = _maxUnpackMicros;
+    _maxUnpackMicros = 0;
+    return longest;
+  }
+
+  int _maxUnpackMicros = 0;
   final Stopwatch _clock = Stopwatch()..start();
 
   bool isLoading(TileId id) => _inflightIds.contains(id);
@@ -355,7 +362,7 @@ class TilePool {
       final started = _clock.elapsedMicroseconds;
       onLoaded(id, BuiltTile.fromMessage(payload as List<Object?>));
       final spent = _clock.elapsedMicroseconds - started;
-      if (spent > maxUnpackMicros) maxUnpackMicros = spent;
+      if (spent > _maxUnpackMicros) _maxUnpackMicros = spent;
     }
     _dispatch();
   }
