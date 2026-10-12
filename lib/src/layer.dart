@@ -7,7 +7,7 @@ import 'text_style.dart';
 import 'pins.dart';
 import 'query.dart';
 import 'style.dart';
-import 'worker.dart';
+import 'source_config.dart';
 
 /// A flutter_map [Marker] with a name the map writes beside it, placed so it
 /// never covers another label.

@@ -8,6 +8,7 @@ import 'expr.dart';
 import 'pmtiles.dart';
 import 'raster_style.dart';
 import 'style_model.dart';
+import 'source_config.dart';
 import 'tile_store.dart';
 import 'net.dart';
 import 'platform.dart';
@@ -38,44 +39,34 @@ class _RasterTile {
 sealed class RasterDrawing<L extends RasterLayer> {
   RasterDrawing(
     this.layer, {
-    required this.cacheDirectory,
-    required this.userAgent,
+    required this.config,
     required this.onLoaded,
-    required this.headers,
     required this.onError,
   });
 
   /// The drawing for [layer].
   static RasterDrawing<RasterLayer> of(
     RasterLayer layer, {
-    required String? cacheDirectory,
-    required String userAgent,
+    required TileSourceConfig config,
     required void Function() onLoaded,
-    Map<String, String> headers = const {},
     void Function(Object error)? onError,
   }) => switch (layer) {
     ImageLayer() => PictureDrawing(
       layer,
-      cacheDirectory: cacheDirectory,
-      userAgent: userAgent,
+      config: config,
       onLoaded: onLoaded,
-      headers: headers,
       onError: onError,
     ),
     PictureTileLayer() => PictureTiles(
       layer,
-      cacheDirectory: cacheDirectory,
-      userAgent: userAgent,
+      config: config,
       onLoaded: onLoaded,
-      headers: headers,
       onError: onError,
     ),
     HillshadeLayer() => ShadedTiles(
       layer,
-      cacheDirectory: cacheDirectory,
-      userAgent: userAgent,
+      config: config,
       onLoaded: onLoaded,
-      headers: headers,
       onError: onError,
     ),
   };
@@ -83,13 +74,13 @@ sealed class RasterDrawing<L extends RasterLayer> {
   /// Taken over from a style whose layer draws from the same pictures, so
   /// only its paint can differ.
   L layer;
-  final String? cacheDirectory;
-  final String userAgent;
-  final Map<String, String> headers;
+
+  /// How pictures are fetched and kept.
+  final TileSourceConfig config;
   final void Function() onLoaded;
   final void Function(Object error)? onError;
 
-  late final Net _client = Net(userAgent: userAgent, perHost: 4);
+  late final Net _client = Net(userAgent: config.userAgent, perHost: 4);
   final ui.Paint _paint = ui.Paint()..filterQuality = ui.FilterQuality.low;
   bool _closed = false;
 
@@ -128,10 +119,8 @@ sealed class RasterDrawing<L extends RasterLayer> {
 final class PictureDrawing extends RasterDrawing<ImageLayer> {
   PictureDrawing(
     super.layer, {
-    required super.cacheDirectory,
-    required super.userAgent,
+    required super.config,
     required super.onLoaded,
-    required super.headers,
     required super.onError,
   }) {
     _load(layer.picture);
@@ -144,7 +133,7 @@ final class PictureDrawing extends RasterDrawing<ImageLayer> {
     try {
       final reply = await _client.get(
         url,
-        headers,
+        config.headers,
         timeout: const Duration(seconds: 30),
       );
       if (reply.status != 200) throw HttpFailure(reply.status, url);
@@ -227,10 +216,8 @@ final class PictureDrawing extends RasterDrawing<ImageLayer> {
 sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
   TileDrawing(
     super.layer, {
-    required super.cacheDirectory,
-    required super.userAgent,
+    required super.config,
     required super.onLoaded,
-    required super.headers,
     required super.onError,
   }) : _maxZoom = layer.sourceMaxZoom ?? 22 {
     final TiledRasterLayer(:tiles, :tileJsonUrl, :cover) = layer;
@@ -278,7 +265,7 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
     try {
       final reply = await _client.get(
         tileJsonUrl,
-        headers,
+        config.headers,
         timeout: const Duration(seconds: 10),
       );
       final json = jsonDecode(utf8.decode(reply.bytes)) as Map<String, dynamic>;
@@ -303,13 +290,7 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
   void _use(String template, TileCover cover) {
     _template = template;
     _store?.close();
-    _store = TileStore.raster(
-      template,
-      cover: cover,
-      cacheDirectory: cacheDirectory,
-      headers: headers,
-      userAgent: userAgent,
-    );
+    _store = TileStore.raster(template, cover: cover, config: config);
   }
 
   /// Fetches tile [z]/[x]/[y] into the cache directory unless it is there
@@ -413,10 +394,8 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
 final class PictureTiles extends TileDrawing<PictureTileLayer> {
   PictureTiles(
     super.layer, {
-    required super.cacheDirectory,
-    required super.userAgent,
+    required super.config,
     required super.onLoaded,
-    required super.headers,
     required super.onError,
   });
 
@@ -455,10 +434,8 @@ final class PictureTiles extends TileDrawing<PictureTileLayer> {
 final class ShadedTiles extends TileDrawing<HillshadeLayer> {
   ShadedTiles(
     super.layer, {
-    required super.cacheDirectory,
-    required super.userAgent,
+    required super.config,
     required super.onLoaded,
-    required super.headers,
     required super.onError,
   });
 

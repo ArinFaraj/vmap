@@ -3,6 +3,7 @@
 /// both carry, and is read back into one of the types here.
 library;
 
+import 'source_config.dart';
 import 'tile_builder.dart' show BuiltTile;
 import 'tile_id.dart';
 
@@ -10,48 +11,48 @@ import 'tile_id.dart';
 class WorkerSetup {
   const WorkerSetup({
     required this.template,
-    required this.cacheDirectory,
-    required this.userAgent,
+    required this.config,
     required this.style,
     required this.nameKeys,
     required this.zoomOffset,
     required this.source,
-    required this.headers,
   });
 
   factory WorkerSetup.fromWire(List<Object?> wire) => WorkerSetup(
     template: wire[0]! as String,
-    cacheDirectory: wire[1] as String?,
-    userAgent: wire[2]! as String,
-    style: (wire[3]! as Map).cast<String, Object?>(),
-    nameKeys: (wire[4] as List?)?.cast<String>(),
-    zoomOffset: (wire[5]! as num).toDouble(),
-    source: wire[6]! as int,
-    headers: (wire[7]! as Map).cast<String, String>(),
+    config: TileSourceConfig(
+      cacheDirectory: wire[1] as String?,
+      userAgent: wire[2]! as String,
+      headers: (wire[3]! as Map).cast<String, String>(),
+    ),
+    style: (wire[4]! as Map).cast<String, Object?>(),
+    nameKeys: (wire[5] as List?)?.cast<String>(),
+    zoomOffset: (wire[6]! as num).toDouble(),
+    source: wire[7]! as int,
   );
 
   /// The addresses of the tiles, `geojson` for data the style holds, or a
   /// `pmtiles://` archive.
   final String template;
-  final String? cacheDirectory;
-  final String userAgent;
+
+  /// How the tiles are fetched and kept.
+  final TileSourceConfig config;
   final Map<String, Object?> style;
   final List<String>? nameKeys;
   final double zoomOffset;
 
   /// Which of the style's sources the worker builds.
   final int source;
-  final Map<String, String> headers;
 
   List<Object?> toWire() => [
     template,
-    cacheDirectory,
-    userAgent,
+    config.cacheDirectory,
+    config.userAgent,
+    config.headers,
     style,
     nameKeys,
     zoomOffset,
     source,
-    headers,
   ];
 }
 

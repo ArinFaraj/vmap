@@ -10,4 +10,4 @@ export 'src/pins.dart' show VmapPin, VmapPins, standardPins;
 export 'src/palette.dart' show Tone, VmapPalette;
 export 'src/stats.dart' show VmapLabelWork, VmapStats, VmapTimings;
 export 'src/style.dart' show VmapOverlay, VmapStyle, VmapStyleEdit;
-export 'src/worker.dart' show TileSourceConfig;
+export 'src/source_config.dart' show TileSourceConfig;

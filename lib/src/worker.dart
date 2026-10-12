@@ -8,32 +8,13 @@ import 'mvt.dart';
 import 'query.dart';
 import 'pmtiles.dart';
 import 'protocol.dart';
+import 'source_config.dart';
 import 'tile_id.dart';
 import 'style_model.dart';
 import 'tile_builder.dart';
 import 'tile_store.dart';
 import 'net.dart';
 import 'platform.dart';
-
-/// How tiles are fetched and kept.
-class TileSourceConfig {
-  const TileSourceConfig({
-    this.cacheDirectory,
-    this.userAgent = 'vmap',
-    this.headers = const {},
-    this.workers = 2,
-  });
-
-  /// Downloaded tiles are kept here between runs. Null disables the disk
-  /// cache.
-  final String? cacheDirectory;
-  final String userAgent;
-
-  /// Sent with every request for a style, its tiles and its pictures, for a
-  /// server that wants a key or a token in a header.
-  final Map<String, String> headers;
-  final int workers;
-}
 
 typedef TileLoaded = void Function(TileId id, BuiltTile tile);
 typedef TileFailed = void Function(TileId id, Object error);
@@ -208,9 +189,7 @@ class TilePool {
       TiledSource(:final cover) => TileStore.vector(
         template,
         cover: cover,
-        cacheDirectory: config.cacheDirectory,
-        headers: config.headers,
-        userAgent: config.userAgent,
+        config: config,
         perHost: 6,
       ),
     };
@@ -236,13 +215,11 @@ class TilePool {
       tileWorkerMain,
       WorkerSetup(
         template: template,
-        cacheDirectory: config.cacheDirectory,
-        userAgent: config.userAgent,
+        config: config,
         style: style,
         nameKeys: nameKeys,
         zoomOffset: sheet.zoomOffset,
         source: source,
-        headers: config.headers,
       ).toWire(),
       (message) {
         switch (WorkerReply.fromWire(message! as List<Object?>)) {
@@ -432,7 +409,7 @@ Future<void> tileWorkerMain(
   Stream<Object?> inbox,
 ) async {
   final setup = WorkerSetup.fromWire(init);
-  final client = Net(userAgent: setup.userAgent, perHost: 4);
+  final client = Net(userAgent: setup.config.userAgent, perHost: 4);
   final sheet = StyleSheet.compile(
     setup.style,
     nameKeys: setup.nameKeys,
@@ -456,7 +433,7 @@ Future<void> tileWorkerMain(
     geoJson = () async {
       if (data is! String) return tiles(data);
       try {
-        final reply = await client.get(data, setup.headers);
+        final reply = await client.get(data, setup.config.headers);
         return tiles(jsonDecode(utf8.decode(reply.bytes)));
       } catch (_) {
         return GeoJsonTiles(null);
@@ -466,9 +443,7 @@ Future<void> tileWorkerMain(
     store = TileStore.vector(
       setup.template,
       cover: def.cover,
-      cacheDirectory: setup.cacheDirectory,
-      headers: setup.headers,
-      userAgent: setup.userAgent,
+      config: setup.config,
     );
   }
 

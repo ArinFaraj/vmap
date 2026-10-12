@@ -4,43 +4,54 @@ import 'dart:typed_data';
 import 'net.dart';
 import 'platform.dart';
 import 'pmtiles.dart';
+import 'source_config.dart';
 import 'style_model.dart' show TileCover;
 
 /// Where the tiles of one tile set come from: the cache directory first,
 /// then the archive or the server, and kept on disk once fetched.
 class TileStore {
   TileStore._(
+    String template, {
+    required TileCover cover,
+    required String folder,
+    required String extension,
+    required TileSourceConfig config,
+    required int perHost,
+  }) : this._connected(
+         template,
+         cover: cover,
+         folder: folder,
+         extension: extension,
+         directory: config.cacheDirectory,
+         headers: config.headers,
+         client: Net(userAgent: config.userAgent, perHost: perHost),
+       );
+
+  TileStore._connected(
     this.template, {
     required this.cover,
     required this.folder,
     required this.extension,
-    required String? cacheDirectory,
+    required String? directory,
     required this.headers,
-    required String userAgent,
-    required int perHost,
-  }) : client = Net(userAgent: userAgent, perHost: perHost),
-       _directory = cacheDirectory {
-    archive = PmTiles.handles(template)
-        ? PmTiles(template, client: client, headers: headers)
-        : null;
-  }
+    required this.client,
+  }) : _directory = directory,
+       archive = PmTiles.handles(template)
+           ? PmTiles(template, client: client, headers: headers)
+           : null;
 
   /// Vector tiles, kept as `.pbf` files.
   TileStore.vector(
     String template, {
     required TileCover cover,
-    required String? cacheDirectory,
-    Map<String, String> headers = const {},
-    String userAgent = 'vmap',
+    required TileSourceConfig config,
     int perHost = 4,
   }) : this._(
          template,
          cover: cover,
          folder: vectorFolder(template),
          extension: '.pbf',
-         cacheDirectory: cacheDirectory,
-         headers: headers,
-         userAgent: userAgent,
+         config: config,
          perHost: perHost,
        );
 
@@ -48,17 +59,13 @@ class TileStore {
   TileStore.raster(
     String template, {
     required TileCover cover,
-    required String? cacheDirectory,
-    Map<String, String> headers = const {},
-    String userAgent = 'vmap',
+    required TileSourceConfig config,
   }) : this._(
          template,
          cover: cover,
          folder: 'raster-${cacheKey(template)}',
          extension: '',
-         cacheDirectory: cacheDirectory,
-         headers: headers,
-         userAgent: userAgent,
+         config: config,
          perHost: 4,
        );
 
@@ -81,7 +88,7 @@ class TileStore {
   final Map<String, String> headers;
 
   /// The archive the tiles are read from, when they are in one.
-  late final PmTiles? archive;
+  final PmTiles? archive;
   final String? _directory;
 
   /// Where tile [z]/[x]/[y] is kept, or null when nothing is: there is no

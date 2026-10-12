@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/engine.dart';
 import 'package:vmap/src/net.dart';
 import 'package:vmap/src/style.dart';
-import 'package:vmap/src/worker.dart';
+import 'package:vmap/src/source_config.dart';
 
 Future<HttpServer> serve(void Function(HttpRequest request) answer) async {
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

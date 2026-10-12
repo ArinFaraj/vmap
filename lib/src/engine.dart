@@ -20,6 +20,7 @@ import 'raster_style.dart';
 import 'sprites.dart';
 import 'mesh_painter.dart';
 import 'offline.dart';
+import 'source_config.dart';
 import 'stats.dart';
 import 'style.dart';
 import 'style_model.dart';
@@ -295,9 +296,7 @@ class VmapEngine extends ChangeNotifier {
           for (final layer in sheet.rasters)
             RasterDrawing.of(
               layer,
-              cacheDirectory: source.cacheDirectory,
-              userAgent: source.userAgent,
-              headers: source.headers,
+              config: source,
               onLoaded: _requestFrame,
               onError: (e) => onError?.call(e),
             ),

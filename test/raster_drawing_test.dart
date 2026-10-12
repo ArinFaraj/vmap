@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/expr.dart';
+import 'package:vmap/src/source_config.dart';
 import 'package:vmap/src/raster.dart';
 import 'package:vmap/src/raster_style.dart';
 
@@ -56,8 +57,7 @@ Future<int> _paintUntilLoaded(
 RasterDrawing _drawing(RasterLayer layer, Completer<void> loaded) {
   final drawing = RasterDrawing.of(
     layer,
-    cacheDirectory: null,
-    userAgent: 'test',
+    config: const TileSourceConfig(userAgent: 'test'),
     onLoaded: () {
       if (!loaded.isCompleted) loaded.complete();
     },
