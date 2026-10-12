@@ -1,11 +1,26 @@
 name: vmap
-description: A vector tile layer for flutter_map that draws any MapLibre style with the Flutter canvas.
-version: 0.25.0
-publish_to: none
+description: >-
+  Vector maps for flutter_map: draws any MapLibre style with the plain Flutter
+  canvas, with labels in every script, pins, overlays and offline tiles.
+version: 0.26.0
+repository: https://github.com/ArinFaraj/vmap
+issue_tracker: https://github.com/ArinFaraj/vmap/issues
+topics:
+  - map
+  - maps
+  - flutter-map
+  - vector-tiles
+  - maplibre
+
+screenshots:
+  - description: One place in Erbil drawn in three styles by vmap.
+    path: doc/screenshots/hero.webp
+  - description: The example app in a light and a dark style.
+    path: doc/screenshots/app.webp
 
 environment:
   sdk: ">=3.13.0 <4.0.0"
-  flutter: ">=3.35.0"
+  flutter: ">=3.41.0"
 
 dependencies:
   dart_earcut: ^1.2.0
@@ -19,3 +34,9 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter
+
+flutter:
+  assets:
+    - path: assets/vmap_worker.js
+      platforms:
+        - web

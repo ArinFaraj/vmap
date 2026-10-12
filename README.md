@@ -1,4 +1,4 @@
-![vmap: vector maps for flutter_map, one place in three styles](doc/images/hero.png)
+![vmap: vector maps for flutter_map, one place in three styles](https://raw.githubusercontent.com/ArinFaraj/vmap/main/doc/images/hero.png)
 
 Vector maps for [flutter_map](https://pub.dev/packages/flutter_map), drawn
 with the plain Flutter canvas, in any MapLibre style.
@@ -13,16 +13,8 @@ with the plain Flutter canvas, in any MapLibre style.
 
 ## Install
 
-vmap is not on pub.dev yet. Depend on it from git:
-
-```yaml
-dependencies:
-  flutter_map: ^8.3.0
-  latlong2: ^0.9.1
-  vmap:
-    git:
-      url: https://github.com/ArinFaraj/vmap.git
-      ref: v0.24.0
+```bash
+flutter pub add vmap flutter_map latlong2
 ```
 
 ## Quick start
@@ -60,7 +52,7 @@ Keep your `FlutterMap` and swap the tile layer:
 
 ## Styles
 
-![The same place in six styles](doc/images/styles.png)
+![The same place in six styles](https://raw.githubusercontent.com/ArinFaraj/vmap/main/doc/images/styles.png)
 
 ```dart
 VmapMap(style: VmapStyle.light)  // built in, the default
@@ -72,7 +64,7 @@ VmapMap(style: VmapStyle.json(jsonDecode(myStyle)))
 The style decides the look and where the tiles come from. Light and dark
 versions of one style switch without reloading a tile.
 
-![One style from a country down to a street](doc/images/zooms.png)
+![One style from a country down to a street](https://raw.githubusercontent.com/ArinFaraj/vmap/main/doc/images/zooms.png)
 
 ### Changing a layer
 
@@ -130,7 +122,7 @@ pins instead:
 VmapMap(pins: VmapPins.standard)
 ```
 
-![Places drawn as pins on two styles](doc/images/pins.png)
+![Places drawn as pins on two styles](https://raw.githubusercontent.com/ArinFaraj/vmap/main/doc/images/pins.png)
 
 The standard set covers the usual kinds of place: food, cafes, hotels, shops,
 parks, sights, health, transport. It uses Material icons, so the app needs
@@ -207,7 +199,7 @@ gestures also work with `VmapLayer`.
 
 An overlay adds sources and layers of your own to whatever style is showing.
 
-![A route and clusters of points over the built in style](doc/images/own-data.png)
+![A route and clusters of points over the built in style](https://raw.githubusercontent.com/ArinFaraj/vmap/main/doc/images/own-data.png)
 Both are written the way a MapLibre style writes them, so anything a style
 can draw, you can draw: lines, fills, circles, text, icons, heatmaps.
 
@@ -400,7 +392,7 @@ VmapMap(
 VmapStyle.url(styleUrl, nameKeys: ['name:en', 'name'])
 ```
 
-![Local names and English names](doc/images/labels.png)
+![Local names and English names](https://raw.githubusercontent.com/ArinFaraj/vmap/main/doc/images/labels.png)
 
 ## Cache
 
@@ -491,15 +483,14 @@ On one Android phone at 60 Hz, flying the same tour over the same style, vmap
 lost 0 frames in each of four runs and vector_map_tiles 9.0.0-beta.13 lost
 between 10 and 196. vmap does more work per frame to get there. The full
 table, the caveats and how to run it are in
-[doc/benchmark.md](doc/benchmark.md).
+[doc/benchmark.md](https://github.com/ArinFaraj/vmap/blob/main/doc/benchmark.md).
 
 ## Limits
 
 - No 3D: buildings are flat and the map does not pitch.
 - Fonts come from the app, not from the style's glyph server.
 - On the web there is no disk cache and a PMTiles archive has to be at an
-  `https://` address. Tiles are built on the page's thread unless the app
-  sets up a worker ([On the web](#on-the-web)). It has been run in Chrome only. Use the default
+  `https://` address. It has been run in Chrome only. Use the default
   JavaScript build: the `--wasm` build froze its tab in three of about a
   dozen runs and showed labels with letters missing for a moment. Label
   halos in the JavaScript build are the text's outline, so they look
@@ -508,7 +499,7 @@ table, the caveats and how to run it are in
   devices are untested.
 
 The full list of what is read from a style, and how the renderer works, is in
-[doc/style-support.md](doc/style-support.md).
+[doc/style-support.md](https://github.com/ArinFaraj/vmap/blob/main/doc/style-support.md).
 
 ## On the web
 
@@ -519,23 +510,10 @@ offers a MapLibre layer for flutter_map, and
 [maplibre_gl](https://pub.dev/packages/maplibre_gl) a MapLibre map of its
 own. Both read the same styles as vmap.
 
-Tiles can be built off the page's thread.
-Compile the worker script into the app's `web` folder and name it before the
-first map is shown:
-
-```bash
-dart run vmap:build_web_worker
-```
-
-```dart
-VmapEngine.webWorker = 'vmap_worker.js';
-```
-
-Run the command again after updating vmap. Without the script, or if it
-does not load, tiles are built on the page as before. On a fast computer
-this made no difference that could be measured; see
-[the benchmark](doc/benchmark.md). It is there for slow devices and has
-not been measured on one.
+Tiles are built in a web worker that ships with vmap, so drawing a new
+area does not hold up the page, with nothing to set up. Set
+`VmapEngine.webWorker = null` before the first map to build them on the
+page instead; a worker that does not load falls back to the page by itself.
 
 ## Attribution
 
@@ -550,11 +528,11 @@ cd example
 flutter run
 ```
 
-![The example app in a light and a dark style](doc/images/app.png)
+![The example app in a light and a dark style](https://raw.githubusercontent.com/ArinFaraj/vmap/main/doc/images/app.png)
 
 A map of Erbil's old town with a bar across the top: the style, the place
 icons (none, the style's own, or pins), and layers to switch on, such as a
-walking route and clusters. [example/README.md](example/README.md) lists its
+walking route and clusters. [example/README.md](https://github.com/ArinFaraj/vmap/blob/main/example/README.md) lists its
 switches.
 
 ## License

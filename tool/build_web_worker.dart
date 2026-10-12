@@ -1,20 +1,23 @@
 import 'dart:convert';
 import 'dart:io';
 
-/// Compiles the script that builds tiles off the page's thread in a browser.
+import 'worker_hash.dart';
+
+/// Compiles the script that builds tiles off the page's thread in a browser
+/// into `assets/vmap_worker.js`, which vmap ships and loads by itself.
+/// Run it from the package root after changing anything under `lib`:
 ///
-///     dart run vmap:build_web_worker
+///     dart run tool/build_web_worker.dart
 ///
-/// writes `web/vmap_worker.js` in the app it is run from. Options:
-/// `--output <file>` for another place, `--flutter <directory>` for the
-/// Flutter SDK when `flutter` is not on the PATH and `FLUTTER_ROOT` is unset.
+/// `--flutter <directory>` names the Flutter SDK when `flutter` is not on
+/// the PATH and `FLUTTER_ROOT` is unset.
 Future<void> main(List<String> arguments) async {
   String? option(String name) {
     final at = arguments.indexOf(name);
     return at < 0 || at + 1 >= arguments.length ? null : arguments[at + 1];
   }
 
-  final output = option('--output') ?? 'web/vmap_worker.js';
+  const output = 'assets/vmap_worker.js';
   final root =
       option('--flutter') ??
       Platform.environment['FLUTTER_ROOT'] ??
@@ -51,6 +54,13 @@ Future<void> main(List<String> arguments) async {
   stderr.write(result.stderr);
   final leftover = File('$output.deps');
   if (leftover.existsSync()) leftover.deleteSync();
+  if (result.exitCode == 0) {
+    final script = File(output);
+    script.writeAsStringSync(
+      '${workerHeader(workerSourceHash(Directory('lib')))}\n'
+      '${script.readAsStringSync()}',
+    );
+  }
   exit(result.exitCode);
 }
 

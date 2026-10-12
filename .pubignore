@@ -1,0 +1,24 @@
+# Pub reads this file instead of .gitignore, so it repeats those rules.
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+migrate_working_dir/
+*.iml
+*.ipr
+*.iws
+.idea/
+/pubspec.lock
+**/doc/api/
+.dart_tool/
+.flutter-plugins-dependencies
+build/
+/coverage/
+
+# The README loads these from the repository.
+/doc/images/

@@ -36,11 +36,11 @@ import 'net.dart' show cacheKey;
 /// Owns the tiles and labels and draws one frame of the map for a camera.
 class VmapEngine extends ChangeNotifier {
   /// In a browser, the address of the script that builds tiles off the
-  /// page's thread: `'vmap_worker.js'` once `dart run vmap:build_web_worker`
-  /// has written it into the app's `web` folder. Set it before the first
-  /// map is shown. Null, or a script that does not load, builds tiles on
-  /// the page's own thread, which costs frames while new tiles come in.
-  /// Other platforms build tiles on isolates and ignore it.
+  /// page's thread. vmap ships one and uses it without being asked. Set
+  /// another before the first map is shown, or null to build tiles on the
+  /// page's own thread; a script that does not load is replaced by the
+  /// page's thread too. Other platforms build tiles on isolates and ignore
+  /// it.
   static String? get webWorker => workerScript;
   static set webWorker(String? script) => workerScript = script;
 

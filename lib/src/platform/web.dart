@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:js_interop';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'dart:ui_web' as ui_web;
 
 import 'package:web/web.dart' as web;
 
@@ -95,8 +96,10 @@ Float32List unpackFloats(Object packed) => packed as Float32List;
 Uint16List unpackShorts(Object packed) => packed as Uint16List;
 
 /// The address of the script that builds tiles off the page's thread, or
-/// null to build them on it.
-String? workerScript;
+/// null to build them on it. The worker vmap ships, by default.
+String? workerScript = ui_web.assetManager.getAssetUrl(
+  'packages/vmap/assets/vmap_worker.js',
+);
 
 class Worker {
   void Function(Object? message)? _send;

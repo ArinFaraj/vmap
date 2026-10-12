@@ -11,7 +11,7 @@ import 'showcase.dart';
 /// phone reads from `flags.txt`, for example `?labels=off`.
 void main() {
   flags.addAll(Uri.base.queryParameters);
-  if (flags['worker'] != 'off') VmapEngine.webWorker = 'vmap_worker.js';
+  if (flags['worker'] == 'off') VmapEngine.webWorker = null;
   runApp(
     tour
         ? const BenchApp(cacheDirectory: '')

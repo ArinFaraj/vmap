@@ -1,8 +1,9 @@
 /// The other half of [VmapEngine.webWorker]: what the worker script runs.
 ///
 /// A browser gives Dart one thread, so without a worker tiles are built on
-/// the page's own. `dart run vmap:build_web_worker` compiles this into
-/// `web/vmap_worker.js`. Only a web build can import this library.
+/// the page's own. `tool/build_web_worker.dart` compiles this into the
+/// `assets/vmap_worker.js` vmap ships. Only a web build can import this
+/// library.
 library;
 
 import 'dart:async';

@@ -1,3 +1,13 @@
+## 0.26.0
+
+- On pub.dev: `flutter pub add vmap`.
+- In a browser, tiles are built in a web worker that ships with vmap. There
+  is nothing to compile or set up; `VmapEngine.webWorker = null` builds them
+  on the page instead. `dart run vmap:build_web_worker` is gone, and a
+  `vmap_worker.js` an app compiled into its own `web` folder can be deleted.
+  The worker is only bundled into web builds.
+- Needs Flutter 3.41 or newer, for web only assets.
+
 ## 0.25.0
 
 Breaking:
