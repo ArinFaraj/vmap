@@ -480,9 +480,9 @@ table, the caveats and how to run it are in
 
 - No 3D: buildings are flat and the map does not pitch.
 - Fonts come from the app, not from the style's glyph server.
-- On the web there is no disk cache and a PMTiles archive has to be at an
-  `https://` address. Tiles are built on the page's thread unless the app
-  sets up a worker (below). It has been run in Chrome only. Use the default
+- On the web, [use MapLibre](#on-the-web). If you run vmap there, there is
+  no disk cache and a PMTiles archive has to be at an `https://` address.
+  Tiles are built on the page's thread unless the app sets up a worker. It has been run in Chrome only. Use the default
   JavaScript build: the `--wasm` build froze its tab in three of about a
   dozen runs and showed labels with letters missing for a moment. Label
   halos in the JavaScript build are the text's outline, so they look
@@ -493,11 +493,46 @@ table, the caveats and how to run it are in
 The full list of what is read from a style, and how the renderer works, is in
 [doc/style-support.md](doc/style-support.md).
 
-## Tiles off the page's thread in a browser
+## On the web
 
-A browser gives Dart one thread. To build tiles on another, compile the
-worker script into the app's `web` folder and name it before the first map
-is shown:
+In a browser, use MapLibre itself. [maplibre_gl](https://pub.dev/packages/maplibre_gl)
+draws with MapLibre GL JS on WebGL, reads the same styles, and needs no
+changes to `index.html`. It draws on the GPU and does what vmap does not,
+such as 3D buildings and a tilted camera. vmap runs in a browser too, but
+there Dart has one thread and nothing is kept on disk.
+
+The two read the same style, so an app can pick one by platform:
+
+```dart
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:latlong2/latlong.dart';
+import 'package:maplibre_gl/maplibre_gl.dart' as ml;
+import 'package:vmap/vmap.dart';
+
+const style = 'https://tiles.openfreemap.org/styles/liberty';
+
+Widget map() => kIsWeb
+    ? ml.MapLibreMap(
+        styleString: style,
+        initialCameraPosition: const ml.CameraPosition(
+          target: ml.LatLng(36.19, 44.01),
+          zoom: 13,
+        ),
+      )
+    : VmapMap(
+        initialCenter: const LatLng(36.19, 44.01),
+        style: VmapStyle.url(style),
+      );
+```
+
+`MapLibreMap` is its own widget, not a flutter_map layer, so markers,
+overlays and taps go through its API on the web.
+
+### vmap in a browser
+
+If you do run vmap on the web, tiles can be built off the page's thread.
+Compile the worker script into the app's `web` folder and name it before the
+first map is shown:
 
 ```bash
 dart run vmap:build_web_worker
