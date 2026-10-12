@@ -75,6 +75,6 @@ void main() {
   test('a feature found at a point carries its id', () {
     final hits = queryTile(layers, sheet, 0, 2218, 1875, 4, 0);
     expect(hits, hasLength(1));
-    expect((hits.single[4]! as Map)[r'$id'], 7);
+    expect(hits.single.properties[r'$id'], 7);
   });
 }

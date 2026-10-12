@@ -8,6 +8,7 @@ import 'package:flutter_map/flutter_map.dart' show Marker;
 import 'package:latlong2/latlong.dart' show LatLng;
 
 import 'camera.dart';
+import 'cluster.dart' show ClusterPoint;
 import 'expr.dart';
 import 'heat.dart';
 import 'labels.dart';
@@ -201,7 +202,6 @@ class VmapEngine extends ChangeNotifier {
       throw StateError('A region is downloaded into a cache directory');
     }
     final jobs = <Future<bool> Function()>[];
-    final client = Net(userAgent: source.userAgent, perHost: 6);
     void cover(int from, int to, void Function(int z, int x, int y) add) {
       for (var z = from; z <= to; z++) {
         for (var y = tileRow(north, z); y <= tileRow(south, z); y++) {
@@ -218,7 +218,7 @@ class VmapEngine extends ChangeNotifier {
       cover(
         at(minZoom),
         at(maxZoom),
-        (z, x, y) => jobs.add(() => pool.keep(TileId(z, x, y), client)),
+        (z, x, y) => jobs.add(() => pool.keep(TileId(z, x, y))),
       );
     }
     for (final r in _rasters) {
@@ -241,11 +241,7 @@ class VmapEngine extends ChangeNotifier {
       }
     }
 
-    try {
-      await Future.wait([for (var i = 0; i < 6; i++) lane()]);
-    } finally {
-      client.close();
-    }
+    await Future.wait([for (var i = 0; i < 6; i++) lane()]);
     return VmapDownload(tiles: jobs.length, fetched: fetched, failed: failed);
   }
 
@@ -612,7 +608,7 @@ class VmapEngine extends ChangeNotifier {
             styleZoom,
           );
           for (final hit in hits) {
-            found.add(_feature(s.def.name, hit! as List<Object?>));
+            found.add(_feature(s.def.name, hit));
           }
         }(),
     ]);
@@ -620,17 +616,17 @@ class VmapEngine extends ChangeNotifier {
     return [for (final f in found) f.$2];
   }
 
-  static (int, VmapFeature) _feature(String source, List<Object?> h) => (
-    h[0]! as int,
+  static (int, VmapFeature) _feature(String source, TileHit hit) => (
+    hit.order,
     VmapFeature(
       source: source,
-      sourceLayer: h[1]! as String,
-      geometryType: h[2]! as String,
-      layers: (h[3]! as List).cast<String>(),
-      id: (h[4]! as Map)[r'$id'],
+      sourceLayer: hit.sourceLayer,
+      geometryType: hit.geometryType,
+      layers: hit.layers,
+      id: hit.properties[r'$id'],
       properties: {
-        for (final e in (h[4]! as Map).entries)
-          if (e.key != r'$id') e.key as String: e.value,
+        for (final e in hit.properties.entries)
+          if (e.key != r'$id') e.key: e.value,
       },
     ),
   );
@@ -682,14 +678,13 @@ class VmapEngine extends ChangeNotifier {
                   ((north + south) / 2 * n - y) * tileExtent,
                   0,
                   styleZoom,
-                  halfWidth: (east - west) / 2 * n * tileExtent,
-                  halfHeight: (south - north) / 2 * n * tileExtent,
+                  box: (
+                    (east - west) / 2 * n * tileExtent,
+                    (south - north) / 2 * n * tileExtent,
+                  ),
                 );
                 for (final hit in hits) {
-                  final (order, feature) = _feature(
-                    s.def.name,
-                    hit! as List<Object?>,
-                  );
+                  final (order, feature) = _feature(s.def.name, hit);
                   // A feature lying over a tile edge is in both tiles, and
                   // only an id tells its two halves from two features.
                   final key = feature.id == null
@@ -723,8 +718,7 @@ class VmapEngine extends ChangeNotifier {
   /// source named [source] comes apart, for zooming in on a tapped cluster.
   /// Null when there is no such cluster.
   Future<double?> clusterExpansionZoom(String source, int clusterId) async {
-    final found = await _clustered(source)?.cluster('zoom', clusterId);
-    final zoom = found == null || found.isEmpty ? null : found.first as int?;
+    final zoom = await _clustered(source)?.clusterZoom(clusterId);
     return zoom == null ? null : zoom + 1.0;
   }
 
@@ -732,7 +726,10 @@ class VmapEngine extends ChangeNotifier {
   Future<List<VmapClusterMember>> clusterChildren(
     String source,
     int clusterId,
-  ) async => _members(await _clustered(source)?.cluster('children', clusterId));
+  ) async => _members(
+    await _clustered(source)
+        ?.clusterMembers(ClusterQuestion.children, clusterId),
+  );
 
   /// The points of the data inside cluster [clusterId], [limit] of them
   /// starting at [offset].
@@ -742,26 +739,25 @@ class VmapEngine extends ChangeNotifier {
     int limit = 10,
     int offset = 0,
   }) async => _members(
-    await _clustered(source)
-        ?.cluster('leaves', clusterId, limit: limit, offset: offset),
+    await _clustered(source)?.clusterMembers(
+      ClusterQuestion.leaves,
+      clusterId,
+      limit: limit,
+      offset: offset,
+    ),
   );
 
-  static List<VmapClusterMember> _members(List<Object?>? found) => [
-    for (final member in found ?? const <Object?>[])
-      if (member case [
-        final num x,
-        final num y,
-        final Map<Object?, Object?> props,
-      ])
-        VmapClusterMember(
-          latitude: latitudeAt(y.toDouble()),
-          longitude: longitudeAt(x.toDouble()),
-          id: props[r'$id'],
-          properties: {
-            for (final e in props.entries)
-              if (e.key != r'$id') e.key! as String: e.value,
-          },
-        ),
+  static List<VmapClusterMember> _members(List<ClusterPoint>? found) => [
+    for (final member in found ?? const <ClusterPoint>[])
+      VmapClusterMember(
+        latitude: latitudeAt(member.y),
+        longitude: longitudeAt(member.x),
+        id: member.props[r'$id'],
+        properties: {
+          for (final e in member.props.entries)
+            if (e.key != r'$id') e.key: e.value,
+        },
+      ),
   ];
 
   void _requestFrame() {

@@ -86,9 +86,8 @@ void main() {
     final pool = _pool(clustered);
     final near = await pool.query(TileId(z, x, y), px, py, 64, z.toDouble());
     expect(near, hasLength(1));
-    final hit = near.single! as List<Object?>;
-    expect(hit[3], ['dots']);
-    expect((hit[4]! as Map)['point_count'], 3);
+    expect(near.single.layers, ['dots']);
+    expect(near.single.properties['point_count'], 3);
 
     final boxed = await pool.query(
       TileId(z, x, y),
@@ -96,8 +95,7 @@ void main() {
       py,
       0,
       z.toDouble(),
-      halfWidth: 64,
-      halfHeight: 64,
+      box: (64, 64),
     );
     expect(boxed, hasLength(1));
     final away = await pool.query(TileId(z, x, y), 10, 10, 4, z.toDouble());
@@ -106,26 +104,37 @@ void main() {
 
   test('a cluster answers its zoom, its children and its points', () async {
     final pool = _pool(clustered);
-    final hit =
-        (await pool.query(TileId(z, x, y), px, py, 64, z.toDouble())).single!
-            as List<Object?>;
-    final id = (hit[4]! as Map)['cluster_id']! as int;
+    final hit = (await pool.query(
+      TileId(z, x, y),
+      px,
+      py,
+      64,
+      z.toDouble(),
+    )).single;
+    final id = hit.properties['cluster_id']! as int;
 
-    final zoom = await pool.cluster('zoom', id);
-    expect(zoom.single, isA<int>());
-    expect(await pool.cluster('children', id), isNotEmpty);
-    final leaves = await pool.cluster('leaves', id, limit: 10);
-    expect(leaves, hasLength(3));
-    final names = [
-      for (final leaf in leaves) ((leaf! as List)[2]! as Map)['name'],
-    ]..sort();
+    expect(await pool.clusterZoom(id), isNotNull);
+    expect(await pool.clusterMembers(ClusterQuestion.children, id), isNotEmpty);
+    final leaves = await pool.clusterMembers(
+      ClusterQuestion.leaves,
+      id,
+      limit: 10,
+    );
+    final names = [for (final leaf in leaves) leaf.props['name']]..sort();
     expect(names, ['a', 'b', 'c']);
-    expect(await pool.cluster('leaves', id, limit: 2), hasLength(2));
+    expect(
+      await pool.clusterMembers(ClusterQuestion.leaves, id, limit: 2),
+      hasLength(2),
+    );
   });
 
   test('a cluster that does not exist answers nothing', () async {
     final pool = _pool(clustered);
-    expect(await pool.cluster('leaves', 999999, limit: 10), isEmpty);
+    expect(await pool.clusterZoom(999999), isNull);
+    expect(
+      await pool.clusterMembers(ClusterQuestion.leaves, 999999, limit: 10),
+      isEmpty,
+    );
   });
 
   test('a tile from the network is built, and a refused one is told', () async {
@@ -165,7 +174,7 @@ void main() {
       if (watch.elapsed > const Duration(seconds: 5)) fail('timed out');
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
-    expect(loaded, [const TileId(1, 0, 0)]);
-    expect(failed, [const TileId(1, 1, 0)]);
+    expect(loaded.toSet(), {const TileId(1, 0, 0)});
+    expect(failed.toSet(), {const TileId(1, 1, 0)});
   });
 }

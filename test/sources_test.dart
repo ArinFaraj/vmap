@@ -107,11 +107,11 @@ void main() {
   test('a lookup finds the features under a point and their layers', () {
     final tiles = GeoJsonTiles(sheet.sources[1].data);
     final onLine = queryTile(tiles.tile(0, 0, 0), sheet, 1, 2048, 2050, 8, 0);
-    expect(onLine.single[3], ['route']);
-    expect((onLine.single[4]! as Map)['name'], 'Route');
+    expect(onLine.single.layers, ['route']);
+    expect(onLine.single.properties['name'], 'Route');
     final x = 4096 * (205 / 360);
     final inArea = queryTile(tiles.tile(0, 0, 0), sheet, 1, x, 1750, 1, 0);
-    expect(inArea.map((f) => (f[4]! as Map)['name']), contains('Area'));
+    expect(inArea.map((f) => f.properties['name']), contains('Area'));
     expect(queryTile(tiles.tile(0, 0, 0), sheet, 1, 100, 100, 8, 0), isEmpty);
   });
 
@@ -131,10 +131,9 @@ void main() {
         y,
         0,
         0,
-        halfWidth: halfWidth,
-        halfHeight: halfHeight,
+        box: (halfWidth, halfHeight),
       ))
-        (f[4]! as Map)['name'],
+        f.properties['name'],
     ];
     expect(names(2048, 2048, 20, 20), ['Route'], reason: 'a line through it');
     expect(names(2330, 1750, 5, 5), ['Area'], reason: 'wholly inside an area');

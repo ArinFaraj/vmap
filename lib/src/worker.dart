@@ -7,34 +7,14 @@ import 'geojson.dart';
 import 'mvt.dart';
 import 'query.dart';
 import 'pmtiles.dart';
+import 'protocol.dart';
 import 'style.dart';
 import 'tile_builder.dart';
+import 'tile_store.dart';
 import 'net.dart';
 import 'platform.dart';
 
-class TileId {
-  const TileId(this.z, this.x, this.y);
-
-  final int z;
-  final int x;
-  final int y;
-
-  TileId get parent => TileId(z - 1, x >> 1, y >> 1);
-
-  @override
-  bool operator ==(Object other) =>
-      other is TileId && other.z == z && other.x == x && other.y == y;
-
-  @override
-  int get hashCode => tileKey(z, x, y);
-
-  @override
-  String toString() => '$z/$x/$y';
-}
-
-/// One number for a tile down to zoom 22. It stays under the 53 bits a
-/// number has in JavaScript.
-int tileKey(int z, int x, int y) => (z * 0x400000 + x) * 0x400000 + y;
+export 'protocol.dart' show ClusterQuestion, TileHit, TileId, tileKey;
 
 /// How tiles are fetched and kept.
 class TileSourceConfig {
@@ -125,8 +105,8 @@ class TilePool {
     _dispatch();
   }
 
-  /// The tile address this pool is using.
-  String? _template;
+  /// Where the tiles of the address this pool is using are kept.
+  TileStore? _store;
 
   /// Whether the server has confirmed [_template] in this run. Until it has,
   /// only tiles already on disk are loaded: the address changes with every
@@ -165,7 +145,7 @@ class TilePool {
             archive.close();
           }
         }
-        _template = direct;
+        _use(direct);
         _confirmed = true;
         await _spawnWorkers(direct);
         _dispatch();
@@ -179,7 +159,7 @@ class TilePool {
         if (saved.length > 1) maxZoom = int.tryParse(saved[1]) ?? maxZoom;
       }
       if (remembered != null) {
-        _template = remembered;
+        _use(remembered);
         await _spawnWorkers(remembered);
         if (_closed) return;
         _dispatch();
@@ -199,12 +179,12 @@ class TilePool {
         _workers.clear();
         _inflight.clear();
         _inflightIds.clear();
-        _template = current;
+        _use(current);
         await _spawnWorkers(current);
         if (_closed) return;
         final directory = config.cacheDirectory;
         if (remembered != null && directory != null) {
-          final stale = _tilesFolder(remembered);
+          final stale = TileStore.folderOf(_tilesPrefix, remembered);
           unawaited(deleteCached(directory, (name) => name == stale));
         }
       }
@@ -215,6 +195,25 @@ class TilePool {
       startError = e;
       _starting = null;
     }
+  }
+
+  static const _tilesPrefix = 'tiles';
+
+  void _use(String template) {
+    _store?.client.close();
+    _store?.close();
+    _store = _def.geoJson
+        ? null
+        : TileStore(
+            template,
+            cover: _def.cover,
+            folder: TileStore.folderOf(_tilesPrefix, template),
+            client: Net(userAgent: config.userAgent, perHost: 6),
+            cacheDirectory: config.cacheDirectory,
+            extension: '.pbf',
+            headers: config.headers,
+            userAgent: config.userAgent,
+          );
   }
 
   Future<void> _spawnWorkers(String template) async {
@@ -235,21 +234,24 @@ class TilePool {
     final worker = _Worker();
     worker.link = await startWorker(
       tileWorkerMain,
-      [
-        template,
-        config.cacheDirectory,
-        config.userAgent,
-        style,
-        nameKeys,
-        sheet.zoomOffset,
-        source,
-        config.headers,
-      ],
+      WorkerSetup(
+        template: template,
+        cacheDirectory: config.cacheDirectory,
+        userAgent: config.userAgent,
+        style: style,
+        nameKeys: nameKeys,
+        zoomOffset: sheet.zoomOffset,
+        source: source,
+        headers: config.headers,
+      ).toWire(),
       (message) {
-        if (message case [final int job, 'q', final List<Object?> found]) {
-          _queries.remove(job)?.complete(found);
-        } else {
-          _onResult(worker, message! as List);
+        switch (WorkerReply.fromWire(message! as List<Object?>)) {
+          case final TileBuilt built:
+            _onResult(worker, built.job, built: built);
+          case final TileNotBuilt failed:
+            _onResult(worker, failed.job, error: failed.error);
+          case final reply:
+            _queries.remove(reply.job)?.complete(reply);
         }
       },
       debugName: 'vmap-tiles-$source-$index',
@@ -279,49 +281,20 @@ class TilePool {
     }
   }
 
-  PmTiles? _keeping;
-
   /// Fetches tile [id] into the cache directory unless it is there already,
   /// and returns whether it had to. A source with nothing to keep (data
   /// held by the style, an archive on this device) answers false.
-  Future<bool> keep(TileId id, Net client) async {
+  Future<bool> keep(TileId id) async {
     await _starting;
-    final directory = config.cacheDirectory;
-    final template = _template;
     if (startError case final error?) throw error;
-    if (directory == null || template == null || _def.geoJson) return false;
-    if (id.z > maxZoom || !_def.cover.has(id.z, id.x, id.y)) return false;
-    final file = _tileCachePath(directory, template, id.z, id.x, id.y);
-    if (fileExists(file)) return false;
-    if (PmTiles.handles(template)) {
-      final archive = _keeping ??= PmTiles(
-        template,
-        userAgent: config.userAgent,
-        headers: config.headers,
-      );
-      if (archive.local) return false;
-      await writeFile(file, await archive.tile(id.z, id.x, id.y));
-      return true;
-    }
-    final (url, reply) = await getTile(
-      client,
-      template,
-      id.z,
-      id.x,
-      _def.cover.row(id.z, id.y),
-      config.headers,
-    );
-    if (reply.status == 204 || reply.status == 404) return false;
-    if (reply.status != 200) throw HttpFailure(reply.status, url);
-    await writeFile(file, reply.bytes);
-    return true;
+    final store = _store;
+    if (store == null || id.z > maxZoom) return false;
+    return store.keep(id.z, id.x, id.y);
   }
 
   bool _onDisk(TileId id) {
     if (_notOnDisk.contains(id)) return false;
-    final found = fileExists(
-      _tileCachePath(config.cacheDirectory!, _template!, id.z, id.x, id.y),
-    );
+    final found = _store?.onDisk(id.z, id.x, id.y) ?? false;
     if (!found) _notOnDisk.add(id);
     return found;
   }
@@ -342,86 +315,97 @@ class TilePool {
       _inflight[job] = id;
       _inflightIds.add(id);
       free.busy++;
-      free.link.send([job, id.z, id.x, id.y, maxZoom]);
+      free.link.send(BuildTile(job, id, maxZoom: maxZoom).toWire());
     }
   }
 
-  void _onResult(_Worker worker, List<Object?> message) {
+  void _onResult(_Worker worker, int job, {TileBuilt? built, String? error}) {
     worker.busy--;
-    final id = _inflight.remove(message[0]! as int);
-    if (id == null || _closed) return;
+    final id = _inflight.remove(job);
+    if (id == null) return;
     _inflightIds.remove(id);
-    _wanted = [
-      for (final w in _wanted)
-        if (w != id) w,
-    ];
-    final payload = message[1];
-    if (payload == null) {
-      onFailed(id, message[2] ?? 'unknown');
+    if (built == null) {
+      onFailed(id, error ?? 'unknown');
     } else {
       final started = _clock.elapsedMicroseconds;
-      onLoaded(id, BuiltTile.fromMessage(payload as List<Object?>));
+      onLoaded(id, built.tile);
       final spent = _clock.elapsedMicroseconds - started;
       if (spent > _maxUnpackMicros) _maxUnpackMicros = spent;
     }
     _dispatch();
   }
 
-  final Map<int, Completer<List<Object?>>> _queries = {};
+  final Map<int, Completer<WorkerReply?>> _queries = {};
 
-  /// The features of tile [id] within [radius] tile units of ([px], [py])
-  /// that the style draws at [styleZoom], or with [halfWidth] and
-  /// [halfHeight] given, those touching the box of that size around it.
-  Future<List<Object?>> query(
+  /// The features of tile [id] within [radius] tile units of ([x], [y])
+  /// that the style draws at [styleZoom], or with a [box] of half a width
+  /// and half a height, those touching the box of that size around it.
+  Future<List<TileHit>> query(
     TileId id,
-    double px,
-    double py,
+    double x,
+    double y,
     double radius,
     double styleZoom, {
-    double halfWidth = -1,
-    double halfHeight = -1,
-  }) => _ask([
-    id.z,
-    id.x,
-    id.y,
-    'q',
-    px,
-    py,
-    radius,
-    styleZoom,
-    halfWidth,
-    halfHeight,
-  ]);
+    (double, double)? box,
+  }) async => switch (await _ask(
+    (job) => FindInTile(
+      job,
+      id,
+      x: x,
+      y: y,
+      radius: radius,
+      styleZoom: styleZoom,
+      box: box,
+    ),
+  )) {
+    FeaturesFound(:final hits) => hits,
+    _ => const [],
+  };
 
-  /// Asks a clustered source about cluster [id]: its `zoom` of expansion,
-  /// its `children` or its `leaves`.
-  Future<List<Object?>> cluster(
-    String what,
+  /// The zoom at which cluster [id] of a clustered GeoJSON source comes
+  /// apart, or null when there is no such cluster.
+  Future<int?> clusterZoom(int id) async => switch (await _ask(
+    (job) => AskCluster(job, ClusterQuestion.zoom, clusterId: id),
+  )) {
+    ClusterZoom(:final zoom) => zoom,
+    _ => null,
+  };
+
+  /// What cluster [id] comes apart into, or the points of the data in it.
+  Future<List<ClusterPoint>> clusterMembers(
+    ClusterQuestion question,
     int id, {
     int limit = 0,
     int offset = 0,
-  }) => _ask([0, 0, 0, 'c', what, id, limit, offset]);
+  }) async => switch (await _ask(
+    (job) =>
+        AskCluster(job, question, clusterId: id, limit: limit, offset: offset),
+  )) {
+    ClusterMembers(:final members) => members,
+    _ => const [],
+  };
 
-  Future<List<Object?>> _ask(List<Object?> question) async {
+  Future<WorkerReply?> _ask(WorkerRequest Function(int job) question) async {
     await _starting;
-    if (_workers.isEmpty || _closed) return const [];
+    if (_workers.isEmpty || _closed) return null;
     final job = _nextJob++;
     final done = _queries[job] = Completer();
-    _workers.first.link.send([job, ...question]);
+    _workers.first.link.send(question(job).toWire());
     return done.future.timeout(
       const Duration(seconds: 10),
       onTimeout: () {
         _queries.remove(job);
-        return const [];
+        return null;
       },
     );
   }
 
   void close() {
     _closed = true;
-    _keeping?.close();
+    _store?.client.close();
+    _store?.close();
     for (final q in _queries.values) {
-      q.complete(const []);
+      q.complete(null);
     }
     _queries.clear();
     for (final w in _workers) {
@@ -438,15 +422,6 @@ class _Worker {
   void close() => link.close();
 }
 
-List<Object?> _members(List<ClusterPoint>? points) => [
-  for (final p in points ?? const <ClusterPoint>[]) [p.x, p.y, p.props],
-];
-
-String _tileCachePath(String directory, String template, int z, int x, int y) =>
-    '$directory/${_tilesFolder(template)}/$z/$x/$y.pbf';
-
-String _tilesFolder(String template) => 'tiles-${cacheKey(template)}';
-
 /// What a tile worker runs: it builds the tiles it is asked for and answers
 /// lookups in them.
 Future<void> tileWorkerMain(
@@ -454,175 +429,145 @@ Future<void> tileWorkerMain(
   void Function(Object? message) send,
   Stream<Object?> inbox,
 ) async {
-  final template = init[0]! as String;
-  final cacheDirectory = init[1] as String?;
-  final client = Net(userAgent: init[2]! as String, perHost: 4);
+  final setup = WorkerSetup.fromWire(init);
+  final client = Net(userAgent: setup.userAgent, perHost: 4);
   final sheet = StyleSheet.compile(
-    (init[3]! as Map).cast<String, Object?>(),
-    nameKeys: (init[4] as List?)?.cast<String>(),
-    zoomOffset: init[5]! as double,
+    setup.style,
+    nameKeys: setup.nameKeys,
+    zoomOffset: setup.zoomOffset,
   );
-  final source = init[6]! as int;
-  final headers = (init[7]! as Map).cast<String, String>();
+  final source = setup.source;
+  final def = sheet.sources[source];
   final builder = TileBuilder(sheet, source: source);
+  void answer(WorkerReply reply) => send(reply.toWire());
 
   Future<GeoJsonTiles>? geoJson;
-  if (sheet.sources[source].geoJson) {
-    final data = sheet.sources[source].data;
-    final cluster = sheet.sources[source].cluster;
-    final promoteId = sheet.sources[source].idKey('');
-    final generateId = sheet.sources[source].generateId;
+  TileStore? store;
+  if (def.geoJson) {
+    final data = def.data;
+    GeoJsonTiles tiles(Object? json) => GeoJsonTiles(
+      json,
+      cluster: def.cluster,
+      promoteId: def.idKey(''),
+      generateId: def.generateId,
+    );
     geoJson = () async {
-      if (data is! String) {
-        return GeoJsonTiles(
-          data,
-          cluster: cluster,
-          promoteId: promoteId,
-          generateId: generateId,
-        );
-      }
+      if (data is! String) return tiles(data);
       try {
-        final reply = await client.get(data, headers);
-        return GeoJsonTiles(
-          jsonDecode(utf8.decode(reply.bytes)),
-          cluster: cluster,
-          promoteId: promoteId,
-          generateId: generateId,
-        );
+        final reply = await client.get(data, setup.headers);
+        return tiles(jsonDecode(utf8.decode(reply.bytes)));
       } catch (_) {
         return GeoJsonTiles(null);
       }
     }();
+  } else {
+    store = TileStore(
+      setup.template,
+      cover: def.cover,
+      folder: TileStore.folderOf(TilePool._tilesPrefix, setup.template),
+      client: client,
+      cacheDirectory: setup.cacheDirectory,
+      extension: '.pbf',
+      headers: setup.headers,
+      userAgent: setup.userAgent,
+    );
   }
-
-  final archive = PmTiles.handles(template)
-      ? PmTiles(template, client: client, headers: headers)
-      : null;
 
   /// The bytes of the tiles built last, which a lookup reads again.
   final recent = <int, Uint8List>{};
 
-  final cover = sheet.sources[source].cover;
-
-  Future<Uint8List> fetch(int z, int x, int y) async {
-    if (!cover.has(z, x, y)) return Uint8List(0);
-    final key = tileKey(z, x, y);
+  Future<Uint8List> fetch(TileId id) async {
+    final key = tileKey(id.z, id.x, id.y);
     final kept = recent.remove(key);
     if (kept != null) {
       recent[key] = kept;
       return kept;
     }
-    void remember(Uint8List bytes) {
-      recent[key] = bytes;
-      if (recent.length > 24) recent.remove(recent.keys.first);
-    }
-
-    String? file;
-    if (cacheDirectory != null && !(archive?.local ?? false)) {
-      file = _tileCachePath(cacheDirectory, template, z, x, y);
-      if (fileExists(file)) {
-        final bytes = await readFile(file);
-        remember(bytes);
-        return bytes;
-      }
-    }
-    void keep(Uint8List bytes) {
-      remember(bytes);
-      final target = file;
-      if (target == null) return;
-      unawaited(writeFile(target, bytes).then<void>((_) {}, onError: (_) {}));
-    }
-
-    if (archive != null) {
-      final bytes = await archive.tile(z, x, y);
-      keep(bytes);
-      return bytes;
-    }
-    final (url, reply) = await getTile(
-      client,
-      template,
-      z,
-      x,
-      cover.row(z, y),
-      headers,
-    );
-    if (reply.status == 204 || reply.status == 404) return Uint8List(0);
-    if (reply.status != 200) throw HttpFailure(reply.status, url);
-    keep(reply.bytes);
-    return reply.bytes;
+    final bytes = await store!.read(id.z, id.x, id.y);
+    recent[key] = bytes;
+    if (recent.length > 24) recent.remove(recent.keys.first);
+    return bytes;
   }
 
-  Future<Iterable<TileLayer>> layersOf(int z, int x, int y) async {
-    if (geoJson != null) return (await geoJson).tile(z, x, y);
-    final bytes = await fetch(z, x, y);
+  Future<Iterable<TileLayer>> layersOf(TileId id) async {
+    if (geoJson != null) return (await geoJson).tile(id.z, id.x, id.y);
+    final bytes = await fetch(id);
     return bytes.isEmpty
         ? const <TileLayer>[]
         : MvtTile.decode(bytes).layers.values;
   }
 
-  await for (final message in inbox) {
-    final m = message as List<Object?>;
-    final job = m[0]! as int;
-    final z = m[1]! as int;
-    final x = m[2]! as int;
-    final y = m[3]! as int;
-    if (m[4] == 'c') {
-      unawaited(() async {
+  Future<WorkerReply> reply(WorkerRequest request) async {
+    switch (request) {
+      case BuildTile(:final job, :final tile, :final maxZoom):
         try {
-          final clusters = (await geoJson)?.clusters;
-          final id = m[6]! as int;
-          send([
-            job,
-            'q',
-            switch (m[5]) {
-              'zoom' => [clusters?.expansionZoom(id)],
-              'children' => _members(clusters?.children(id)),
-              _ => _members(
-                clusters?.leaves(id, limit: m[7]! as int, offset: m[8]! as int),
-              ),
-            },
-          ]);
-        } catch (_) {
-          send([job, 'q', const <Object?>[]]);
+          final layers = await layersOf(tile);
+          final built = layers.isEmpty
+              ? BuiltTile(const [], const [])
+              : (builder.buildLayers(
+                  layers,
+                  tile.z,
+                  x: tile.x,
+                  y: tile.y,
+                  maxZoom: maxZoom,
+                )..keyLabels(
+                  tile.z,
+                  tile.x,
+                  tile.y,
+                  grid: geoJson == null ? 1024 : 1 << 24,
+                ));
+          return TileBuilt(job, built);
+        } catch (e) {
+          return TileNotBuilt(job, '$e');
         }
-      }());
-      continue;
-    }
-    if (m[4] == 'q') {
-      unawaited(() async {
+      case final FindInTile find:
         try {
-          send([
-            job,
-            'q',
+          return FeaturesFound(
+            find.job,
             queryTile(
-              await layersOf(z, x, y),
+              await layersOf(find.tile),
               sheet,
               source,
-              m[5]! as double,
-              m[6]! as double,
-              m[7]! as double,
-              m[8]! as double,
-              halfWidth: m[9]! as double,
-              halfHeight: m[10]! as double,
+              find.x,
+              find.y,
+              find.radius,
+              find.styleZoom,
+              box: find.box,
             ),
-          ]);
+          );
         } catch (_) {
-          send([job, 'q', const <Object?>[]]);
+          return FeaturesFound(find.job, const []);
         }
-      }());
-      continue;
+      case final AskCluster ask:
+        final id = ask.clusterId;
+        try {
+          final clusters = geoJson == null ? null : (await geoJson).clusters;
+          return switch (ask.question) {
+            ClusterQuestion.zoom => ClusterZoom(
+              ask.job,
+              clusters?.expansionZoom(id),
+            ),
+            ClusterQuestion.children => ClusterMembers(
+              ask.job,
+              clusters?.children(id) ?? const [],
+            ),
+            ClusterQuestion.leaves => ClusterMembers(
+              ask.job,
+              clusters?.leaves(id, limit: ask.limit, offset: ask.offset) ??
+                  const [],
+            ),
+          };
+        } catch (_) {
+          return ask.question == ClusterQuestion.zoom
+              ? ClusterZoom(ask.job, null)
+              : ClusterMembers(ask.job, const []);
+        }
     }
-    unawaited(() async {
-      try {
-        final layers = await layersOf(z, x, y);
-        final tile = layers.isEmpty
-            ? BuiltTile(const [], const [])
-            : (builder.buildLayers(layers, z, x: x, y: y, maxZoom: m[4]! as int)
-                ..keyLabels(z, x, y, grid: geoJson == null ? 1024 : 1 << 24));
-        send([job, tile.toMessage()]);
-      } catch (e) {
-        send([job, null, '$e']);
-      }
-    }());
+  }
+
+  await for (final message in inbox) {
+    unawaited(
+      reply(WorkerRequest.fromWire(message! as List<Object?>)).then(answer),
+    );
   }
 }

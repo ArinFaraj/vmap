@@ -1,5 +1,6 @@
 import 'expr.dart';
 import 'mvt.dart';
+import 'protocol.dart' show TileHit;
 import 'style.dart';
 
 /// One map feature found at a point.
@@ -98,9 +99,9 @@ class VmapFeatureState {
 /// style layer of [source] draws at [styleZoom]. Each comes with the highest
 /// position among the layers drawing it, for ordering across tiles.
 ///
-/// With [halfWidth] and [halfHeight] zero or more, it is the features that
+/// With a [box] of half a width and half a height, it is the features that
 /// touch the box of that size around the point instead.
-List<List<Object?>> queryTile(
+List<TileHit> queryTile(
   Iterable<TileLayer> layers,
   StyleSheet sheet,
   int source,
@@ -108,13 +109,11 @@ List<List<Object?>> queryTile(
   double py,
   double radius,
   double styleZoom, {
-  double halfWidth = -1,
-  double halfHeight = -1,
+  (double, double)? box,
 }) {
-  final boxed = halfWidth >= 0 && halfHeight >= 0;
   final context = EvalContext()..zoom = styleZoom;
   final sink = GeometrySink();
-  final found = <List<Object?>>[];
+  final found = <TileHit>[];
   bool shown(double minZoom, double maxZoom) =>
       styleZoom >= minZoom && styleZoom < maxZoom;
   for (final layer in layers) {
@@ -142,16 +141,17 @@ List<List<Object?>> queryTile(
     for (final f in layer.features) {
       sink.clear();
       f.readGeometry(sink);
-      final hit = boxed
-          ? _touches(
-              f.type,
-              sink,
-              x - halfWidth / scale,
-              y - halfHeight / scale,
-              x + halfWidth / scale,
-              y + halfHeight / scale,
-            )
-          : _hit(f.type, sink, x, y, reach);
+      final hit = switch (box) {
+        (final halfWidth, final halfHeight) => _touches(
+          f.type,
+          sink,
+          x - halfWidth / scale,
+          y - halfHeight / scale,
+          x + halfWidth / scale,
+          y + halfHeight / scale,
+        ),
+        null => _hit(f.type, sink, x, y, reach),
+      };
       if (!hit) continue;
       final tags = f.allTags(layer);
       if (idKey != null && tags[idKey] != null) tags[r'$id'] = tags[idKey];
@@ -182,7 +182,15 @@ List<List<Object?>> queryTile(
         if (order < 0) order = p;
       }
       if (ids.isEmpty) continue;
-      found.add([order, layer.name, context.geometryType, ids, context.props]);
+      found.add(
+        TileHit(
+          order: order,
+          sourceLayer: layer.name,
+          geometryType: context.geometryType,
+          layers: ids,
+          properties: context.props,
+        ),
+      );
     }
   }
   return found;

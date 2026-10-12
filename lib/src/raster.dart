@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 import 'expr.dart';
 import 'pmtiles.dart';
 import 'style.dart';
+import 'tile_store.dart';
 import 'net.dart';
 import 'platform.dart';
 import 'worker.dart' show tileKey;
@@ -44,12 +45,8 @@ class RasterTiles {
            layer.tiles ??
            (PmTiles.handles(layer.tileJsonUrl) ? layer.tileJsonUrl : null),
        _maxZoom = layer.sourceMaxZoom ?? 22 {
-    if (PmTiles.handles(_template)) {
-      final archive = _archive = PmTiles(
-        _template!,
-        client: _client,
-        headers: headers,
-      );
+    if (_template case final template?) _use(template);
+    if (_store?.archive case final archive?) {
       if (layer.sourceMaxZoom == null) {
         archive.maxZoom.then((deepest) {
           _maxZoom = deepest;
@@ -137,7 +134,7 @@ class RasterTiles {
     _paint.shader = null;
   }
 
-  PmTiles? _archive;
+  TileStore? _store;
 
   RasterLayer layer;
   final String? cacheDirectory;
@@ -169,7 +166,7 @@ class RasterTiles {
       final json = jsonDecode(utf8.decode(reply.bytes)) as Map<String, dynamic>;
       final deepest = json['maxzoom'];
       if (deepest is num) _maxZoom = deepest.toInt();
-      _template = tileTemplate(json['tiles']);
+      if (tileTemplate(json['tiles']) case final template?) _use(template);
       if (!_closed) onLoaded();
     } catch (e) {
       if (!_closed) onError?.call(e);
@@ -183,35 +180,24 @@ class RasterTiles {
         _maxZoom,
       );
 
+  void _use(String template) {
+    _template = template;
+    _store?.close();
+    _store = TileStore(
+      template,
+      cover: layer.cover,
+      folder: TileStore.folderOf('raster', template),
+      client: _client,
+      cacheDirectory: cacheDirectory,
+      headers: headers,
+      userAgent: userAgent,
+    );
+  }
+
   /// Fetches tile [z]/[x]/[y] into the cache directory unless it is there
   /// already, and returns whether it had to.
-  Future<bool> keep(int z, int x, int y) async {
-    final template = _template;
-    final archive = _archive;
-    if (cacheDirectory == null || template == null) return false;
-    if (archive?.local ?? false) return false;
-    if (!layer.cover.has(z, x, y)) return false;
-    final file = '$cacheDirectory/raster-${cacheKey(template)}/$z/$x/$y';
-    if (fileExists(file)) return false;
-    if (archive != null) {
-      final bytes = await archive.tile(z, x, y);
-      if (bytes.isEmpty) return false;
-      await writeFile(file, bytes);
-      return true;
-    }
-    final (url, reply) = await getTile(
-      _client,
-      template,
-      z,
-      x,
-      layer.cover.row(z, y),
-      headers,
-    );
-    if (reply.status == 204 || reply.status == 404) return false;
-    if (reply.status != 200) throw HttpFailure(reply.status, url);
-    await writeFile(file, reply.bytes);
-    return true;
-  }
+  Future<bool> keep(int z, int x, int y) async =>
+      await _store?.keep(z, x, y) ?? false;
 
   /// Draws the tiles covering the view. [zoom] is the slippy-map zoom and
   /// [origin] the world pixel at the canvas origin.
@@ -302,31 +288,8 @@ class RasterTiles {
     tile.loading = true;
     _loading++;
     try {
-      final template = _template!;
-      final archive = _archive;
-      final file = cacheDirectory == null || (archive?.local ?? false)
-          ? null
-          : '$cacheDirectory/raster-${cacheKey(template)}/$z/$x/$y';
-      Uint8List bytes;
-      if (file != null && fileExists(file)) {
-        bytes = await readFile(file);
-      } else if (archive != null) {
-        bytes = await archive.tile(z, x, y);
-        if (bytes.isEmpty) throw HttpFailure(404, template);
-        if (file != null) await writeFile(file, bytes);
-      } else {
-        final (url, reply) = await getTile(
-          _client,
-          template,
-          z,
-          x,
-          layer.cover.row(z, y),
-          headers,
-        );
-        if (reply.status != 200) throw HttpFailure(reply.status, url);
-        bytes = reply.bytes;
-        if (file != null) await writeFile(file, bytes);
-      }
+      final bytes = await _store!.read(z, x, y);
+      if (bytes.isEmpty) throw HttpFailure(404, '$_template $z/$x/$y');
       final codec = await ui.instantiateImageCodec(bytes);
       final frame = await codec.getNextFrame();
       codec.dispose();
@@ -504,7 +467,7 @@ class RasterTiles {
     _closed = true;
     _pictureShader?.dispose();
     _picture?.dispose();
-    _archive?.close();
+    _store?.close();
     _client.close();
     for (final t in _tiles.values) {
       t.image?.dispose();
