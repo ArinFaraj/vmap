@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'cluster.dart';
 import 'mvt.dart';
 import 'tile_builder.dart' show tileExtent;
+import 'mercator.dart';
 
 /// GeoJSON cut into tiles on demand, in the shape vector tiles arrive in.
 class GeoJsonTiles {
@@ -143,12 +144,8 @@ class GeoJsonTiles {
     var n = 0;
     for (final p in positions) {
       if (p is! List || p.length < 2) continue;
-      final lon = (p[0] as num).toDouble();
-      final lat = (p[1] as num).toDouble().clamp(-85.0511, 85.0511);
-      final rad = lat * math.pi / 180;
-      out[n++] = (lon + 180) / 360;
-      out[n++] =
-          (1 - math.log(math.tan(rad) + 1 / math.cos(rad)) / math.pi) / 2;
+      out[n++] = worldX((p[0] as num).toDouble());
+      out[n++] = worldY((p[1] as num).toDouble());
     }
     return n == out.length ? out : Float64List.sublistView(out, 0, n);
   }

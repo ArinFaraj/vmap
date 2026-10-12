@@ -8,6 +8,7 @@ import 'cluster.dart';
 import 'expr.dart';
 import 'net.dart';
 import 'tessellate.dart';
+import 'mercator.dart';
 
 /// Which map style to draw: a MapLibre style document, or the style that
 /// ships with the package.
@@ -763,13 +764,8 @@ class TileCover {
     if (z < minZoom) return false;
     final bounds = this.bounds;
     if (bounds == null) return true;
-    final n = 1 << z;
-    int column(double lon) => ((lon + 180) / 360 * n).floor();
-    int row(double lat) {
-      final r = lat.clamp(-85.0511, 85.0511) * math.pi / 180;
-      return ((1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2 * n)
-          .floor();
-    }
+    int column(double lon) => tileColumn(lon, z);
+    int row(double lat) => tileRow(lat, z);
 
     return x >= column(bounds[0]) &&
         x <= column(bounds[2]) &&
@@ -1526,10 +1522,8 @@ class StyleSheet {
       if (at is! List || at.length < 2) return null;
       final lng = asNumber(at[0]), lat = asNumber(at[1]);
       if (lng == null || lat == null) return null;
-      final turn = lat.clamp(-85.0511, 85.0511) * math.pi / 180;
-      out[i * 2] = (lng + 180) / 360;
-      out[i * 2 + 1] =
-          (1 - math.log(math.tan(turn) + 1 / math.cos(turn)) / math.pi) / 2;
+      out[i * 2] = worldX(lng.toDouble());
+      out[i * 2 + 1] = worldY(lat.toDouble());
     }
     return out;
   }

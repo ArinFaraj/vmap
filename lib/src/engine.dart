@@ -22,6 +22,7 @@ import 'tile_builder.dart';
 import 'tiles.dart';
 import 'worker.dart';
 import 'platform.dart';
+import 'mercator.dart';
 
 class VmapStats {
   int tilesDrawn = 0;
@@ -202,18 +203,8 @@ class VmapEngine extends ChangeNotifier {
     final client = Net(userAgent: source.userAgent, perHost: 6);
     void cover(int from, int to, void Function(int z, int x, int y) add) {
       for (var z = from; z <= to; z++) {
-        final n = 1 << z;
-        int column(double lng) =>
-            ((lng + 180) / 360 * n).floor().clamp(0, n - 1);
-        int row(double lat) {
-          final turn = lat.clamp(-85.0511, 85.0511) * math.pi / 180;
-          final y =
-              (1 - math.log(math.tan(turn) + 1 / math.cos(turn)) / math.pi) / 2;
-          return (y * n).floor().clamp(0, n - 1);
-        }
-
-        for (var y = row(north); y <= row(south); y++) {
-          for (var x = column(west); x <= column(east); x++) {
+        for (var y = tileRow(north, z); y <= tileRow(south, z); y++) {
+          for (var x = tileColumn(west, z); x <= tileColumn(east, z); x++) {
             add(z, x, y);
           }
         }
@@ -222,7 +213,7 @@ class VmapEngine extends ChangeNotifier {
 
     for (final s in _sources) {
       final pool = s.pool;
-      int at(double zoom) => (zoom - 1).floor().clamp(0, pool.maxZoom);
+      int at(double zoom) => tileZoomAt(zoom, pool.maxZoom);
       cover(
         at(minZoom),
         at(maxZoom),
@@ -500,10 +491,8 @@ class VmapEngine extends ChangeNotifier {
     _markerLabels.clear();
     for (var i = 0; i < value.length; i++) {
       final m = value[i];
-      final lat = m.point.latitude * math.pi / 180;
-      final wx = (m.point.longitude + 180) / 360;
-      final wy =
-          (1 - math.log(math.tan(lat) + 1 / math.cos(lat)) / math.pi) / 2;
+      final wx = worldX(m.point.longitude);
+      final wy = worldY(m.point.latitude);
       areas.add((
         wx,
         wy,
@@ -602,15 +591,14 @@ class VmapEngine extends ChangeNotifier {
     final camera = _camera;
     final sheet = _sheet;
     if (camera == null || sheet == null) return const [];
-    final lat = point.latitude.clamp(-85.0511, 85.0511) * math.pi / 180;
-    final wx = (point.longitude + 180) / 360;
-    final wy = (1 - math.log(math.tan(lat) + 1 / math.cos(lat)) / math.pi) / 2;
+    final wx = worldX(point.longitude);
+    final wy = worldY(point.latitude);
     final styleZoom = camera.zoom - 1 + sheet.zoomOffset;
     final found = <(int, VmapFeature)>[];
     await Future.wait([
       for (final s in List.of(_sources))
         () async {
-          final z = (camera.zoom - 1).floor().clamp(0, s.pool.maxZoom);
+          final z = tileZoomAt(camera.zoom, s.pool.maxZoom);
           final n = 1 << z;
           final x = (wx * n).floor().clamp(0, n - 1);
           final y = (wy * n).floor().clamp(0, n - 1);
@@ -646,11 +634,6 @@ class VmapEngine extends ChangeNotifier {
     ),
   );
 
-  static double _worldY(double latitude) {
-    final lat = latitude.clamp(-85.0511, 85.0511) * math.pi / 180;
-    return (1 - math.log(math.tan(lat) + 1 / math.cos(lat)) / math.pi) / 2;
-  }
-
   /// What the map shows between [southWest] and [northEast]: the features
   /// the style draws that touch the box, topmost first. It reads the tiles
   /// again off the UI thread, so it answers a moment later.
@@ -666,17 +649,17 @@ class VmapEngine extends ChangeNotifier {
     final camera = _camera;
     final sheet = _sheet;
     if (camera == null || sheet == null) return const [];
-    final west = (southWest.longitude + 180) / 360;
-    final east = (northEast.longitude + 180) / 360;
-    final north = _worldY(northEast.latitude);
-    final south = _worldY(southWest.latitude);
+    final west = worldX(southWest.longitude);
+    final east = worldX(northEast.longitude);
+    final north = worldY(northEast.latitude);
+    final south = worldY(southWest.latitude);
     if (east < west || south < north) return const [];
     final styleZoom = camera.zoom - 1 + sheet.zoomOffset;
     final found = <String, (int, VmapFeature)>{};
     await Future.wait([
       for (final s in List.of(_sources))
         () async {
-          var z = (camera.zoom - 1).floor().clamp(0, s.pool.maxZoom);
+          var z = tileZoomAt(camera.zoom, s.pool.maxZoom);
           int tiles(int z) {
             final n = 1 << z;
             return ((east * n).floor() - (west * n).floor() + 1) *
@@ -770,8 +753,8 @@ class VmapEngine extends ChangeNotifier {
         final Map<Object?, Object?> props,
       ])
         VmapClusterMember(
-          latitude: math.atan(_sinh(math.pi * (1 - 2 * y))) * 180 / math.pi,
-          longitude: x * 360 - 180,
+          latitude: latitudeAt(y.toDouble()),
+          longitude: longitudeAt(x.toDouble()),
           id: props[r'$id'],
           properties: {
             for (final e in props.entries)
@@ -779,8 +762,6 @@ class VmapEngine extends ChangeNotifier {
           },
         ),
   ];
-
-  static double _sinh(double v) => (math.exp(v) - math.exp(-v)) / 2;
 
   void _requestFrame() {
     if (_framePending || _disposed) return;

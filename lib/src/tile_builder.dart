@@ -6,6 +6,7 @@ import 'mvt.dart';
 import 'platform.dart';
 import 'style.dart';
 import 'tessellate.dart';
+import 'mercator.dart';
 
 const double tileExtent = 4096;
 
@@ -231,8 +232,6 @@ class TileBuilder {
     maxZoom: maxZoom,
   );
 
-  static double _sinh(double v) => (math.exp(v) - math.exp(-v)) / 2;
-
   BuiltTile buildLayers(
     Iterable<TileLayer> tileLayers,
     int z, {
@@ -325,15 +324,8 @@ class TileBuilder {
           final tiles = 1 << z;
           return [
             for (var i = 0; i < _sink.coordCount; i += 2) ...[
-              (x + _sink.coords[i] * across) / tiles * 360 - 180,
-              math.atan(
-                    _sinh(
-                      math.pi *
-                          (1 - 2 * (y + _sink.coords[i + 1] * across) / tiles),
-                    ),
-                  ) *
-                  180 /
-                  math.pi,
+              longitudeAt((x + _sink.coords[i] * across) / tiles),
+              latitudeAt((y + _sink.coords[i + 1] * across) / tiles),
             ],
           ];
         };

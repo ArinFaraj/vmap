@@ -10,6 +10,7 @@ import 'style.dart';
 import 'net.dart';
 import 'platform.dart';
 import 'worker.dart' show tileKey;
+import 'mercator.dart';
 
 class _RasterTile {
   ui.Image? image;
@@ -467,7 +468,7 @@ class RasterTiles {
     final terrarium = relief.terrarium;
     final direction = relief.direction;
     final n = math.pow(2, z);
-    final latitude = math.atan(_sinh(math.pi * (1 - 2 * (y + 0.5) / n))).abs();
+    final latitude = latitudeAt((y + 0.5) / n).abs() * math.pi / 180;
     final metres = 40075016.686 * math.cos(latitude) / (n * width);
     final colours = [
       shadow.r, shadow.g, shadow.b, shadow.a, //
@@ -499,8 +500,6 @@ class RasterTiles {
     );
     return done.future;
   }
-
-  static double _sinh(double x) => (math.exp(x) - math.exp(-x)) / 2;
 
   void close() {
     _closed = true;
