@@ -329,31 +329,47 @@ class HeatPaint {
 /// labels have the same signature, and a change to anything the builder
 /// reads changes it.
 class SymbolBuild {
+  /// The keys of the JSON a build is made from.
+  static const sourceKey = 'source';
+  static const sourceLayerKey = 'sourceLayer';
+  static const filterKey = 'filter';
+  static const textKey = 'text';
+  static const iconKey = 'icon';
+  static const placementKey = 'placement';
+  static const spacingKey = 'spacing';
+  static const textUprightKey = 'textUpright';
+  static const iconUprightKey = 'iconUpright';
+  static const minZoomKey = 'minZoom';
+  static const maxZoomKey = 'maxZoom';
+  static const sortKeyKey = 'sortKey';
+  static const iconRotateKey = 'iconRotate';
+  static const paintKeysKey = 'paintKeys';
+
   SymbolBuild(Map<String, Object?> json)
     : signature = jsonEncode(json),
-      source = json['source']! as int,
-      sourceLayer = json['sourceLayer']! as String,
-      filter = compileFilter(json['filter']),
-      text = switch (json['text']) {
+      source = json[sourceKey]! as int,
+      sourceLayer = json[sourceLayerKey]! as String,
+      filter = compileFilter(json[filterKey]),
+      text = switch (json[textKey]) {
         null => (_) => '',
         final field => compileText(field),
       },
-      icon = switch (json['icon']) {
+      icon = switch (json[iconKey]) {
         null => null,
         final image => compileText(image),
       },
-      placement = compileExpr(json['placement']),
-      spacing = (json['spacing']! as num).toDouble(),
-      textUpright = json['textUpright'] == true,
-      iconUpright = json['iconUpright'] == true,
-      minZoom = (json['minZoom']! as num).toDouble(),
-      maxZoom = (json['maxZoom']! as num).toDouble(),
-      sortKey = switch (json['sortKey']) {
+      placement = compileExpr(json[placementKey]),
+      spacing = (json[spacingKey]! as num).toDouble(),
+      textUpright = json[textUprightKey] == true,
+      iconUpright = json[iconUprightKey] == true,
+      minZoom = (json[minZoomKey]! as num).toDouble(),
+      maxZoom = (json[maxZoomKey]! as num).toDouble(),
+      sortKey = switch (json[sortKeyKey]) {
         null => null,
         final key => compileExpr(key),
       },
-      iconRotate = (json['iconRotate']! as num).toDouble(),
-      paintKeys = (json['paintKeys']! as List).cast<String>();
+      iconRotate = (json[iconRotateKey]! as num).toDouble(),
+      paintKeys = (json[paintKeysKey]! as List).cast<String>();
 
   final String signature;
 

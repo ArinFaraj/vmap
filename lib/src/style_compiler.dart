@@ -324,20 +324,20 @@ class StyleCompiler {
     _reads(layout['text-size'], paintKeys);
     _reads(layout['icon-size'], paintKeys);
     final build = SymbolBuild({
-      'source': source,
-      'sourceLayer': sourceLayer,
-      'filter': filter,
-      'text': hasText ? field : null,
-      'icon': hasIcon ? image : null,
-      'placement': placement,
-      'spacing': spacing,
-      'textUpright': textUpright,
-      'iconUpright': iconUpright,
-      'minZoom': layer.minZoom,
-      'maxZoom': layer.maxZoom,
-      'sortKey': layout['symbol-sort-key'],
-      'iconRotate': asNumber(layout['icon-rotate']) ?? 0,
-      'paintKeys': paintKeys.toList()..sort(),
+      SymbolBuild.sourceKey: source,
+      SymbolBuild.sourceLayerKey: sourceLayer,
+      SymbolBuild.filterKey: filter,
+      SymbolBuild.textKey: hasText ? field : null,
+      SymbolBuild.iconKey: hasIcon ? image : null,
+      SymbolBuild.placementKey: placement,
+      SymbolBuild.spacingKey: spacing,
+      SymbolBuild.textUprightKey: textUpright,
+      SymbolBuild.iconUprightKey: iconUpright,
+      SymbolBuild.minZoomKey: layer.minZoom,
+      SymbolBuild.maxZoomKey: layer.maxZoom,
+      SymbolBuild.sortKeyKey: layout['symbol-sort-key'],
+      SymbolBuild.iconRotateKey: asNumber(layout['icon-rotate']) ?? 0,
+      SymbolBuild.paintKeysKey: paintKeys.toList()..sort(),
     });
     _symbols.add(
       SymbolLayer(

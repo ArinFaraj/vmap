@@ -718,7 +718,7 @@ class VmapEngine extends ChangeNotifier {
         canvas,
         sheet,
         run,
-        [...s.fallback, ...s.ideal],
+        s.fallback.followedBy(s.ideal),
         _states[s.def.name],
         size,
       );

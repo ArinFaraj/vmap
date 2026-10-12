@@ -120,7 +120,7 @@ class MeshPainter {
     ui.Canvas canvas,
     StyleSheet sheet,
     StyleRun run,
-    List<TileDraw> tiles,
+    Iterable<TileDraw> tiles,
     Map<Object, Map<String, Object?>>? states,
     ui.Size size,
   ) {
