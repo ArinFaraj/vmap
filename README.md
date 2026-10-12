@@ -453,7 +453,24 @@ VmapMap(
 A source that lists several `tiles` addresses has its tiles spread over
 them, and the next one is asked when one fails.
 
-## Compared with vector_map_tiles
+## Related packages
+
+Other ways to draw vector maps in Flutter, as their own pages describe them
+in October 2026:
+
+| Package | What it is | Draws with | Web |
+| --- | --- | --- | --- |
+| [vector_map_tiles](https://pub.dev/packages/vector_map_tiles) | flutter_map layer | 9.x: tiles rendered to images. 10.x beta: `flutter_gpu` | not listed |
+| [flutter_map_vector_tiles](https://pub.dev/packages/flutter_map_vector_tiles) | flutter_map layer, a rewrite of vector_map_tiles' ideas | tiles drawn once into images, labels each frame | yes |
+| [flutter_map_maplibre](https://pub.dev/packages/flutter_map_maplibre) | flutter_map layer | MapLibre's own renderer | yes |
+| [flutter_map_maplibre_gpu](https://pub.dev/packages/flutter_map_maplibre_gpu) | flutter_map layer | Flutter GPU, through maplibre_flutter_gpu | no |
+| [maplibre_gl](https://pub.dev/packages/maplibre_gl) | a map widget of its own | MapLibre's own renderer, MapLibre GL JS on the web | yes |
+| [maplibre](https://pub.dev/packages/maplibre) | a map widget of its own | MapLibre's own renderer, MapLibre GL JS on the web | yes |
+| [maplibre_flutter_gpu](https://pub.dev/packages/maplibre_flutter_gpu) | a map widget of its own | Flutter GPU | no |
+
+vmap has been measured against one of them so far.
+
+### vmap and vector_map_tiles
 
 [vector_map_tiles](https://pub.dev/packages/vector_map_tiles) is the
 established vector layer for flutter_map.
