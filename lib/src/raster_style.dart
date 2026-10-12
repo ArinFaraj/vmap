@@ -200,9 +200,7 @@ sealed class TiledRasterLayer extends RasterLayer {
   final int? sourceMaxZoom;
   final TileCover cover;
 
-  @override
-  String get signature =>
-      '$runtimeType|$tileJsonUrl|$tiles|$tileSize|${cover.signature}';
+  String get _source => '$tileJsonUrl|$tiles|$tileSize|${cover.signature}';
 }
 
 final class PictureTileLayer extends TiledRasterLayer {
@@ -225,6 +223,9 @@ final class PictureTileLayer extends TiledRasterLayer {
 
   /// Set when the layer changes the colours of its tiles.
   final RasterAdjust? adjust;
+
+  @override
+  String get signature => 'tiles|$_source';
 }
 
 /// Tiles of heights, shaded as light falling on the ground.
@@ -242,4 +243,7 @@ final class HillshadeLayer extends TiledRasterLayer {
   });
 
   final ReliefPaint relief;
+
+  @override
+  String get signature => 'hillshade|$_source';
 }

@@ -76,7 +76,7 @@ class LayerShaders {
   /// Dashes carry their colour because a colour filter on the paint does
   /// not reach vertices drawn through a shader.
   ui.ImageShader? of(
-    PaintLayer layer,
+    MeshLayer layer,
     double width,
     double scale,
     EvalContext context,
@@ -87,7 +87,10 @@ class LayerShaders {
     final blur = line?.blur;
     final gradient = line?.gradient;
     final dash = line?.dash;
-    final pattern = layer.pattern;
+    final pattern = switch (layer) {
+      PatternedLayer(:final pattern) => pattern,
+      _ => null,
+    };
     if (dash == null && pattern == null && blur == null && gradient == null) {
       return null;
     }

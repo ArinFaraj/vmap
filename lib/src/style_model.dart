@@ -99,21 +99,40 @@ sealed class PaintLayer {
   /// The paint reads feature properties, so it is worked out per mesh.
   final bool perFeature;
 
-  /// A line's total width or the diameter of a circle or a glow, in logical
-  /// pixels. Null for a fill.
-  Expr? get width => null;
-
-  /// The name of the sprite image that fills the shape, or that is repeated
-  /// along the line.
-  Expr? get pattern => null;
-
   /// Circles and glows reach past the edge of their tile, so they are drawn
   /// unclipped and in a run of their own, after everything under them in
   /// every tile.
   bool get spills => false;
 }
 
-final class FillLayer extends PaintLayer {
+/// A layer with a width: a line's total width, or the diameter of a circle
+/// or a glow, in logical pixels.
+abstract interface class StrokedLayer {
+  Expr get width;
+}
+
+/// A layer that can be painted with a sprite image: one that fills the
+/// shape, or that is repeated along the line.
+abstract interface class PatternedLayer {
+  Expr? get pattern;
+}
+
+/// A layer drawn mesh by mesh from its bucket.
+sealed class MeshLayer extends PaintLayer {
+  MeshLayer({
+    required super.id,
+    required super.bucket,
+    required super.minZoom,
+    required super.maxZoom,
+    required super.color,
+    required super.opacity,
+    super.translate,
+    super.translateOnScreen,
+    super.perFeature,
+  });
+}
+
+final class FillLayer extends MeshLayer implements PatternedLayer {
   FillLayer({
     required super.id,
     required super.bucket,
@@ -131,7 +150,8 @@ final class FillLayer extends PaintLayer {
   final Expr? pattern;
 }
 
-final class LineLayer extends PaintLayer {
+final class LineLayer extends MeshLayer
+    implements StrokedLayer, PatternedLayer {
   LineLayer({
     required super.id,
     required super.bucket,
@@ -176,7 +196,7 @@ final class LineLayer extends PaintLayer {
   final Expr? gradient;
 }
 
-final class CircleLayer extends PaintLayer {
+final class CircleLayer extends MeshLayer implements StrokedLayer {
   CircleLayer({
     required super.id,
     required super.bucket,
@@ -216,7 +236,7 @@ class CircleRing {
 
 /// Points drawn as glows that add up, then coloured by how much they add up
 /// to.
-final class HeatmapLayer extends PaintLayer {
+final class HeatmapLayer extends PaintLayer implements StrokedLayer {
   HeatmapLayer({
     required super.id,
     required super.bucket,

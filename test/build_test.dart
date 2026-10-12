@@ -261,9 +261,9 @@ void main() {
         },
       ]);
       expect(sheet.layers, hasLength(2));
-      final edge = sheet.layers[1];
+      final edge = sheet.layers[1] as LineLayer;
       expect(edge, isA<LineLayer>());
-      expect(edge.width!(at(15)), 1);
+      expect(edge.width(at(15)), 1);
       expect(sheet.buckets[edge.bucket].outline, isTrue);
       expect(Rgba.of(edge.color(at(15)))!.toArgb(), 0xFF999999);
     });
@@ -353,7 +353,7 @@ void main() {
       final relief = sheet.rasters.single as TiledRasterLayer;
       expect(relief.tiles, contains('relief'));
       expect(relief.sourceMaxZoom, 6);
-      expect(sheet.layers[0].pattern!(at(12)), 'wetland');
+      expect((sheet.layers[0] as FillLayer).pattern!(at(12)), 'wetland');
       final circle = sheet.layers[1] as CircleLayer;
       expect(circle.width(at(12)), 8);
       expect(circle.ring!.width(at(12)), 1);

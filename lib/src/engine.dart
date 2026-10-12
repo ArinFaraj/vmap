@@ -811,7 +811,7 @@ class VmapEngine extends ChangeNotifier {
       final color = Rgba.of(layer.color(_context));
       if (color == null) continue;
       _colors[i] = color.toArgb(asNumber(layer.opacity(_context)) ?? 1);
-      if (layer.width case final width?) {
+      if (layer case StrokedLayer(:final width)) {
         _widths[i] = asNumber(width(_context)) ?? 0;
       }
     }
@@ -1018,20 +1018,27 @@ class VmapEngine extends ChangeNotifier {
     var draws = 0;
     for (var p = first; p < end; p++) {
       if (_colors[p] >>> 24 == 0) continue;
-      final layer = layers[p];
-      final meshes = groups[layer.bucket];
+      final meshes = groups[layers[p].bucket];
       if (meshes == null) continue;
       var color = _colors[p];
       var width = _widths[p];
-      if (layer case HeatmapLayer(:final heat)) {
-        _heat.add(canvas, _context, heat, meshes, width / scale);
-        draws++;
-        continue;
+      final MeshLayer layer;
+      switch (layers[p]) {
+        case HeatmapLayer(:final heat):
+          _heat.add(canvas, _context, heat, meshes, width / scale);
+          draws++;
+          continue;
+        case final MeshLayer mesh:
+          layer = mesh;
       }
+      final patterned = switch (layer) {
+        PatternedLayer(pattern: _?) => true,
+        _ => false,
+      };
       ui.ImageShader? shader;
       if (!layer.perFeature) {
         shader = _shaders.of(layer, width, scale, _context, _sprites, color);
-        if (shader == null && (layer.pattern != null)) continue;
+        if (shader == null && patterned) continue;
       }
       final moved = layer.translate?.call(_context);
       final shifted = moved is List && moved.length == 2;
@@ -1056,11 +1063,11 @@ class VmapEngine extends ChangeNotifier {
           if (own == null) continue;
           color = own.toArgb(asNumber(layer.opacity(_context)) ?? 1);
           if (color >>> 24 == 0) continue;
-          if (layer.width case final own?) {
+          if (layer case StrokedLayer(width: final own)) {
             width = asNumber(own(_context)) ?? 0;
           }
           shader = _shaders.of(layer, width, scale, _context, _sprites, color);
-          if (shader == null && layer.pattern != null) continue;
+          if (shader == null && patterned) continue;
         }
         switch (layer) {
           case FillLayer():
@@ -1072,7 +1079,7 @@ class VmapEngine extends ChangeNotifier {
             if (width <= 0) continue;
             if (shader == null) {
               _paint.color = ui.Color(color);
-            } else if (layer.pattern != null) {
+            } else if (patterned) {
               _paint
                 ..color = ui.Color(color)
                 ..shader = shader;
@@ -1115,8 +1122,6 @@ class VmapEngine extends ChangeNotifier {
               ..color = ui.Color(color)
               ..strokeWidth = width / scale;
             canvas.drawRawPoints(ui.PointMode.points, m.points!, _pointPaint);
-          case HeatmapLayer():
-            continue;
         }
         draws++;
         if (shader != null) {

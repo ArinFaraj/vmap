@@ -83,31 +83,20 @@ class StyleCompiler {
       if (raw is! Map) continue;
       final layer = _Layer(raw);
       if (layer.hidden) continue;
-      switch (layer.type) {
-        case 'background':
-          _addBackground(layer);
-        case 'raster' || 'hillshade':
-          _addRaster(layer);
-        case 'symbol' ||
-            'line' ||
-            'circle' ||
-            'heatmap' ||
-            'fill' ||
-            'fill-extrusion':
-          final vector = _vector(layer);
-          if (vector == null) continue;
-          switch (layer.type) {
-            case 'symbol':
-              _addSymbol(vector);
-            case 'heatmap':
-              _addHeatmap(vector);
-            case 'circle':
-              _addCircle(vector);
-            case 'line':
-              _addLine(vector);
-            default:
-              _addFill(vector);
-          }
+      final add = switch (layer.type) {
+        'symbol' => _addSymbol,
+        'heatmap' => _addHeatmap,
+        'circle' => _addCircle,
+        'line' => _addLine,
+        'fill' || 'fill-extrusion' => _addFill,
+        _ => null,
+      };
+      if (add != null) {
+        if (_vector(layer) case final vector?) add(vector);
+      } else if (layer.type == 'background') {
+        _addBackground(layer);
+      } else if (layer.type == 'raster' || layer.type == 'hillshade') {
+        _addRaster(layer);
       }
     }
     final sprite = json['sprite'];
