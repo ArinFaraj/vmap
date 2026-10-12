@@ -16,6 +16,7 @@ import 'pins.dart';
 import 'query.dart';
 import 'layer.dart' show NamedMarker;
 import 'raster.dart';
+import 'raster_style.dart';
 import 'shaders.dart';
 import 'sprites.dart';
 import 'stats.dart';
@@ -71,7 +72,7 @@ class VmapEngine extends ChangeNotifier {
     ..strokeCap = ui.StrokeCap.round;
   SpriteSheet? _sprites;
   String? _spriteUrl;
-  final List<RasterTiles> _rasters = [];
+  final List<RasterDrawing<RasterLayer>> _rasters = [];
   final LayerShaders _shaders = LayerShaders();
   final HeatPainter _heat = HeatPainter();
   final VmapStats stats = VmapStats();
@@ -172,7 +173,7 @@ class VmapEngine extends ChangeNotifier {
         (z, x, y) => jobs.add(() => pool.keep(TileId(z, x, y))),
       );
     }
-    for (final r in _rasters) {
+    for (final r in _rasters.whereType<TileDrawing>()) {
       cover(
         r.tileZoom(minZoom),
         r.tileZoom(maxZoom),
@@ -329,7 +330,7 @@ class VmapEngine extends ChangeNotifier {
         ..clear()
         ..addAll([
           for (final layer in sheet.rasters)
-            RasterTiles(
+            RasterDrawing.of(
               layer,
               cacheDirectory: source.cacheDirectory,
               userAgent: source.userAgent,

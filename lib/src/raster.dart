@@ -33,63 +33,114 @@ class _RasterTile {
   bool shadeAgain = false;
 }
 
-/// Downloads and draws the picture tiles of one raster layer.
-class RasterTiles {
-  RasterTiles(
+/// Draws one raster layer of the style: the picture of an `image` source,
+/// picture tiles, or tiles of heights shaded as a hillshade.
+sealed class RasterDrawing<L extends RasterLayer> {
+  RasterDrawing(
     this.layer, {
     required this.cacheDirectory,
     required this.userAgent,
     required this.onLoaded,
-    this.headers = const {},
-    this.onError,
-  }) : _maxZoom = switch (layer) {
-         TiledRasterLayer(:final sourceMaxZoom?) => sourceMaxZoom,
-         _ => 22,
-       } {
-    switch (layer) {
-      case ImageLayer(:final picture):
-        _loadPicture(picture);
-      case TiledRasterLayer(:final tiles?, :final cover):
-        _use(tiles, cover);
-      case TiledRasterLayer(
-            :final tileJsonUrl?,
-            :final cover,
-            :final sourceMaxZoom,
-          )
-          when PmTiles.handles(tileJsonUrl):
-        _use(tileJsonUrl, cover);
-        if (sourceMaxZoom == null) {
-          _store!.archive!.maxZoom.then((deepest) {
-            _maxZoom = deepest;
-            if (!_closed) onLoaded();
-          }, onError: (_) {});
-        }
-      case TiledRasterLayer(:final tileJsonUrl?, :final cover):
-        _resolve(tileJsonUrl, cover);
-      case TiledRasterLayer():
-        break;
-    }
+    required this.headers,
+    required this.onError,
+  });
+
+  /// The drawing for [layer].
+  static RasterDrawing<RasterLayer> of(
+    RasterLayer layer, {
+    required String? cacheDirectory,
+    required String userAgent,
+    required void Function() onLoaded,
+    Map<String, String> headers = const {},
+    void Function(Object error)? onError,
+  }) => switch (layer) {
+    ImageLayer() => PictureDrawing(
+      layer,
+      cacheDirectory: cacheDirectory,
+      userAgent: userAgent,
+      onLoaded: onLoaded,
+      headers: headers,
+      onError: onError,
+    ),
+    PictureTileLayer() => PictureTiles(
+      layer,
+      cacheDirectory: cacheDirectory,
+      userAgent: userAgent,
+      onLoaded: onLoaded,
+      headers: headers,
+      onError: onError,
+    ),
+    HillshadeLayer() => ShadedTiles(
+      layer,
+      cacheDirectory: cacheDirectory,
+      userAgent: userAgent,
+      onLoaded: onLoaded,
+      headers: headers,
+      onError: onError,
+    ),
+  };
+
+  /// Taken over from a style whose layer draws from the same pictures, so
+  /// only its paint can differ.
+  L layer;
+  final String? cacheDirectory;
+  final String userAgent;
+  final Map<String, String> headers;
+  final void Function() onLoaded;
+  final void Function(Object error)? onError;
+
+  late final Net _client = Net(userAgent: userAgent, perHost: 4);
+  final ui.Paint _paint = ui.Paint()..filterQuality = ui.FilterQuality.low;
+  bool _closed = false;
+
+  /// Draws the layer for the view. [zoom] is the slippy-map zoom and
+  /// [origin] the world pixel at the canvas origin.
+  void paint(
+    ui.Canvas canvas,
+    EvalContext context,
+    double zoom,
+    ui.Offset origin,
+    ui.Size size,
+  ) {
+    final styleZoom = context.zoom;
+    if (styleZoom < layer.minZoom || styleZoom >= layer.maxZoom) return;
+    final opacity = (asNumber(layer.opacity(context)) ?? 1).clamp(0.0, 1.0);
+    if (opacity <= 0) return;
+    _paint.color = ui.Color.fromRGBO(255, 255, 255, opacity);
+    _draw(canvas, context, zoom, origin, size);
   }
 
-  ReliefPaint? get _relief => switch (layer) {
-    HillshadeLayer(:final relief) => relief,
-    _ => null,
-  };
+  void _draw(
+    ui.Canvas canvas,
+    EvalContext context,
+    double zoom,
+    ui.Offset origin,
+    ui.Size size,
+  );
 
-  bool get _nearest => switch (layer) {
-    ImageLayer(:final nearest) || PictureTileLayer(:final nearest) => nearest,
-    HillshadeLayer() => false,
-  };
+  void close() {
+    _closed = true;
+    _client.close();
+  }
+}
 
-  RasterAdjust? get _adjust => switch (layer) {
-    ImageLayer(:final adjust) || PictureTileLayer(:final adjust) => adjust,
-    HillshadeLayer() => null,
-  };
+/// The one picture of an `image` source, stretched between its corners.
+final class PictureDrawing extends RasterDrawing<ImageLayer> {
+  PictureDrawing(
+    super.layer, {
+    required super.cacheDirectory,
+    required super.userAgent,
+    required super.onLoaded,
+    required super.headers,
+    required super.onError,
+  }) {
+    _load(layer.picture);
+  }
 
   ui.Image? _picture;
-  ui.ImageShader? _pictureShader;
+  ui.ImageShader? _shader;
 
-  Future<void> _loadPicture(String url) async {
+  Future<void> _load(String url) async {
     try {
       final reply = await _client.get(
         url,
@@ -102,7 +153,7 @@ class RasterTiles {
       codec.dispose();
       if (_closed) return frame.image.dispose();
       _picture = frame.image;
-      _pictureShader = ui.ImageShader(
+      _shader = ui.ImageShader(
         forShader(frame.image),
         ui.TileMode.clamp,
         ui.TileMode.clamp,
@@ -111,7 +162,9 @@ class RasterTiles {
           ..[5] = 1
           ..[10] = 1
           ..[15] = 1,
-        filterQuality: _nearest ? ui.FilterQuality.none : ui.FilterQuality.low,
+        filterQuality: layer.nearest
+            ? ui.FilterQuality.none
+            : ui.FilterQuality.low,
       );
       onLoaded();
     } catch (e) {
@@ -119,22 +172,26 @@ class RasterTiles {
     }
   }
 
-  /// Draws the one picture of an `image` source stretched between its four
-  /// corners, once for every copy of the world in view.
-  void _paintPicture(
+  /// Draws the picture once for every copy of the world in view.
+  @override
+  void _draw(
     ui.Canvas canvas,
+    EvalContext context,
     double zoom,
     ui.Offset origin,
     ui.Size size,
   ) {
-    final image = _picture, shown = layer;
-    if (image == null || shown is! ImageLayer) return;
-    final corners = shown.corners;
+    final image = _picture;
+    if (image == null) return;
+    _paint
+      ..isAntiAlias = true
+      ..colorFilter = layer.adjust?.filter(context);
+    final corners = layer.corners;
     final world = 256.0 * math.pow(2, zoom);
     final w = image.width.toDouble(), h = image.height.toDouble();
     final first = (origin.dx / world).floor() - 1;
     final last = ((origin.dx + size.width) / world).floor() + 1;
-    _paint.shader = _pictureShader;
+    _paint.shader = _shader;
     for (var copy = first; copy <= last; copy++) {
       final at = Float32List(8);
       var left = double.infinity, right = -double.infinity;
@@ -158,27 +215,64 @@ class RasterTiles {
     _paint.shader = null;
   }
 
-  TileStore? _store;
+  @override
+  void close() {
+    super.close();
+    _shader?.dispose();
+    _picture?.dispose();
+  }
+}
 
-  RasterLayer layer;
-  final String? cacheDirectory;
-  final String userAgent;
-  final Map<String, String> headers;
-  final void Function() onLoaded;
-  final void Function(Object error)? onError;
+/// A layer drawn from tiles, fetched through a [TileStore].
+sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
+  TileDrawing(
+    super.layer, {
+    required super.cacheDirectory,
+    required super.userAgent,
+    required super.onLoaded,
+    required super.headers,
+    required super.onError,
+  }) : _maxZoom = layer.sourceMaxZoom ?? 22 {
+    final TiledRasterLayer(:tiles, :tileJsonUrl, :cover) = layer;
+    if (tiles != null) {
+      _use(tiles, cover);
+    } else if (PmTiles.handles(tileJsonUrl)) {
+      _use(tileJsonUrl!, cover);
+      if (layer.sourceMaxZoom == null) {
+        _store!.archive!.maxZoom.then((deepest) {
+          _maxZoom = deepest;
+          if (!_closed) onLoaded();
+        }, onError: (_) {});
+      }
+    } else if (tileJsonUrl != null) {
+      _resolve(tileJsonUrl, cover);
+    }
+  }
 
   static const int _maxTiles = 48;
   static const int _maxLoading = 4;
 
-  late final Net _client = Net(userAgent: userAgent, perHost: 4);
+  TileStore? _store;
   final Map<int, _RasterTile> _tiles = {};
-  final ui.Paint _paint = ui.Paint()..filterQuality = ui.FilterQuality.low;
   final Stopwatch _clock = Stopwatch()..start();
   String? _template;
   int _maxZoom;
   int _loading = 0;
   int _frame = 0;
-  bool _closed = false;
+
+  /// How far each tile is drawn past its right and bottom edge, so no gap
+  /// shows between neighbours.
+  double get _lap;
+
+  /// The cells around the edge of a tile's image that belong to the tiles
+  /// beside it.
+  double get _ring;
+
+  /// Sets up [_paint] for this frame's tiles.
+  void _setUpPaint(EvalContext context);
+
+  /// Keeps a tile's decoded [image], or what it is made from.
+  Future<void> _decoded(_RasterTile tile, ui.Image image, int z, int x, int y);
 
   Future<void> _resolve(String tileJsonUrl, TileCover cover) async {
     try {
@@ -200,13 +294,11 @@ class RasterTiles {
   }
 
   /// The zoom of the tiles drawn at map zoom [zoom].
-  int tileZoom(double zoom) {
-    final size = switch (layer) {
-      TiledRasterLayer(:final tileSize) => tileSize,
-      ImageLayer() => 512.0,
-    };
-    return (zoom + math.log(256 / size) / math.ln2).round().clamp(0, _maxZoom);
-  }
+  int tileZoom(double zoom) =>
+      (zoom + math.log(256 / layer.tileSize) / math.ln2).round().clamp(
+        0,
+        _maxZoom,
+      );
 
   void _use(String template, TileCover cover) {
     _template = template;
@@ -225,26 +317,14 @@ class RasterTiles {
   Future<bool> keep(int z, int x, int y) async =>
       await _store?.keep(z, x, y) ?? false;
 
-  /// Draws the tiles covering the view. [zoom] is the slippy-map zoom and
-  /// [origin] the world pixel at the canvas origin.
-  void paint(
+  @override
+  void _draw(
     ui.Canvas canvas,
     EvalContext context,
     double zoom,
     ui.Offset origin,
     ui.Size size,
   ) {
-    final styleZoom = context.zoom;
-    if (styleZoom < layer.minZoom || styleZoom >= layer.maxZoom) return;
-    final opacity = (asNumber(layer.opacity(context)) ?? 1).clamp(0.0, 1.0);
-    if (opacity <= 0) return;
-    if (layer is ImageLayer) {
-      _paint
-        ..color = ui.Color.fromRGBO(255, 255, 255, opacity)
-        ..isAntiAlias = true
-        ..colorFilter = _adjust?.filter(context);
-      return _paintPicture(canvas, zoom, origin, size);
-    }
     if (_template == null) return;
     _frame++;
     final z = tileZoom(zoom);
@@ -257,17 +337,8 @@ class RasterTiles {
       origin.dy + size.height,
       tileSpan: span,
     );
-    // Opaque tiles lap over each other a little so no gap shows between
-    // them. See-through shading would be twice as dark in the lap, so its
-    // tiles share their edges exactly, drawn without anti-aliasing so every
-    // pixel belongs to one tile.
-    final shaded = layer is HillshadeLayer;
-    final lap = shaded ? 0.0 : 0.5;
-    _paint
-      ..filterQuality = _nearest ? ui.FilterQuality.none : ui.FilterQuality.low
-      ..color = ui.Color.fromRGBO(255, 255, 255, opacity)
-      ..isAntiAlias = !shaded
-      ..colorFilter = _adjust?.filter(context);
+    _setUpPaint(context);
+    final lap = _lap, ring = _ring;
     for (var y = y0; y <= y1; y++) {
       for (var x = x0; x <= x1; x++) {
         final key = tileKey(z, x % n, y);
@@ -278,9 +349,6 @@ class RasterTiles {
           _load(tile, z, x % n, y);
           continue;
         }
-        // A shaded tile carries a ring one cell wide of what lies past its
-        // edge, so the picture blends into the next tile's.
-        final ring = shaded ? 1.0 : 0.0;
         canvas.drawImageRect(
           image,
           ui.Rect.fromLTRB(ring, ring, image.width - ring, image.height - ring),
@@ -320,38 +388,118 @@ class RasterTiles {
       final codec = await ui.instantiateImageCodec(bytes);
       final frame = await codec.getNextFrame();
       codec.dispose();
-      final image = frame.image;
-      if (layer is HillshadeLayer) {
-        final data = await image.toByteData();
-        tile
-          ..pixels = data!.buffer.asUint8List()
-          ..width = image.width
-          ..height = image.height
-          ..edges = _edgesOf(
-            data.buffer.asUint8List(),
-            image.width,
-            image.height,
-          );
-        image.dispose();
-        await _reshade(tile, z, x, y);
-        for (final (dx, dy) in _around) {
-          final beside = _beside(z, x + dx, y + dy);
-          if (beside != null && beside.pixels != null) {
-            unawaited(_reshade(beside, z, (x + dx) % (1 << z), y + dy));
-          }
-        }
-      } else if (_closed) {
-        image.dispose();
-      } else {
-        tile.image = image;
-        onLoaded();
-      }
+      await _decoded(tile, frame.image, z, x, y);
     } catch (e) {
       tile.failedAtMs = _clock.elapsedMilliseconds;
       if (!_closed) onError?.call(e);
     } finally {
       tile.loading = false;
       _loading--;
+    }
+  }
+
+  @override
+  void close() {
+    super.close();
+    _store?.close();
+    for (final t in _tiles.values) {
+      t.image?.dispose();
+    }
+    _tiles.clear();
+  }
+}
+
+/// Picture tiles, drawn as they come.
+final class PictureTiles extends TileDrawing<PictureTileLayer> {
+  PictureTiles(
+    super.layer, {
+    required super.cacheDirectory,
+    required super.userAgent,
+    required super.onLoaded,
+    required super.headers,
+    required super.onError,
+  });
+
+  /// Opaque tiles lap over each other a little so no gap shows between
+  /// them.
+  @override
+  double get _lap => 0.5;
+
+  @override
+  double get _ring => 0;
+
+  @override
+  void _setUpPaint(EvalContext context) => _paint
+    ..filterQuality = layer.nearest
+        ? ui.FilterQuality.none
+        : ui.FilterQuality.low
+    ..isAntiAlias = true
+    ..colorFilter = layer.adjust?.filter(context);
+
+  @override
+  Future<void> _decoded(
+    _RasterTile tile,
+    ui.Image image,
+    int z,
+    int x,
+    int y,
+  ) async {
+    if (_closed) return image.dispose();
+    tile.image = image;
+    onLoaded();
+  }
+}
+
+/// Tiles of heights, shaded as light falling on the ground. Each tile is
+/// shaded again as the tiles around it arrive, so its edges blend.
+final class ShadedTiles extends TileDrawing<HillshadeLayer> {
+  ShadedTiles(
+    super.layer, {
+    required super.cacheDirectory,
+    required super.userAgent,
+    required super.onLoaded,
+    required super.headers,
+    required super.onError,
+  });
+
+  /// See-through shading would be twice as dark where tiles lap, so the
+  /// tiles share their edges exactly, drawn without anti-aliasing so every
+  /// pixel belongs to one tile.
+  @override
+  double get _lap => 0;
+
+  /// A shaded tile carries a ring one cell wide of what lies past its edge,
+  /// so the picture blends into the next tile's.
+  @override
+  double get _ring => 1;
+
+  @override
+  void _setUpPaint(EvalContext context) => _paint
+    ..filterQuality = ui.FilterQuality.low
+    ..isAntiAlias = false
+    ..colorFilter = null;
+
+  @override
+  Future<void> _decoded(
+    _RasterTile tile,
+    ui.Image image,
+    int z,
+    int x,
+    int y,
+  ) async {
+    final data = await image.toByteData();
+    tile
+      ..pixels = data!.buffer.asUint8List()
+      ..width = image.width
+      ..height = image.height
+      ..edges = _edgesOf(data.buffer.asUint8List(), image.width, image.height);
+    image.dispose();
+    await _reshade(tile, z, x, y);
+    for (final (dx, dy) in _around) {
+      final beside = _beside(z, x + dx, y + dy);
+      if (beside != null && beside.pixels != null) {
+        unawaited(_reshade(beside, z, (x + dx) % (1 << z), y + dy));
+      }
     }
   }
 
@@ -401,9 +549,9 @@ class RasterTiles {
     try {
       do {
         tile.shadeAgain = false;
-        final relief = _relief;
+        final relief = layer.relief;
         final pixels = tile.pixels;
-        if (relief == null || pixels == null) return;
+        if (pixels == null) return;
         final n = 1 << z;
         var complete = true;
         final sides = <Uint8List?>[
@@ -488,18 +636,6 @@ class RasterTiles {
       done.complete,
     );
     return done.future;
-  }
-
-  void close() {
-    _closed = true;
-    _pictureShader?.dispose();
-    _picture?.dispose();
-    _store?.close();
-    _client.close();
-    for (final t in _tiles.values) {
-      t.image?.dispose();
-    }
-    _tiles.clear();
   }
 }
 
