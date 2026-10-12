@@ -1,0 +1,227 @@
+import 'dart:math' as math;
+import 'dart:typed_data';
+
+import 'collision_boxes.dart';
+import 'label_path.dart';
+import 'label_state.dart';
+import 'label_view.dart';
+import 'tile_builder.dart' show tileExtent;
+
+/// Lays names along roads: straight where the road is straight enough, bent
+/// along it where it is not, and not twice close together.
+class RoadLabels {
+  RoadLabels(this._view, this._boxes);
+
+  final LabelView _view;
+  final CollisionBoxes _boxes;
+
+  /// Road names follow bends. Off, a name is only written where the road is
+  /// straight enough to carry it.
+  bool curved = true;
+
+  /// The road names placed in this pass, which the same name keeps away
+  /// from.
+  final List<LabelState> placed = [];
+
+  /// How close two of the same name may be, in logical pixels.
+  static const double _repeatDistance = 260;
+
+  /// Finds a straight enough stretch around the road's middle to carry text
+  /// [textW] pixels long, and sets the label's anchor and angle to it.
+  bool fit(
+    LabelState st,
+    double textW,
+    double textH,
+    double unitPx, {
+    double? maxBend,
+  }) {
+    final c = st.candidate;
+    final line = c.source.line!;
+    final need = textW * 1.15 / unitPx;
+    if (c.lineLength < need) return false;
+    final half = textW / 2 / unitPx;
+    final from = c.lineLength / 2 - half;
+    final to = c.lineLength / 2 + half;
+    var walked = 0.0;
+    var ax = 0.0, ay = 0.0, bx = 0.0, by = 0.0;
+    var first = -1;
+    var last = -1;
+    final n = line.length ~/ 2;
+    for (var i = 1; i < n; i++) {
+      final x0 = line[i * 2 - 2];
+      final y0 = line[i * 2 - 1];
+      final dx = line[i * 2] - x0;
+      final dy = line[i * 2 + 1] - y0;
+      final seg = math.sqrt(dx * dx + dy * dy);
+      if (seg == 0) continue;
+      if (first < 0 && walked + seg >= from) {
+        final t = (from - walked) / seg;
+        ax = x0 + dx * t;
+        ay = y0 + dy * t;
+        first = i;
+      }
+      if (walked + seg >= to) {
+        final t = (to - walked) / seg;
+        bx = x0 + dx * t;
+        by = y0 + dy * t;
+        last = i;
+        break;
+      }
+      walked += seg;
+    }
+    if (first < 0 || last < 0) return false;
+    final cx = bx - ax;
+    final cy = by - ay;
+    final chord = math.sqrt(cx * cx + cy * cy);
+    if (chord == 0) return false;
+    final limit = textH * 0.3 / unitPx;
+    for (var i = first; i < last; i++) {
+      final px = line[i * 2] - ax;
+      final py = line[i * 2 + 1] - ay;
+      if ((px * cy - py * cx).abs() / chord > limit) {
+        return curved && _bend(st, from, to, textH, unitPx, maxBend);
+      }
+    }
+    st.curve = null;
+    var angle = math.atan2(cy, cx);
+    if (angle > math.pi / 2) angle -= math.pi;
+    if (angle < -math.pi / 2) angle += math.pi;
+    st
+      ..angle = angle
+      ..worldX = c.tileX + (ax + bx) / 2 / tileExtent * c.tileSpan
+      ..worldY = c.tileY + (ay + by) / 2 / tileExtent * c.tileSpan;
+    return true;
+  }
+
+  /// The sharpest turn between two neighbouring slices of a bent name.
+  static const double _maxBend = 0.42;
+
+  /// Remembers the road around [from]..[to] tile units from its start as the
+  /// path the text bends along, with as much road again on either side so
+  /// the text has room when the zoom changes. False when the road turns too
+  /// sharply under the text.
+  bool _bend(
+    LabelState st,
+    double from,
+    double to,
+    double textH,
+    double unitPx,
+    double? maxBend,
+  ) {
+    final c = st.candidate;
+    final line = c.source.line!;
+    final room = (to - from) / 2;
+    final lo = from - room;
+    final hi = to + room;
+    final unit = c.tileSpan / tileExtent;
+    final path = <double>[];
+    var walked = 0.0;
+    var before = 0.0;
+    final n = line.length ~/ 2;
+    for (var i = 1; i < n; i++) {
+      final x0 = line[i * 2 - 2];
+      final y0 = line[i * 2 - 1];
+      final dx = line[i * 2] - x0;
+      final dy = line[i * 2 + 1] - y0;
+      final seg = math.sqrt(dx * dx + dy * dy);
+      if (seg == 0) continue;
+      if (walked + seg >= lo && walked <= hi) {
+        if (path.isEmpty) {
+          before = walked;
+          path
+            ..add(c.tileX + x0 * unit)
+            ..add(c.tileY + y0 * unit);
+        }
+        path
+          ..add(c.tileX + (x0 + dx) * unit)
+          ..add(c.tileY + (y0 + dy) * unit);
+      }
+      walked += seg;
+    }
+    if (path.length < 4) return false;
+    st
+      ..curve = Float64List.fromList(path)
+      ..curveMid = ((from + to) / 2 - before) * unit;
+    final count = math.max(2, ((to - from) * unitPx / (textH * 0.7)).ceil());
+    final strips = this.strips(st, count, (to - from) / count * unit);
+    final limit = maxBend ?? _maxBend;
+    for (var i = 1; i < count; i++) {
+      var turn = (strips[i * 3 + 2] - strips[i * 3 - 1]).abs();
+      if (turn > math.pi) turn = 2 * math.pi - turn;
+      if (turn > limit) {
+        st.curve = null;
+        return false;
+      }
+    }
+    final last = (count - 1) * 3;
+    st
+      ..angle = math.atan2(
+        strips[last + 1] - strips[1],
+        strips[last] - strips[0],
+      )
+      ..worldX = strips[(count ~/ 2) * 3]
+      ..worldY = strips[(count ~/ 2) * 3 + 1];
+    return true;
+  }
+
+  Float64List _strips = Float64List(96);
+
+  /// The middle and angle of each of [count] slices of a bent name, [step]
+  /// apart along its road, as x, y and angle in turn.
+  Float64List strips(LabelState st, int count, double step) {
+    if (_strips.length < count * 3) _strips = Float64List(count * 6);
+    layStrips(st.curve!, st.curveMid, count, step, _strips);
+    return _strips;
+  }
+
+  /// How many slices a bent text [textW] by [textH] pixels is cut into.
+  static int stripCount(double textW, double textH) =>
+      math.max(2, (textW / (textH * 0.7)).ceil());
+
+  /// Whether a bent name runs into something already placed, and with [add]
+  /// the space it takes itself.
+  bool curveHits(
+    LabelState st,
+    double textW,
+    double textH,
+    double reach, {
+    required bool add,
+  }) {
+    final count = stripCount(textW, textH);
+    final strips = this.strips(st, count, textW / count / _view.world);
+    for (var i = 0; i < count * 3; i += 3) {
+      _view.project(strips[i], strips[i + 1]);
+      if (add) {
+        _boxes.add(
+          _view.x - reach,
+          _view.y - reach,
+          _view.x + reach,
+          _view.y + reach,
+        );
+      } else if (_boxes.hits(
+        _view.x - reach,
+        _view.y - reach,
+        _view.x + reach,
+        _view.y + reach,
+      )) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Whether a name the same as [st]'s is placed close by already.
+  bool nearSame(LabelState st) {
+    final world = _view.world;
+    final text = st.candidate.source.text;
+    for (final other in placed) {
+      if (other.candidate.source.text != text) continue;
+      final dx = (other.worldX - st.worldX) * world;
+      final dy = (other.worldY - st.worldY) * world;
+      if (dx * dx + dy * dy < _repeatDistance * _repeatDistance) {
+        return true;
+      }
+    }
+    return false;
+  }
+}

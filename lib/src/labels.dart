@@ -9,8 +9,8 @@ import 'expr.dart';
 import 'label_sprites.dart';
 import 'label_state.dart';
 import 'label_view.dart';
-import 'label_path.dart';
 import 'pins.dart';
+import 'road_labels.dart';
 import 'sprites.dart';
 import 'style.dart';
 import 'tile_builder.dart';
@@ -135,7 +135,6 @@ class LabelEngine {
   static const double _majorRoadRoom = 14;
   static const int _placementIntervalMs = 90;
   static const int _zoomingIntervalMs = 350;
-  static const double _roadRepeatDistance = 260;
 
   /// A frame that spent this long placing labels draws no new text images;
   /// they wait a frame, so the two costs never land on the same one.
@@ -187,7 +186,6 @@ class LabelEngine {
 
   /// The labels that are showing or fading, which is all a frame draws.
   final List<LabelState> _live = [];
-  final List<LabelState> _placedRoads = [];
   final ui.Paint _imagePaint = ui.Paint()
     ..filterQuality = ui.FilterQuality.medium;
   final Stopwatch _clock = Stopwatch()..start();
@@ -219,6 +217,12 @@ class LabelEngine {
 
   final LabelView _view = LabelView();
   final CollisionBoxes _boxes = CollisionBoxes();
+  late final RoadLabels _roads = RoadLabels(_view, _boxes);
+
+  /// Road names follow bends. Off, a name is only written where the road is
+  /// straight enough to carry it.
+  bool get curvedRoads => _roads.curved;
+  set curvedRoads(bool value) => _roads.curved = value;
   double _placedRotation = 0;
 
   /// A move of [by] logical pixels as the upright label frame sees it: one
@@ -483,8 +487,8 @@ class LabelEngine {
       _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
       if (sprite case ImageSprite(:final image) when st.curve != null) {
         final textW = sprite.textWidth * st.scale;
-        final n = _stripCount(textW, sprite.textHeight * st.scale);
-        final strips = _layStrips(st, n, textW / n / world);
+        final n = RoadLabels.stripCount(textW, sprite.textHeight * st.scale);
+        final strips = _roads.strips(st, n, textW / n / world);
         final flip = math.cos(st.angle + rotation) < 0;
         final pad = LabelSprites.haloPad * pixelW / sprite.width;
         final slice = (pixelW - pad * 2) / n;
@@ -629,7 +633,7 @@ class LabelEngine {
     states.sort((a, b) => a.sortKey - b.sortKey);
 
     _boxes.clear();
-    _placedRoads.clear();
+    _roads.placed.clear();
     final obstacleBoxes = [
       for (final (wx, wy, w, h, shiftX, shiftY) in obstacles)
         () {
@@ -684,14 +688,15 @@ class LabelEngine {
         if (st.roadFitKey != fitKey) {
           st
             ..roadFitKey = fitKey
-            ..roadFits = _fitRoad(
+            ..roadFits = _roads.fit(
               st,
               textW,
               textH,
               c.tileSpan * world / tileExtent,
+              maxBend: layer?.maxBend,
             );
         }
-        if (!st.roadFits || _nearSameRoad(st, world)) continue;
+        if (!st.roadFits || _roads.nearSame(st)) continue;
         final room = fontSize <= 12.5 ? _minorRoadRoom : _majorRoadRoom;
         final (roadX, roadY) = layer == null
             ? (0.0, 0.0)
@@ -710,10 +715,10 @@ class LabelEngine {
         st.screenAngle = turn;
         if (st.curve != null) {
           final reach = (textH + room) / 2 + _boxes.pad;
-          if (_curveHits(st, world, origin, textW, textH, reach, add: false)) {
+          if (_roads.curveHits(st, textW, textH, reach, add: false)) {
             continue;
           }
-          _curveHits(st, world, origin, textW, textH, reach, add: true);
+          _roads.curveHits(st, textW, textH, reach, add: true);
         } else {
           if (_boxes.collides(sx, sy, textW + room, textH + room, turn)) {
             continue;
@@ -729,7 +734,7 @@ class LabelEngine {
           _live.add(st);
         }
         sprite?.usedPass = _pass;
-        _placedRoads.add(st);
+        _roads.placed.add(st);
         continue;
       }
 
@@ -741,7 +746,7 @@ class LabelEngine {
         ..screenAngle = 0;
       final beside = c.marker != null;
       final symbol = _symbolOf(c);
-      if (c.source.spaced && c.hasText && _nearSameRoad(st, world)) continue;
+      if (c.source.spaced && c.hasText && _roads.nearSame(st)) continue;
       final spin = (symbol?.textRotate ?? 0) * math.pi / 180;
       st.screenAngle = spin;
       _view.project(st.worldX, st.worldY);
@@ -953,7 +958,7 @@ class LabelEngine {
       st
         ..showText = showText
         ..showIcon = showIcon;
-      if (c.source.spaced && c.hasText) _placedRoads.add(st);
+      if (c.source.spaced && c.hasText) _roads.placed.add(st);
       st.placed = true;
       if (!st.live) {
         st.live = true;
@@ -963,187 +968,6 @@ class LabelEngine {
     }
     _states.removeWhere((_, st) => st.seenPass != _pass && !st.live);
     _sprites.trim(_pass);
-  }
-
-  /// Finds a straight enough stretch around the road's middle to carry text
-  /// [textW] pixels long, and sets the label's anchor and angle to it.
-  bool _fitRoad(LabelState st, double textW, double textH, double unitPx) {
-    final c = st.candidate;
-    final line = c.source.line!;
-    final need = textW * 1.15 / unitPx;
-    if (c.lineLength < need) return false;
-    final half = textW / 2 / unitPx;
-    final from = c.lineLength / 2 - half;
-    final to = c.lineLength / 2 + half;
-    var walked = 0.0;
-    var ax = 0.0, ay = 0.0, bx = 0.0, by = 0.0;
-    var first = -1;
-    var last = -1;
-    final n = line.length ~/ 2;
-    for (var i = 1; i < n; i++) {
-      final x0 = line[i * 2 - 2];
-      final y0 = line[i * 2 - 1];
-      final dx = line[i * 2] - x0;
-      final dy = line[i * 2 + 1] - y0;
-      final seg = math.sqrt(dx * dx + dy * dy);
-      if (seg == 0) continue;
-      if (first < 0 && walked + seg >= from) {
-        final t = (from - walked) / seg;
-        ax = x0 + dx * t;
-        ay = y0 + dy * t;
-        first = i;
-      }
-      if (walked + seg >= to) {
-        final t = (to - walked) / seg;
-        bx = x0 + dx * t;
-        by = y0 + dy * t;
-        last = i;
-        break;
-      }
-      walked += seg;
-    }
-    if (first < 0 || last < 0) return false;
-    final cx = bx - ax;
-    final cy = by - ay;
-    final chord = math.sqrt(cx * cx + cy * cy);
-    if (chord == 0) return false;
-    final limit = textH * 0.3 / unitPx;
-    for (var i = first; i < last; i++) {
-      final px = line[i * 2] - ax;
-      final py = line[i * 2 + 1] - ay;
-      if ((px * cy - py * cx).abs() / chord > limit) {
-        return curvedRoads && _bend(st, from, to, textH, unitPx);
-      }
-    }
-    st.curve = null;
-    var angle = math.atan2(cy, cx);
-    if (angle > math.pi / 2) angle -= math.pi;
-    if (angle < -math.pi / 2) angle += math.pi;
-    st
-      ..angle = angle
-      ..worldX = c.tileX + (ax + bx) / 2 / tileExtent * c.tileSpan
-      ..worldY = c.tileY + (ay + by) / 2 / tileExtent * c.tileSpan;
-    return true;
-  }
-
-  /// Road names follow bends. Off, a name is only written where the road is
-  /// straight enough to carry it.
-  bool curvedRoads = true;
-
-  /// The sharpest turn between two neighbouring slices of a bent name.
-  static const double _maxBend = 0.42;
-
-  /// Remembers the road around [from]..[to] tile units from its start as the
-  /// path the text bends along, with as much road again on either side so
-  /// the text has room when the zoom changes. False when the road turns too
-  /// sharply under the text.
-  bool _bend(
-    LabelState st,
-    double from,
-    double to,
-    double textH,
-    double unitPx,
-  ) {
-    final c = st.candidate;
-    final line = c.source.line!;
-    final room = (to - from) / 2;
-    final lo = from - room;
-    final hi = to + room;
-    final unit = c.tileSpan / tileExtent;
-    final path = <double>[];
-    var walked = 0.0;
-    var before = 0.0;
-    final n = line.length ~/ 2;
-    for (var i = 1; i < n; i++) {
-      final x0 = line[i * 2 - 2];
-      final y0 = line[i * 2 - 1];
-      final dx = line[i * 2] - x0;
-      final dy = line[i * 2 + 1] - y0;
-      final seg = math.sqrt(dx * dx + dy * dy);
-      if (seg == 0) continue;
-      if (walked + seg >= lo && walked <= hi) {
-        if (path.isEmpty) {
-          before = walked;
-          path
-            ..add(c.tileX + x0 * unit)
-            ..add(c.tileY + y0 * unit);
-        }
-        path
-          ..add(c.tileX + (x0 + dx) * unit)
-          ..add(c.tileY + (y0 + dy) * unit);
-      }
-      walked += seg;
-    }
-    if (path.length < 4) return false;
-    st
-      ..curve = Float64List.fromList(path)
-      ..curveMid = ((from + to) / 2 - before) * unit;
-    final count = math.max(2, ((to - from) * unitPx / (textH * 0.7)).ceil());
-    final strips = _layStrips(st, count, (to - from) / count * unit);
-    final limit = _symbolOf(c)?.maxBend ?? _maxBend;
-    for (var i = 1; i < count; i++) {
-      var turn = (strips[i * 3 + 2] - strips[i * 3 - 1]).abs();
-      if (turn > math.pi) turn = 2 * math.pi - turn;
-      if (turn > limit) {
-        st.curve = null;
-        return false;
-      }
-    }
-    final last = (count - 1) * 3;
-    st
-      ..angle = math.atan2(
-        strips[last + 1] - strips[1],
-        strips[last] - strips[0],
-      )
-      ..worldX = strips[(count ~/ 2) * 3]
-      ..worldY = strips[(count ~/ 2) * 3 + 1];
-    return true;
-  }
-
-  Float64List _strips = Float64List(96);
-
-  Float64List _layStrips(LabelState st, int count, double step) {
-    if (_strips.length < count * 3) _strips = Float64List(count * 6);
-    layStrips(st.curve!, st.curveMid, count, step, _strips);
-    return _strips;
-  }
-
-  /// How many slices a bent text [textW] by [textH] pixels is cut into.
-  static int _stripCount(double textW, double textH) =>
-      math.max(2, (textW / (textH * 0.7)).ceil());
-
-  /// Whether a bent name runs into something already placed, and with [add]
-  /// the space it takes itself.
-  bool _curveHits(
-    LabelState st,
-    double world,
-    ui.Offset origin,
-    double textW,
-    double textH,
-    double reach, {
-    required bool add,
-  }) {
-    final count = _stripCount(textW, textH);
-    final strips = _layStrips(st, count, textW / count / world);
-    for (var i = 0; i < count * 3; i += 3) {
-      _view.project(strips[i], strips[i + 1]);
-      if (add) {
-        _boxes.add(
-          _view.x - reach,
-          _view.y - reach,
-          _view.x + reach,
-          _view.y + reach,
-        );
-      } else if (_boxes.hits(
-        _view.x - reach,
-        _view.y - reach,
-        _view.x + reach,
-        _view.y + reach,
-      )) {
-        return true;
-      }
-    }
-    return false;
   }
 
   /// Which way a thing lies from its point when [anchor] is the part of it
@@ -1160,19 +984,6 @@ class LabelEngine {
         ? -1
         : 0,
   );
-
-  bool _nearSameRoad(LabelState st, double world) {
-    final text = st.candidate.source.text;
-    for (final other in _placedRoads) {
-      if (other.candidate.source.text != text) continue;
-      final dx = (other.worldX - st.worldX) * world;
-      final dy = (other.worldY - st.worldY) * world;
-      if (dx * dx + dy * dy < _roadRepeatDistance * _roadRepeatDistance) {
-        return true;
-      }
-    }
-    return false;
-  }
 
   /// Turns a distance field into a crisp shape in [tint]. The edge of the
   /// shape is where the field is [edge] full, three quarters for the shape
