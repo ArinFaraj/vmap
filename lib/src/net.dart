@@ -55,3 +55,21 @@ Future<(String, Reply)> getTile(
     }
   }
 }
+
+/// A short name for [text] that stays the same across runs and Dart
+/// versions, for naming what is kept in the cache directory.
+String cacheKey(String text) {
+  var hash = 0x811c9dc5;
+  for (final unit in text.codeUnits) {
+    hash ^= unit;
+    hash =
+        (hash +
+            (hash << 1) +
+            (hash << 4) +
+            (hash << 7) +
+            (hash << 8) +
+            (hash << 24)) &
+        0xffffffff;
+  }
+  return hash.toRadixString(36);
+}

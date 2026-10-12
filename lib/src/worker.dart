@@ -128,12 +128,9 @@ class TilePool {
   bool _confirmed = false;
   final Set<TileId> _notOnDisk = {};
 
-  /// The folder under the cache directory that holds this source's tiles.
-  String? get cacheName => _template?.hashCode.toRadixString(36);
-
   String? get _templateFile => config.cacheDirectory == null
       ? null
-      : '${config.cacheDirectory}/source-${_def.tileJsonUrl.hashCode.toRadixString(36)}.txt';
+      : '${config.cacheDirectory}/source-${cacheKey(_def.tileJsonUrl!)}.txt';
 
   /// Starts on the address remembered from the last run, so tiles on disk
   /// show without waiting for the network, and asks the server for the
@@ -198,6 +195,11 @@ class TilePool {
         _template = current;
         await _spawnWorkers(current);
         if (_closed) return;
+        final directory = config.cacheDirectory;
+        if (remembered != null && directory != null) {
+          final stale = _tilesFolder(remembered);
+          unawaited(deleteCached(directory, (name) => name == stale));
+        }
       }
       _confirmed = true;
       _notOnDisk.clear();
@@ -434,7 +436,9 @@ List<Object?> _members(List<ClusterPoint>? points) => [
 ];
 
 String _tileCachePath(String directory, String template, int z, int x, int y) =>
-    '$directory/${template.hashCode.toRadixString(36)}/$z/$x/$y.pbf';
+    '$directory/${_tilesFolder(template)}/$z/$x/$y.pbf';
+
+String _tilesFolder(String template) => 'tiles-${cacheKey(template)}';
 
 /// What a tile worker runs: it builds the tiles it is asked for and answers
 /// lookups in them.

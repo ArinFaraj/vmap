@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'net.dart' show cacheKey;
 import 'platform.dart';
 
 /// One image of a sprite sheet.
@@ -74,7 +75,7 @@ class SpriteSheet {
   }) async {
     final base = cacheDirectory == null
         ? null
-        : '$cacheDirectory/sprite-${url.hashCode.toRadixString(36)}';
+        : '$cacheDirectory/sprite-${cacheKey(url)}';
     if (base != null) {
       try {
         if (fileExists('$base.json') && fileExists('$base.png')) {

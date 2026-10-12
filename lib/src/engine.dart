@@ -23,6 +23,7 @@ import 'tiles.dart';
 import 'worker.dart';
 import 'platform.dart';
 import 'mercator.dart';
+import 'net.dart' show cacheKey;
 
 class VmapStats {
   int tilesDrawn = 0;
@@ -160,18 +161,14 @@ class VmapEngine extends ChangeNotifier {
     _loadStyle();
   }
 
-  static final _kept = RegExp('^(style|sprite|raster|source)-');
+  static final _kept = RegExp('^(style|sprite|raster|source|tiles)-');
 
   /// Deletes what this map keeps in the cache directory, then loads it again
   /// from the network. Other files in the directory are left alone.
   Future<void> clearCache() async {
     final directory = source.cacheDirectory;
     if (directory != null) {
-      final tiles = {for (final s in _sources) s.pool.cacheName};
-      await deleteCached(
-        directory,
-        (name) => _kept.hasMatch(name) || tiles.contains(name),
-      );
+      await deleteCached(directory, _kept.hasMatch);
     }
     if (!_disposed) reload();
   }
@@ -268,7 +265,7 @@ class VmapEngine extends ChangeNotifier {
 
   String? _styleFile(String url) => source.cacheDirectory == null
       ? null
-      : '${source.cacheDirectory}/style-${url.hashCode.toRadixString(36)}.json';
+      : '${source.cacheDirectory}/style-${cacheKey(url)}.json';
 
   /// Uses the style right away when it is at hand. One named by address is
   /// drawn from the copy kept from the last run while the current one

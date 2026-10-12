@@ -191,8 +191,7 @@ class RasterTiles {
     if (cacheDirectory == null || template == null) return false;
     if (archive?.local ?? false) return false;
     if (!layer.cover.has(z, x, y)) return false;
-    final file =
-        '$cacheDirectory/raster-${template.hashCode.toRadixString(36)}/$z/$x/$y';
+    final file = '$cacheDirectory/raster-${cacheKey(template)}/$z/$x/$y';
     if (fileExists(file)) return false;
     if (archive != null) {
       final bytes = await archive.tile(z, x, y);
@@ -307,7 +306,7 @@ class RasterTiles {
       final archive = _archive;
       final file = cacheDirectory == null || (archive?.local ?? false)
           ? null
-          : '$cacheDirectory/raster-${template.hashCode.toRadixString(36)}/$z/$x/$y';
+          : '$cacheDirectory/raster-${cacheKey(template)}/$z/$x/$y';
       Uint8List bytes;
       if (file != null && fileExists(file)) {
         bytes = await readFile(file);
