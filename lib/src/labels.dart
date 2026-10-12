@@ -386,213 +386,240 @@ class LabelEngine {
       final pin = st.pin;
       final pins = _pins;
       if (pin != null && pins != null && st.showIcon) {
-        if (_pinRatio != devicePixelRatio) {
-          _dropPinImages();
-          _pinRatio = devicePixelRatio;
-        }
-        final image = _pinImages[pin] ??= drawPin(
-          pin,
-          pins.size,
-          devicePixelRatio,
-        );
-        _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
-        final extent = pins.size + pinPad * 2;
-        _view.project(st.worldX, st.worldY);
-        final px = _view.x - extent / 2;
-        final py = _view.y - extent / 2;
-        canvas.drawImageRect(
-          image,
-          ui.Rect.fromLTWH(
-            0,
-            0,
-            image.width.toDouble(),
-            image.height.toDouble(),
-          ),
-          ui.Rect.fromLTWH(
-            (px * devicePixelRatio).roundToDouble() / devicePixelRatio,
-            (py * devicePixelRatio).roundToDouble() / devicePixelRatio,
-            extent,
-            extent,
-          ),
-          _imagePaint,
-        );
+        _drawPin(canvas, st, pin, pins, devicePixelRatio);
       } else if (icon != null && st.showIcon && sheet != null) {
-        _imagePaint.color = ui.Color.fromRGBO(
-          255,
-          255,
-          255,
-          st.opacity * st.iconOpacity,
+        _drawIcon(
+          canvas,
+          st,
+          icon,
+          sheet,
+          styleZoom,
+          devicePixelRatio,
+          rotation,
         );
-        final symbol = _symbolOf(st.candidate);
-        ui.ColorFilter? fill, rim;
-        if (icon.sdf && symbol != null) {
-          _context.zoom = styleZoom;
-          _bind(st.candidate);
-          final by = st.iconW / icon.width;
-          fill = _sdfFilter(
-            Rgba.of(symbol.iconColor(_context)) ?? Rgba.black,
-            by * devicePixelRatio,
-          );
-          final reach = asNumber(symbol.iconHaloWidth?.call(_context)) ?? 0;
-          final around = Rgba.of(symbol.iconHaloColor?.call(_context));
-          if (reach > 0 && around != null && by > 0) {
-            rim = _sdfFilter(
-              around,
-              by * devicePixelRatio,
-              edge: (0.75 - reach / (8 * by)).clamp(0.1, 0.75),
-              fade:
-                  (asNumber(symbol.iconHaloBlur?.call(_context)) ?? 0) /
-                  (8 * by),
-            );
-          }
-        }
-        final fit = symbol?.textFit ?? false;
-        _view.project(st.worldX, st.worldY);
-        final ix = _view.x + (fit ? st.dx : st.iconDx);
-        final iy = _view.y + (fit ? st.dy : st.iconDy);
-        final from = st.candidate.source;
-        final turn = from.turns ? from.angle + rotation : from.angle;
-        final area = ui.Rect.fromLTWH(
-          -st.iconW / 2,
-          -st.iconH / 2,
-          st.iconW,
-          st.iconH,
-        );
-        for (final filter in [?rim, fill]) {
-          _imagePaint.colorFilter = filter;
-          if (turn == 0) {
-            canvas.drawImageRect(
-              sheet.image,
-              icon.source,
-              area.translate(
-                (ix * devicePixelRatio).roundToDouble() / devicePixelRatio,
-                (iy * devicePixelRatio).roundToDouble() / devicePixelRatio,
-              ),
-              _imagePaint,
-            );
-          } else {
-            canvas
-              ..save()
-              ..translate(ix, iy)
-              ..rotate(turn)
-              ..drawImageRect(sheet.image, icon.source, area, _imagePaint)
-              ..restore();
-          }
-        }
       }
       _imagePaint.colorFilter = null;
       if (sprite == null || !wantsText) continue;
-      final pixelW = sprite.pixelW;
-      final pixelH = sprite.pixelH;
-      _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
-      if (sprite case ImageSprite(:final image) when st.curve != null) {
-        final textW = sprite.textWidth * st.scale;
-        final n = RoadLabels.stripCount(textW, sprite.textHeight * st.scale);
-        final strips = _roads.strips(st, n, textW / n / world);
-        final flip = math.cos(st.angle + rotation) < 0;
-        final pad = LabelSprites.haloPad * pixelW / sprite.width;
-        final slice = (pixelW - pad * 2) / n;
-        final k = sprite.width * st.scale / pixelW;
-        final transforms = Float32List(n * 4);
-        final rects = Float32List(n * 4);
-        for (var j = 0; j < n; j++) {
-          final i = flip ? n - 1 - j : j;
-          final a = strips[i * 3 + 2] + rotation + (flip ? math.pi : 0);
-          _view.project(strips[i * 3], strips[i * 3 + 1]);
-          final left = j == 0 ? 0.0 : pad + j * slice - 0.5;
-          final right = j == n - 1 ? pixelW : pad + (j + 1) * slice + 0.5;
-          final anchorX = pad + (j + 0.5) * slice - left;
-          final anchorY = pixelH / 2;
-          final scos = math.cos(a) * k;
-          final ssin = math.sin(a) * k;
-          transforms[j * 4] = scos;
-          transforms[j * 4 + 1] = ssin;
-          transforms[j * 4 + 2] =
-              _view.x + st.dx - scos * anchorX + ssin * anchorY;
-          transforms[j * 4 + 3] =
-              _view.y + st.dy - ssin * anchorX - scos * anchorY;
-          rects[j * 4] = left;
-          rects[j * 4 + 1] = 0;
-          rects[j * 4 + 2] = right;
-          rects[j * 4 + 3] = pixelH;
-        }
-        canvas.drawRawAtlas(
-          image,
-          transforms,
-          rects,
-          null,
-          null,
-          null,
-          _imagePaint,
+      _drawText(canvas, st, sprite, devicePixelRatio, rotation);
+    }
+    _live.length = kept;
+    if (rotation != 0) canvas.restore();
+    return animating;
+  }
+
+  void _drawPin(
+    ui.Canvas canvas,
+    LabelState st,
+    VmapPin pin,
+    VmapPins pins,
+    double devicePixelRatio,
+  ) {
+    if (_pinRatio != devicePixelRatio) {
+      _dropPinImages();
+      _pinRatio = devicePixelRatio;
+    }
+    final image = _pinImages[pin] ??= drawPin(pin, pins.size, devicePixelRatio);
+    _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
+    final extent = pins.size + pinPad * 2;
+    _view.project(st.worldX, st.worldY);
+    final px = _view.x - extent / 2;
+    final py = _view.y - extent / 2;
+    canvas.drawImageRect(
+      image,
+      ui.Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+      ui.Rect.fromLTWH(
+        (px * devicePixelRatio).roundToDouble() / devicePixelRatio,
+        (py * devicePixelRatio).roundToDouble() / devicePixelRatio,
+        extent,
+        extent,
+      ),
+      _imagePaint,
+    );
+  }
+
+  void _drawIcon(
+    ui.Canvas canvas,
+    LabelState st,
+    SpriteImage icon,
+    SpriteSheet sheet,
+    double styleZoom,
+    double devicePixelRatio,
+    double rotation,
+  ) {
+    _imagePaint.color = ui.Color.fromRGBO(
+      255,
+      255,
+      255,
+      st.opacity * st.iconOpacity,
+    );
+    final symbol = _symbolOf(st.candidate);
+    ui.ColorFilter? fill, rim;
+    if (icon.sdf && symbol != null) {
+      _context.zoom = styleZoom;
+      _bind(st.candidate);
+      final by = st.iconW / icon.width;
+      fill = _sdfFilter(
+        Rgba.of(symbol.iconColor(_context)) ?? Rgba.black,
+        by * devicePixelRatio,
+      );
+      final reach = asNumber(symbol.iconHaloWidth?.call(_context)) ?? 0;
+      final around = Rgba.of(symbol.iconHaloColor?.call(_context));
+      if (reach > 0 && around != null && by > 0) {
+        rim = _sdfFilter(
+          around,
+          by * devicePixelRatio,
+          edge: (0.75 - reach / (8 * by)).clamp(0.1, 0.75),
+          fade: (asNumber(symbol.iconHaloBlur?.call(_context)) ?? 0) / (8 * by),
         );
-        continue;
       }
-      _view.project(st.worldX, st.worldY);
-      final sx = _view.x + st.dx;
-      final sy = _view.y + st.dy;
-      final turn = st.screenAngle;
-      final w = sprite.width * st.scale;
-      final h = sprite.height * st.scale;
-      if (sprite case PictureSprite(:final picture)) {
-        canvas.save();
-        if (turn == 0) {
-          canvas.translate(
-            ((sx - w / 2) * devicePixelRatio).roundToDouble() /
-                devicePixelRatio,
-            ((sy - h / 2) * devicePixelRatio).roundToDouble() /
-                devicePixelRatio,
-          );
-        } else {
-          canvas
-            ..translate(sx, sy)
-            ..rotate(turn)
-            ..translate(-w / 2, -h / 2);
-        }
-        canvas.scale(st.scale);
-        final fading = st.opacity < 1;
-        if (fading) {
-          canvas.saveLayer(
-            ui.Rect.fromLTWH(0, 0, sprite.width, sprite.height),
-            _imagePaint,
-          );
-        }
-        canvas.drawPicture(picture);
-        if (fading) canvas.restore();
-        canvas.restore();
-        continue;
-      }
-      final image = (sprite as ImageSprite).image;
-      final source = ui.Rect.fromLTWH(0, 0, pixelW, pixelH);
+    }
+    final fit = symbol?.textFit ?? false;
+    _view.project(st.worldX, st.worldY);
+    final ix = _view.x + (fit ? st.dx : st.iconDx);
+    final iy = _view.y + (fit ? st.dy : st.iconDy);
+    final from = st.candidate.source;
+    final turn = from.turns ? from.angle + rotation : from.angle;
+    final area = ui.Rect.fromLTWH(
+      -st.iconW / 2,
+      -st.iconH / 2,
+      st.iconW,
+      st.iconH,
+    );
+    for (final filter in [?rim, fill]) {
+      _imagePaint.colorFilter = filter;
       if (turn == 0) {
-        final left =
-            ((sx - w / 2) * devicePixelRatio).roundToDouble() /
-            devicePixelRatio;
-        final top =
-            ((sy - h / 2) * devicePixelRatio).roundToDouble() /
-            devicePixelRatio;
         canvas.drawImageRect(
-          image,
-          source,
-          ui.Rect.fromLTWH(left, top, w, h),
+          sheet.image,
+          icon.source,
+          area.translate(
+            (ix * devicePixelRatio).roundToDouble() / devicePixelRatio,
+            (iy * devicePixelRatio).roundToDouble() / devicePixelRatio,
+          ),
           _imagePaint,
         );
       } else {
         canvas
           ..save()
-          ..translate(sx, sy)
+          ..translate(ix, iy)
           ..rotate(turn)
-          ..drawImageRect(
-            image,
-            source,
-            ui.Rect.fromLTWH(-w / 2, -h / 2, w, h),
-            _imagePaint,
-          )
+          ..drawImageRect(sheet.image, icon.source, area, _imagePaint)
           ..restore();
       }
     }
-    _live.length = kept;
-    if (rotation != 0) canvas.restore();
-    return animating;
+  }
+
+  /// Draws a label's text: an image cut into strips along a bent road, a
+  /// recording played back, or an image.
+  void _drawText(
+    ui.Canvas canvas,
+    LabelState st,
+    LabelSprite sprite,
+    double devicePixelRatio,
+    double rotation,
+  ) {
+    final pixelW = sprite.pixelW;
+    final pixelH = sprite.pixelH;
+    _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
+    if (sprite case ImageSprite(:final image) when st.curve != null) {
+      final textW = sprite.textWidth * st.scale;
+      final n = RoadLabels.stripCount(textW, sprite.textHeight * st.scale);
+      final strips = _roads.strips(st, n, textW / n / _view.world);
+      final flip = math.cos(st.angle + rotation) < 0;
+      final pad = LabelSprites.haloPad * pixelW / sprite.width;
+      final slice = (pixelW - pad * 2) / n;
+      final k = sprite.width * st.scale / pixelW;
+      final transforms = Float32List(n * 4);
+      final rects = Float32List(n * 4);
+      for (var j = 0; j < n; j++) {
+        final i = flip ? n - 1 - j : j;
+        final a = strips[i * 3 + 2] + rotation + (flip ? math.pi : 0);
+        _view.project(strips[i * 3], strips[i * 3 + 1]);
+        final left = j == 0 ? 0.0 : pad + j * slice - 0.5;
+        final right = j == n - 1 ? pixelW : pad + (j + 1) * slice + 0.5;
+        final anchorX = pad + (j + 0.5) * slice - left;
+        final anchorY = pixelH / 2;
+        final scos = math.cos(a) * k;
+        final ssin = math.sin(a) * k;
+        transforms[j * 4] = scos;
+        transforms[j * 4 + 1] = ssin;
+        transforms[j * 4 + 2] =
+            _view.x + st.dx - scos * anchorX + ssin * anchorY;
+        transforms[j * 4 + 3] =
+            _view.y + st.dy - ssin * anchorX - scos * anchorY;
+        rects[j * 4] = left;
+        rects[j * 4 + 1] = 0;
+        rects[j * 4 + 2] = right;
+        rects[j * 4 + 3] = pixelH;
+      }
+      canvas.drawRawAtlas(
+        image,
+        transforms,
+        rects,
+        null,
+        null,
+        null,
+        _imagePaint,
+      );
+      return;
+    }
+    _view.project(st.worldX, st.worldY);
+    final sx = _view.x + st.dx;
+    final sy = _view.y + st.dy;
+    final turn = st.screenAngle;
+    final w = sprite.width * st.scale;
+    final h = sprite.height * st.scale;
+    if (sprite case PictureSprite(:final picture)) {
+      canvas.save();
+      if (turn == 0) {
+        canvas.translate(
+          ((sx - w / 2) * devicePixelRatio).roundToDouble() / devicePixelRatio,
+          ((sy - h / 2) * devicePixelRatio).roundToDouble() / devicePixelRatio,
+        );
+      } else {
+        canvas
+          ..translate(sx, sy)
+          ..rotate(turn)
+          ..translate(-w / 2, -h / 2);
+      }
+      canvas.scale(st.scale);
+      final fading = st.opacity < 1;
+      if (fading) {
+        canvas.saveLayer(
+          ui.Rect.fromLTWH(0, 0, sprite.width, sprite.height),
+          _imagePaint,
+        );
+      }
+      canvas.drawPicture(picture);
+      if (fading) canvas.restore();
+      canvas.restore();
+      return;
+    }
+    final image = (sprite as ImageSprite).image;
+    final source = ui.Rect.fromLTWH(0, 0, pixelW, pixelH);
+    if (turn == 0) {
+      final left =
+          ((sx - w / 2) * devicePixelRatio).roundToDouble() / devicePixelRatio;
+      final top =
+          ((sy - h / 2) * devicePixelRatio).roundToDouble() / devicePixelRatio;
+      canvas.drawImageRect(
+        image,
+        source,
+        ui.Rect.fromLTWH(left, top, w, h),
+        _imagePaint,
+      );
+    } else {
+      canvas
+        ..save()
+        ..translate(sx, sy)
+        ..rotate(turn)
+        ..drawImageRect(
+          image,
+          source,
+          ui.Rect.fromLTWH(-w / 2, -h / 2, w, h),
+          _imagePaint,
+        )
+        ..restore();
+    }
   }
 
   /// Decides which labels show for this camera. Labels without an image yet
@@ -685,289 +712,335 @@ class LabelEngine {
         ..showText = c.hasText
         ..showIcon = false;
       if (isRoad) {
-        if (st.roadFitKey != fitKey) {
-          st
-            ..roadFitKey = fitKey
-            ..roadFits = _roads.fit(
-              st,
-              textW,
-              textH,
-              c.tileSpan * world / tileExtent,
-              maxBend: layer?.maxBend,
-            );
-        }
-        if (!st.roadFits || _roads.nearSame(st)) continue;
-        final room = fontSize <= 12.5 ? _minorRoadRoom : _majorRoadRoom;
-        final (roadX, roadY) = layer == null
-            ? (0.0, 0.0)
-            : _moved(
-                layer.textTranslate,
-                layer.textTranslateOnScreen,
-                styleZoom,
-              );
-        _view.project(st.worldX, st.worldY);
-        final sx = _view.x + roadX;
-        final sy = _view.y + roadY;
-        var turn = (st.angle + _view.rotation) % (2 * math.pi);
-        if (turn > math.pi) turn -= 2 * math.pi;
-        if (turn > math.pi / 2) turn -= math.pi;
-        if (turn < -math.pi / 2) turn += math.pi;
-        st.screenAngle = turn;
-        if (st.curve != null) {
-          final reach = (textH + room) / 2 + _boxes.pad;
-          if (_roads.curveHits(st, textW, textH, reach, add: false)) {
-            continue;
-          }
-          _roads.curveHits(st, textW, textH, reach, add: true);
-        } else {
-          if (_boxes.collides(sx, sy, textW + room, textH + room, turn)) {
-            continue;
-          }
-          _boxes.take(sx, sy, textW + room, textH + room, turn);
-        }
-        st
-          ..dx = roadX
-          ..dy = roadY
-          ..placed = true;
-        if (!st.live) {
-          st.live = true;
-          _live.add(st);
-        }
-        sprite?.usedPass = _pass;
-        _roads.placed.add(st);
-        continue;
+        _placeRoad(
+          st,
+          layer,
+          sprite,
+          fontSize,
+          textW,
+          textH,
+          styleZoom,
+          fitKey,
+        );
+      } else {
+        _placePoint(
+          st,
+          layer,
+          sprite,
+          fontSize,
+          textW,
+          textH,
+          textPad,
+          iconPad,
+          styleZoom,
+          obstacleBoxes,
+        );
       }
+    }
+    _states.removeWhere((_, st) => st.seenPass != _pass && !st.live);
+    _sprites.trim(_pass);
+  }
 
+  /// Places a name along its road, when the road can carry it and it runs
+  /// into nothing placed before it.
+  void _placeRoad(
+    LabelState st,
+    SymbolLayer? layer,
+    LabelSprite? sprite,
+    double fontSize,
+    double textW,
+    double textH,
+    double styleZoom,
+    int fitKey,
+  ) {
+    final c = st.candidate;
+    if (st.roadFitKey != fitKey) {
       st
-        ..worldX = c.worldX
-        ..worldY = c.worldY
-        ..angle = 0
-        ..curve = null
-        ..screenAngle = 0;
-      final beside = c.marker != null;
-      final symbol = _symbolOf(c);
-      if (c.source.spaced && c.hasText && _roads.nearSame(st)) continue;
-      final spin = (symbol?.textRotate ?? 0) * math.pi / 180;
-      st.screenAngle = spin;
-      _view.project(st.worldX, st.worldY);
-      final sx = _view.x;
-      final sy = _view.y;
-
-      var tx = 0.0;
-      var ty = 0.0;
-      if (symbol != null && c.hasText) {
-        tx = symbol.offsetX * fontSize;
-        ty = symbol.offsetY * fontSize;
-        final anchor = symbol.anchor;
-        if (anchor.startsWith('top')) ty += textH / 2;
-        if (anchor.startsWith('bottom')) ty -= textH / 2;
-        if (anchor.endsWith('left')) tx += textW / 2;
-        if (anchor.endsWith('right')) tx -= textW / 2;
-        if (spin != 0) {
-          final cos = math.cos(spin);
-          final sin = math.sin(spin);
-          (tx, ty) = (tx * cos - ty * sin, tx * sin + ty * cos);
-        }
+        ..roadFitKey = fitKey
+        ..roadFits = _roads.fit(
+          st,
+          textW,
+          textH,
+          c.tileSpan * _view.world / tileExtent,
+          maxBend: layer?.maxBend,
+        );
+    }
+    if (!st.roadFits || _roads.nearSame(st)) return;
+    final room = fontSize <= 12.5 ? _minorRoadRoom : _majorRoadRoom;
+    final (roadX, roadY) = layer == null
+        ? (0.0, 0.0)
+        : _moved(layer.textTranslate, layer.textTranslateOnScreen, styleZoom);
+    _view.project(st.worldX, st.worldY);
+    final sx = _view.x + roadX;
+    final sy = _view.y + roadY;
+    var turn = (st.angle + _view.rotation) % (2 * math.pi);
+    if (turn > math.pi) turn -= 2 * math.pi;
+    if (turn > math.pi / 2) turn -= math.pi;
+    if (turn < -math.pi / 2) turn += math.pi;
+    st.screenAngle = turn;
+    if (st.curve != null) {
+      final reach = (textH + room) / 2 + _boxes.pad;
+      if (_roads.curveHits(st, textW, textH, reach, add: false)) {
+        return;
       }
-      final (moveX, moveY) = symbol == null
-          ? (0.0, 0.0)
-          : _moved(
-              symbol.textTranslate,
-              symbol.textTranslateOnScreen,
-              styleZoom,
-            );
-      tx += moveX;
-      ty += moveY;
-
-      var icon = st.icon;
-      if (icon == null && c.source.icon.isNotEmpty) {
-        icon = st.icon = _sheet?.entries[c.source.icon];
+      _roads.curveHits(st, textW, textH, reach, add: true);
+    } else {
+      if (_boxes.collides(sx, sy, textW + room, textH + room, turn)) {
+        return;
       }
+      _boxes.take(sx, sy, textW + room, textH + room, turn);
+    }
+    st
+      ..dx = roadX
+      ..dy = roadY
+      ..placed = true;
+    if (!st.live) {
+      st.live = true;
+      _live.add(st);
+    }
+    sprite?.usedPass = _pass;
+    _roads.placed.add(st);
+  }
+
+  /// Places a point's text and icon, the text trying each side the layer
+  /// allows, or stepping aside for a marker.
+  void _placePoint(
+    LabelState st,
+    SymbolLayer? layer,
+    LabelSprite? sprite,
+    double fontSize,
+    double textW,
+    double textH,
+    double textPad,
+    double iconPad,
+    double styleZoom,
+    List<int> obstacleBoxes,
+  ) {
+    final c = st.candidate;
+
+    st
+      ..worldX = c.worldX
+      ..worldY = c.worldY
+      ..angle = 0
+      ..curve = null
+      ..screenAngle = 0;
+    final beside = c.marker != null;
+    final symbol = _symbolOf(c);
+    if (c.source.spaced && c.hasText && _roads.nearSame(st)) return;
+    final spin = (symbol?.textRotate ?? 0) * math.pi / 180;
+    st.screenAngle = spin;
+    _view.project(st.worldX, st.worldY);
+    final sx = _view.x;
+    final sy = _view.y;
+
+    var tx = 0.0;
+    var ty = 0.0;
+    if (symbol != null && c.hasText) {
+      tx = symbol.offsetX * fontSize;
+      ty = symbol.offsetY * fontSize;
+      final anchor = symbol.anchor;
+      if (anchor.startsWith('top')) ty += textH / 2;
+      if (anchor.startsWith('bottom')) ty -= textH / 2;
+      if (anchor.endsWith('left')) tx += textW / 2;
+      if (anchor.endsWith('right')) tx -= textW / 2;
+      if (spin != 0) {
+        final cos = math.cos(spin);
+        final sin = math.sin(spin);
+        (tx, ty) = (tx * cos - ty * sin, tx * sin + ty * cos);
+      }
+    }
+    final (moveX, moveY) = symbol == null
+        ? (0.0, 0.0)
+        : _moved(symbol.textTranslate, symbol.textTranslateOnScreen, styleZoom);
+    tx += moveX;
+    ty += moveY;
+
+    var icon = st.icon;
+    if (icon == null && c.source.icon.isNotEmpty) {
+      icon = st.icon = _sheet?.entries[c.source.icon];
+    }
+    st
+      ..iconDx = 0
+      ..iconDy = 0;
+    if (icon != null && symbol != null) {
+      final by = asNumber(symbol.iconSize(_context..zoom = styleZoom)) ?? 1;
+      if (!symbol.textFit) {
+        final (ax, ay) = _sides(symbol.iconAnchor);
+        st
+          ..iconDx = symbol.iconOffsetX * by + ax * icon.width * by / 2
+          ..iconDy = symbol.iconOffsetY * by + ay * icon.height * by / 2;
+      }
+      final (ix, iy) = _moved(
+        symbol.iconTranslate,
+        symbol.iconTranslateOnScreen,
+        styleZoom,
+      );
+      st
+        ..iconDx += ix
+        ..iconDy += iy;
+      st
+        ..iconW = symbol.textFit ? textW + _fitPad * 2 : icon.width * by
+        ..iconH = symbol.textFit ? textH + _fitPad * 2 : icon.height * by
+        ..iconOpacity = (asNumber(symbol.iconOpacity(_context)) ?? 1).clamp(
+          0.0,
+          1.0,
+        );
+    }
+    final pins = _pins;
+    final pin = pins == null || symbol == null || c.source.icon.isEmpty
+        ? null
+        : pins.resolve(c.source.icon, place: symbol.sourceLayer == 'poi');
+    st.pin = pin;
+    if (pin != null) {
       st
         ..iconDx = 0
-        ..iconDy = 0;
-      if (icon != null && symbol != null) {
-        final by = asNumber(symbol.iconSize(_context..zoom = styleZoom)) ?? 1;
-        if (!symbol.textFit) {
-          final (ax, ay) = _sides(symbol.iconAnchor);
-          st
-            ..iconDx = symbol.iconOffsetX * by + ax * icon.width * by / 2
-            ..iconDy = symbol.iconOffsetY * by + ay * icon.height * by / 2;
-        }
-        final (ix, iy) = _moved(
-          symbol.iconTranslate,
-          symbol.iconTranslateOnScreen,
-          styleZoom,
-        );
-        st
-          ..iconDx += ix
-          ..iconDy += iy;
-        st
-          ..iconW = symbol.textFit ? textW + _fitPad * 2 : icon.width * by
-          ..iconH = symbol.textFit ? textH + _fitPad * 2 : icon.height * by
-          ..iconOpacity = (asNumber(symbol.iconOpacity(_context)) ?? 1).clamp(
-            0.0,
-            1.0,
-          );
-      }
-      final pins = _pins;
-      final pin = pins == null || symbol == null || c.source.icon.isEmpty
-          ? null
-          : pins.resolve(c.source.icon, place: symbol.sourceLayer == 'poi');
-      st.pin = pin;
-      if (pin != null) {
-        st
-          ..iconDx = 0
-          ..iconDy = 0
-          ..iconW = pins!.size
-          ..iconH = pins.size
-          ..iconOpacity = 1;
-        if (c.hasText) {
-          final reach = pins.size / 2 + _pinGap;
-          final anchor = symbol!.anchor;
-          tx = 0;
-          ty = 0;
-          if (anchor.endsWith('left')) {
-            tx = reach + textW / 2;
-          } else if (anchor.endsWith('right')) {
-            tx = -reach - textW / 2;
-          } else if (anchor.startsWith('bottom')) {
-            ty = -reach - textH / 2;
-          } else {
-            ty = reach + textH / 2;
-          }
+        ..iconDy = 0
+        ..iconW = pins!.size
+        ..iconH = pins.size
+        ..iconOpacity = 1;
+      if (c.hasText) {
+        final reach = pins.size / 2 + _pinGap;
+        final anchor = symbol!.anchor;
+        tx = 0;
+        ty = 0;
+        if (anchor.endsWith('left')) {
+          tx = reach + textW / 2;
+        } else if (anchor.endsWith('right')) {
+          tx = -reach - textW / 2;
+        } else if (anchor.startsWith('bottom')) {
+          ty = -reach - textH / 2;
+        } else {
+          ty = reach + textH / 2;
         }
       }
-      final hasIcon = icon != null || pin != null;
-      if (!hasIcon && !c.hasText) continue;
+    }
+    final hasIcon = icon != null || pin != null;
+    if (!hasIcon && !c.hasText) return;
 
-      var textFits = false;
-      final sides = symbol?.anchors ?? const <String>[];
-      if (c.hasText && sides.isNotEmpty) {
-        // The side the text took last is tried first, so a label stays put
-        // while it still fits there.
-        final away = pin != null
-            ? pins!.size / 2 + _pinGap
-            : symbol!.radialOffset * fontSize;
-        final first = st.side < sides.length ? st.side : 0;
-        for (var k = 0; k < sides.length && !textFits; k++) {
-          final at = (first + k) % sides.length;
-          final (ax, ay) = _sides(sides[at]);
-          final double fx, fy;
-          if (away > 0) {
-            final reach = ax != 0 && ay != 0 ? away / math.sqrt2 : away;
-            fx = moveX + ax * (reach + textW / 2);
-            fy = moveY + ay * (reach + textH / 2);
-          } else {
-            fx = moveX + ax * ((symbol!.offsetX * fontSize).abs() + textW / 2);
-            fy = moveY + ay * ((symbol.offsetY * fontSize).abs() + textH / 2);
-          }
-          if (!(symbol!.textOverlaps) &&
-              _boxes.collides(sx + fx, sy + fy, textW, textH, spin)) {
-            continue;
-          }
+    var textFits = false;
+    final sides = symbol?.anchors ?? const <String>[];
+    if (c.hasText && sides.isNotEmpty) {
+      // The side the text took last is tried first, so a label stays put
+      // while it still fits there.
+      final away = pin != null
+          ? pins!.size / 2 + _pinGap
+          : symbol!.radialOffset * fontSize;
+      final first = st.side < sides.length ? st.side : 0;
+      for (var k = 0; k < sides.length && !textFits; k++) {
+        final at = (first + k) % sides.length;
+        final (ax, ay) = _sides(sides[at]);
+        final double fx, fy;
+        if (away > 0) {
+          final reach = ax != 0 && ay != 0 ? away / math.sqrt2 : away;
+          fx = moveX + ax * (reach + textW / 2);
+          fy = moveY + ay * (reach + textH / 2);
+        } else {
+          fx = moveX + ax * ((symbol!.offsetX * fontSize).abs() + textW / 2);
+          fy = moveY + ay * ((symbol.offsetY * fontSize).abs() + textH / 2);
+        }
+        if (!(symbol!.textOverlaps) &&
+            _boxes.collides(sx + fx, sy + fy, textW, textH, spin)) {
+          continue;
+        }
+        st
+          ..side = at
+          ..dx = fx
+          ..dy = fy;
+        textFits = true;
+      }
+    } else if (c.hasText) {
+      if (obstacles.isEmpty) {
+        textFits =
+            (symbol?.textOverlaps ?? false) ||
+            !_boxes.collides(sx + tx, sy + ty, textW, textH, spin);
+        st
+          ..dx = tx
+          ..dy = ty;
+      } else {
+        var down = textH / 2 + _obstacleReach;
+        var across = textW / 2 + _obstacleReach;
+        var shiftX = tx;
+        var shiftY = ty;
+        if (beside) {
+          final own = c.marker!;
+          down = textH / 2 + obstacles[own].$4 / 2 + 2;
+          across = textW / 2 + obstacles[own].$3 / 2 + 4;
+          _boxes.ignored = obstacleBoxes[own];
+          shiftX = obstacles[own].$5;
+          shiftY = obstacles[own].$6;
+        }
+        final first = beside && c.startsRight ? -across : across;
+        for (var k = 0; k < 6 && !textFits; k++) {
+          final ox = switch (k) {
+            1 => st.dx,
+            2 => beside ? first : 0.0,
+            3 => beside ? -first : 0.0,
+            4 => beside ? 0.0 : across,
+            5 => beside ? 0.0 : -across,
+            _ => 0.0,
+          };
+          final oy = switch (k) {
+            1 => st.dy,
+            2 => beside ? 0.0 : down,
+            3 => beside ? 0.0 : -down,
+            4 => beside ? down : 0.0,
+            5 => beside ? -down : 0.0,
+            _ => 0.0,
+          };
+          if (beside && (k == 1 || (ox == 0 && oy == 0))) continue;
+          if (hasIcon && k > 1) break;
+          final fx = k == 1 ? ox : ox + shiftX;
+          final fy = k == 1 ? oy : oy + shiftY;
+          if (_boxes.collides(sx + fx, sy + fy, textW, textH, spin)) continue;
           st
-            ..side = at
             ..dx = fx
             ..dy = fy;
           textFits = true;
         }
-      } else if (c.hasText) {
-        if (obstacles.isEmpty) {
-          textFits =
-              (symbol?.textOverlaps ?? false) ||
-              !_boxes.collides(sx + tx, sy + ty, textW, textH, spin);
-          st
-            ..dx = tx
-            ..dy = ty;
-        } else {
-          var down = textH / 2 + _obstacleReach;
-          var across = textW / 2 + _obstacleReach;
-          var shiftX = tx;
-          var shiftY = ty;
-          if (beside) {
-            final own = c.marker!;
-            down = textH / 2 + obstacles[own].$4 / 2 + 2;
-            across = textW / 2 + obstacles[own].$3 / 2 + 4;
-            _boxes.ignored = obstacleBoxes[own];
-            shiftX = obstacles[own].$5;
-            shiftY = obstacles[own].$6;
-          }
-          final first = beside && c.startsRight ? -across : across;
-          for (var k = 0; k < 6 && !textFits; k++) {
-            final ox = switch (k) {
-              1 => st.dx,
-              2 => beside ? first : 0.0,
-              3 => beside ? -first : 0.0,
-              4 => beside ? 0.0 : across,
-              5 => beside ? 0.0 : -across,
-              _ => 0.0,
-            };
-            final oy = switch (k) {
-              1 => st.dy,
-              2 => beside ? 0.0 : down,
-              3 => beside ? 0.0 : -down,
-              4 => beside ? down : 0.0,
-              5 => beside ? -down : 0.0,
-              _ => 0.0,
-            };
-            if (beside && (k == 1 || (ox == 0 && oy == 0))) continue;
-            if (hasIcon && k > 1) break;
-            final fx = k == 1 ? ox : ox + shiftX;
-            final fy = k == 1 ? oy : oy + shiftY;
-            if (_boxes.collides(sx + fx, sy + fy, textW, textH, spin)) continue;
-            st
-              ..dx = fx
-              ..dy = fy;
-            textFits = true;
-          }
-          _boxes.ignored = null;
-        }
+        _boxes.ignored = null;
       }
-      final fitted = pin == null && (symbol?.textFit ?? false);
-      _boxes.pad = iconPad;
-      final iconFits =
-          hasIcon &&
-          ((symbol?.iconOverlaps ?? false) ||
-              fitted ||
-              !_boxes.collides(
-                sx + st.iconDx,
-                sy + st.iconDy,
-                st.iconW,
-                st.iconH,
-                0,
-              ));
-      final bool showText;
-      final bool showIcon;
-      if (c.hasText && hasIcon) {
-        showText = textFits && (iconFits || symbol!.iconOptional);
-        showIcon = iconFits && (textFits || symbol!.textOptional);
-      } else {
-        showText = textFits;
-        showIcon = iconFits;
-      }
-      if (!showText && !showIcon) continue;
-      if (showText && !(symbol?.textIgnored ?? false)) {
-        _boxes.pad = textPad;
-        _boxes.take(sx + st.dx, sy + st.dy, textW, textH, spin);
-      }
-      if (showIcon && !fitted && !(symbol?.iconIgnored ?? false)) {
-        _boxes.pad = iconPad;
-        _boxes.take(sx + st.iconDx, sy + st.iconDy, st.iconW, st.iconH, 0);
-      }
-      st
-        ..showText = showText
-        ..showIcon = showIcon;
-      if (c.source.spaced && c.hasText) _roads.placed.add(st);
-      st.placed = true;
-      if (!st.live) {
-        st.live = true;
-        _live.add(st);
-      }
-      sprite?.usedPass = _pass;
     }
-    _states.removeWhere((_, st) => st.seenPass != _pass && !st.live);
-    _sprites.trim(_pass);
+    final fitted = pin == null && (symbol?.textFit ?? false);
+    _boxes.pad = iconPad;
+    final iconFits =
+        hasIcon &&
+        ((symbol?.iconOverlaps ?? false) ||
+            fitted ||
+            !_boxes.collides(
+              sx + st.iconDx,
+              sy + st.iconDy,
+              st.iconW,
+              st.iconH,
+              0,
+            ));
+    final bool showText;
+    final bool showIcon;
+    if (c.hasText && hasIcon) {
+      showText = textFits && (iconFits || symbol!.iconOptional);
+      showIcon = iconFits && (textFits || symbol!.textOptional);
+    } else {
+      showText = textFits;
+      showIcon = iconFits;
+    }
+    if (!showText && !showIcon) return;
+    if (showText && !(symbol?.textIgnored ?? false)) {
+      _boxes.pad = textPad;
+      _boxes.take(sx + st.dx, sy + st.dy, textW, textH, spin);
+    }
+    if (showIcon && !fitted && !(symbol?.iconIgnored ?? false)) {
+      _boxes.pad = iconPad;
+      _boxes.take(sx + st.iconDx, sy + st.iconDy, st.iconW, st.iconH, 0);
+    }
+    st
+      ..showText = showText
+      ..showIcon = showIcon;
+    if (c.source.spaced && c.hasText) _roads.placed.add(st);
+    st.placed = true;
+    if (!st.live) {
+      st.live = true;
+      _live.add(st);
+    }
+    sprite?.usedPass = _pass;
   }
 
   /// Which way a thing lies from its point when [anchor] is the part of it
