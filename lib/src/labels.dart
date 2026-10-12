@@ -6,9 +6,10 @@ import 'package:flutter/foundation.dart' show listEquals;
 
 import 'collision_boxes.dart';
 import 'expr.dart';
+import 'label_sprites.dart';
+import 'label_state.dart';
 import 'label_view.dart';
 import 'label_path.dart';
-import 'platform.dart';
 import 'pins.dart';
 import 'sprites.dart';
 import 'style.dart';
@@ -56,232 +57,6 @@ class VmapTextStyle {
     markerWeight,
     markerColor,
   );
-}
-
-class LabelCandidate {
-  LabelCandidate(this.key, this.source, this.tileX, this.tileY, this.tileSpan)
-    : marker = null,
-      worldX = tileX + source.x / tileExtent * tileSpan,
-      worldY = tileY + source.y / tileExtent * tileSpan,
-      _line = source.line;
-
-  /// The name of marker number [marker], written beside it at [worldX],
-  /// [worldY] ahead of every map label.
-  LabelCandidate.marker(int this.marker, String name, this.worldX, this.worldY)
-    : key = 'm|$marker|$name',
-      source = BuiltLabel(-1, 0, name, 0, 0, null),
-      tileX = worldX,
-      tileY = worldY,
-      tileSpan = 0,
-      _line = null;
-
-  final String key;
-
-  /// The number of the marker this names, in the order the markers were
-  /// given. Null for a label of the map.
-  final int? marker;
-
-  /// Lower is placed first. Markers' names come before every map label.
-  int get rank => switch (marker) {
-    final index? => _markersFirst + index,
-    null => source.priority,
-  };
-
-  static const int _markersFirst = -(1 << 30);
-  late String spriteKey = '${source.layer}|${source.text}';
-
-  /// The colours the text was last asked for in, when they come from the
-  /// feature. One picture is kept for each.
-  int ink = 0;
-
-  /// Whether the text reads right to left, so its first letter is at its
-  /// right edge.
-  late final bool startsRight = _startsRight(source.text);
-
-  static bool _startsRight(String text) {
-    for (final unit in text.codeUnits) {
-      if (unit >= 0x0590 && unit <= 0x08ff) return true;
-      if ((unit >= 0x41 && unit <= 0x5a) || (unit >= 0x61 && unit <= 0x7a)) {
-        return false;
-      }
-    }
-    return false;
-  }
-
-  final BuiltLabel source;
-  late final bool hasText = source.text.isNotEmpty;
-
-  /// The owning tile's corner and width, as fractions of the world.
-  final double tileX;
-  final double tileY;
-  final double tileSpan;
-  final double worldX;
-  final double worldY;
-  final Float32List? _line;
-  late final double lineLength = _length(_line);
-
-  static double _length(Float32List? line) {
-    if (line == null) return 0;
-    var total = 0.0;
-    for (var i = 2; i < line.length; i += 2) {
-      final dx = line[i] - line[i - 2];
-      final dy = line[i + 1] - line[i - 1];
-      total += math.sqrt(dx * dx + dy * dy);
-    }
-    return total;
-  }
-}
-
-/// A label drawn once, shared by every label with the same text and class:
-/// into an image, or where [directLabels] is set as a recording of its text
-/// that is played every frame.
-/// A label's text drawn once, to be placed every frame.
-sealed class _Sprite {
-  _Sprite(
-    this.width,
-    this.height,
-    this.textWidth,
-    this.textHeight,
-    this.fontSize,
-  );
-
-  /// The size of what is drawn in its own units: the image's pixels, or the
-  /// logical pixels of the recording.
-  double get pixelW;
-  double get pixelH;
-
-  void dispose() => dropped = true;
-
-  /// The size the text was drawn at. The image is scaled while the label's
-  /// size stays close to it.
-  final double fontSize;
-  final double width;
-  final double height;
-  final double textWidth;
-  final double textHeight;
-  int usedPass = 0;
-
-  /// Evicted from the cache; its image is gone.
-  bool dropped = false;
-}
-
-/// Text turned into an image, which can be cut into strips along a road.
-final class _ImageSprite extends _Sprite {
-  _ImageSprite(
-    this.image,
-    super.width,
-    super.height,
-    super.textWidth,
-    super.textHeight,
-    super.fontSize,
-  );
-
-  final ui.Image image;
-
-  @override
-  double get pixelW => image.width.toDouble();
-
-  @override
-  double get pixelH => image.height.toDouble();
-
-  @override
-  void dispose() {
-    super.dispose();
-    image.dispose();
-  }
-}
-
-/// Text kept as a recording, played back sharp at any size.
-final class _PictureSprite extends _Sprite {
-  _PictureSprite(
-    this.picture,
-    this.paragraphs,
-    super.width,
-    super.height,
-    super.textWidth,
-    super.textHeight,
-    super.fontSize,
-  );
-
-  final ui.Picture picture;
-
-  /// The text [picture] plays, kept for as long as it is.
-  final List<ui.Paragraph> paragraphs;
-
-  @override
-  double get pixelW => width;
-
-  @override
-  double get pixelH => height;
-
-  @override
-  void dispose() {
-    super.dispose();
-    picture.dispose();
-    for (final paragraph in paragraphs) {
-      paragraph.dispose();
-    }
-  }
-}
-
-class _LabelState {
-  _LabelState(this.candidate);
-
-  LabelCandidate candidate;
-  _Sprite? sprite;
-  double opacity = 0;
-  bool placed = false;
-  int seenPass = -1;
-  int sortKey = 0;
-  double worldX = 0;
-  double worldY = 0;
-
-  /// The angle of the road the text runs along, on the map and on the
-  /// screen. The second follows the map's rotation and never reads upside
-  /// down.
-  double angle = 0;
-  double screenAngle = 0;
-
-  /// For a name that follows a bend: the stretch of road it sits on, as x,y
-  /// pairs in fractions of the world, and how far along it the middle of the
-  /// text is. Null for a name written straight. The text is laid on it
-  /// afresh every frame, so its letters keep their spacing through a zoom.
-  Float64List? curve;
-  double curveMid = 0;
-
-  /// The label's size now over the size its image was drawn at.
-  double scale = 1;
-
-  /// The image is too far from the label's size and wants drawing again.
-  bool resize = false;
-
-  /// Where the label sits relative to its anchor, in screen pixels, after
-  /// stepping aside for a reserved area.
-  double dx = 0;
-  double dy = 0;
-  int roadFitKey = -1;
-  bool roadFits = false;
-
-  /// The icon at the anchor and the size it is drawn at.
-  SpriteImage? icon;
-
-  /// The pin drawn in place of the icon.
-  VmapPin? pin;
-  double iconW = 0;
-  double iconH = 0;
-  double iconOpacity = 1;
-
-  /// How far the icon's middle is drawn from the point.
-  double iconDx = 0;
-  double iconDy = 0;
-
-  /// Which of the layer's variable anchors the text took last.
-  int side = 0;
-  bool showIcon = false;
-  bool showText = true;
-
-  /// In the list of labels that are showing or fading.
-  bool live = false;
 }
 
 /// Chooses which labels show, fades them, and draws them. Text is laid out by
@@ -348,26 +123,11 @@ class LabelEngine {
   };
 
   static const double _fadeSeconds = 0.2;
-  static const double _haloPad = 4;
 
   /// UI-thread time a frame may spend drawing new labels into images.
   /// Candidates weighed per placement, best priority first. The rest are the
   /// least important street names and wait for a closer zoom.
   static const int _maxConsidered = 240;
-
-  /// The halo is the text redrawn in the background colour around itself.
-  /// A blurred shadow looks the same and stalls the raster thread for tens of
-  /// milliseconds per label image.
-  static const List<ui.Offset> _haloOffsets = [
-    ui.Offset(1.5, 0),
-    ui.Offset(-1.5, 0),
-    ui.Offset(0, 1.5),
-    ui.Offset(0, -1.5),
-    ui.Offset(1.1, 1.1),
-    ui.Offset(-1.1, 1.1),
-    ui.Offset(1.1, -1.1),
-    ui.Offset(-1.1, -1.1),
-  ];
 
   /// Extra clear space kept around street names, so a grid of short streets
   /// names a few of them instead of all of them.
@@ -376,8 +136,6 @@ class LabelEngine {
   static const int _placementIntervalMs = 90;
   static const int _zoomingIntervalMs = 350;
   static const double _roadRepeatDistance = 260;
-
-  static const int _maxSprites = 1400;
 
   /// A frame that spent this long placing labels draws no new text images;
   /// they wait a frame, so the two costs never land on the same one.
@@ -422,13 +180,14 @@ class LabelEngine {
 
   static const int _heavyPlaceMicros = 800;
 
-  final Map<String, _LabelState> _states = {};
-  final Map<String, _Sprite> _sprites = {};
-  final List<_LabelState> _frameStates = [];
+  final Map<String, LabelState> _states = {};
+  final LabelWork work = LabelWork();
+  late final LabelSprites _sprites = LabelSprites(work);
+  final List<LabelState> _frameStates = [];
 
   /// The labels that are showing or fading, which is all a frame draws.
-  final List<_LabelState> _live = [];
-  final List<_LabelState> _placedRoads = [];
+  final List<LabelState> _live = [];
+  final List<LabelState> _placedRoads = [];
   final ui.Paint _imagePaint = ui.Paint()
     ..filterQuality = ui.FilterQuality.medium;
   final Stopwatch _clock = Stopwatch()..start();
@@ -478,24 +237,6 @@ class LabelEngine {
   /// it is drawn again, and sharpened once the zoom rests.
   bool _zooming = false;
   int lastRasterMicros = 0;
-  int rasterizedTotal = 0;
-
-  /// Time spent laying label text out, and turning it into images.
-  int layoutMicrosTotal = 0;
-  int imageMicrosTotal = 0;
-
-  /// How many images labels were drawn into.
-  int imagesTotal = 0;
-  int resizedTotal = 0;
-  int evictedTotal = 0;
-  int statesWalked = 0;
-
-  /// Starts the totals again from zero once the engine has added them up.
-  void clearTotals() {
-    rasterizedTotal = layoutMicrosTotal = imageMicrosTotal = imagesTotal =
-        resizedTotal = evictedTotal = statesWalked = 0;
-  }
-
   int get stateCount => _states.length;
   int get spriteCount => _sprites.length;
 
@@ -508,9 +249,6 @@ class LabelEngine {
   };
 
   void clear() {
-    for (final sprite in _sprites.values) {
-      sprite.dispose();
-    }
     _sprites.clear();
     _dropPinImages();
     _states.clear();
@@ -585,7 +323,7 @@ class LabelEngine {
         pending = true;
         break;
       }
-      if (cached == null && st.sprite != null) resizedTotal++;
+      if (cached == null && st.sprite != null) work.resized++;
       st
         ..sprite =
             cached ??
@@ -597,12 +335,12 @@ class LabelEngine {
     }
 
     lastRasterMicros = _clock.elapsedMicroseconds - rasterStart;
-    rasterizedTotal += rasterized;
+    work.rasterized += rasterized;
     _lastZoom = zoom;
     final styleZoom = zoom - 1 + zoomOffset;
     var animating = pending;
     final step = dt / _fadeSeconds;
-    statesWalked += _live.length;
+    work.statesWalked += _live.length;
     if (rotation != 0) {
       canvas
         ..save()
@@ -743,12 +481,12 @@ class LabelEngine {
       final pixelW = sprite.pixelW;
       final pixelH = sprite.pixelH;
       _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
-      if (sprite case _ImageSprite(:final image) when st.curve != null) {
+      if (sprite case ImageSprite(:final image) when st.curve != null) {
         final textW = sprite.textWidth * st.scale;
         final n = _stripCount(textW, sprite.textHeight * st.scale);
         final strips = _layStrips(st, n, textW / n / world);
         final flip = math.cos(st.angle + rotation) < 0;
-        final pad = _haloPad * pixelW / sprite.width;
+        final pad = LabelSprites.haloPad * pixelW / sprite.width;
         final slice = (pixelW - pad * 2) / n;
         final k = sprite.width * st.scale / pixelW;
         final transforms = Float32List(n * 4);
@@ -791,7 +529,7 @@ class LabelEngine {
       final turn = st.screenAngle;
       final w = sprite.width * st.scale;
       final h = sprite.height * st.scale;
-      if (sprite case _PictureSprite(:final picture)) {
+      if (sprite case PictureSprite(:final picture)) {
         canvas.save();
         if (turn == 0) {
           canvas.translate(
@@ -819,7 +557,7 @@ class LabelEngine {
         canvas.restore();
         continue;
       }
-      final image = (sprite as _ImageSprite).image;
+      final image = (sprite as ImageSprite).image;
       final source = ui.Rect.fromLTWH(0, 0, pixelW, pixelH);
       if (turn == 0) {
         final left =
@@ -879,7 +617,7 @@ class LabelEngine {
             sy > size.height + margin) {
           continue;
         }
-        final st = _states[c.key] ??= _LabelState(c);
+        final st = _states[c.key] ??= LabelState(c);
         if (st.seenPass == _pass) continue;
         st
           ..seenPass = _pass
@@ -1224,22 +962,12 @@ class LabelEngine {
       sprite?.usedPass = _pass;
     }
     _states.removeWhere((_, st) => st.seenPass != _pass && !st.live);
-    if (_sprites.length > _maxSprites) {
-      final unused = [
-        for (final e in _sprites.entries)
-          if (e.value.usedPass != _pass) e.key,
-      ];
-      for (final key in unused) {
-        if (_sprites.length <= _maxSprites * 3 ~/ 4) break;
-        evictedTotal++;
-        _sprites.remove(key)!.dispose();
-      }
-    }
+    _sprites.trim(_pass);
   }
 
   /// Finds a straight enough stretch around the road's middle to carry text
   /// [textW] pixels long, and sets the label's anchor and angle to it.
-  bool _fitRoad(_LabelState st, double textW, double textH, double unitPx) {
+  bool _fitRoad(LabelState st, double textW, double textH, double unitPx) {
     final c = st.candidate;
     final line = c.source.line!;
     final need = textW * 1.15 / unitPx;
@@ -1310,7 +1038,7 @@ class LabelEngine {
   /// the text has room when the zoom changes. False when the road turns too
   /// sharply under the text.
   bool _bend(
-    _LabelState st,
+    LabelState st,
     double from,
     double to,
     double textH,
@@ -1374,7 +1102,7 @@ class LabelEngine {
 
   Float64List _strips = Float64List(96);
 
-  Float64List _layStrips(_LabelState st, int count, double step) {
+  Float64List _layStrips(LabelState st, int count, double step) {
     if (_strips.length < count * 3) _strips = Float64List(count * 6);
     layStrips(st.curve!, st.curveMid, count, step, _strips);
     return _strips;
@@ -1387,7 +1115,7 @@ class LabelEngine {
   /// Whether a bent name runs into something already placed, and with [add]
   /// the space it takes itself.
   bool _curveHits(
-    _LabelState st,
+    LabelState st,
     double world,
     ui.Offset origin,
     double textW,
@@ -1433,7 +1161,7 @@ class LabelEngine {
         : 0,
   );
 
-  bool _nearSameRoad(_LabelState st, double world) {
+  bool _nearSameRoad(LabelState st, double world) {
     final text = st.candidate.source.text;
     for (final other in _placedRoads) {
       if (other.candidate.source.text != text) continue;
@@ -1478,20 +1206,21 @@ class LabelEngine {
     return false;
   }
 
-  /// Draws the label once into an image. The halo is the text redrawn in the
-  /// halo colour around itself, so the text is laid out a single time.
-  _Sprite _rasterize(
-    _LabelState st,
+  /// Draws the label once, in the look its layer gives it, or for a
+  /// marker's name the look the app gives markers.
+  LabelSprite _rasterize(
+    LabelState st,
     double styleZoom,
     int background,
     double dpr,
   ) {
-    final source = st.candidate.source;
-    final beside = st.candidate.marker != null;
-    final symbol = _symbolOf(st.candidate);
+    final c = st.candidate;
+    final source = c.source;
+    final beside = c.marker != null;
+    final symbol = _symbolOf(c);
     _context.zoom = styleZoom;
-    _bind(st.candidate);
-    final fontSize = _size(st.candidate, styleZoom);
+    _bind(c);
+    final fontSize = _size(c, styleZoom);
     final isRoad = source.line != null;
     final label = symbol?.uppercase ?? false
         ? source.text.toUpperCase()
@@ -1514,144 +1243,35 @@ class LabelEngine {
       (color, halo, haloWidth) = _ink(symbol);
       weight = symbol.weight;
     }
-    final italic = symbol?.italic ?? false;
-    final maxWidthEm = isRoad ? 60.0 : (symbol?.maxWidth ?? 9);
-    // A marker's name hugs its marker: lines are flush on the side the text
-    // starts from, which is the side the marker is on.
-    final align = !beside
-        ? (symbol?.justify ?? ui.TextAlign.center)
-        : (_isRtl(label) ? ui.TextAlign.right : ui.TextAlign.left);
-    final lineHeight = symbol?.lineHeight ?? 1.15;
-    final haloBlur = symbol == null
-        ? 0.0
-        : (asNumber(symbol.haloBlur(_context)) ?? 0).clamp(0.0, haloWidth);
-    final layoutWidth = maxWidthEm * fontSize;
-    ui.Paragraph lay([ui.Paint? foreground]) {
-      final started = _clock.elapsedMicroseconds;
-      final builder =
-          ui.ParagraphBuilder(
-              ui.ParagraphStyle(
-                textAlign: align,
-                textDirection: _isRtl(label)
-                    ? ui.TextDirection.rtl
-                    : ui.TextDirection.ltr,
-                maxLines: isRoad ? 1 : 3,
-                fontFamily: text.fontFamily,
-                fontSize: fontSize,
-                height: lineHeight,
-              ),
-            )
-            ..pushStyle(
-              ui.TextStyle(
-                color: foreground == null ? ui.Color(color) : null,
-                foreground: foreground,
-                fontSize: fontSize,
-                fontFamily: text.fontFamily,
-                fontFamilyFallback: text.fontFamilyFallback,
-                fontWeight:
-                    ui.FontWeight.values[(weight ~/ 100 - 1).clamp(0, 8)],
-                fontVariations: [ui.FontVariation('wght', weight.toDouble())],
-                fontStyle: italic ? ui.FontStyle.italic : ui.FontStyle.normal,
-                letterSpacing: (symbol?.letterSpacing ?? 0) * fontSize,
-                height: lineHeight,
-              ),
-            )
-            ..addText(label);
-      final laid = builder.build()
-        ..layout(ui.ParagraphConstraints(width: layoutWidth));
-      layoutMicrosTotal += _clock.elapsedMicroseconds - started;
-      return laid;
-    }
-
-    final paragraph = lay();
-    final textW = math.max(1, paragraph.longestLine).ceilToDouble();
-    final textH = paragraph.height.ceilToDouble();
-    final pixelW = ((textW + _haloPad * 2) * dpr).ceil();
-    final pixelH = ((textH + _haloPad * 2) * dpr).ceil();
-    final recorder = ui.PictureRecorder();
-    final at = ui.Offset(switch (align) {
-      ui.TextAlign.left => _haloPad,
-      ui.TextAlign.right => _haloPad + textW - layoutWidth,
-      _ => _haloPad + textW / 2 - layoutWidth / 2,
-    }, _haloPad);
-    // Where text is drawn straight to the page the halo is the text again
-    // with its outline stroked, which costs far less than a layer of shifted
-    // copies does.
-    final outline = !directLabels || halo == null || haloWidth <= 0
-        ? null
-        : lay(
-            ui.Paint()
-              ..style = ui.PaintingStyle.stroke
-              ..strokeWidth = haloWidth * 2 / 1.5
-              ..strokeJoin = ui.StrokeJoin.round
-              ..color = ui.Color(halo)
-              ..maskFilter = haloBlur > 0
-                  ? ui.MaskFilter.blur(ui.BlurStyle.normal, haloBlur / 2)
-                  : null,
-          );
-    // A name along a road stays an image: turned text is drawn as outlines
-    // every frame, which a turned image is not.
-    if (directLabels && !isRoad) {
-      final canvas = ui.Canvas(recorder);
-      if (outline != null) canvas.drawParagraph(outline, at);
-      canvas.drawParagraph(paragraph, at);
-      final sprite = _PictureSprite(
-        recorder.endRecording(),
-        [paragraph, ?outline],
-        textW + _haloPad * 2,
-        textH + _haloPad * 2,
-        textW,
-        textH,
-        fontSize,
-      )..usedPass = _pass;
-      _sprites.remove(st.candidate.spriteKey)?.dispose();
-      return _sprites[st.candidate.spriteKey] = sprite;
-    }
-    final canvas = ui.Canvas(recorder)..scale(dpr);
-    if (outline != null) {
-      canvas.drawParagraph(outline, at);
-    } else if (halo != null) {
-      canvas.saveLayer(
-        null,
-        ui.Paint()
-          ..colorFilter = ui.ColorFilter.mode(
-            ui.Color(halo),
-            ui.BlendMode.srcIn,
-          )
-          ..imageFilter = haloBlur > 0
-              ? ui.ImageFilter.blur(sigmaX: haloBlur / 2, sigmaY: haloBlur / 2)
-              : null,
-      );
-      // A ring of copies a pixel apart leaves no gap between the strokes of
-      // thin letters, which one ring of a wide halo does.
-      final rings = haloWidth.ceil();
-      for (var ring = 1; ring <= rings; ring++) {
-        final reach = haloWidth * ring / rings / 1.5;
-        for (final offset in _haloOffsets) {
-          canvas.drawParagraph(paragraph, at + offset * reach);
-        }
-      }
-      canvas.restore();
-    }
-    canvas.drawParagraph(paragraph, at);
-    final picture = recorder.endRecording();
-    final imageStart = _clock.elapsedMicroseconds;
-    final image = picture.toImageSync(pixelW, pixelH);
-    imageMicrosTotal += _clock.elapsedMicroseconds - imageStart;
-    imagesTotal++;
-    final sprite = _ImageSprite(
-      image,
-      pixelW / dpr,
-      pixelH / dpr,
-      textW,
-      textH,
-      fontSize,
-    )..usedPass = _pass;
-    picture.dispose();
-    paragraph.dispose();
-    outline?.dispose();
-    _sprites.remove(st.candidate.spriteKey)?.dispose();
-    _sprites[st.candidate.spriteKey] = sprite;
-    return sprite;
+    final rightToLeft = _isRtl(label);
+    return _sprites.draw(
+      c.spriteKey,
+      TextLook(
+        text: label,
+        fontSize: fontSize,
+        color: color,
+        halo: halo,
+        haloWidth: haloWidth,
+        haloBlur: symbol == null
+            ? 0.0
+            : (asNumber(symbol.haloBlur(_context)) ?? 0).clamp(0.0, haloWidth),
+        weight: weight,
+        italic: symbol?.italic ?? false,
+        letterSpacing: symbol?.letterSpacing ?? 0,
+        lineHeight: symbol?.lineHeight ?? 1.15,
+        // A marker's name hugs its marker: lines are flush on the side the
+        // text starts from, which is the side the marker is on.
+        align: !beside
+            ? (symbol?.justify ?? ui.TextAlign.center)
+            : (rightToLeft ? ui.TextAlign.right : ui.TextAlign.left),
+        rightToLeft: rightToLeft,
+        road: isRoad,
+        layoutWidth: (isRoad ? 60.0 : (symbol?.maxWidth ?? 9)) * fontSize,
+        fontFamily: text.fontFamily,
+        fontFamilyFallback: text.fontFamilyFallback,
+      ),
+      dpr: dpr,
+      pass: _pass,
+    );
   }
 }

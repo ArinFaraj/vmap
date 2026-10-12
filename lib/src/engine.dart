@@ -11,6 +11,7 @@ import 'camera.dart';
 import 'cluster.dart' show ClusterPoint;
 import 'expr.dart';
 import 'heat.dart';
+import 'label_state.dart';
 import 'labels.dart';
 import 'pins.dart';
 import 'query.dart';
@@ -929,14 +930,14 @@ class VmapEngine extends ChangeNotifier {
     stats.placeMicros += _labels.lastPlaceMicros;
     stats
       ..labelRasterMicros += _labels.lastRasterMicros
-      ..labelsRasterized += _labels.rasterizedTotal
-      ..labelLayoutMicros += _labels.layoutMicrosTotal
-      ..labelImageMicros += _labels.imageMicrosTotal
-      ..labelImages += _labels.imagesTotal
-      ..labelStatesWalked += _labels.statesWalked
-      ..labelsResized += _labels.resizedTotal
-      ..labelsEvicted += _labels.evictedTotal;
-    _labels.clearTotals();
+      ..labelsRasterized += _labels.work.rasterized
+      ..labelLayoutMicros += _labels.work.layoutMicros
+      ..labelImageMicros += _labels.work.imageMicros
+      ..labelImages += _labels.work.images
+      ..labelStatesWalked += _labels.work.statesWalked
+      ..labelsResized += _labels.work.resized
+      ..labelsEvicted += _labels.work.evicted;
+    _labels.work.clear();
     if (labelsStarted - now - _prepSpent > stats.maxDrawMicros) {
       stats.maxDrawMicros = labelsStarted - now - _prepSpent;
     }

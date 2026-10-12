@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'camera.dart';
-import 'labels.dart';
+import 'label_state.dart';
 import 'style.dart';
 import 'tessellate.dart';
 import 'tile_builder.dart';
