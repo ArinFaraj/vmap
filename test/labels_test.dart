@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/label_state.dart';
 import 'package:vmap/src/labels.dart';
+import 'package:vmap/src/text_style.dart';
 import 'package:vmap/src/style_model.dart';
 import 'package:vmap/src/tile_builder.dart';
 

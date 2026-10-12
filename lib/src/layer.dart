@@ -3,7 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 
 import 'camera.dart';
 import 'engine.dart';
-import 'labels.dart';
+import 'text_style.dart';
 import 'pins.dart';
 import 'query.dart';
 import 'style.dart';

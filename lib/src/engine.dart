@@ -12,6 +12,7 @@ import 'expr.dart';
 import 'heat.dart';
 import 'label_state.dart';
 import 'labels.dart';
+import 'text_style.dart';
 import 'pins.dart';
 import 'query.dart';
 import 'layer.dart' show NamedMarker;

@@ -1,7 +1,7 @@
 export 'src/camera.dart' show VmapCamera;
 export 'src/engine.dart' show VmapEngine;
 export 'src/gestures.dart' show VmapGestures;
-export 'src/labels.dart' show VmapTextStyle;
+export 'src/text_style.dart' show VmapTextStyle;
 export 'src/layer.dart' show NamedMarker, VmapLayer, VmapLayerState;
 export 'src/map.dart' show VmapMap, VmapMapState;
 export 'src/query.dart'

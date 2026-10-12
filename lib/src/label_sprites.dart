@@ -341,3 +341,14 @@ class LabelSprites {
     return _byKey[key] = sprite;
   }
 }
+
+/// Whether [text] is written right to left.
+bool isRightToLeft(String text) {
+  for (final unit in text.codeUnits) {
+    if (unit >= 0x0590 && unit <= 0x08FF || unit >= 0xFB1D && unit <= 0xFEFC) {
+      return true;
+    }
+    if (unit >= 0x41 && unit <= 0x24F) return false;
+  }
+  return false;
+}
