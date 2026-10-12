@@ -237,7 +237,12 @@ sealed class WorkerReply {
   List<Object?> toWire();
 }
 
-final class TileBuilt extends WorkerReply {
+/// How building a tile ended.
+sealed class TileOutcome extends WorkerReply {
+  const TileOutcome(super.job);
+}
+
+final class TileBuilt extends TileOutcome {
   const TileBuilt(super.job, this.tile);
 
   final BuiltTile tile;
@@ -246,7 +251,7 @@ final class TileBuilt extends WorkerReply {
   List<Object?> toWire() => [job, 'built', tile.toMessage()];
 }
 
-final class TileNotBuilt extends WorkerReply {
+final class TileNotBuilt extends TileOutcome {
   const TileNotBuilt(super.job, this.error);
 
   final String error;

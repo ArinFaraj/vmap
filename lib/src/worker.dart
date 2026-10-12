@@ -252,10 +252,8 @@ class TilePool {
       ).toWire(),
       (message) {
         switch (WorkerReply.fromWire(message! as List<Object?>)) {
-          case final TileBuilt built:
-            _onResult(worker, built.job, built: built);
-          case final TileNotBuilt failed:
-            _onResult(worker, failed.job, error: failed.error);
+          case final TileOutcome outcome:
+            _onResult(worker, outcome);
           case final reply:
             _queries.remove(reply.job)?.complete(reply);
         }
@@ -325,22 +323,23 @@ class TilePool {
     }
   }
 
-  void _onResult(_Worker worker, int job, {TileBuilt? built, String? error}) {
+  void _onResult(_Worker worker, TileOutcome outcome) {
     worker.busy--;
-    final id = _inflight.remove(job);
+    final id = _inflight.remove(outcome.job);
     if (id == null || _closed) return;
     _inflightIds.remove(id);
     _wanted = [
       for (final w in _wanted)
         if (w != id) w,
     ];
-    if (built == null) {
-      onFailed(id, error ?? 'unknown');
-    } else {
-      final started = _clock.elapsedMicroseconds;
-      onLoaded(id, built.tile);
-      final spent = _clock.elapsedMicroseconds - started;
-      if (spent > _maxUnpackMicros) _maxUnpackMicros = spent;
+    switch (outcome) {
+      case TileNotBuilt(:final error):
+        onFailed(id, error);
+      case TileBuilt(:final tile):
+        final started = _clock.elapsedMicroseconds;
+        onLoaded(id, tile);
+        final spent = _clock.elapsedMicroseconds - started;
+        if (spent > _maxUnpackMicros) _maxUnpackMicros = spent;
     }
     _dispatch();
   }
