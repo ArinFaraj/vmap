@@ -655,13 +655,14 @@ class _HudState extends State<_Hud> {
     slowSeen = slow.length >= 300 ? 0 : slow.length;
     if (slow.length >= 300) slow.clear();
     frames.clear();
-    if (mounted)
+    if (mounted) {
       setState(
         () => text = line
             .replaceFirst(' worst', '\nworst')
             .replaceFirst(' build', '\nbuild')
             .replaceFirst(' rss', '\nrss'),
       );
+    }
   }
 
   @override
