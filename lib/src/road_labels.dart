@@ -19,9 +19,13 @@ class RoadLabels {
   /// straight enough to carry it.
   bool curved = true;
 
-  /// The road names placed in this pass, which the same name keeps away
-  /// from.
-  final List<LabelState> placed = [];
+  final List<LabelState> _placed = [];
+
+  /// Forgets the names placed in the last pass.
+  void startPass() => _placed.clear();
+
+  /// Remembers [st] as placed, so the same name keeps away from it.
+  void placed(LabelState st) => _placed.add(st);
 
   /// How close two of the same name may be, in logical pixels.
   static const double _repeatDistance = 260;
@@ -214,7 +218,7 @@ class RoadLabels {
   bool nearSame(LabelState st) {
     final world = _view.world;
     final text = st.candidate.source.text;
-    for (final other in placed) {
+    for (final other in _placed) {
       if (other.candidate.source.text != text) continue;
       final dx = (other.worldX - st.worldX) * world;
       final dy = (other.worldY - st.worldY) * world;

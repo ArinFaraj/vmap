@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/foundation.dart' show listEquals, visibleForTesting;
 
 import 'collision_boxes.dart';
 import 'expr.dart';
@@ -246,7 +246,8 @@ class LabelEngine {
 
   int get shown => _states.values.where((s) => s.opacity > 0).length;
 
-  /// The keys of the labels showing, for a test to read.
+  /// The keys of the labels showing.
+  @visibleForTesting
   Set<String> get shownKeys => {
     for (final st in _live)
       if (st.opacity > 0) st.candidate.key,
@@ -509,7 +510,8 @@ class LabelEngine {
   }
 
   /// Draws a label's text: an image cut into strips along a bent road, a
-  /// recording played back, or an image.
+  /// recording played back, or an image. A road's name is always an image,
+  /// so only an image follows a bend.
   void _drawText(
     ui.Canvas canvas,
     LabelState st,
@@ -517,94 +519,131 @@ class LabelEngine {
     double devicePixelRatio,
     double rotation,
   ) {
+    _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
+    switch (sprite) {
+      case ImageSprite() when st.curve != null:
+        _drawBent(canvas, st, sprite, rotation);
+      case PictureSprite():
+        _drawRecording(canvas, st, sprite, devicePixelRatio);
+      case ImageSprite():
+        _drawImage(canvas, st, sprite, devicePixelRatio);
+    }
+  }
+
+  void _drawBent(
+    ui.Canvas canvas,
+    LabelState st,
+    ImageSprite sprite,
+    double rotation,
+  ) {
     final pixelW = sprite.pixelW;
     final pixelH = sprite.pixelH;
-    _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
-    if (sprite case ImageSprite(:final image) when st.curve != null) {
-      final textW = sprite.textWidth * st.scale;
-      final n = RoadLabels.stripCount(textW, sprite.textHeight * st.scale);
-      final strips = _roads.strips(st, n, textW / n / _view.world);
-      final flip = math.cos(st.angle + rotation) < 0;
-      final pad = LabelSprites.haloPad * pixelW / sprite.width;
-      final slice = (pixelW - pad * 2) / n;
-      final k = sprite.width * st.scale / pixelW;
-      final transforms = Float32List(n * 4);
-      final rects = Float32List(n * 4);
-      for (var j = 0; j < n; j++) {
-        final i = flip ? n - 1 - j : j;
-        final a = strips[i * 3 + 2] + rotation + (flip ? math.pi : 0);
-        _view.project(strips[i * 3], strips[i * 3 + 1]);
-        final left = j == 0 ? 0.0 : pad + j * slice - 0.5;
-        final right = j == n - 1 ? pixelW : pad + (j + 1) * slice + 0.5;
-        final anchorX = pad + (j + 0.5) * slice - left;
-        final anchorY = pixelH / 2;
-        final scos = math.cos(a) * k;
-        final ssin = math.sin(a) * k;
-        transforms[j * 4] = scos;
-        transforms[j * 4 + 1] = ssin;
-        transforms[j * 4 + 2] =
-            _view.x + st.dx - scos * anchorX + ssin * anchorY;
-        transforms[j * 4 + 3] =
-            _view.y + st.dy - ssin * anchorX - scos * anchorY;
-        rects[j * 4] = left;
-        rects[j * 4 + 1] = 0;
-        rects[j * 4 + 2] = right;
-        rects[j * 4 + 3] = pixelH;
-      }
-      canvas.drawRawAtlas(
-        image,
-        transforms,
-        rects,
-        null,
-        null,
-        null,
+    final textW = sprite.textWidth * st.scale;
+    final n = RoadLabels.stripCount(textW, sprite.textHeight * st.scale);
+    final strips = _roads.strips(st, n, textW / n / _view.world);
+    final flip = math.cos(st.angle + rotation) < 0;
+    final pad = LabelSprites.haloPad * pixelW / sprite.width;
+    final slice = (pixelW - pad * 2) / n;
+    final k = sprite.width * st.scale / pixelW;
+    final transforms = Float32List(n * 4);
+    final rects = Float32List(n * 4);
+    for (var j = 0; j < n; j++) {
+      final i = flip ? n - 1 - j : j;
+      final a = strips[i * 3 + 2] + rotation + (flip ? math.pi : 0);
+      _view.project(strips[i * 3], strips[i * 3 + 1]);
+      final left = j == 0 ? 0.0 : pad + j * slice - 0.5;
+      final right = j == n - 1 ? pixelW : pad + (j + 1) * slice + 0.5;
+      final anchorX = pad + (j + 0.5) * slice - left;
+      final anchorY = pixelH / 2;
+      final scos = math.cos(a) * k;
+      final ssin = math.sin(a) * k;
+      transforms[j * 4] = scos;
+      transforms[j * 4 + 1] = ssin;
+      transforms[j * 4 + 2] = _view.x + st.dx - scos * anchorX + ssin * anchorY;
+      transforms[j * 4 + 3] = _view.y + st.dy - ssin * anchorX - scos * anchorY;
+      rects[j * 4] = left;
+      rects[j * 4 + 1] = 0;
+      rects[j * 4 + 2] = right;
+      rects[j * 4 + 3] = pixelH;
+    }
+    canvas.drawRawAtlas(
+      sprite.image,
+      transforms,
+      rects,
+      null,
+      null,
+      null,
+      _imagePaint,
+    );
+  }
+
+  /// Where the middle of [st]'s text is on the screen, and its size there.
+  (double, double, double, double) _textBox(LabelState st, LabelSprite sprite) {
+    _view.project(st.worldX, st.worldY);
+    return (
+      _view.x + st.dx,
+      _view.y + st.dy,
+      sprite.width * st.scale,
+      sprite.height * st.scale,
+    );
+  }
+
+  /// [at] moved to the nearest device pixel.
+  static double _snap(double at, double devicePixelRatio) =>
+      (at * devicePixelRatio).roundToDouble() / devicePixelRatio;
+
+  void _drawRecording(
+    ui.Canvas canvas,
+    LabelState st,
+    PictureSprite sprite,
+    double devicePixelRatio,
+  ) {
+    final (sx, sy, w, h) = _textBox(st, sprite);
+    final turn = st.screenAngle;
+    canvas.save();
+    if (turn == 0) {
+      canvas.translate(
+        _snap(sx - w / 2, devicePixelRatio),
+        _snap(sy - h / 2, devicePixelRatio),
+      );
+    } else {
+      canvas
+        ..translate(sx, sy)
+        ..rotate(turn)
+        ..translate(-w / 2, -h / 2);
+    }
+    canvas.scale(st.scale);
+    final fading = st.opacity < 1;
+    if (fading) {
+      canvas.saveLayer(
+        ui.Rect.fromLTWH(0, 0, sprite.width, sprite.height),
         _imagePaint,
       );
-      return;
     }
-    _view.project(st.worldX, st.worldY);
-    final sx = _view.x + st.dx;
-    final sy = _view.y + st.dy;
+    canvas.drawPicture(sprite.picture);
+    if (fading) canvas.restore();
+    canvas.restore();
+  }
+
+  void _drawImage(
+    ui.Canvas canvas,
+    LabelState st,
+    ImageSprite sprite,
+    double devicePixelRatio,
+  ) {
+    final (sx, sy, w, h) = _textBox(st, sprite);
     final turn = st.screenAngle;
-    final w = sprite.width * st.scale;
-    final h = sprite.height * st.scale;
-    if (sprite case PictureSprite(:final picture)) {
-      canvas.save();
-      if (turn == 0) {
-        canvas.translate(
-          ((sx - w / 2) * devicePixelRatio).roundToDouble() / devicePixelRatio,
-          ((sy - h / 2) * devicePixelRatio).roundToDouble() / devicePixelRatio,
-        );
-      } else {
-        canvas
-          ..translate(sx, sy)
-          ..rotate(turn)
-          ..translate(-w / 2, -h / 2);
-      }
-      canvas.scale(st.scale);
-      final fading = st.opacity < 1;
-      if (fading) {
-        canvas.saveLayer(
-          ui.Rect.fromLTWH(0, 0, sprite.width, sprite.height),
-          _imagePaint,
-        );
-      }
-      canvas.drawPicture(picture);
-      if (fading) canvas.restore();
-      canvas.restore();
-      return;
-    }
-    final image = (sprite as ImageSprite).image;
-    final source = ui.Rect.fromLTWH(0, 0, pixelW, pixelH);
+    final source = ui.Rect.fromLTWH(0, 0, sprite.pixelW, sprite.pixelH);
     if (turn == 0) {
-      final left =
-          ((sx - w / 2) * devicePixelRatio).roundToDouble() / devicePixelRatio;
-      final top =
-          ((sy - h / 2) * devicePixelRatio).roundToDouble() / devicePixelRatio;
       canvas.drawImageRect(
-        image,
+        sprite.image,
         source,
-        ui.Rect.fromLTWH(left, top, w, h),
+        ui.Rect.fromLTWH(
+          _snap(sx - w / 2, devicePixelRatio),
+          _snap(sy - h / 2, devicePixelRatio),
+          w,
+          h,
+        ),
         _imagePaint,
       );
     } else {
@@ -613,7 +652,7 @@ class LabelEngine {
         ..translate(sx, sy)
         ..rotate(turn)
         ..drawImageRect(
-          image,
+          sprite.image,
           source,
           ui.Rect.fromLTWH(-w / 2, -h / 2, w, h),
           _imagePaint,
@@ -660,7 +699,7 @@ class LabelEngine {
     states.sort((a, b) => a.sortKey - b.sortKey);
 
     _boxes.clear();
-    _roads.placed.clear();
+    _roads.startPass();
     final obstacleBoxes = [
       for (final (wx, wy, w, h, shiftX, shiftY) in obstacles)
         () {
@@ -683,7 +722,6 @@ class LabelEngine {
       final layer = _symbolOf(c);
       final textPad = layer?.textPadding ?? CollisionBoxes.defaultPad;
       final iconPad = layer?.iconPadding ?? CollisionBoxes.defaultPad;
-      _boxes.pad = textPad;
       final fontSize = _size(c, styleZoom);
       if (c.source.props != null && c.hasText) {
         final ink = _ink(symbols[c.source.layer]).hashCode;
@@ -719,6 +757,7 @@ class LabelEngine {
           fontSize,
           textW,
           textH,
+          textPad,
           styleZoom,
           fitKey,
         );
@@ -750,6 +789,7 @@ class LabelEngine {
     double fontSize,
     double textW,
     double textH,
+    double textPad,
     double styleZoom,
     int fitKey,
   ) {
@@ -779,16 +819,23 @@ class LabelEngine {
     if (turn < -math.pi / 2) turn += math.pi;
     st.screenAngle = turn;
     if (st.curve != null) {
-      final reach = (textH + room) / 2 + _boxes.pad;
+      final reach = (textH + room) / 2 + textPad;
       if (_roads.curveHits(st, textW, textH, reach, add: false)) {
         return;
       }
       _roads.curveHits(st, textW, textH, reach, add: true);
     } else {
-      if (_boxes.collides(sx, sy, textW + room, textH + room, turn)) {
+      if (_boxes.collides(
+        sx,
+        sy,
+        textW + room,
+        textH + room,
+        turn,
+        pad: textPad,
+      )) {
         return;
       }
-      _boxes.take(sx, sy, textW + room, textH + room, turn);
+      _boxes.take(sx, sy, textW + room, textH + room, turn, pad: textPad);
     }
     st
       ..dx = roadX
@@ -799,7 +846,7 @@ class LabelEngine {
       _live.add(st);
     }
     sprite?.usedPass = _pass;
-    _roads.placed.add(st);
+    _roads.placed(st);
   }
 
   /// Places a point's text and icon, the text trying each side the layer
@@ -939,7 +986,14 @@ class LabelEngine {
           fy = moveY + ay * ((symbol.offsetY * fontSize).abs() + textH / 2);
         }
         if (!(symbol!.textOverlaps) &&
-            _boxes.collides(sx + fx, sy + fy, textW, textH, spin)) {
+            _boxes.collides(
+              sx + fx,
+              sy + fy,
+              textW,
+              textH,
+              spin,
+              pad: textPad,
+            )) {
           continue;
         }
         st
@@ -952,7 +1006,14 @@ class LabelEngine {
       if (obstacles.isEmpty) {
         textFits =
             (symbol?.textOverlaps ?? false) ||
-            !_boxes.collides(sx + tx, sy + ty, textW, textH, spin);
+            !_boxes.collides(
+              sx + tx,
+              sy + ty,
+              textW,
+              textH,
+              spin,
+              pad: textPad,
+            );
         st
           ..dx = tx
           ..dy = ty;
@@ -961,11 +1022,12 @@ class LabelEngine {
         var across = textW / 2 + _obstacleReach;
         var shiftX = tx;
         var shiftY = ty;
+        int? ownBox;
         if (beside) {
           final own = c.marker!;
           down = textH / 2 + obstacles[own].$4 / 2 + 2;
           across = textW / 2 + obstacles[own].$3 / 2 + 4;
-          _boxes.ignored = obstacleBoxes[own];
+          ownBox = obstacleBoxes[own];
           shiftX = obstacles[own].$5;
           shiftY = obstacles[own].$6;
         }
@@ -991,17 +1053,25 @@ class LabelEngine {
           if (hasIcon && k > 1) break;
           final fx = k == 1 ? ox : ox + shiftX;
           final fy = k == 1 ? oy : oy + shiftY;
-          if (_boxes.collides(sx + fx, sy + fy, textW, textH, spin)) continue;
+          if (_boxes.collides(
+            sx + fx,
+            sy + fy,
+            textW,
+            textH,
+            spin,
+            pad: textPad,
+            except: ownBox,
+          )) {
+            continue;
+          }
           st
             ..dx = fx
             ..dy = fy;
           textFits = true;
         }
-        _boxes.ignored = null;
       }
     }
     final fitted = pin == null && (symbol?.textFit ?? false);
-    _boxes.pad = iconPad;
     final iconFits =
         hasIcon &&
         ((symbol?.iconOverlaps ?? false) ||
@@ -1012,6 +1082,7 @@ class LabelEngine {
               st.iconW,
               st.iconH,
               0,
+              pad: iconPad,
             ));
     final bool showText;
     final bool showIcon;
@@ -1024,17 +1095,22 @@ class LabelEngine {
     }
     if (!showText && !showIcon) return;
     if (showText && !(symbol?.textIgnored ?? false)) {
-      _boxes.pad = textPad;
-      _boxes.take(sx + st.dx, sy + st.dy, textW, textH, spin);
+      _boxes.take(sx + st.dx, sy + st.dy, textW, textH, spin, pad: textPad);
     }
     if (showIcon && !fitted && !(symbol?.iconIgnored ?? false)) {
-      _boxes.pad = iconPad;
-      _boxes.take(sx + st.iconDx, sy + st.iconDy, st.iconW, st.iconH, 0);
+      _boxes.take(
+        sx + st.iconDx,
+        sy + st.iconDy,
+        st.iconW,
+        st.iconH,
+        0,
+        pad: iconPad,
+      );
     }
     st
       ..showText = showText
       ..showIcon = showIcon;
-    if (c.source.spaced && c.hasText) _roads.placed.add(st);
+    if (c.source.spaced && c.hasText) _roads.placed(st);
     st.placed = true;
     if (!st.live) {
       st.live = true;
