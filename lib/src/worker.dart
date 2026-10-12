@@ -188,7 +188,7 @@ class TilePool {
         if (_closed) return;
         final directory = config.cacheDirectory;
         if (remembered != null && directory != null) {
-          final stale = TileStore.folderOf(_tilesPrefix, remembered);
+          final stale = TileStore.vectorFolder(remembered);
           unawaited(deleteCached(directory, (name) => name == stale));
         }
       }
@@ -201,22 +201,17 @@ class TilePool {
     }
   }
 
-  static const _tilesPrefix = 'tiles';
-
   void _use(String template) {
-    _store?.client.close();
     _store?.close();
     _store = switch (_def) {
       GeoJsonSource() => null,
-      TiledSource(:final cover) => TileStore(
+      TiledSource(:final cover) => TileStore.vector(
         template,
         cover: cover,
-        folder: TileStore.folderOf(_tilesPrefix, template),
-        client: Net(userAgent: config.userAgent, perHost: 6),
         cacheDirectory: config.cacheDirectory,
-        extension: '.pbf',
         headers: config.headers,
         userAgent: config.userAgent,
+        perHost: 6,
       ),
     };
   }
@@ -410,7 +405,6 @@ class TilePool {
 
   void close() {
     _closed = true;
-    _store?.client.close();
     _store?.close();
     for (final q in _queries.values) {
       q.complete(null);
@@ -469,13 +463,10 @@ Future<void> tileWorkerMain(
       }
     }();
   } else if (def is TiledSource) {
-    store = TileStore(
+    store = TileStore.vector(
       setup.template,
       cover: def.cover,
-      folder: TileStore.folderOf(TilePool._tilesPrefix, setup.template),
-      client: client,
       cacheDirectory: setup.cacheDirectory,
-      extension: '.pbf',
       headers: setup.headers,
       userAgent: setup.userAgent,
     );

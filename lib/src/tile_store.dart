@@ -9,36 +9,71 @@ import 'style_model.dart' show TileCover;
 /// Where the tiles of one tile set come from: the cache directory first,
 /// then the archive or the server, and kept on disk once fetched.
 class TileStore {
-  TileStore(
+  TileStore._(
     this.template, {
     required this.cover,
     required this.folder,
-    required this.client,
-    String? cacheDirectory,
-    this.extension = '',
-    this.headers = const {},
-    String userAgent = 'vmap',
-  }) : archive = PmTiles.handles(template)
-           ? PmTiles(
-               template,
-               client: client,
-               userAgent: userAgent,
-               headers: headers,
-             )
-           : null,
-       _directory = cacheDirectory;
+    required this.extension,
+    required String? cacheDirectory,
+    required this.headers,
+    required String userAgent,
+    required int perHost,
+  }) : client = Net(userAgent: userAgent, perHost: perHost),
+       _directory = cacheDirectory {
+    archive = PmTiles.handles(template)
+        ? PmTiles(template, client: client, headers: headers)
+        : null;
+  }
 
-  /// The name of the folder in the cache directory holding the tiles of
-  /// [template], begun with [prefix].
-  static String folderOf(String prefix, String template) =>
-      '$prefix-${cacheKey(template)}';
+  /// Vector tiles, kept as `.pbf` files.
+  TileStore.vector(
+    String template, {
+    required TileCover cover,
+    required String? cacheDirectory,
+    Map<String, String> headers = const {},
+    String userAgent = 'vmap',
+    int perHost = 4,
+  }) : this._(
+         template,
+         cover: cover,
+         folder: vectorFolder(template),
+         extension: '.pbf',
+         cacheDirectory: cacheDirectory,
+         headers: headers,
+         userAgent: userAgent,
+         perHost: perHost,
+       );
+
+  /// Picture tiles, kept as the server sent them.
+  TileStore.raster(
+    String template, {
+    required TileCover cover,
+    required String? cacheDirectory,
+    Map<String, String> headers = const {},
+    String userAgent = 'vmap',
+  }) : this._(
+         template,
+         cover: cover,
+         folder: 'raster-${cacheKey(template)}',
+         extension: '',
+         cacheDirectory: cacheDirectory,
+         headers: headers,
+         userAgent: userAgent,
+         perHost: 4,
+       );
+
+  /// The folder in the cache directory holding the vector tiles of
+  /// [template].
+  static String vectorFolder(String template) => 'tiles-${cacheKey(template)}';
 
   /// The addresses of the tiles, or a `pmtiles://` archive.
   final String template;
   final TileCover cover;
 
-  /// The folder in the cache directory, as [folderOf] names it.
+  /// The folder in the cache directory holding the tiles.
   final String folder;
+
+  /// The store's own connection, closed with it.
   final Net client;
 
   /// Ends the name of a tile's file.
@@ -46,7 +81,7 @@ class TileStore {
   final Map<String, String> headers;
 
   /// The archive the tiles are read from, when they are in one.
-  final PmTiles? archive;
+  late final PmTiles? archive;
   final String? _directory;
 
   /// Where tile [z]/[x]/[y] is kept, or null when nothing is: there is no
@@ -101,5 +136,8 @@ class TileStore {
     return reply.bytes;
   }
 
-  void close() => archive?.close();
+  void close() {
+    archive?.close();
+    client.close();
+  }
 }

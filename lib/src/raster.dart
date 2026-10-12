@@ -211,11 +211,9 @@ class RasterTiles {
   void _use(String template, TileCover cover) {
     _template = template;
     _store?.close();
-    _store = TileStore(
+    _store = TileStore.raster(
       template,
       cover: cover,
-      folder: TileStore.folderOf('raster', template),
-      client: _client,
       cacheDirectory: cacheDirectory,
       headers: headers,
       userAgent: userAgent,
