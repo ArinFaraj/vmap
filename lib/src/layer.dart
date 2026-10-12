@@ -4,9 +4,6 @@ import 'package:flutter_map/flutter_map.dart';
 import 'camera.dart';
 import 'engine.dart';
 import 'labels.dart';
-
-import 'package:latlong2/latlong.dart';
-
 import 'pins.dart';
 import 'query.dart';
 import 'style.dart';
@@ -136,72 +133,13 @@ class VmapLayer extends StatefulWidget {
 class VmapLayerState extends State<VmapLayer> {
   VmapEngine? _owned;
 
-  /// What the map shows at [point]: the features the style draws within
-  /// [radius] logical pixels of it, topmost first.
-  Future<List<VmapFeature>> featuresAt(LatLng point, {double radius = 6}) =>
-      _engine.featuresAt(point, radius: radius);
-
-  /// What the map shows between [southWest] and [northEast]: the features
-  /// the style draws that touch the box, topmost first.
-  Future<List<VmapFeature>> featuresIn(LatLng southWest, LatLng northEast) =>
-      _engine.featuresIn(southWest, northEast);
-
-  /// The map zoom at which a cluster of a clustered GeoJSON source comes
-  /// apart, for zooming in on a tapped cluster.
-  Future<double?> clusterExpansionZoom(String source, int clusterId) =>
-      _engine.clusterExpansionZoom(source, clusterId);
-
-  /// What a cluster comes apart into at its expansion zoom.
-  Future<List<VmapClusterMember>> clusterChildren(
-    String source,
-    int clusterId,
-  ) => _engine.clusterChildren(source, clusterId);
-
-  /// The points of the data inside a cluster.
-  Future<List<VmapClusterMember>> clusterLeaves(
-    String source,
-    int clusterId, {
-    int limit = 10,
-    int offset = 0,
-  }) => _engine.clusterLeaves(source, clusterId, limit: limit, offset: offset);
-
-  /// Fetches the tiles of a region into the cache directory for use
-  /// offline. See [VmapEngine.downloadRegion].
-  Future<VmapDownload> downloadRegion({
-    required double west,
-    required double south,
-    required double east,
-    required double north,
-    required double minZoom,
-    required double maxZoom,
-    void Function(int done, int total)? onProgress,
-    bool Function()? cancelled,
-  }) => _engine.downloadRegion(
-    west: west,
-    south: south,
-    east: east,
-    north: north,
-    minZoom: minZoom,
-    maxZoom: maxZoom,
-    onProgress: onProgress,
-    cancelled: cancelled,
-  );
-
-  /// The credit the style's sources ask for, once the style has loaded.
-  List<String> get attributions => _engine.attributions;
-
-  /// Loads the style and every tile again, from the cache where it has them.
-  void reload() => _engine.reload();
-
-  /// Deletes what the map keeps in the cache directory, then loads it again
-  /// from the network.
-  Future<void> clearCache() => _engine.clearCache();
-
-  VmapEngine get _engine => widget.engine ?? _owned!;
+  /// What draws the layer: ask it what is on the map, about clusters, to
+  /// download a region or clear the cache, and for the sources' credits.
+  VmapEngine get engine => widget.engine ?? _owned!;
 
   /// A browser fetches the font for a script the first time it is drawn,
   /// and a phone can have its font changed while the app runs.
-  void _fontsChanged() => _engine.fontsChanged();
+  void _fontsChanged() => engine.fontsChanged();
 
   VmapTextStyle get _text => VmapTextStyle(
     fontFamily: widget.textStyle?.fontFamily,
@@ -292,7 +230,7 @@ class VmapLayerState extends State<VmapLayer> {
         child: CustomPaint(
           size: camera.size,
           painter: _VmapPainter(
-            _engine,
+            engine,
             VmapCamera(
               zoom: camera.zoom,
               origin: camera.pixelOrigin,

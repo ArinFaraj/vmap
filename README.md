@@ -302,17 +302,20 @@ VmapOverlay(
 )
 ```
 
-Tapping a cluster finds it like any other feature. Ask the layer, through a
-`GlobalKey<VmapLayerState>`, where it comes apart and move there, or list
-what it holds:
+Tapping a cluster finds it like any other feature. Ask the map's engine,
+through a `GlobalKey<VmapMapState>` on the map, where it comes apart and
+move there, or list what it holds:
 
 ```dart
-final layer = layerKey.currentState!;
+final engine = mapKey.currentState!.engine!;
 final id = feature.properties['cluster_id']! as int;
-final zoom = await layer.clusterExpansionZoom('shops', id);
+final zoom = await engine.clusterExpansionZoom('shops', id);
 if (zoom != null) mapController.move(tapped, zoom);
-final shops = await layer.clusterLeaves('shops', id, limit: 20);
+final shops = await engine.clusterLeaves('shops', id, limit: 20);
 ```
+
+With your own `FlutterMap`, a `GlobalKey<VmapLayerState>` on the layer
+gives the same engine as `key.currentState!.engine`.
 
 ## What is under a tap
 
@@ -332,13 +335,16 @@ properties, its source and the ids of the style layers drawing it. The answer
 comes from the tiles off the UI thread, so it arrives a moment after the tap.
 
 With your own `FlutterMap`, give the layer a `GlobalKey<VmapLayerState>` and
-call `key.currentState!.featuresAt(point)`.
+call `key.currentState!.engine.featuresAt(point)`.
 
 For everything in an area instead of at a point, for a selection box or a
 list of what is on screen:
 
 ```dart
-final shown = await key.currentState!.featuresIn(southWest, northEast);
+final shown = await mapKey.currentState!.engine!.featuresIn(
+  southWest,
+  northEast,
+);
 ```
 
 It returns what touches the box. A feature with an id comes once, the id
@@ -408,17 +414,17 @@ start draws from disk at once and checks the server in the background.
 VmapMap(cacheDirectory: '${cacheDir.path}/vmap')
 ```
 
-`clearCache()` on the layer's state deletes what the map kept there and
-loads it again. `reload()` loads again without deleting.
+`clearCache()` on the engine deletes what the map kept there and loads it
+again. `reload()` loads again without deleting.
 
 ### A region for offline use
 
-`downloadRegion` on the layer's state (or on the engine) fetches every tile
+`downloadRegion` on the engine fetches every tile
 the style draws for an area into the same directory, so that part of the
 map shows with no network:
 
 ```dart
-final result = await layerKey.currentState!.downloadRegion(
+final result = await mapKey.currentState!.engine!.downloadRegion(
   west: 43.9, south: 36.1, east: 44.1, north: 36.3,
   minZoom: 10, maxZoom: 16,
   onProgress: (done, total) => setState(() => progress = done / total),
@@ -514,8 +520,7 @@ not been measured on one.
 
 Show the credit your tile source asks for. For OpenFreeMap that is
 `© OpenFreeMap © OpenMapTiles © OpenStreetMap`. `attributions` on the
-layer's state lists what the sources of a style ask for in their
-`attribution`.
+engine lists what the sources of a style ask for in their `attribution`.
 
 ## Example
 

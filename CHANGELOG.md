@@ -1,3 +1,36 @@
+## 0.25.0
+
+Breaking:
+
+- `VmapLayerState` hands out its `engine` and no longer repeats nine of its
+  methods. `featuresAt`, `featuresIn`, the cluster lookups,
+  `downloadRegion`, `reload`, `clearCache` and `attributions` are called on
+  `key.currentState!.engine`.
+- `VmapMapState` is public, so a `GlobalKey<VmapMapState>` on a `VmapMap`
+  reaches its engine too.
+- An app that builds tiles in a web worker compiles `vmap_worker.js` again
+  with `dart run vmap:build_web_worker`: the messages the worker reads have
+  changed.
+- Tiles are kept in the cache directory under new folder names, so tiles
+  kept by an earlier version are fetched again once. Delete the old
+  folders, or the whole directory, to get the space back.
+
+Fixed:
+
+- Changing `icon-rotate` builds the tiles again.
+- A marker at a pole lands on the edge of the world instead of off it.
+- A source that starts after failing stops reporting the failure in
+  `error`.
+- A cluster lookup that throws answers empty at once instead of after ten
+  seconds.
+- A PMTiles archive on a server is asked for with the app's user agent.
+- When a server replaces a tile set, the old tiles are deleted from the
+  cache directory, and `clearCache` finds every tile folder.
+- `VmapStats.resetTimers` restarts every running count, including the label
+  totals, the longest unpack and the list of slow paints.
+- A raster layer that turns from picture tiles into a hillshade over the
+  same source gets fresh tiles.
+
 ## 0.24.0
 
 - `featuresIn(southWest, northEast)` on the layer's state and the engine:

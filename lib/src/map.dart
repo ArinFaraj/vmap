@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+import 'engine.dart';
 import 'gestures.dart';
 import 'layer.dart';
 import 'pins.dart';
@@ -107,15 +108,21 @@ class VmapMap extends StatefulWidget {
   final List<Widget> children;
 
   @override
-  State<VmapMap> createState() => _VmapMapState();
+  State<VmapMap> createState() => VmapMapState();
 }
 
-class _VmapMapState extends State<VmapMap> {
+/// Reached through a `GlobalKey<VmapMapState>` on the map.
+class VmapMapState extends State<VmapMap> {
   MapController? _owned;
   final _layer = GlobalKey<VmapLayerState>();
 
   MapController get _controller =>
       widget.controller ?? (_owned ??= MapController());
+
+  /// What draws the map, once it is built: ask it what is on the map, about
+  /// clusters, to download a region or clear the cache, and for the
+  /// sources' credits.
+  VmapEngine? get engine => _layer.currentState?.engine;
 
   @override
   void dispose() {
@@ -147,7 +154,7 @@ class _VmapMapState extends State<VmapMap> {
               : (_, point) async {
                   onTap?.call(point);
                   if (onFeatureTap == null) return;
-                  final found = await _layer.currentState?.featuresAt(point);
+                  final found = await engine?.featuresAt(point);
                   if (mounted && found != null) onFeatureTap(point, found);
                 },
           onLongPress: onLongPress == null

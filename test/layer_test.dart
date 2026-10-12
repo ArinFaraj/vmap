@@ -46,4 +46,32 @@ void main() {
     await tester.pump();
     expect(drawing, findsOneWidget);
   });
+
+  testWidgets('the map and the layer hand out the engine that draws them', (
+    tester,
+  ) async {
+    const empty = VmapStyle.json({
+      'version': 8,
+      'sources': <String, Object?>{},
+      'layers': <Object?>[],
+    });
+    final mapKey = GlobalKey<VmapMapState>();
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: VmapMap(
+          key: mapKey,
+          initialCenter: const LatLng(36.19, 44.01),
+          style: empty,
+        ),
+      ),
+    );
+    final engine = mapKey.currentState!.engine;
+    expect(engine, isNotNull);
+    expect(
+      tester.state<VmapLayerState>(find.byType(VmapLayer)).engine,
+      same(engine),
+    );
+    expect(await engine!.featuresAt(const LatLng(36.19, 44.01)), isEmpty);
+  });
 }
