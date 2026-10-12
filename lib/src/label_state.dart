@@ -166,18 +166,3 @@ class LabelState {
   /// In the list of labels that are showing or fading.
   bool live = false;
 }
-
-/// Which way a thing lies from its point when [anchor] is the part of it
-/// on the point: 1 for right or below, -1 for left or above, 0 for neither.
-(double, double) anchorSides(String anchor) => (
-  anchor.endsWith('left')
-      ? 1
-      : anchor.endsWith('right')
-      ? -1
-      : 0,
-  anchor.startsWith('top')
-      ? 1
-      : anchor.startsWith('bottom')
-      ? -1
-      : 0,
-);
