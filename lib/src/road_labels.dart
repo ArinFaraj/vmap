@@ -34,18 +34,18 @@ class RoadLabels {
   /// [textW] pixels long, and sets the label's anchor and angle to it.
   bool fit(
     LabelState st,
+    TileLabel road,
     double textW,
     double textH,
     double unitPx, {
     double? maxBend,
   }) {
-    final c = st.candidate;
-    final line = c.line!;
+    final line = road.tile.line!;
     final need = textW * 1.15 / unitPx;
-    if (c.lineLength < need) return false;
+    if (road.lineLength < need) return false;
     final half = textW / 2 / unitPx;
-    final from = c.lineLength / 2 - half;
-    final to = c.lineLength / 2 + half;
+    final from = road.lineLength / 2 - half;
+    final to = road.lineLength / 2 + half;
     var walked = 0.0;
     var ax = 0.0, ay = 0.0, bx = 0.0, by = 0.0;
     var first = -1;
@@ -83,7 +83,7 @@ class RoadLabels {
       final px = line[i * 2] - ax;
       final py = line[i * 2 + 1] - ay;
       if ((px * cy - py * cx).abs() / chord > limit) {
-        return curved && _bend(st, from, to, textH, unitPx, maxBend);
+        return curved && _bend(st, road, from, to, textH, unitPx, maxBend);
       }
     }
     st.curve = null;
@@ -92,8 +92,8 @@ class RoadLabels {
     if (angle < -math.pi / 2) angle += math.pi;
     st
       ..angle = angle
-      ..worldX = c.tileX + (ax + bx) / 2 / tileExtent * c.tileSpan
-      ..worldY = c.tileY + (ay + by) / 2 / tileExtent * c.tileSpan;
+      ..worldX = road.tileX + (ax + bx) / 2 / tileExtent * road.tileSpan
+      ..worldY = road.tileY + (ay + by) / 2 / tileExtent * road.tileSpan;
     return true;
   }
 
@@ -106,18 +106,18 @@ class RoadLabels {
   /// sharply under the text.
   bool _bend(
     LabelState st,
+    TileLabel road,
     double from,
     double to,
     double textH,
     double unitPx,
     double? maxBend,
   ) {
-    final c = st.candidate;
-    final line = c.line!;
+    final line = road.tile.line!;
     final room = (to - from) / 2;
     final lo = from - room;
     final hi = to + room;
-    final unit = c.tileSpan / tileExtent;
+    final unit = road.tileSpan / tileExtent;
     final path = <double>[];
     var walked = 0.0;
     var before = 0.0;
@@ -133,12 +133,12 @@ class RoadLabels {
         if (path.isEmpty) {
           before = walked;
           path
-            ..add(c.tileX + x0 * unit)
-            ..add(c.tileY + y0 * unit);
+            ..add(road.tileX + x0 * unit)
+            ..add(road.tileY + y0 * unit);
         }
         path
-          ..add(c.tileX + (x0 + dx) * unit)
-          ..add(c.tileY + (y0 + dy) * unit);
+          ..add(road.tileX + (x0 + dx) * unit)
+          ..add(road.tileY + (y0 + dy) * unit);
       }
       walked += seg;
     }

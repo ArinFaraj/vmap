@@ -194,7 +194,7 @@ class LoadedTile {
     final ty = id.y * span;
     while (_labelAt < built.labels.length) {
       final l = built.labels[_labelAt++];
-      labels.add(LabelCandidate(l.key, l, tx, ty, span));
+      labels.add(TileLabel(l.key, l, tx, ty, span));
       if (_labelAt & 127 == 0 && clock.elapsedMicroseconds > deadline) return;
     }
     _built = null;

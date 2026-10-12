@@ -47,7 +47,7 @@ final _sheet = StyleSheet.compile({
 
 /// A label of the place layer at screen pixel [x], [y].
 LabelCandidate _place(String key, String text, double x, double y, int rank) =>
-    LabelCandidate(
+    TileLabel(
       key,
       BuiltLabel(0, rank, text, 0, 0, null),
       x / _world,
@@ -107,15 +107,15 @@ void main() {
       final labels = _engine()
         ..obstacles = [(200 / _world, 200 / _world, 40, 40, 0, 0)];
       final shown = await _settle(labels, [
-        [LabelCandidate.marker(0, 'Home', 200 / _world, 200 / _world)],
+        [MarkerName(0, 'Home', 200 / _world, 200 / _world)],
         [_place('under', 'Covered', 200, 200, 1)],
       ]);
-      expect(shown, {LabelCandidate.marker(0, 'Home', 0, 0).key, 'under'});
+      expect(shown, {MarkerName(0, 'Home', 0, 0).key, 'under'});
     },
   );
 
   test('a name is written along a straight road', () async {
-    final road = LabelCandidate(
+    final road = TileLabel(
       'road',
       BuiltLabel(
         1,

@@ -408,7 +408,7 @@ class VmapEngine extends ChangeNotifier {
       ));
       final name = m is NamedMarker ? m.name : null;
       if (name == null || name.isEmpty) continue;
-      _markerLabels.add(LabelCandidate.marker(i, name, wx, wy));
+      _markerLabels.add(MarkerName(i, name, wx, wy));
     }
     _labels.obstacles = areas;
     notifyListeners();
@@ -447,9 +447,7 @@ class VmapEngine extends ChangeNotifier {
   bool get curvedLabels => _labels.curvedRoads;
   set curvedLabels(bool value) {
     if (value == _labels.curvedRoads) return;
-    _labels
-      ..curvedRoads = value
-      ..clear();
+    _labels.curvedRoads = value;
     notifyListeners();
   }
 

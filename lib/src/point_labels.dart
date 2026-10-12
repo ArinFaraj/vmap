@@ -12,12 +12,11 @@ import 'style_model.dart';
 /// Places the labels of points: an icon or a pin, and text beside it on a
 /// side that is free, keeping clear of the app's markers.
 class PointLabels {
-  PointLabels(this._view, this._boxes, this._roads, this._context);
+  PointLabels(this._view, this._boxes, this._roads);
 
   final LabelView _view;
   final CollisionBoxes _boxes;
   final RoadLabels _roads;
-  final EvalContext _context;
 
   /// The style's icons. Null until they have loaded.
   SpriteSheet? sheet;
@@ -64,6 +63,7 @@ class PointLabels {
 
   /// Places a point's text and icon, the text trying each side the layer
   /// allows, or stepping aside for a marker. False when neither fits.
+  /// [context] is bound to the label's feature at the style zoom.
   bool place(
     LabelState st,
     SymbolLayer? symbol,
@@ -72,7 +72,7 @@ class PointLabels {
     double textH,
     double textPad,
     double iconPad,
-    double styleZoom,
+    EvalContext context,
   ) {
     final c = st.candidate;
     st
@@ -81,7 +81,8 @@ class PointLabels {
       ..angle = 0
       ..curve = null
       ..screenAngle = 0;
-    if (c.spaced && c.hasText && _roads.nearSame(st)) return false;
+    final spaced = c is TileLabel && c.tile.spaced;
+    if (spaced && c.hasText && _roads.nearSame(st)) return false;
     final spin = (symbol?.textRotate ?? 0) * math.pi / 180;
     st.screenAngle = spin;
     _view.project(st.worldX, st.worldY);
@@ -99,10 +100,10 @@ class PointLabels {
         : _view.moved(
             symbol.textTranslate,
             symbol.textTranslateOnScreen,
-            _context..zoom = styleZoom,
+            context,
           );
     var text = _textOffset(symbol, c, fontSize, spot, moved);
-    final icon = _sizeIcon(st, symbol, spot, styleZoom);
+    final icon = _sizeIcon(st, symbol, spot, context);
     final pin = _choosePin(st, symbol);
     if (pin != null && c.hasText) text = _besidePin(symbol!, spot, pin.$2);
     final hasIcon = icon != null || pin != null;
@@ -162,7 +163,7 @@ class PointLabels {
     st
       ..showText = showText
       ..showIcon = showIcon;
-    if (c.spaced && c.hasText) _roads.placed(st);
+    if (spaced && c.hasText) _roads.placed(st);
     return true;
   }
 
@@ -200,18 +201,18 @@ class PointLabels {
     LabelState st,
     SymbolLayer? symbol,
     _Spot spot,
-    double styleZoom,
+    EvalContext context,
   ) {
-    final c = st.candidate;
+    final name = _iconName(st.candidate);
     var icon = st.icon;
-    if (icon == null && c.icon.isNotEmpty) {
-      icon = st.icon = sheet?.entries[c.icon];
+    if (icon == null && name.isNotEmpty) {
+      icon = st.icon = sheet?.entries[name];
     }
     st
       ..iconDx = 0
       ..iconDy = 0;
     if (icon == null || symbol == null) return icon;
-    final by = asNumber(symbol.iconSize(_context..zoom = styleZoom)) ?? 1;
+    final by = asNumber(symbol.iconSize(context)) ?? 1;
     if (!symbol.textFit) {
       final (ax, ay) = anchorSides(symbol.iconAnchor);
       st
@@ -221,14 +222,14 @@ class PointLabels {
     final (ix, iy) = _view.moved(
       symbol.iconTranslate,
       symbol.iconTranslateOnScreen,
-      _context..zoom = styleZoom,
+      context,
     );
     st
       ..iconDx += ix
       ..iconDy += iy
       ..iconW = symbol.textFit ? spot.textW + _fitPad * 2 : icon.width * by
       ..iconH = symbol.textFit ? spot.textH + _fitPad * 2 : icon.height * by
-      ..iconOpacity = (asNumber(symbol.iconOpacity(_context)) ?? 1).clamp(
+      ..iconOpacity = (asNumber(symbol.iconOpacity(context)) ?? 1).clamp(
         0.0,
         1.0,
       );
@@ -239,7 +240,7 @@ class PointLabels {
   /// its middle, when the app draws pins and has one for the icon.
   (VmapPin, double)? _choosePin(LabelState st, SymbolLayer? symbol) {
     final pins = this.pins;
-    final name = st.candidate.icon;
+    final name = _iconName(st.candidate);
     final pin = pins == null || symbol == null || name.isEmpty
         ? null
         : pins.resolve(name, place: symbol.sourceLayer == 'poi');
@@ -326,12 +327,12 @@ class PointLabels {
     bool hasIcon,
   ) {
     final c = st.candidate;
-    final beside = c.marker != null;
+    final beside = c is MarkerName;
     var down = spot.textH / 2 + _obstacleReach;
     var across = spot.textW / 2 + _obstacleReach;
     var (shiftX, shiftY) = text;
     int? ownBox;
-    if (c.marker case final own?) {
+    if (c case MarkerName(index: final own)) {
       final (_, _, w, h, ox, oy) = _obstacles[own];
       down = spot.textH / 2 + h / 2 + 2;
       across = spot.textW / 2 + w / 2 + 4;
@@ -382,6 +383,12 @@ class PointLabels {
         except: except,
       );
 }
+
+/// The sprite image drawn at [c]'s point. Empty for none.
+String _iconName(LabelCandidate c) => switch (c) {
+  TileLabel(:final tile) => tile.icon,
+  MarkerName() => '',
+};
 
 /// Which way a thing lies from its point when [anchor] is the part of it
 /// on the point: 1 for right or below, -1 for left or above, 0 for neither.

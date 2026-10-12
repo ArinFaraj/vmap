@@ -49,9 +49,9 @@ class LabelEngine {
   final EvalContext _context = EvalContext();
 
   /// The style layer that draws [c]. Null for a marker's name.
-  SymbolLayer? _symbolOf(LabelCandidate c) => switch (c.tile) {
-    final tile? => symbols[tile.layer],
-    null => null,
+  SymbolLayer? _symbolOf(LabelCandidate c) => switch (c) {
+    TileLabel(:final tile) => symbols[tile.layer],
+    MarkerName() => null,
   };
 
   double _size(LabelCandidate c, double styleZoom) {
@@ -96,20 +96,19 @@ class LabelEngine {
     return _context;
   }
 
-  /// Points the paint expressions at the feature behind [c].
+  /// Points the paint expressions at the feature behind [c]. A marker's
+  /// name has none.
   void _bind(LabelCandidate c) {
-    final tile = c.tile;
-    final props = tile?.props;
-    if (tile == null || props == null) {
+    if (c case TileLabel(tile: BuiltLabel(:final props?, :final layer))) {
+      _context
+        ..props = props
+        ..state =
+            stateOf?.call(symbols[layer].source, props[r'$id']) ?? const {};
+    } else {
       _context
         ..props = const {}
         ..state = const {};
-      return;
     }
-    _context
-      ..props = props
-      ..state =
-          stateOf?.call(symbols[tile.layer].source, props[r'$id']) ?? const {};
   }
 
   /// A text's colour, halo colour and halo width from its layer's paint.
@@ -161,12 +160,17 @@ class LabelEngine {
   final CollisionBoxes _boxes = CollisionBoxes();
   late final RoadLabels _roads = RoadLabels(_view, _boxes);
   late final LabelPainter _painter = LabelPainter(_view, _roads);
-  late final PointLabels _points = PointLabels(_view, _boxes, _roads, _context);
+  late final PointLabels _points = PointLabels(_view, _boxes, _roads);
 
   /// Road names follow bends. Off, a name is only written where the road is
   /// straight enough to carry it.
   bool get curvedRoads => _roads.curved;
-  set curvedRoads(bool value) => _roads.curved = value;
+  set curvedRoads(bool value) {
+    if (value == _roads.curved) return;
+    _roads.curved = value;
+    clear();
+  }
+
   double _placedRotation = 0;
 
   /// While the zoom is changing a label's image is stretched further before
@@ -389,18 +393,21 @@ class LabelEngine {
         continue;
       }
       final c = st.candidate;
-      final isRoad = c.line != null;
+      final road = c is TileLabel && c.tile.line != null ? c : null;
       _bind(c);
       final layer = _symbolOf(c);
       final textPad = layer?.textPadding ?? CollisionBoxes.defaultPad;
       final iconPad = layer?.iconPadding ?? CollisionBoxes.defaultPad;
       final fontSize = _size(c, styleZoom);
-      if (layer != null && c.props != null && c.hasText) {
+      if (layer != null &&
+          c is TileLabel &&
+          c.tile.props != null &&
+          c.hasText) {
         final ink = _ink(layer).hashCode;
         if (ink != c.ink) {
           c
             ..ink = ink
-            ..spriteKey = '${c.tile?.layer}|${c.text}|$ink';
+            ..spriteKey = '${c.tile.layer}|${c.text}|$ink';
           st.sprite = null;
         }
       }
@@ -421,9 +428,10 @@ class LabelEngine {
         ..placed = false
         ..showText = c.hasText
         ..showIcon = false;
-      if (isRoad) {
+      if (road != null) {
         _placeRoad(
           st,
+          road,
           layer,
           sprite,
           fontSize,
@@ -442,7 +450,7 @@ class LabelEngine {
           textH,
           textPad,
           iconPad,
-          styleZoom,
+          _context..zoom = styleZoom,
         )) {
           _showPlaced(st, sprite);
         }
@@ -456,6 +464,7 @@ class LabelEngine {
   /// into nothing placed before it.
   void _placeRoad(
     LabelState st,
+    TileLabel road,
     SymbolLayer? layer,
     LabelSprite? sprite,
     double fontSize,
@@ -465,15 +474,15 @@ class LabelEngine {
     double styleZoom,
     int fitKey,
   ) {
-    final c = st.candidate;
     if (st.roadFitKey != fitKey) {
       st
         ..roadFitKey = fitKey
         ..roadFits = _roads.fit(
           st,
+          road,
           textW,
           textH,
-          c.tileSpan * _view.world / tileExtent,
+          road.tileSpan * _view.world / tileExtent,
           maxBend: layer?.maxBend,
         );
     }
@@ -539,12 +548,12 @@ class LabelEngine {
     double dpr,
   ) {
     final c = st.candidate;
-    final beside = c.marker != null;
+    final beside = c is MarkerName;
     final symbol = _symbolOf(c);
     _context.zoom = styleZoom;
     _bind(c);
     final fontSize = _size(c, styleZoom);
-    final isRoad = c.line != null;
+    final isRoad = c is TileLabel && c.tile.line != null;
     final label = symbol?.uppercase ?? false ? c.text.toUpperCase() : c.text;
     final dark =
         (background >> 16 & 255) * 0.3 +

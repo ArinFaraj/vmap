@@ -10,6 +10,7 @@ import 'pins.dart';
 import 'road_labels.dart';
 import 'sprites.dart';
 import 'style_model.dart';
+import 'tile_builder.dart' show BuiltLabel;
 
 /// Draws placed labels: pins, icons, and text straight or bent along roads.
 class LabelPainter {
@@ -84,8 +85,11 @@ class LabelPainter {
     _view.project(st.worldX, st.worldY);
     final ix = _view.x + (fit ? st.dx : st.iconDx);
     final iy = _view.y + (fit ? st.dy : st.iconDy);
-    final from = st.candidate;
-    final turn = from.turns ? from.angle + rotation : from.angle;
+    final turn = switch (st.candidate) {
+      TileLabel(tile: BuiltLabel(:final angle, :final turns)) =>
+        turns ? angle + rotation : angle,
+      MarkerName() => 0.0,
+    };
     final area = ui.Rect.fromLTWH(
       -st.iconW / 2,
       -st.iconH / 2,

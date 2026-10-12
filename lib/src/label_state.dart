@@ -7,37 +7,10 @@ import 'sprites.dart';
 import 'tile_builder.dart';
 
 /// A label a tile or a marker offers, which the label engine may place.
-class LabelCandidate {
-  LabelCandidate(
-    this.key,
-    BuiltLabel this.tile,
-    this.tileX,
-    this.tileY,
-    this.tileSpan,
-  ) : marker = null,
-      text = tile.text,
-      rank = tile.priority,
-      worldX = tileX + tile.x / tileExtent * tileSpan,
-      worldY = tileY + tile.y / tileExtent * tileSpan;
-
-  /// The name of marker number [marker], written beside it at [worldX],
-  /// [worldY] ahead of every map label.
-  LabelCandidate.marker(int this.marker, this.text, this.worldX, this.worldY)
-    : key = 'm|$marker|$text',
-      tile = null,
-      rank = _markersFirst + marker,
-      tileX = worldX,
-      tileY = worldY,
-      tileSpan = 0;
+sealed class LabelCandidate {
+  LabelCandidate(this.key, this.text, this.rank, this.worldX, this.worldY);
 
   final String key;
-
-  /// The number of the marker this names, in the order the markers were
-  /// given. Null for a label of the map.
-  final int? marker;
-
-  /// The label a tile built. Null for a marker's name.
-  final BuiltLabel? tile;
 
   /// The text written.
   final String text;
@@ -45,29 +18,19 @@ class LabelCandidate {
   /// Lower is placed first. Markers' names come before every map label.
   final int rank;
 
-  static const int _markersFirst = -(1 << 30);
-  late String spriteKey = '${tile?.layer ?? 'marker'}|$text';
+  /// Where the label's point is, as fractions of the world.
+  final double worldX;
+  final double worldY;
 
-  /// The line a road's name runs along, in tile units. Null for a point.
-  Float32List? get line => tile?.line;
-
-  /// The name of the sprite image drawn at the point. Empty for none.
-  String get icon => tile?.icon ?? '';
-
-  /// The feature's values of what its layer's paint reads.
-  Map<String, Object?>? get props => tile?.props;
-
-  /// One of several placed along a line, kept apart from the same text.
-  bool get spaced => tile?.spaced ?? false;
-
-  /// How far the icon is turned, in radians, and whether it turns with the
-  /// map.
-  double get angle => tile?.angle ?? 0;
-  bool get turns => tile?.turns ?? false;
+  /// Names the picture of the text, shared by labels that look the same.
+  late String spriteKey = '$_kind|$text';
+  String get _kind;
 
   /// The colours the text was last asked for in, when they come from the
   /// feature. One picture is kept for each.
   int ink = 0;
+
+  late final bool hasText = text.isNotEmpty;
 
   /// Whether the text reads right to left, so its first letter is at its
   /// right edge.
@@ -82,16 +45,32 @@ class LabelCandidate {
     }
     return false;
   }
+}
 
-  late final bool hasText = text.isNotEmpty;
+/// A label a tile built, for a feature of the map.
+final class TileLabel extends LabelCandidate {
+  TileLabel(String key, this.tile, this.tileX, this.tileY, this.tileSpan)
+    : super(
+        key,
+        tile.text,
+        tile.priority,
+        tileX + tile.x / tileExtent * tileSpan,
+        tileY + tile.y / tileExtent * tileSpan,
+      );
+
+  final BuiltLabel tile;
 
   /// The owning tile's corner and width, as fractions of the world.
   final double tileX;
   final double tileY;
   final double tileSpan;
-  final double worldX;
-  final double worldY;
-  late final double lineLength = _length(line);
+
+  @override
+  String get _kind => '${tile.layer}';
+
+  /// The length of the road the name runs along, in tile units. Zero for a
+  /// point.
+  late final double lineLength = _length(tile.line);
 
   static double _length(Float32List? line) {
     if (line == null) return 0;
@@ -103,6 +82,21 @@ class LabelCandidate {
     }
     return total;
   }
+}
+
+/// The name of marker number [index], written beside it ahead of every map
+/// label.
+final class MarkerName extends LabelCandidate {
+  MarkerName(this.index, String name, double worldX, double worldY)
+    : super('m|$index|$name', name, _first + index, worldX, worldY);
+
+  /// The marker's place in the order the markers were given.
+  final int index;
+
+  static const int _first = -(1 << 30);
+
+  @override
+  String get _kind => 'marker';
 }
 
 /// What one label is across frames: whether it is placed, how far it has
