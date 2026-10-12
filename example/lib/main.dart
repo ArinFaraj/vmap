@@ -222,36 +222,36 @@ class _BenchAppState extends State<BenchApp>
       lap++;
       lapStart = elapsed;
       engineLaps.add({
-        'frames': engine.stats.frames,
-        'paint_avg_us': engine.stats.frames == 0
+        'frames': engine.stats.timings.frames,
+        'paint_avg_us': engine.stats.timings.frames == 0
             ? 0
-            : engine.stats.paintMicros ~/ engine.stats.frames,
-        'paint_max_us': engine.stats.maxPaintMicros,
-        'stroke_total_ms': engine.stats.strokeMicros ~/ 1000,
-        'strokes_built': engine.stats.strokesBuilt,
-        'label_total_ms': engine.stats.labelMicros ~/ 1000,
-        'label_max_us': engine.stats.maxLabelMicros,
-        'tile_setup_total_ms': engine.stats.tileSetupMicros ~/ 1000,
-        'tile_setup_max_us': engine.stats.maxTileSetupMicros,
-        'paints_over_4ms': engine.stats.paintsOver4ms,
-        'paints_over_8ms': engine.stats.paintsOver8ms,
-        'prep_max_us': engine.stats.maxPrepMicros,
-        'place_max_us': engine.stats.maxPlaceMicros,
-        'place_total_ms': engine.stats.placeMicros ~/ 1000,
-        'label_raster_total_ms': engine.stats.labelRasterMicros ~/ 1000,
-        'labels_rasterized': engine.stats.labelsRasterized,
-        'label_layout_ms': engine.stats.labelLayoutMicros ~/ 1000,
-        'label_image_ms': engine.stats.labelImageMicros ~/ 1000,
-        'label_images': engine.stats.labelImages,
-        'labels_resized': engine.stats.labelsResized,
-        'labels_evicted': engine.stats.labelsEvicted,
-        'label_states_walked': engine.stats.labelStatesWalked,
-        'label_raster_max_us': engine.stats.maxLabelRasterMicros,
-        'draw_max_us': engine.stats.maxDrawMicros,
-        'unpack_max_us': engine.stats.maxUnpackMicros,
+            : engine.stats.timings.paintMicros ~/ engine.stats.timings.frames,
+        'paint_max_us': engine.stats.timings.maxPaintMicros,
+        'stroke_total_ms': engine.stats.timings.strokeMicros ~/ 1000,
+        'strokes_built': engine.stats.timings.strokesBuilt,
+        'label_total_ms': engine.stats.timings.labelMicros ~/ 1000,
+        'label_max_us': engine.stats.timings.maxLabelMicros,
+        'tile_setup_total_ms': engine.stats.timings.tileSetupMicros ~/ 1000,
+        'tile_setup_max_us': engine.stats.timings.maxTileSetupMicros,
+        'paints_over_4ms': engine.stats.timings.paintsOver4ms,
+        'paints_over_8ms': engine.stats.timings.paintsOver8ms,
+        'prep_max_us': engine.stats.timings.maxPrepMicros,
+        'place_max_us': engine.stats.timings.maxPlaceMicros,
+        'place_total_ms': engine.stats.timings.placeMicros ~/ 1000,
+        'label_raster_total_ms': engine.stats.timings.labelRasterMicros ~/ 1000,
+        'labels_rasterized': engine.stats.timings.labels.rasterized,
+        'label_layout_ms': engine.stats.timings.labels.layoutMicros ~/ 1000,
+        'label_image_ms': engine.stats.timings.labels.imageMicros ~/ 1000,
+        'label_images': engine.stats.timings.labels.images,
+        'labels_resized': engine.stats.timings.labels.resized,
+        'labels_evicted': engine.stats.timings.labels.evicted,
+        'label_states_walked': engine.stats.timings.labels.statesWalked,
+        'label_raster_max_us': engine.stats.timings.maxLabelRasterMicros,
+        'draw_max_us': engine.stats.timings.maxDrawMicros,
+        'unpack_max_us': engine.stats.timings.maxUnpackMicros,
         'rss_mb': kIsWeb ? 0 : ProcessInfo.currentRss >> 20,
         'slow':
-            (engine.stats.slowPaints.toList()..sort(
+            (engine.stats.timings.slowPaints.toList()..sort(
                   (a, b) =>
                       int.parse(b.split('paint=')[1].split(' ')[0]) -
                       int.parse(a.split('paint=')[1].split(' ')[0]),
@@ -643,7 +643,7 @@ class _HudState extends State<_Hud> {
     final line =
         'fps ${frames.length} skipped $late in ${pace.hitches} hitches, worst gap ${pace.worstGap.toStringAsFixed(0)}ms wait ${pace.waitMax.toStringAsFixed(1)} (all $dropped/$total) build ${worstBuild.toStringAsFixed(1)} raster ${worstRaster.toStringAsFixed(1)} '
         'rss ${ProcessInfo.currentRss >> 20}MB tiles ${s.tilesCached} states ${s.labelStates} sprites ${s.labelSprites}';
-    final slow = s.slowPaints;
+    final slow = s.timings.slowPaints;
     if (frames.isNotEmpty) {
       log?.writeln(
         '${DateTime.now().toIso8601String().substring(11, 19)} $line',

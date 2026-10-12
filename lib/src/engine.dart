@@ -18,6 +18,7 @@ import 'layer.dart' show NamedMarker;
 import 'raster.dart';
 import 'shaders.dart';
 import 'sprites.dart';
+import 'stats.dart';
 import 'style.dart';
 import 'style_model.dart';
 import 'tile_builder.dart';
@@ -28,59 +29,6 @@ import 'mercator.dart';
 import 'protocol.dart';
 import 'tile_id.dart';
 import 'net.dart' show cacheKey;
-
-class VmapStats {
-  int tilesDrawn = 0;
-  int fallbackTiles = 0;
-  int tilesCached = 0;
-  int tilesLoading = 0;
-  int labelsShown = 0;
-  int drawCalls = 0;
-
-  /// Time spent on the UI thread, in microseconds, summed since [resetTimers].
-  int paintMicros = 0;
-  int strokeMicros = 0;
-  int labelMicros = 0;
-  int tileSetupMicros = 0;
-  int maxPaintMicros = 0;
-  int maxLabelMicros = 0;
-  int maxTileSetupMicros = 0;
-  int strokesBuilt = 0;
-  int frames = 0;
-  int paintsOver4ms = 0;
-  int paintsOver8ms = 0;
-  int maxPrepMicros = 0;
-  int maxPlaceMicros = 0;
-  int maxLabelRasterMicros = 0;
-  int maxDrawMicros = 0;
-  int placeMicros = 0;
-  int labelStates = 0;
-  int labelRasterMicros = 0;
-  int labelsRasterized = 0;
-  int labelLayoutMicros = 0;
-  int labelImageMicros = 0;
-  int labelImages = 0;
-  int labelStatesWalked = 0;
-  int labelsResized = 0;
-  int labelsEvicted = 0;
-  int maxUnpackMicros = 0;
-
-  /// One line per paint that took over 5 ms, newest last.
-  final List<String> slowPaints = [];
-  int labelSprites = 0;
-
-  void resetTimers() {
-    paintMicros = strokeMicros = labelMicros = tileSetupMicros = 0;
-    maxPaintMicros = maxLabelMicros = maxTileSetupMicros = strokesBuilt =
-        frames = 0;
-    paintsOver4ms = paintsOver8ms = maxPrepMicros = maxPlaceMicros =
-        maxLabelRasterMicros = maxDrawMicros = placeMicros = 0;
-    labelRasterMicros = labelsRasterized = labelLayoutMicros =
-        labelImageMicros = labelImages = labelStatesWalked = labelsResized =
-            labelsEvicted = maxUnpackMicros = 0;
-    slowPaints.clear();
-  }
-}
 
 /// Owns the tiles and labels and draws one frame of the map for a camera.
 class VmapEngine extends ChangeNotifier {
@@ -898,47 +846,24 @@ class VmapEngine extends ChangeNotifier {
       loading += s.missing.length;
       unpack = math.max(unpack, s.pool.takeMaxUnpackMicros());
     }
-    stats
-      ..frames += 1
-      ..labelMicros += finished - labelsStarted
-      ..paintMicros += finished - now;
-    if (finished - labelsStarted > stats.maxLabelMicros) {
-      stats.maxLabelMicros = finished - labelsStarted;
-    }
-    if (finished - now > stats.maxPaintMicros) {
-      stats.maxPaintMicros = finished - now;
-    }
-    if (finished - now > 5000) {
-      if (stats.slowPaints.length >= 300) stats.slowPaints.removeAt(0);
-      stats.slowPaints.add(
-        't=${now ~/ 1000} paint=${finished - now} prep=$_prepSpent place=${_labels.lastPlaceMicros} '
-        'lraster=${_labels.lastRasterMicros} labels=${finished - labelsStarted} z=${camera.zoom.toStringAsFixed(2)} '
-        'tiles=$ideal+$fallback cached=$cached',
+    final timings = stats.timings
+      ..frame(
+        paint: finished - now,
+        labels: finished - labelsStarted,
+        place: _labels.lastPlaceMicros,
+        raster: _labels.lastRasterMicros,
+        prep: _prepSpent,
+        draw: labelsStarted - now - _prepSpent,
+        unpack: unpack,
+        describe: () =>
+            't=${now ~/ 1000} paint=${finished - now} prep=$_prepSpent '
+            'place=${_labels.lastPlaceMicros} '
+            'lraster=${_labels.lastRasterMicros} '
+            'labels=${finished - labelsStarted} '
+            'z=${camera.zoom.toStringAsFixed(2)} '
+            'tiles=$ideal+$fallback cached=$cached',
       );
-    }
-    if (finished - now > 4000) stats.paintsOver4ms++;
-    if (finished - now > 8000) stats.paintsOver8ms++;
-    if (_prepSpent > stats.maxPrepMicros) stats.maxPrepMicros = _prepSpent;
-    if (_labels.lastPlaceMicros > stats.maxPlaceMicros) {
-      stats.maxPlaceMicros = _labels.lastPlaceMicros;
-    }
-    if (_labels.lastRasterMicros > stats.maxLabelRasterMicros) {
-      stats.maxLabelRasterMicros = _labels.lastRasterMicros;
-    }
-    stats.placeMicros += _labels.lastPlaceMicros;
-    stats
-      ..labelRasterMicros += _labels.lastRasterMicros
-      ..labelsRasterized += _labels.work.rasterized
-      ..labelLayoutMicros += _labels.work.layoutMicros
-      ..labelImageMicros += _labels.work.imageMicros
-      ..labelImages += _labels.work.images
-      ..labelStatesWalked += _labels.work.statesWalked
-      ..labelsResized += _labels.work.resized
-      ..labelsEvicted += _labels.work.evicted;
-    _labels.work.clear();
-    if (labelsStarted - now - _prepSpent > stats.maxDrawMicros) {
-      stats.maxDrawMicros = labelsStarted - now - _prepSpent;
-    }
+    timings.labels.take(_labels.work);
     if (animating || waiting || _stale) {
       _requestFrame();
     } else {
@@ -949,7 +874,6 @@ class VmapEngine extends ChangeNotifier {
       ..tilesDrawn = ideal
       ..fallbackTiles = fallback
       ..tilesCached = cached
-      ..maxUnpackMicros = math.max(stats.maxUnpackMicros, unpack)
       ..labelStates = _labels.stateCount
       ..labelSprites = _labels.spriteCount
       ..tilesLoading = loading
@@ -1157,8 +1081,7 @@ class VmapEngine extends ChangeNotifier {
     );
     final spent = _clock.elapsedMicroseconds - started;
     _prepSpent += spent;
-    stats.tileSetupMicros += spent;
-    if (spent > stats.maxTileSetupMicros) stats.maxTileSetupMicros = spent;
+    stats.timings.tileSetup(spent);
   }
 
   void _prepareBackdrop(double zoom) {
@@ -1197,9 +1120,7 @@ class VmapEngine extends ChangeNotifier {
     final vertices = mesh.build(pass, halfWidth, offset);
     final spent = _clock.elapsedMicroseconds - started;
     _prepSpent += spent;
-    stats
-      ..strokeMicros += spent
-      ..strokesBuilt += 1;
+    stats.timings.stroke(spent);
     return vertices;
   }
 

@@ -2,26 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'platform.dart';
-
-/// What drawing labels cost, added up until the engine reads and clears it.
-class LabelWork {
-  int rasterized = 0;
-
-  /// Time spent laying label text out, and turning it into images.
-  int layoutMicros = 0;
-  int imageMicros = 0;
-
-  /// How many images labels were drawn into.
-  int images = 0;
-  int resized = 0;
-  int evicted = 0;
-  int statesWalked = 0;
-
-  void clear() {
-    rasterized = layoutMicros = imageMicros = images = resized = evicted =
-        statesWalked = 0;
-  }
-}
+import 'stats.dart';
 
 /// A label's text drawn once, to be placed every frame.
 sealed class LabelSprite {
@@ -164,7 +145,7 @@ class TextLook {
 class LabelSprites {
   LabelSprites(this.work);
 
-  final LabelWork work;
+  final VmapLabelWork work;
   final Map<String, LabelSprite> _byKey = {};
   final Stopwatch _clock = Stopwatch()..start();
 

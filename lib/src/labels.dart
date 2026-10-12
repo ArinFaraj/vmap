@@ -12,6 +12,7 @@ import 'label_view.dart';
 import 'pins.dart';
 import 'road_labels.dart';
 import 'sprites.dart';
+import 'stats.dart';
 import 'style_model.dart';
 import 'tile_builder.dart';
 
@@ -180,7 +181,7 @@ class LabelEngine {
   static const int _heavyPlaceMicros = 800;
 
   final Map<String, LabelState> _states = {};
-  final LabelWork work = LabelWork();
+  final VmapLabelWork work = VmapLabelWork();
   late final LabelSprites _sprites = LabelSprites(work);
   final List<LabelState> _frameStates = [];
 
