@@ -139,6 +139,7 @@ class TilePool {
   /// show without waiting for the network, and asks the server for the
   /// current one meanwhile.
   Future<void> _start() async {
+    startError = null;
     try {
       final direct = _def.geoJson
           ? 'geojson'
