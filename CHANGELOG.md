@@ -8,6 +8,10 @@ Breaking:
   `key.currentState!.engine`.
 - `VmapMapState` is public, so a `GlobalKey<VmapMapState>` on a `VmapMap`
   reaches its engine too.
+- `VmapStats` keeps what the last frame drew. Running totals and longest
+  costs moved to `stats.timings` (a `VmapTimings`), and label text costs to
+  `stats.timings.labels` (a `VmapLabelWork`). `resetTimers` replaces the
+  timings. `labelsShown`, which was never set, is gone.
 - An app that builds tiles in a web worker compiles `vmap_worker.js` again
   with `dart run vmap:build_web_worker`: the messages the worker reads have
   changed.
