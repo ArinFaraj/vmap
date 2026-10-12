@@ -117,8 +117,8 @@ class Worker {
 
 /// Runs [body] in a worker when [script] names one, which then has to
 /// be the tile worker's script, and otherwise on the page's own thread
-/// between frames. A script that does not load is replaced by the page's
-/// thread, with what it was sent so far.
+/// between frames. A script the browser refuses or that does not load is
+/// replaced by the page's thread, with what it was sent so far.
 Future<Worker> startWorker(
   WorkerBody body,
   List<Object?> init,
@@ -131,7 +131,13 @@ Future<Worker> startWorker(
     _onPage(worker, body, init, onMessage);
     return worker;
   }
-  final real = web.Worker(script.toJS);
+  final web.Worker real;
+  try {
+    real = web.Worker(script.toJS);
+  } on Object {
+    _onPage(worker, body, init, onMessage);
+    return worker;
+  }
   var answered = false;
   final unanswered = <Object?>[];
   real.onmessage = ((web.MessageEvent event) {

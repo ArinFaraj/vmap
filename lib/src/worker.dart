@@ -16,10 +16,6 @@ import 'tile_store.dart';
 import 'net.dart';
 import 'platform.dart';
 
-/// In a browser, the script tiles are built in, or null to build them on the
-/// page's thread. Set through `VmapEngine.webWorker`.
-String? workerScript = defaultWorkerScript;
-
 typedef TileLoaded = void Function(TileId id, BuiltTile tile);
 typedef TileFailed = void Function(TileId id, Object error);
 
@@ -34,6 +30,7 @@ class TilePool {
     required this.source,
     required this.onLoaded,
     required this.onFailed,
+    this.script,
   }) : maxZoom =
            sheet.sources[source].maxZoom ??
            sheet.sources[source].defaultMaxZoom {
@@ -41,6 +38,10 @@ class TilePool {
   }
 
   final TileSourceConfig config;
+
+  /// In a browser, the script the workers run, or null to build tiles on
+  /// the page's thread.
+  final String? script;
 
   /// The style document the workers build tiles for, and its compiled form.
   final Map<String, Object?> style;
@@ -233,7 +234,7 @@ class TilePool {
             _queries.remove(reply.job)?.complete(reply);
         }
       },
-      script: workerScript,
+      script: script,
       debugName: 'vmap-tiles-$source-$index',
     );
     return worker;

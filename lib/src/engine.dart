@@ -38,11 +38,10 @@ class VmapEngine extends ChangeNotifier {
   /// In a browser, the address of the script that builds tiles off the
   /// page's thread. vmap ships one and uses it without being asked. Set
   /// another before the first map is shown, or null to build tiles on the
-  /// page's own thread; a script that does not load is replaced by the
-  /// page's thread too. Other platforms build tiles on isolates and ignore
+  /// page's own thread; a script the browser refuses or that does not load
+  /// is replaced by the page's thread too. Other platforms build tiles on isolates and ignore
   /// it.
-  static String? get webWorker => workerScript;
-  static set webWorker(String? script) => workerScript = script;
+  static String? webWorker = defaultWorkerScript;
 
   VmapEngine({
     this._style = VmapStyle.light,
@@ -340,6 +339,7 @@ class VmapEngine extends ChangeNotifier {
           made.failedAt[id] = _clock.elapsedMilliseconds;
           onError?.call(error);
         },
+        script: webWorker,
       );
       final before = byName[def.name];
       if (before != null) {
