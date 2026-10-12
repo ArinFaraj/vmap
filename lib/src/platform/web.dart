@@ -95,9 +95,8 @@ Float32List unpackFloats(Object packed) => packed as Float32List;
 
 Uint16List unpackShorts(Object packed) => packed as Uint16List;
 
-/// The address of the script that builds tiles off the page's thread, or
-/// null to build them on it. The worker vmap ships, by default.
-String? workerScript = ui_web.assetManager.getAssetUrl(
+/// The worker script vmap ships as a web only asset.
+final String defaultWorkerScript = ui_web.assetManager.getAssetUrl(
   'packages/vmap/assets/vmap_worker.js',
 );
 
@@ -116,7 +115,7 @@ class Worker {
   }
 }
 
-/// Runs [body] in a worker when [workerScript] names one, which then has to
+/// Runs [body] in a worker when [script] names one, which then has to
 /// be the tile worker's script, and otherwise on the page's own thread
 /// between frames. A script that does not load is replaced by the page's
 /// thread, with what it was sent so far.
@@ -124,10 +123,10 @@ Future<Worker> startWorker(
   WorkerBody body,
   List<Object?> init,
   void Function(Object? message) onMessage, {
+  String? script,
   String? debugName,
 }) async {
   final worker = Worker();
-  final script = workerScript;
   if (script == null) {
     _onPage(worker, body, init, onMessage);
     return worker;

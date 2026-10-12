@@ -2,6 +2,8 @@ import 'dart:io';
 
 /// A fingerprint of every Dart file under [lib], which the compiled web
 /// worker records so a test can tell when it was built from older code.
+/// It leaves out the dependencies compiled into the worker, so a test
+/// cannot tell when only those moved.
 String workerSourceHash(Directory lib) {
   final files =
       lib
@@ -19,8 +21,13 @@ String workerSourceHash(Directory lib) {
   }
 
   for (final file in files) {
-    add(file.path.substring(lib.path.length).codeUnits);
-    add(file.readAsBytesSync());
+    add(
+      file.uri.pathSegments
+          .skip(lib.uri.pathSegments.length - 1)
+          .join('/')
+          .codeUnits,
+    );
+    add(file.readAsStringSync().replaceAll('\r\n', '\n').codeUnits);
   }
   return hash.toRadixString(16).padLeft(8, '0');
 }

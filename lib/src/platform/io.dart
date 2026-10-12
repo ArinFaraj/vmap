@@ -115,13 +115,15 @@ class Worker {
 }
 
 /// Only a browser needs a script to build tiles off its one thread.
-String? workerScript;
+const String? defaultWorkerScript = null;
 
 /// Starts [body] on an isolate of its own. It must be a top level function.
+/// [script] is for a browser only.
 Future<Worker> startWorker(
   WorkerBody body,
   List<Object?> init,
   void Function(Object? message) onMessage, {
+  String? script,
   String? debugName,
 }) async {
   final inbox = ReceivePort();

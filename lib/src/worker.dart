@@ -16,6 +16,10 @@ import 'tile_store.dart';
 import 'net.dart';
 import 'platform.dart';
 
+/// In a browser, the script tiles are built in, or null to build them on the
+/// page's thread. Set through `VmapEngine.webWorker`.
+String? workerScript = defaultWorkerScript;
+
 typedef TileLoaded = void Function(TileId id, BuiltTile tile);
 typedef TileFailed = void Function(TileId id, Object error);
 
@@ -229,6 +233,7 @@ class TilePool {
             _queries.remove(reply.job)?.complete(reply);
         }
       },
+      script: workerScript,
       debugName: 'vmap-tiles-$source-$index',
     );
     return worker;

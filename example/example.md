@@ -40,6 +40,6 @@ VmapMap(
 )
 ```
 
-The [showcase app](https://github.com/ArinFaraj/vmap/tree/main/example) in
+The [showcase app](https://github.com/ArinFaraj/vmap/tree/v0.26.0/example) in
 this folder switches between styles, place icons and layers, and runs the
 benchmark.
