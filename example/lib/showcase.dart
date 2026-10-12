@@ -636,48 +636,50 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
             ),
           if (!_plain)
             SafeArea(
-              minimum: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _TopBar(
-                    look: _look,
-                    onLook: _setLook,
-                    icons: _icons,
-                    onIcons: (mode) => setState(() => _icons = mode),
-                    layers: [
-                      _Layer('Demo places', _showPlaces, (on) {
-                        setState(() {
-                          _showPlaces = on;
-                          if (!on) _place = null;
-                        });
-                      }),
-                      _Layer('Walking route', _route, _setRoute),
-                      _Layer(
-                        'Clusters',
-                        _clusters,
-                        (on) => setState(() => _clusters = on),
-                      ),
-                      _Layer(
-                        'Curved road names',
-                        _curved,
-                        (on) => setState(() => _curved = on),
-                      ),
-                      _Layer('Rotation', _rotate, (on) {
-                        setState(() => _rotate = on);
-                        if (!on) _northUp();
-                      }),
-                    ],
-                    onNorth: _northUp,
-                  ),
-                  const Spacer(),
-                  if (selected != null) _PlaceCard(place: selected),
-                  const SizedBox(height: 10),
-                  const Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: _Attribution(),
-                  ),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _TopBar(
+                      look: _look,
+                      onLook: _setLook,
+                      icons: _icons,
+                      onIcons: (mode) => setState(() => _icons = mode),
+                      layers: [
+                        _Layer('Demo places', _showPlaces, (on) {
+                          setState(() {
+                            _showPlaces = on;
+                            if (!on) _place = null;
+                          });
+                        }),
+                        _Layer('Walking route', _route, _setRoute),
+                        _Layer(
+                          'Clusters',
+                          _clusters,
+                          (on) => setState(() => _clusters = on),
+                        ),
+                        _Layer(
+                          'Curved road names',
+                          _curved,
+                          (on) => setState(() => _curved = on),
+                        ),
+                        _Layer('Rotation', _rotate, (on) {
+                          setState(() => _rotate = on);
+                          if (!on) _northUp();
+                        }),
+                      ],
+                      onNorth: _northUp,
+                    ),
+                    const Spacer(),
+                    if (selected != null) _PlaceCard(place: selected),
+                    const SizedBox(height: 10),
+                    const Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: _Attribution(),
+                    ),
+                  ],
+                ),
               ),
             ),
         ],
