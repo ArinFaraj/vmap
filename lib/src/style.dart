@@ -1189,6 +1189,7 @@ class StyleSheet {
             minZoom,
             maxZoom,
             layout['symbol-sort-key'],
+            layout['icon-rotate'],
             paintKeys.toList()..sort(),
           ]),
         );

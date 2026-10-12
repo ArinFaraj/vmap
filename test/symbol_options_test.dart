@@ -94,6 +94,13 @@ void main() {
     expect(sheet.shape, isNot(_sheet({}).shape));
   });
 
+  test('turning the icons builds the tiles again', () {
+    expect(
+      _sheet({'icon-rotate': 45}).shape,
+      isNot(_sheet({'icon-rotate': 0}).shape),
+    );
+  });
+
   test('a label carries what its layer\'s sizes read', () {
     final sheet = _sheet({
       'text-size': [
