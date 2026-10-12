@@ -96,6 +96,26 @@ void main() {
     expect(await archive.tile(2, 0, 0), isEmpty);
   }, testOn: 'vm');
 
+  test('an archive on a server is asked for with the user agent', () async {
+    final agents = <String?>{};
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    server.listen((request) {
+      agents.add(request.headers.value('user-agent'));
+      request.response
+        ..add(_archive())
+        ..close();
+    });
+    final archive = PmTiles(
+      'pmtiles://http://127.0.0.1:${server.port}/tiny.pmtiles',
+      userAgent: 'com.example.app',
+    );
+    addTearDown(archive.close);
+
+    expect(await archive.tile(0, 0, 0), [1, 2, 3]);
+    expect(agents, {'com.example.app'});
+  }, testOn: 'vm');
+
   test('only archives are taken for archives', () {
     expect(PmTiles.handles('pmtiles://https://example.org/a.pmtiles'), isTrue);
     expect(PmTiles.handles('https://example.org/planet'), isFalse);

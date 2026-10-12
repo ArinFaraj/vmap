@@ -150,7 +150,11 @@ class TilePool {
           throw StateError('The source ${_def.name} has no tiles');
         }
         if (PmTiles.handles(direct) && _def.maxZoom == null) {
-          final archive = PmTiles(direct, headers: config.headers);
+          final archive = PmTiles(
+            direct,
+            userAgent: config.userAgent,
+            headers: config.headers,
+          );
           try {
             maxZoom = await archive.maxZoom;
           } finally {
@@ -281,7 +285,11 @@ class TilePool {
     final file = _tileCachePath(directory, template, id.z, id.x, id.y);
     if (fileExists(file)) return false;
     if (PmTiles.handles(template)) {
-      final archive = _keeping ??= PmTiles(template, headers: config.headers);
+      final archive = _keeping ??= PmTiles(
+        template,
+        userAgent: config.userAgent,
+        headers: config.headers,
+      );
       if (archive.local) return false;
       await writeFile(file, await archive.tile(id.z, id.x, id.y));
       return true;

@@ -9,10 +9,14 @@ import 'platform.dart';
 /// path, for example `pmtiles://https://example.org/world.pmtiles` or
 /// `pmtiles:///data/world.pmtiles`.
 class PmTiles {
-  PmTiles(String address, {Net? client, this.headers = const {}})
-    : _where = address.substring(scheme.length),
-      _client = client,
-      _ownsClient = client == null;
+  PmTiles(
+    String address, {
+    Net? client,
+    this.userAgent = 'vmap',
+    this.headers = const {},
+  }) : _where = address.substring(scheme.length),
+       _client = client,
+       _ownsClient = client == null;
 
   static const String scheme = 'pmtiles://';
 
@@ -20,6 +24,9 @@ class PmTiles {
       address != null && address.startsWith(scheme);
 
   final String _where;
+
+  /// Sent as the user agent when the archive makes its own client.
+  final String userAgent;
   final Map<String, String> headers;
   Net? _client;
   final bool _ownsClient;
@@ -190,7 +197,7 @@ class PmTiles {
 
   Future<Uint8List> _read(int offset, int length) async {
     if (!_remote) return (_file ??= FileSlices(_where)).read(offset, length);
-    final reply = await (_client ??= Net()).get(_where, {
+    final reply = await (_client ??= Net(userAgent: userAgent)).get(_where, {
       ...headers,
       'range': 'bytes=$offset-${offset + length - 1}',
       'accept-encoding': 'identity',
