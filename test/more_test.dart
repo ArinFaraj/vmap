@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/expr.dart';
 import 'package:vmap/src/style.dart';
 
-import 'features_test.dart' show build, tile;
+import 'support/mvt_fixture.dart';
 
 Object? eval(Object? json, [Map<String, Object?> props = const {}]) =>
     compileExpr(json)(EvalContext()..props = props);
