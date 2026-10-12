@@ -3,32 +3,8 @@
 /// both carry, and is read back into one of the types here.
 library;
 
-import 'cluster.dart' show ClusterPoint;
 import 'tile_builder.dart' show BuiltTile;
-
-class TileId {
-  const TileId(this.z, this.x, this.y);
-
-  final int z;
-  final int x;
-  final int y;
-
-  TileId get parent => TileId(z - 1, x >> 1, y >> 1);
-
-  @override
-  bool operator ==(Object other) =>
-      other is TileId && other.z == z && other.x == x && other.y == y;
-
-  @override
-  int get hashCode => tileKey(z, x, y);
-
-  @override
-  String toString() => '$z/$x/$y';
-}
-
-/// One number for a tile down to zoom 22. It stays under the 53 bits a
-/// number has in JavaScript.
-int tileKey(int z, int x, int y) => (z * 0x400000 + x) * 0x400000 + y;
+import 'tile_id.dart';
 
 /// What a worker is started with.
 class WorkerSetup {
@@ -218,15 +194,9 @@ sealed class WorkerReply {
           if (member case [
             final num x,
             final num y,
-            final int count,
             final Map<Object?, Object?> props,
           ])
-            ClusterPoint(
-              x.toDouble(),
-              y.toDouble(),
-              count,
-              props.cast<String, Object?>(),
-            ),
+            ClusterMember(x.toDouble(), y.toDouble(), props.cast()),
       ]),
       final kind => throw ArgumentError('No worker reply is called $kind'),
     };
@@ -287,16 +257,26 @@ final class ClusterZoom extends WorkerReply {
 final class ClusterMembers extends WorkerReply {
   const ClusterMembers(super.job, this.members);
 
-  final List<ClusterPoint> members;
+  final List<ClusterMember> members;
 
   @override
   List<Object?> toWire() => [
     job,
     'members',
     [
-      for (final m in members) [m.x, m.y, m.count, m.props],
+      for (final m in members) [m.x, m.y, m.properties],
     ],
   ];
+}
+
+/// A point or a smaller cluster inside a cluster.
+class ClusterMember {
+  const ClusterMember(this.x, this.y, this.properties);
+
+  /// As fractions of the world.
+  final double x;
+  final double y;
+  final Map<String, Object?> properties;
 }
 
 /// A feature a lookup found in one tile.

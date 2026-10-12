@@ -1,7 +1,7 @@
 import 'expr.dart';
 import 'mvt.dart';
 import 'protocol.dart' show TileHit;
-import 'style.dart';
+import 'style_model.dart';
 
 /// One map feature found at a point.
 class VmapFeature {

@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'expr.dart';
 import 'mvt.dart';
 import 'platform.dart';
-import 'style.dart';
+import 'style_model.dart';
 import 'tessellate.dart';
 import 'mercator.dart';
 

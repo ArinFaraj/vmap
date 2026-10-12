@@ -4,10 +4,11 @@ import 'dart:ui' as ui;
 
 import 'camera.dart';
 import 'label_state.dart';
-import 'style.dart';
+import 'style_model.dart';
 import 'tessellate.dart';
 import 'tile_builder.dart';
 import 'worker.dart';
+import 'tile_id.dart';
 
 class MeshStroke {
   MeshStroke(this.pass, this.halfWidth, this.offset, this.vertices);

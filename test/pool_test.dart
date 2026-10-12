@@ -5,7 +5,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/net.dart';
-import 'package:vmap/src/style.dart';
+import 'package:vmap/src/style_model.dart';
 import 'package:vmap/src/worker.dart';
 
 Future<HttpServer> _serve(void Function(HttpRequest request) answer) async {

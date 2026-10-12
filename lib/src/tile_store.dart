@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'net.dart';
 import 'platform.dart';
 import 'pmtiles.dart';
-import 'style.dart' show TileCover;
+import 'style_model.dart' show TileCover;
 
 /// Where the tiles of one tile set come from: the cache directory first,
 /// then the archive or the server, and kept on disk once fetched.

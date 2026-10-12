@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/expr.dart';
-import 'package:vmap/src/style.dart';
+import 'package:vmap/src/style_model.dart';
 import 'package:vmap/src/tessellate.dart';
 
 MeshChunk _corner(LineJoin join, {bool offsets = false}) {

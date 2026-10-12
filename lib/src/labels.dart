@@ -12,7 +12,7 @@ import 'label_view.dart';
 import 'pins.dart';
 import 'road_labels.dart';
 import 'sprites.dart';
-import 'style.dart';
+import 'style_model.dart';
 import 'tile_builder.dart';
 
 /// How text on the map is set. Sizes and colours of map labels come from the

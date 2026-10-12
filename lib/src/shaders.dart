@@ -5,7 +5,7 @@ import 'dart:ui' as ui;
 import 'platform.dart';
 import 'expr.dart';
 import 'sprites.dart';
-import 'style.dart';
+import 'style_model.dart';
 import 'tessellate.dart';
 
 /// The repeating pictures layers are drawn through: dashes and patterns.

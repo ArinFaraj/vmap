@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:vmap/src/style.dart';
+import 'package:vmap/src/style_model.dart';
 import 'package:vmap/src/tile_builder.dart';
 
 /// Geometry types of a vector tile feature.

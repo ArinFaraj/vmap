@@ -6,11 +6,12 @@ import 'dart:ui' as ui;
 
 import 'expr.dart';
 import 'pmtiles.dart';
-import 'style.dart';
+import 'raster_style.dart';
+import 'style_model.dart';
 import 'tile_store.dart';
 import 'net.dart';
 import 'platform.dart';
-import 'worker.dart' show tileKey;
+import 'tile_id.dart';
 import 'mercator.dart';
 
 class _RasterTile {

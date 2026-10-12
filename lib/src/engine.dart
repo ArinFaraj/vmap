@@ -8,7 +8,6 @@ import 'package:flutter_map/flutter_map.dart' show Marker;
 import 'package:latlong2/latlong.dart' show LatLng;
 
 import 'camera.dart';
-import 'cluster.dart' show ClusterPoint;
 import 'expr.dart';
 import 'heat.dart';
 import 'label_state.dart';
@@ -20,11 +19,14 @@ import 'raster.dart';
 import 'shaders.dart';
 import 'sprites.dart';
 import 'style.dart';
+import 'style_model.dart';
 import 'tile_builder.dart';
 import 'tiles.dart';
 import 'worker.dart';
 import 'platform.dart';
 import 'mercator.dart';
+import 'protocol.dart';
+import 'tile_id.dart';
 import 'net.dart' show cacheKey;
 
 class VmapStats {
@@ -740,14 +742,14 @@ class VmapEngine extends ChangeNotifier {
     ),
   );
 
-  static List<VmapClusterMember> _members(List<ClusterPoint>? found) => [
-    for (final member in found ?? const <ClusterPoint>[])
+  static List<VmapClusterMember> _members(List<ClusterMember>? found) => [
+    for (final member in found ?? const <ClusterMember>[])
       VmapClusterMember(
         latitude: latitudeAt(member.y),
         longitude: longitudeAt(member.x),
-        id: member.props[r'$id'],
+        id: member.properties[r'$id'],
         properties: {
-          for (final e in member.props.entries)
+          for (final e in member.properties.entries)
             if (e.key != r'$id') e.key: e.value,
         },
       ),

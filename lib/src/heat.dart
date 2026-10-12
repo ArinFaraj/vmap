@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'expr.dart';
-import 'style.dart';
+import 'style_model.dart';
 import 'tiles.dart';
 
 /// Draws heatmap layers: every point adds a soft glow to a picture of how

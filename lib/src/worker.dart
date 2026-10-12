@@ -8,13 +8,12 @@ import 'mvt.dart';
 import 'query.dart';
 import 'pmtiles.dart';
 import 'protocol.dart';
-import 'style.dart';
+import 'tile_id.dart';
+import 'style_model.dart';
 import 'tile_builder.dart';
 import 'tile_store.dart';
 import 'net.dart';
 import 'platform.dart';
-
-export 'protocol.dart' show ClusterQuestion, TileHit, TileId, tileKey;
 
 /// How tiles are fetched and kept.
 class TileSourceConfig {
@@ -381,7 +380,7 @@ class TilePool {
   };
 
   /// What cluster [id] comes apart into, or the points of the data in it.
-  Future<List<ClusterPoint>> clusterMembers(
+  Future<List<ClusterMember>> clusterMembers(
     ClusterQuestion question,
     int id, {
     int limit = 0,
@@ -558,12 +557,13 @@ Future<void> tileWorkerMain(
             ),
             ClusterQuestion.children => ClusterMembers(
               ask.job,
-              clusters?.children(id) ?? const [],
+              _members(clusters?.children(id)),
             ),
             ClusterQuestion.leaves => ClusterMembers(
               ask.job,
-              clusters?.leaves(id, limit: ask.limit, offset: ask.offset) ??
-                  const [],
+              _members(
+                clusters?.leaves(id, limit: ask.limit, offset: ask.offset),
+              ),
             ),
           };
         } catch (_) {
@@ -580,3 +580,8 @@ Future<void> tileWorkerMain(
     );
   }
 }
+
+List<ClusterMember> _members(List<ClusterPoint>? points) => [
+  for (final p in points ?? const <ClusterPoint>[])
+    ClusterMember(p.x, p.y, p.props),
+];

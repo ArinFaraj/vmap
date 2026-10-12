@@ -3,10 +3,6 @@ import 'dart:convert';
 import 'builtin_style.dart';
 import 'palette.dart';
 
-export 'palette.dart';
-export 'raster_style.dart';
-export 'style_model.dart';
-
 /// Which map style to draw: a MapLibre style document, or the style that
 /// ships with the package.
 class VmapStyle {

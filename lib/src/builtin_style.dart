@@ -1,4 +1,4 @@
-import 'style.dart';
+import 'palette.dart';
 
 /// The package's own style as a MapLibre style document, for tiles in the
 /// OpenMapTiles schema.

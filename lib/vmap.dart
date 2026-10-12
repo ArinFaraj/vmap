@@ -7,6 +7,6 @@ export 'src/map.dart' show VmapMap, VmapMapState;
 export 'src/query.dart'
     show VmapClusterMember, VmapDownload, VmapFeature, VmapFeatureState;
 export 'src/pins.dart' show VmapPin, VmapPins, standardPins;
-export 'src/style.dart'
-    show Tone, VmapOverlay, VmapPalette, VmapStyle, VmapStyleEdit;
+export 'src/palette.dart' show Tone, VmapPalette;
+export 'src/style.dart' show VmapOverlay, VmapStyle, VmapStyleEdit;
 export 'src/worker.dart' show TileSourceConfig;

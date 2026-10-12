@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/style.dart';
+import 'package:vmap/src/raster_style.dart';
+import 'package:vmap/src/style_model.dart';
 
 StyleSheet _sheet(
   Object? coordinates, [

@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/expr.dart';
 import 'package:vmap/src/geojson.dart';
 import 'package:vmap/src/query.dart';
-import 'package:vmap/src/style.dart';
+import 'package:vmap/src/style_model.dart';
 import 'package:vmap/src/tile_builder.dart';
 
 Map<String, Object?> _square(int id, double west) => {

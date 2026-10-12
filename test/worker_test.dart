@@ -6,8 +6,10 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/mercator.dart';
-import 'package:vmap/src/style.dart';
+import 'package:vmap/src/style_model.dart';
 import 'package:vmap/src/tile_builder.dart';
+import 'package:vmap/src/protocol.dart';
+import 'package:vmap/src/tile_id.dart';
 import 'package:vmap/src/worker.dart';
 
 import 'support/mvt_fixture.dart';
@@ -120,7 +122,7 @@ void main() {
       id,
       limit: 10,
     );
-    final names = [for (final leaf in leaves) leaf.props['name']]..sort();
+    final names = [for (final leaf in leaves) leaf.properties['name']]..sort();
     expect(names, ['a', 'b', 'c']);
     expect(
       await pool.clusterMembers(ClusterQuestion.leaves, id, limit: 2),
