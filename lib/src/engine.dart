@@ -303,7 +303,7 @@ class VmapEngine extends ChangeNotifier {
         ]);
     } else {
       for (var i = 0; i < _rasters.length; i++) {
-        _rasters[i].layer = sheet.rasters[i];
+        _rasters[i].restyle(sheet.rasters[i]);
       }
     }
     if (sheet.sprite != _spriteUrl) _loadSprites(sheet.sprite);

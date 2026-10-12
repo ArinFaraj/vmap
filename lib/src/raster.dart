@@ -38,7 +38,7 @@ class _RasterTile {
 /// picture tiles, or tiles of heights shaded as a hillshade.
 sealed class RasterDrawing<L extends RasterLayer> {
   RasterDrawing(
-    this.layer, {
+    this._layer, {
     required this.config,
     required this.onLoaded,
     required this.onError,
@@ -71,9 +71,16 @@ sealed class RasterDrawing<L extends RasterLayer> {
     ),
   };
 
-  /// Taken over from a style whose layer draws from the same pictures, so
-  /// only its paint can differ.
-  L layer;
+  L _layer;
+  L get layer => _layer;
+
+  /// Takes over [next] from a restyled style. The engine keeps a drawing
+  /// only for a layer with the same [RasterLayer.signature], which names
+  /// the layer's kind, so [next] is an [L] whose paint alone can differ.
+  void restyle(RasterLayer next) {
+    assert(next.signature == _layer.signature);
+    _layer = next as L;
+  }
 
   /// How pictures are fetched and kept.
   final TileSourceConfig config;
