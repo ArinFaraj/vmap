@@ -10,6 +10,8 @@ import json
 import os
 import sys
 
+import numpy as np
+
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -61,7 +63,8 @@ def shadowed(canvas, layer, at, blur=40, offset=24, strength=70):
 
 
 def phone(shot, width):
-    """A screenshot inside a plain dark bezel."""
+    """A screenshot inside a plain dark bezel. The screenshots have no status
+    bar, so the bezel has no camera cut-out to cover the app with."""
     screen = shot.resize(
         (width, round(shot.height * width / shot.width)), Image.LANCZOS
     )
@@ -74,17 +77,6 @@ def phone(shot, width):
         (0, 0, body.width - 1, body.height - 1), radius + bezel, fill=(18, 19, 22)
     )
     body.alpha_composite(rounded(screen, radius), (bezel, bezel))
-    island = (round(width * 0.3), round(width * 0.085))
-    ImageDraw.Draw(body).rounded_rectangle(
-        (
-            body.width // 2 - island[0] // 2,
-            bezel + round(width * 0.03),
-            body.width // 2 + island[0] // 2,
-            bezel + round(width * 0.03) + island[1],
-        ),
-        island[1] // 2,
-        fill=(18, 19, 22),
-    )
     return body
 
 
@@ -104,24 +96,96 @@ def load(directory, name):
     return Image.open(os.path.join(directory, name + ".png")).convert("RGB")
 
 
-def hero(directory):
-    canvas = Image.new("RGBA", (2400, 1500), PAPER + (255,))
-    side = 520
-    middle = 600
-    left = phone(load(directory, "hero-liberty"), side)
-    centre = phone(load(directory, "hero-default"), middle)
-    right = phone(load(directory, "hero-night"), side)
-    gap = 110
-    total = left.width + centre.width + right.width + gap * 2
-    x = (canvas.width - total) // 2
-    shadowed(canvas, left, (x, (canvas.height - left.height) // 2 + 40))
-    shadowed(
-        canvas,
-        right,
-        (x + left.width + centre.width + gap * 2, (canvas.height - right.height) // 2 + 40),
+WHITE = (246, 247, 250)
+SOFT = (170, 178, 192)
+
+
+def lockup(canvas, x, y, size=200):
+    """The wordmark, the line naming flutter_map, and three small facts, in
+    white for a dark ground."""
+    draw = ImageDraw.Draw(canvas)
+    draw.text((x - 6, y), "vmap", font=font(size, 720), fill=WHITE)
+    line = font(50, 460)
+    line_y = y + size * 1.18
+    draw.text((x, line_y), "Vector maps for ", font=line, fill=SOFT)
+    draw.text(
+        (x + draw.textlength("Vector maps for ", font=line), line_y),
+        "flutter_map",
+        font=font(50, 640),
+        fill=WHITE,
     )
-    shadowed(canvas, centre, (x + left.width + gap, (canvas.height - centre.height) // 2))
+    small = font(30, 560)
+    pills = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    pd = ImageDraw.Draw(pills)
+    fx, fy = x, line_y + 100
+    spots = []
+    for fact in ("Any MapLibre style", "Every script", "Plain Flutter canvas"):
+        w = draw.textlength(fact, font=small) + 48
+        pd.rounded_rectangle(
+            (fx, fy, fx + w, fy + 60),
+            30,
+            fill=(255, 255, 255, 26),
+            outline=(255, 255, 255, 70),
+            width=2,
+        )
+        spots.append((fx + 24, fy + 12, fact))
+        fx += w + 14
+    canvas.alpha_composite(pills)
+    draw = ImageDraw.Draw(canvas)
+    for tx, ty, fact in spots:
+        draw.text((tx, ty), fact, font=small, fill=WHITE)
+
+
+def fade_from_left(size, color, solid_to, gone_at, alpha):
+    """A wash of [color] that is [alpha] up to [solid_to] and gone by
+    [gone_at], eased, for text to sit on."""
+    width, height = size
+    xs = np.arange(width, dtype=np.float32)
+    t = np.clip((gone_at - xs) / (gone_at - solid_to), 0, 1)
+    t = t * t * (3 - 2 * t)
+    layer = np.zeros((height, width, 4), dtype=np.uint8)
+    layer[:, :, :3] = color
+    layer[:, :, 3] = np.repeat((t * alpha).astype(np.uint8)[None, :], height, 0)
+    return Image.fromarray(layer, "RGBA")
+
+
+def hero(directory):
+    """One place in three styles, swept from dark to light on a slant, the
+    title on the dark side."""
+    size = (2400, 1120)
+
+    def banner(name):
+        return load(directory, name).convert("RGBA").resize(size, Image.LANCZOS)
+
+    canvas = banner("banner-night")
+    slant = 340
+    for name, cut in (("banner-liberty", 1180), ("banner-positron", 1820)):
+        top, bottom = (cut + slant / 2, 0), (cut - slant / 2, size[1])
+        mask = Image.new("L", size, 0)
+        ImageDraw.Draw(mask).polygon(
+            [top, (size[0], 0), (size[0], size[1]), bottom], fill=255
+        )
+        canvas.paste(banner(name), (0, 0), mask)
+        edge = Image.new("RGBA", size, (0, 0, 0, 0))
+        ImageDraw.Draw(edge).line([top, bottom], fill=(255, 255, 255, 230), width=5)
+        canvas.alpha_composite(edge)
+    canvas.alpha_composite(fade_from_left(size, (10, 12, 17), 700, 1250, 230))
+    lockup(canvas, 140, 300)
     canvas.convert("RGB").save(os.path.join(OUT, "hero.png"), optimize=True)
+
+
+def app(directory):
+    """The example app in a light and a dark style, its top bar showing."""
+    canvas = Image.new("RGBA", (2400, 1600), PAPER + (255,))
+    width = 560
+    left = phone(load(directory, "hero-default"), width)
+    right = phone(load(directory, "hero-night"), width)
+    gap = 120
+    x = (canvas.width - left.width - right.width - gap) // 2
+    y = (canvas.height - left.height) // 2
+    shadowed(canvas, left, (x, y))
+    shadowed(canvas, right, (x + left.width + gap, y))
+    canvas.convert("RGB").save(os.path.join(OUT, "app.png"), optimize=True)
 
 
 def panels(directory, name, items, columns, size, radius=44, gap=48, margin=96):
@@ -194,6 +258,7 @@ def main():
     directory = sys.argv[1]
     os.makedirs(OUT, exist_ok=True)
     hero(directory)
+    app(directory)
     panels(
         directory,
         "styles",
@@ -219,15 +284,26 @@ def main():
         columns=3,
         size=(704, 900),
     )
+    if os.path.exists(os.path.join(directory, "vmt-liberty.png")):
+        panels(
+            directory,
+            "compare",
+            [
+                ("plain-liberty-deep", "vmap", "The Liberty style, with zoomOffset: 1"),
+                ("vmt-liberty", "vector_map_tiles", "The same style and camera"),
+            ],
+            columns=2,
+            size=(1080, 1180),
+        )
     panels(
         directory,
-        "compare",
+        "own-data",
         [
-            ("plain-liberty-deep", "vmap", "The Liberty style, with zoomOffset: 1"),
-            ("vmt-liberty", "vector_map_tiles", "The same style and camera"),
+            ("route", "A route", "A GeoJSON line and area of your own"),
+            ("clusters", "Clusters", "400 points, gathered as the map zooms out"),
         ],
         columns=2,
-        size=(1080, 1180),
+        size=(1080, 900),
     )
     panels(
         directory,

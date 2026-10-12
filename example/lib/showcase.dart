@@ -18,6 +18,18 @@ const _dark = bool.fromEnvironment('DARK');
 const _zoomTenths = int.fromEnvironment('ZOOM', defaultValue: 158);
 const _selected = int.fromEnvironment('SELECT', defaultValue: -1);
 const _plain = bool.fromEnvironment('PLAIN');
+
+/// The size the app is shown at on a desktop, as `<width>x<height>` in
+/// logical pixels. A phone by default; wider for a banner picture.
+const _frame = String.fromEnvironment('FRAME', defaultValue: '390x844');
+final _frameSize = Size(
+  double.parse(_frame.split('x')[0]),
+  double.parse(_frame.split('x')[1]),
+);
+
+/// Opens one of the top bar's menus at start, for a picture of it:
+/// `style`, `icons` or `layers`.
+const _openMenu = String.fromEnvironment('MENU');
 const _pins = bool.fromEnvironment('PINS', defaultValue: true);
 const _names = String.fromEnvironment(
   'NAMES',
@@ -555,7 +567,7 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
           ),
     ];
     final selected = _place == null ? null : places[_place!];
-    Widget screen = Scaffold(
+    final Widget screen = Scaffold(
       body: Stack(
         children: [
           if (widget.vmtStyle case final other?)
@@ -687,27 +699,6 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
     );
     final desktop =
         !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
-    if (desktop) {
-      screen = ColoredBox(
-        color: const Color(0xFF202124),
-        child: Center(
-          child: SizedBox(
-            width: 390,
-            height: 844,
-            child: RepaintBoundary(
-              key: _boundary,
-              child: MediaQuery(
-                data: const MediaQueryData(
-                  size: Size(390, 844),
-                  padding: EdgeInsets.only(top: 54, bottom: 24),
-                ),
-                child: screen,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
     return MaterialApp(
       scaffoldMessengerKey: _messenger,
       debugShowCheckedModeBanner: false,
@@ -716,6 +707,34 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
         fontFamily: 'GoogleSansFlex',
         fontFamilyFallback: const ['Vazirmatn'],
       ),
+      // On a desktop the app is shown at phone size. The frame wraps the
+      // navigator, so open menus are in a saved picture too.
+      builder: desktop
+          ? (context, child) => ColoredBox(
+              color: const Color(0xFF202124),
+              child: OverflowBox(
+                minWidth: _frameSize.width,
+                maxWidth: _frameSize.width,
+                minHeight: _frameSize.height,
+                maxHeight: _frameSize.height,
+                child: SizedBox(
+                  width: _frameSize.width,
+                  height: _frameSize.height,
+                  child: RepaintBoundary(
+                    key: _boundary,
+                    child: MediaQuery(
+                      data: MediaQuery.of(context).copyWith(
+                        size: _frameSize,
+                        padding: EdgeInsets.zero,
+                        viewPadding: EdgeInsets.zero,
+                      ),
+                      child: child!,
+                    ),
+                  ),
+                ),
+              ),
+            )
+          : null,
       home: screen,
     );
   }
@@ -763,6 +782,7 @@ class _TopBar extends StatelessWidget {
               spacing: 6,
               children: [
                 _Menu(
+                  openAtStart: _openMenu == 'style',
                   label: looks[look].label,
                   items: [
                     for (var i = 0; i < looks.length; i++)
@@ -770,6 +790,7 @@ class _TopBar extends StatelessWidget {
                   ],
                 ),
                 _Menu(
+                  openAtStart: _openMenu == 'icons',
                   prefix: 'Icons',
                   label: icons.label,
                   items: [
@@ -778,6 +799,7 @@ class _TopBar extends StatelessWidget {
                   ],
                 ),
                 _Menu(
+                  openAtStart: _openMenu == 'layers',
                   prefix: 'Layers',
                   label: '$on',
                   items: [
@@ -824,17 +846,39 @@ class _Choice extends StatelessWidget {
 }
 
 /// A pill that opens [items], reading "[prefix] [label]".
-class _Menu extends StatelessWidget {
-  const _Menu({required this.label, required this.items, this.prefix});
+class _Menu extends StatefulWidget {
+  const _Menu({
+    required this.label,
+    required this.items,
+    this.prefix,
+    this.openAtStart = false,
+  });
 
   final String? prefix;
   final String label;
   final List<Widget> items;
+  final bool openAtStart;
+
+  @override
+  State<_Menu> createState() => _MenuState();
+}
+
+class _MenuState extends State<_Menu> {
+  final _controller = MenuController();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.openAtStart) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _controller.open());
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return MenuAnchor(
+      controller: _controller,
       alignmentOffset: const Offset(0, 6),
       style: MenuStyle(
         backgroundColor: WidgetStatePropertyAll(scheme.surfaceContainerLowest),
@@ -845,7 +889,7 @@ class _Menu extends StatelessWidget {
           EdgeInsets.symmetric(vertical: 6),
         ),
       ),
-      menuChildren: items,
+      menuChildren: widget.items,
       builder: (context, controller, _) => Material(
         color: scheme.surfaceContainerLowest,
         elevation: 1.5,
@@ -860,9 +904,9 @@ class _Menu extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (prefix != null)
+                if (widget.prefix != null)
                   Text(
-                    '$prefix ',
+                    '${widget.prefix} ',
                     style: TextStyle(
                       fontSize: 13,
                       height: 1.2,
@@ -870,7 +914,7 @@ class _Menu extends StatelessWidget {
                     ),
                   ),
                 Text(
-                  label,
+                  widget.label,
                   style: TextStyle(
                     fontSize: 13,
                     height: 1.2,

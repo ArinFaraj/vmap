@@ -1,7 +1,9 @@
 # vmap example and benchmark
 
-`flutter run` shows a small map of Erbil's old town with a few places on it.
-Tap a pin for its card, and the button at the top to walk through the styles.
+`flutter run` shows a map of Erbil's old town. The bar along the top picks
+the style, the place icons (none, the style's own, or vmap's pins), and the
+layers: a few demo places with cards, a walking route, clusters, road names
+that follow bends, and rotation. The compass button turns north up.
 
 Compile time switches select the rest:
 
@@ -11,9 +13,14 @@ Compile time switches select the rest:
 - `--dart-define=NAMES=name:en,name` sets the label language order.
 - `--dart-define=ZOOM=158`, `LAT` and `LON` (in millionths of a degree) set
   the starting camera. The zoom is times ten.
-- `--dart-define=PLAIN=true` hides the pins and the controls.
+- `--dart-define=PLAIN=true` hides the bar and the demo places.
+- `--dart-define=PINS=false` starts with the style's own icons instead of
+  pins.
+- `--dart-define=OVERLAY=true`, `LIVE=true` and `CLUSTER=true` start with the
+  walking route, the route with a moving dot, or the clusters switched on.
 - `--dart-define=SHOT=/path/file.png` saves a picture after twelve seconds and
-  quits. On a desktop the map is shown at phone size.
+  quits. On a desktop the map is shown at phone size, or at
+  `--dart-define=FRAME=1200x560` logical pixels.
 - `--dart-define=MODE=vmt` draws with vector_map_tiles instead, and
   `MODE=raster` with flutter_map's raster `TileLayer` in the benchmark.
 - `--dart-define=ZOFF=1` reads a style one zoom level deeper, the way
@@ -32,7 +39,7 @@ reads at start: `laps=1` sets the number of laps, `labels=off` hides the
 labels, and `style_file=<path on the device>` draws a style document from a
 file.
 
-`tool/readme_images.py` composes the pictures in the README from `SHOT`
-screenshots.
+`tool/readme_shots.sh <dir>` takes every screenshot the README needs, on
+macOS, and `tool/readme_images.py <dir>` composes the pictures from them.
 
 In a browser: `flutter run -d chrome -t lib/main_web.dart`.

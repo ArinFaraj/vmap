@@ -1,12 +1,7 @@
-<h1 align="center">vmap</h1>
+![vmap: vector maps for flutter_map, one place in three styles](doc/images/hero.png)
 
-<p align="center">
-  Vector maps for Flutter, drawn with the plain Flutter canvas.<br>
-  Works with <a href="https://pub.dev/packages/flutter_map">flutter_map</a>
-  and any MapLibre style.
-</p>
-
-![vmap showing three styles](doc/images/hero.png)
+Vector maps for [flutter_map](https://pub.dev/packages/flutter_map), drawn
+with the plain Flutter canvas, in any MapLibre style.
 
 - Reads any MapLibre style: colours, roads, labels, icons, dashes, patterns.
 - Runs on the stable channel, on Skia or Impeller. No GPU package.
@@ -211,6 +206,8 @@ gestures also work with `VmapLayer`.
 ## Your own data
 
 An overlay adds sources and layers of your own to whatever style is showing.
+
+![A route and clusters of points over the built in style](doc/images/own-data.png)
 Both are written the way a MapLibre style writes them, so anything a style
 can draw, you can draw: lines, fills, circles, text, icons, heatmaps.
 
@@ -529,8 +526,12 @@ cd example
 flutter run
 ```
 
-A map of Erbil's old town with a few places and a button that walks through
-the styles. [example/README.md](example/README.md) lists its switches.
+![The example app in a light and a dark style](doc/images/app.png)
+
+A map of Erbil's old town with a bar across the top: the style, the place
+icons (none, the style's own, or pins), and layers to switch on, such as a
+walking route and clusters. [example/README.md](example/README.md) lists its
+switches.
 
 ## License
 
