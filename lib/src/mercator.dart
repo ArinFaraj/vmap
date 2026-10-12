@@ -38,3 +38,33 @@ int tileRow(double latitude, int z) {
 /// that stops at [maxZoom].
 int tileZoomAt(double mapZoom, int maxZoom) =>
     (mapZoom - 1).floor().clamp(0, maxZoom);
+
+/// The tiles of zoom [z] over a stretch of the world, from [left], [top] to
+/// [right], [bottom] in units of which one tile is [tileSpan]. Columns run
+/// on past the world's edge, for a view showing it more than once: take
+/// them modulo [n]. Rows stop at the poles.
+class TileRange {
+  TileRange(
+    this.z,
+    double left,
+    double top,
+    double right,
+    double bottom, {
+    required double tileSpan,
+  }) : n = 1 << z,
+       x0 = (left / tileSpan).floor(),
+       x1 = (right / tileSpan).floor(),
+       y0 = math.max(0, (top / tileSpan).floor()),
+       y1 = math.min((1 << z) - 1, (bottom / tileSpan).floor());
+
+  final int z;
+
+  /// Tiles across the world at [z].
+  final int n;
+  final int x0;
+  final int x1;
+  final int y0;
+  final int y1;
+
+  int get count => (x1 - x0 + 1) * (y1 - y0 + 1);
+}

@@ -648,21 +648,17 @@ class VmapEngine extends ChangeNotifier {
     await Future.wait([
       for (final s in List.of(_sources))
         () async {
-          var z = tileZoomAt(camera.zoom, s.pool.maxZoom);
-          int tiles(int z) {
-            final n = 1 << z;
-            return ((east * n).floor() - (west * n).floor() + 1) *
-                ((south * n).floor() - (north * n).floor() + 1);
+          TileRange at(int z) =>
+              TileRange(z, west, north, east, south, tileSpan: 1 / (1 << z));
+          var range = at(tileZoomAt(camera.zoom, s.pool.maxZoom));
+          while (range.z > 0 && range.count > _maxQueryTiles) {
+            range = at(range.z - 1);
           }
-
-          while (z > 0 && tiles(z) > _maxQueryTiles) {
-            z--;
-          }
-          final n = 1 << z;
+          final TileRange(:z, :n, :x0, :x1, :y0, :y1) = range;
           final asked = <Future<void>>[];
-          for (var y = (north * n).floor(); y <= (south * n).floor(); y++) {
-            for (var x = (west * n).floor(); x <= (east * n).floor(); x++) {
-              if (x < 0 || y < 0 || x >= n || y >= n) continue;
+          for (var y = y0; y <= y1; y++) {
+            for (var x = x0; x <= x1; x++) {
+              if (x < 0 || x >= n) continue;
               asked.add(() async {
                 final hits = await s.pool.query(
                   TileId(z, x, y),

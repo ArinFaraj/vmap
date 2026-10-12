@@ -8,6 +8,7 @@ import 'style_model.dart';
 import 'tessellate.dart';
 import 'tile_builder.dart';
 import 'worker.dart';
+import 'mercator.dart';
 import 'tile_id.dart';
 
 class MeshStroke {
@@ -273,14 +274,7 @@ class TileSource {
     maxDataZoom = pool.maxZoom;
     final tz = dataZoom.floor().clamp(0, maxDataZoom);
     final tileSize = 256.0 * math.pow(2, camera.zoom - tz);
-    final n = 1 << tz;
-    final x0 = (camera.origin.dx / tileSize).floor();
-    final x1 = ((camera.origin.dx + size.width) / tileSize).floor();
-    final y0 = math.max(0, (camera.origin.dy / tileSize).floor());
-    final y1 = math.min(
-      n - 1,
-      ((camera.origin.dy + size.height) / tileSize).floor(),
-    );
+    final TileRange(:n, :x0, :x1, :y0, :y1) = _inView(camera, tz, tileSize);
     final centerX = (camera.origin.dx + size.width / 2) / tileSize - 0.5;
     final centerY = (camera.origin.dy + size.height / 2) / tileSize - 0.5;
 
@@ -390,14 +384,7 @@ class TileSource {
     }
     void cover(int z, {required bool fetch}) {
       final span = 256.0 * math.pow(2, camera.zoom - z);
-      final n = 1 << z;
-      final x0 = (camera.origin.dx / span).floor();
-      final x1 = ((camera.origin.dx + size.width) / span).floor();
-      final y0 = math.max(0, (camera.origin.dy / span).floor());
-      final y1 = math.min(
-        n - 1,
-        ((camera.origin.dy + size.height) / span).floor(),
-      );
+      final TileRange(:n, :x0, :x1, :y0, :y1) = _inView(camera, z, span);
       for (var y = y0; y <= y1; y++) {
         for (var x = x0; x <= x1; x++) {
           final id = TileId(z, x % n, y);
@@ -437,4 +424,14 @@ class TileSource {
       t.dispose();
     }
   }
+
+  /// The tiles of zoom [z], [span] logical pixels wide, that cover the view.
+  static TileRange _inView(VmapCamera camera, int z, double span) => TileRange(
+    z,
+    camera.origin.dx,
+    camera.origin.dy,
+    camera.origin.dx + camera.size.width,
+    camera.origin.dy + camera.size.height,
+    tileSpan: span,
+  );
 }

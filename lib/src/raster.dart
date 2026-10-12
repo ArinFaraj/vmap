@@ -249,11 +249,14 @@ class RasterTiles {
     _frame++;
     final z = tileZoom(zoom);
     final span = 256.0 * math.pow(2, zoom - z);
-    final n = 1 << z;
-    final x0 = (origin.dx / span).floor();
-    final x1 = ((origin.dx + size.width) / span).floor();
-    final y0 = math.max(0, (origin.dy / span).floor());
-    final y1 = math.min(n - 1, ((origin.dy + size.height) / span).floor());
+    final TileRange(:n, :x0, :x1, :y0, :y1) = TileRange(
+      z,
+      origin.dx,
+      origin.dy,
+      origin.dx + size.width,
+      origin.dy + size.height,
+      tileSpan: span,
+    );
     // Opaque tiles lap over each other a little so no gap shows between
     // them. See-through shading would be twice as dark in the lap, so its
     // tiles share their edges exactly, drawn without anti-aliasing so every
