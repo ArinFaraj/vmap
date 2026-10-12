@@ -40,7 +40,7 @@ class RoadLabels {
     double? maxBend,
   }) {
     final c = st.candidate;
-    final line = c.source.line!;
+    final line = c.line!;
     final need = textW * 1.15 / unitPx;
     if (c.lineLength < need) return false;
     final half = textW / 2 / unitPx;
@@ -113,7 +113,7 @@ class RoadLabels {
     double? maxBend,
   ) {
     final c = st.candidate;
-    final line = c.source.line!;
+    final line = c.line!;
     final room = (to - from) / 2;
     final lo = from - room;
     final hi = to + room;
@@ -217,9 +217,9 @@ class RoadLabels {
   /// Whether a name the same as [st]'s is placed close by already.
   bool nearSame(LabelState st) {
     final world = _view.world;
-    final text = st.candidate.source.text;
+    final text = st.candidate.text;
     for (final other in _placed) {
-      if (other.candidate.source.text != text) continue;
+      if (other.candidate.text != text) continue;
       final dx = (other.worldX - st.worldX) * world;
       final dy = (other.worldY - st.worldY) * world;
       if (dx * dx + dy * dy < _repeatDistance * _repeatDistance) {

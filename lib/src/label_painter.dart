@@ -84,7 +84,7 @@ class LabelPainter {
     _view.project(st.worldX, st.worldY);
     final ix = _view.x + (fit ? st.dx : st.iconDx);
     final iy = _view.y + (fit ? st.dy : st.iconDy);
-    final from = st.candidate.source;
+    final from = st.candidate;
     final turn = from.turns ? from.angle + rotation : from.angle;
     final area = ui.Rect.fromLTWH(
       -st.iconW / 2,

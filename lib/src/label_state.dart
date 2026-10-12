@@ -8,21 +8,27 @@ import 'tile_builder.dart';
 
 /// A label a tile or a marker offers, which the label engine may place.
 class LabelCandidate {
-  LabelCandidate(this.key, this.source, this.tileX, this.tileY, this.tileSpan)
-    : marker = null,
-      worldX = tileX + source.x / tileExtent * tileSpan,
-      worldY = tileY + source.y / tileExtent * tileSpan,
-      _line = source.line;
+  LabelCandidate(
+    this.key,
+    BuiltLabel this.tile,
+    this.tileX,
+    this.tileY,
+    this.tileSpan,
+  ) : marker = null,
+      text = tile.text,
+      rank = tile.priority,
+      worldX = tileX + tile.x / tileExtent * tileSpan,
+      worldY = tileY + tile.y / tileExtent * tileSpan;
 
   /// The name of marker number [marker], written beside it at [worldX],
   /// [worldY] ahead of every map label.
-  LabelCandidate.marker(int this.marker, String name, this.worldX, this.worldY)
-    : key = 'm|$marker|$name',
-      source = BuiltLabel(-1, 0, name, 0, 0, null),
+  LabelCandidate.marker(int this.marker, this.text, this.worldX, this.worldY)
+    : key = 'm|$marker|$text',
+      tile = null,
+      rank = _markersFirst + marker,
       tileX = worldX,
       tileY = worldY,
-      tileSpan = 0,
-      _line = null;
+      tileSpan = 0;
 
   final String key;
 
@@ -30,14 +36,34 @@ class LabelCandidate {
   /// given. Null for a label of the map.
   final int? marker;
 
+  /// The label a tile built. Null for a marker's name.
+  final BuiltLabel? tile;
+
+  /// The text written.
+  final String text;
+
   /// Lower is placed first. Markers' names come before every map label.
-  int get rank => switch (marker) {
-    final index? => _markersFirst + index,
-    null => source.priority,
-  };
+  final int rank;
 
   static const int _markersFirst = -(1 << 30);
-  late String spriteKey = '${source.layer}|${source.text}';
+  late String spriteKey = '${tile?.layer ?? 'marker'}|$text';
+
+  /// The line a road's name runs along, in tile units. Null for a point.
+  Float32List? get line => tile?.line;
+
+  /// The name of the sprite image drawn at the point. Empty for none.
+  String get icon => tile?.icon ?? '';
+
+  /// The feature's values of what its layer's paint reads.
+  Map<String, Object?>? get props => tile?.props;
+
+  /// One of several placed along a line, kept apart from the same text.
+  bool get spaced => tile?.spaced ?? false;
+
+  /// How far the icon is turned, in radians, and whether it turns with the
+  /// map.
+  double get angle => tile?.angle ?? 0;
+  bool get turns => tile?.turns ?? false;
 
   /// The colours the text was last asked for in, when they come from the
   /// feature. One picture is kept for each.
@@ -45,7 +71,7 @@ class LabelCandidate {
 
   /// Whether the text reads right to left, so its first letter is at its
   /// right edge.
-  late final bool startsRight = _startsRight(source.text);
+  late final bool startsRight = _startsRight(text);
 
   static bool _startsRight(String text) {
     for (final unit in text.codeUnits) {
@@ -57,8 +83,7 @@ class LabelCandidate {
     return false;
   }
 
-  final BuiltLabel source;
-  late final bool hasText = source.text.isNotEmpty;
+  late final bool hasText = text.isNotEmpty;
 
   /// The owning tile's corner and width, as fractions of the world.
   final double tileX;
@@ -66,8 +91,7 @@ class LabelCandidate {
   final double tileSpan;
   final double worldX;
   final double worldY;
-  final Float32List? _line;
-  late final double lineLength = _length(_line);
+  late final double lineLength = _length(line);
 
   static double _length(Float32List? line) {
     if (line == null) return 0;

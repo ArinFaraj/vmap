@@ -55,8 +55,10 @@ class LabelEngine {
   final EvalContext _context = EvalContext();
 
   /// The style layer that draws [c]. Null for a marker's name.
-  SymbolLayer? _symbolOf(LabelCandidate c) =>
-      c.marker == null ? symbols[c.source.layer] : null;
+  SymbolLayer? _symbolOf(LabelCandidate c) => switch (c.tile) {
+    final tile? => symbols[tile.layer],
+    null => null,
+  };
 
   double _size(LabelCandidate c, double styleZoom) {
     final symbol = _symbolOf(c);
@@ -102,8 +104,9 @@ class LabelEngine {
 
   /// Points the paint expressions at the feature behind [c].
   void _bind(LabelCandidate c) {
-    final props = c.source.props;
-    if (props == null) {
+    final tile = c.tile;
+    final props = tile?.props;
+    if (tile == null || props == null) {
       _context
         ..props = const {}
         ..state = const {};
@@ -112,8 +115,7 @@ class LabelEngine {
     _context
       ..props = props
       ..state =
-          stateOf?.call(symbols[c.source.layer].source, props[r'$id']) ??
-          const {};
+          stateOf?.call(symbols[tile.layer].source, props[r'$id']) ?? const {};
   }
 
   /// A text's colour, halo colour and halo width from its layer's paint.
@@ -419,18 +421,18 @@ class LabelEngine {
         continue;
       }
       final c = st.candidate;
-      final isRoad = c.source.line != null;
+      final isRoad = c.line != null;
       _bind(c);
       final layer = _symbolOf(c);
       final textPad = layer?.textPadding ?? CollisionBoxes.defaultPad;
       final iconPad = layer?.iconPadding ?? CollisionBoxes.defaultPad;
       final fontSize = _size(c, styleZoom);
-      if (c.source.props != null && c.hasText) {
-        final ink = _ink(symbols[c.source.layer]).hashCode;
+      if (layer != null && c.props != null && c.hasText) {
+        final ink = _ink(layer).hashCode;
         if (ink != c.ink) {
           c
             ..ink = ink
-            ..spriteKey = '${c.source.layer}|${c.source.text}|$ink';
+            ..spriteKey = '${c.tile?.layer}|${c.text}|$ink';
           st.sprite = null;
         }
       }
@@ -441,7 +443,7 @@ class LabelEngine {
           ? st.scale < 0.7 || st.scale > 1.4
           : st.scale < 0.87 || st.scale > 1.15;
       final textW = sprite == null
-          ? c.source.text.length * fontSize * 0.55
+          ? c.text.length * fontSize * 0.55
           : sprite.textWidth * st.scale;
       final textH = sprite == null
           ? fontSize * 1.35
@@ -572,7 +574,7 @@ class LabelEngine {
       ..angle = 0
       ..curve = null
       ..screenAngle = 0;
-    if (c.source.spaced && c.hasText && _roads.nearSame(st)) return;
+    if (c.spaced && c.hasText && _roads.nearSame(st)) return;
     final spin = (symbol?.textRotate ?? 0) * math.pi / 180;
     st.screenAngle = spin;
     _view.project(st.worldX, st.worldY);
@@ -649,7 +651,7 @@ class LabelEngine {
     st
       ..showText = showText
       ..showIcon = showIcon;
-    if (c.source.spaced && c.hasText) _roads.placed(st);
+    if (c.spaced && c.hasText) _roads.placed(st);
     st.placed = true;
     if (!st.live) {
       st.live = true;
@@ -696,8 +698,8 @@ class LabelEngine {
   ) {
     final c = st.candidate;
     var icon = st.icon;
-    if (icon == null && c.source.icon.isNotEmpty) {
-      icon = st.icon = _sheet?.entries[c.source.icon];
+    if (icon == null && c.icon.isNotEmpty) {
+      icon = st.icon = _sheet?.entries[c.icon];
     }
     st
       ..iconDx = 0
@@ -731,7 +733,7 @@ class LabelEngine {
   /// its middle, when the app draws pins and has one for the icon.
   (VmapPin, double)? _choosePin(LabelState st, SymbolLayer? symbol) {
     final pins = _pins;
-    final name = st.candidate.source.icon;
+    final name = st.candidate.icon;
     final pin = pins == null || symbol == null || name.isEmpty
         ? null
         : pins.resolve(name, place: symbol.sourceLayer == 'poi');
@@ -884,16 +886,13 @@ class LabelEngine {
     double dpr,
   ) {
     final c = st.candidate;
-    final source = c.source;
     final beside = c.marker != null;
     final symbol = _symbolOf(c);
     _context.zoom = styleZoom;
     _bind(c);
     final fontSize = _size(c, styleZoom);
-    final isRoad = source.line != null;
-    final label = symbol?.uppercase ?? false
-        ? source.text.toUpperCase()
-        : source.text;
+    final isRoad = c.line != null;
+    final label = symbol?.uppercase ?? false ? c.text.toUpperCase() : c.text;
     final dark =
         (background >> 16 & 255) * 0.3 +
             (background >> 8 & 255) * 0.59 +
