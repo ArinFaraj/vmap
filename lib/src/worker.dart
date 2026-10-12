@@ -549,19 +549,23 @@ Future<void> tileWorkerMain(
     final y = m[3]! as int;
     if (m[4] == 'c') {
       unawaited(() async {
-        final clusters = (await geoJson)?.clusters;
-        final id = m[6]! as int;
-        send([
-          job,
-          'q',
-          switch (m[5]) {
-            'zoom' => [clusters?.expansionZoom(id)],
-            'children' => _members(clusters?.children(id)),
-            _ => _members(
-              clusters?.leaves(id, limit: m[7]! as int, offset: m[8]! as int),
-            ),
-          },
-        ]);
+        try {
+          final clusters = (await geoJson)?.clusters;
+          final id = m[6]! as int;
+          send([
+            job,
+            'q',
+            switch (m[5]) {
+              'zoom' => [clusters?.expansionZoom(id)],
+              'children' => _members(clusters?.children(id)),
+              _ => _members(
+                clusters?.leaves(id, limit: m[7]! as int, offset: m[8]! as int),
+              ),
+            },
+          ]);
+        } catch (_) {
+          send([job, 'q', const <Object?>[]]);
+        }
       }());
       continue;
     }
