@@ -32,11 +32,10 @@ class TileStore {
     required this.cover,
     required this.folder,
     required this.extension,
-    required String? directory,
+    required this.directory,
     required this.headers,
     required this.client,
-  }) : _directory = directory,
-       archive = PmTiles.handles(template)
+  }) : archive = PmTiles.handles(template)
            ? PmTiles(template, client: client, headers: headers)
            : null;
 
@@ -89,12 +88,14 @@ class TileStore {
 
   /// The archive the tiles are read from, when they are in one.
   final PmTiles? archive;
-  final String? _directory;
+
+  /// The cache directory, or null when tiles are not kept.
+  final String? directory;
 
   /// Where tile [z]/[x]/[y] is kept, or null when nothing is: there is no
   /// cache directory, or the tiles are in an archive on this device already.
   String? fileOf(int z, int x, int y) {
-    final directory = _directory;
+    final directory = this.directory;
     if (directory == null || (archive?.local ?? false)) return null;
     return '$directory/$folder/$z/$x/$y$extension';
   }

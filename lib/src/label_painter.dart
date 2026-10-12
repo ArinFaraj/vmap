@@ -59,15 +59,15 @@ class LabelPainter {
     );
   }
 
-  /// Draws [st]'s icon from the sprite sheet, through [filters] when it
-  /// is tinted: its fill, and the rim drawn under it.
+  /// Draws [st]'s icon from the sprite sheet, tinted by its layer's paint
+  /// read in [tint] when it is an SDF icon.
   void paintIcon(
     ui.Canvas canvas,
     LabelState st,
     SpriteImage icon,
     SpriteSheet sheet,
     SymbolLayer? symbol,
-    (ui.ColorFilter?, ui.ColorFilter?) filters,
+    EvalContext? tint,
     double devicePixelRatio,
     double rotation,
   ) {
@@ -77,7 +77,9 @@ class LabelPainter {
       255,
       st.opacity * st.iconOpacity,
     );
-    final fill = filters.$1, rim = filters.$2;
+    final (fill, rim) = tint == null || symbol == null
+        ? (null, null)
+        : _tint(st, icon, symbol, tint, devicePixelRatio);
     final fit = symbol?.textFit ?? false;
     _view.project(st.worldX, st.worldY);
     final ix = _view.x + (fit ? st.dx : st.iconDx);
@@ -264,6 +266,33 @@ class LabelPainter {
         )
         ..restore();
     }
+  }
+
+  /// The fill an SDF icon is tinted with, and the rim drawn under it.
+  (ui.ColorFilter, ui.ColorFilter?) _tint(
+    LabelState st,
+    SpriteImage icon,
+    SymbolLayer symbol,
+    EvalContext context,
+    double devicePixelRatio,
+  ) {
+    final by = st.iconW / icon.width;
+    final fill = sdf(
+      Rgba.of(symbol.iconColor(context)) ?? Rgba.black,
+      by * devicePixelRatio,
+    );
+    final reach = asNumber(symbol.iconHaloWidth?.call(context)) ?? 0;
+    final around = Rgba.of(symbol.iconHaloColor?.call(context));
+    if (reach <= 0 || around == null || by <= 0) return (fill, null);
+    return (
+      fill,
+      sdf(
+        around,
+        by * devicePixelRatio,
+        edge: (0.75 - reach / (8 * by)).clamp(0.1, 0.75),
+        fade: (asNumber(symbol.iconHaloBlur?.call(context)) ?? 0) / (8 * by),
+      ),
+    );
   }
 
   /// Turns a distance field into a crisp shape in [tint]. The edge of the

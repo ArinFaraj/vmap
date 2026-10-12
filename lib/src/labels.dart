@@ -93,6 +93,13 @@ class LabelEngine {
   /// Has the labels placed and coloured again on the next frame.
   void restyle() => _placeAgain = true;
 
+  /// The context with the paint expressions pointed at [c]'s feature.
+  EvalContext _bound(LabelCandidate c, double styleZoom) {
+    _context.zoom = styleZoom;
+    _bind(c);
+    return _context;
+  }
+
   /// Points the paint expressions at the feature behind [c].
   void _bind(LabelCandidate c) {
     final props = c.source.props;
@@ -343,7 +350,7 @@ class LabelEngine {
           icon,
           sheet,
           symbol,
-          _iconFilters(st, icon, symbol, styleZoom, devicePixelRatio),
+          icon.sdf && symbol != null ? _bound(st.candidate, styleZoom) : null,
           devicePixelRatio,
           rotation,
         );
@@ -354,37 +361,6 @@ class LabelEngine {
     _live.length = kept;
     if (rotation != 0) canvas.restore();
     return animating;
-  }
-
-  /// The fill and rim an SDF icon is tinted with by its layer's paint.
-  (ui.ColorFilter?, ui.ColorFilter?) _iconFilters(
-    LabelState st,
-    SpriteImage icon,
-    SymbolLayer? symbol,
-    double styleZoom,
-    double devicePixelRatio,
-  ) {
-    ui.ColorFilter? fill, rim;
-    if (icon.sdf && symbol != null) {
-      _context.zoom = styleZoom;
-      _bind(st.candidate);
-      final by = st.iconW / icon.width;
-      fill = LabelPainter.sdf(
-        Rgba.of(symbol.iconColor(_context)) ?? Rgba.black,
-        by * devicePixelRatio,
-      );
-      final reach = asNumber(symbol.iconHaloWidth?.call(_context)) ?? 0;
-      final around = Rgba.of(symbol.iconHaloColor?.call(_context));
-      if (reach > 0 && around != null && by > 0) {
-        rim = LabelPainter.sdf(
-          around,
-          by * devicePixelRatio,
-          edge: (0.75 - reach / (8 * by)).clamp(0.1, 0.75),
-          fade: (asNumber(symbol.iconHaloBlur?.call(_context)) ?? 0) / (8 * by),
-        );
-      }
-    }
-    return (fill, rim);
   }
 
   /// Decides which labels show for this camera. Labels without an image yet
