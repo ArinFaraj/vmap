@@ -328,8 +328,12 @@ class TilePool {
   void _onResult(_Worker worker, int job, {TileBuilt? built, String? error}) {
     worker.busy--;
     final id = _inflight.remove(job);
-    if (id == null) return;
+    if (id == null || _closed) return;
     _inflightIds.remove(id);
+    _wanted = [
+      for (final w in _wanted)
+        if (w != id) w,
+    ];
     if (built == null) {
       onFailed(id, error ?? 'unknown');
     } else {

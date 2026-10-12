@@ -174,7 +174,7 @@ void main() {
       if (watch.elapsed > const Duration(seconds: 5)) fail('timed out');
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
-    expect(loaded.toSet(), {const TileId(1, 0, 0)});
-    expect(failed.toSet(), {const TileId(1, 1, 0)});
+    expect(loaded, [const TileId(1, 0, 0)]);
+    expect(failed, [const TileId(1, 1, 0)]);
   });
 }
