@@ -64,7 +64,7 @@ void main() {
 
   test('every vector and GeoJSON source is kept, in order of first use', () {
     expect(sheet.sources.map((s) => s.name), ['base', 'mine']);
-    expect(sheet.sources[1].geoJson, isTrue);
+    expect(sheet.sources[1], isA<GeoJsonSource>());
   });
 
   test('layers are drawn in runs that follow the style order', () {
@@ -78,7 +78,7 @@ void main() {
   });
 
   test('GeoJSON is cut into the tiles it touches', () {
-    final tiles = GeoJsonTiles(sheet.sources[1].data);
+    final tiles = GeoJsonTiles((sheet.sources[1] as GeoJsonSource).data);
     expect(tiles.featureCount, 2);
     final west = tiles.tile(1, 0, 0);
     final features = west.single.features;
@@ -91,7 +91,7 @@ void main() {
   });
 
   test('a GeoJSON tile builds meshes for its own layers only', () {
-    final tiles = GeoJsonTiles(sheet.sources[1].data);
+    final tiles = GeoJsonTiles((sheet.sources[1] as GeoJsonSource).data);
     final built = TileBuilder(
       sheet,
       source: 1,
@@ -105,7 +105,7 @@ void main() {
   });
 
   test('a lookup finds the features under a point and their layers', () {
-    final tiles = GeoJsonTiles(sheet.sources[1].data);
+    final tiles = GeoJsonTiles((sheet.sources[1] as GeoJsonSource).data);
     final onLine = queryTile(tiles.tile(0, 0, 0), sheet, 1, 2048, 2050, 8, 0);
     expect(onLine.single.layers, ['route']);
     expect(onLine.single.properties['name'], 'Route');
@@ -116,7 +116,7 @@ void main() {
   });
 
   test('a lookup finds the features that touch a box', () {
-    final tiles = GeoJsonTiles(sheet.sources[1].data);
+    final tiles = GeoJsonTiles((sheet.sources[1] as GeoJsonSource).data);
     List<Object?> names(
       double x,
       double y,

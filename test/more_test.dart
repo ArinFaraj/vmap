@@ -146,7 +146,7 @@ void main() {
         {'id': 'heat', 'type': 'heatmap', 'source': 'points'},
       ],
     });
-    expect(sheet.rasters.single.relief!.terrarium, isTrue);
+    expect((sheet.rasters.single as HillshadeLayer).relief.terrarium, isTrue);
     expect(sheet.layers.single, isA<HeatmapLayer>());
     expect(sheet.runs.map((r) => r.raster), [0, -1]);
   });

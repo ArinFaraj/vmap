@@ -137,7 +137,7 @@ List<TileHit> queryTile(
     final y = py / scale;
     final reach = radius / scale;
     final from = sheet.sources[source];
-    final idKey = from.geoJson ? null : from.idKey(layer.name);
+    final idKey = from is GeoJsonSource ? null : from.idKey(layer.name);
     for (final f in layer.features) {
       sink.clear();
       f.readGeometry(sink);

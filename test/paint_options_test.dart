@@ -66,7 +66,10 @@ void main() {
       ],
     });
     final context = EvalContext();
-    expect(sheet.rasters.single.adjust!.filter(context), isNotNull);
+    expect(
+      (sheet.rasters.single as PictureTileLayer).adjust!.filter(context),
+      isNotNull,
+    );
     expect(sheet.layers.single.translate!(context), [4, -6]);
   });
 

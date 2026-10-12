@@ -52,7 +52,7 @@ class TilePool {
     required this.onFailed,
   }) : maxZoom =
            sheet.sources[source].maxZoom ??
-           (sheet.sources[source].geoJson ? 18 : 14) {
+           sheet.sources[source].defaultMaxZoom {
     _starting = _start();
   }
 
@@ -115,9 +115,10 @@ class TilePool {
   bool _confirmed = false;
   final Set<TileId> _notOnDisk = {};
 
-  String? get _templateFile => config.cacheDirectory == null
+  /// Where the tile address [tileJsonUrl] last answered is kept.
+  String? _templateFile(String tileJsonUrl) => config.cacheDirectory == null
       ? null
-      : '${config.cacheDirectory}/source-${cacheKey(_def.tileJsonUrl!)}.txt';
+      : '${config.cacheDirectory}/source-${cacheKey(tileJsonUrl)}.txt';
 
   /// Starts on the address remembered from the last run, so tiles on disk
   /// show without waiting for the network, and asks the server for the
@@ -125,15 +126,19 @@ class TilePool {
   Future<void> _start() async {
     startError = null;
     try {
-      final direct = _def.geoJson
-          ? 'geojson'
-          : _def.tiles ??
-                (PmTiles.handles(_def.tileJsonUrl) ? _def.tileJsonUrl : null);
-      if (direct != null || _def.tileJsonUrl == null) {
+      final def = _def;
+      final tileJsonUrl = def is TiledSource ? def.tileJsonUrl : null;
+      final direct = switch (def) {
+        GeoJsonSource() => 'geojson',
+        TiledSource(:final tiles?) => tiles,
+        TiledSource() when PmTiles.handles(tileJsonUrl) => tileJsonUrl,
+        TiledSource() => null,
+      };
+      if (direct != null || tileJsonUrl == null) {
         if (direct == null) {
           throw StateError('The source ${_def.name} has no tiles');
         }
-        if (PmTiles.handles(direct) && _def.maxZoom == null) {
+        if (PmTiles.handles(direct) && def.maxZoom == null) {
           final archive = PmTiles(
             direct,
             userAgent: config.userAgent,
@@ -151,7 +156,7 @@ class TilePool {
         _dispatch();
         return;
       }
-      final file = _templateFile;
+      final file = _templateFile(tileJsonUrl);
       String? remembered;
       if (file != null && fileExists(file)) {
         final saved = utf8.decode(await readFile(file)).split('\n');
@@ -167,7 +172,7 @@ class TilePool {
 
       String? current;
       try {
-        current = await _fetchTemplate();
+        current = await _fetchTemplate(tileJsonUrl);
       } catch (_) {
         if (remembered == null) rethrow;
       }
@@ -202,23 +207,24 @@ class TilePool {
   void _use(String template) {
     _store?.client.close();
     _store?.close();
-    _store = _def.geoJson
-        ? null
-        : TileStore(
-            template,
-            cover: _def.cover,
-            folder: TileStore.folderOf(_tilesPrefix, template),
-            client: Net(userAgent: config.userAgent, perHost: 6),
-            cacheDirectory: config.cacheDirectory,
-            extension: '.pbf',
-            headers: config.headers,
-            userAgent: config.userAgent,
-          );
+    _store = switch (_def) {
+      GeoJsonSource() => null,
+      TiledSource(:final cover) => TileStore(
+        template,
+        cover: cover,
+        folder: TileStore.folderOf(_tilesPrefix, template),
+        client: Net(userAgent: config.userAgent, perHost: 6),
+        cacheDirectory: config.cacheDirectory,
+        extension: '.pbf',
+        headers: config.headers,
+        userAgent: config.userAgent,
+      ),
+    };
   }
 
   Future<void> _spawnWorkers(String template) async {
     final workers = await Future.wait([
-      for (var i = 0; i < (_def.geoJson ? 1 : config.workers); i++)
+      for (var i = 0; i < (_def is GeoJsonSource ? 1 : config.workers); i++)
         _spawnWorker(i, template),
     ]);
     if (_closed) {
@@ -259,11 +265,11 @@ class TilePool {
     return worker;
   }
 
-  Future<String> _fetchTemplate() async {
+  Future<String> _fetchTemplate(String tileJsonUrl) async {
     final client = Net(userAgent: config.userAgent);
     try {
       final reply = await client.get(
-        _def.tileJsonUrl!,
+        tileJsonUrl,
         config.headers,
         timeout: const Duration(seconds: 10),
       );
@@ -271,7 +277,7 @@ class TilePool {
       final template = tileTemplate(json['tiles'])!;
       final deepest = json['maxzoom'];
       if (deepest is num) maxZoom = deepest.toInt();
-      final file = _templateFile;
+      final file = _templateFile(tileJsonUrl);
       if (file != null) {
         await writeFile(file, utf8.encode('$template\n$maxZoom'));
       }
@@ -443,7 +449,7 @@ Future<void> tileWorkerMain(
 
   Future<GeoJsonTiles>? geoJson;
   TileStore? store;
-  if (def.geoJson) {
+  if (def is GeoJsonSource) {
     final data = def.data;
     GeoJsonTiles tiles(Object? json) => GeoJsonTiles(
       json,
@@ -460,7 +466,7 @@ Future<void> tileWorkerMain(
         return GeoJsonTiles(null);
       }
     }();
-  } else {
+  } else if (def is TiledSource) {
     store = TileStore(
       setup.template,
       cover: def.cover,

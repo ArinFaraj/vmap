@@ -140,7 +140,9 @@ class StyleCompiler {
     final source = _sourceOf(layer.raw['source']);
     if (source == null) return null;
     final named = layer.raw['source-layer'];
-    if (named is! String && !_vectorSources[source].geoJson) return null;
+    if (named is! String && _vectorSources[source] is! GeoJsonSource) {
+      return null;
+    }
     return _VectorLayer(layer, source, named is String ? named : '');
   }
 
@@ -169,24 +171,30 @@ class StyleCompiler {
           )
         : null;
     _vectorSources.add(
-      VectorSource(
-        name: '$name',
-        geoJson: geoJson,
-        tileJsonUrl: geoJson ? null : from['url'] as String?,
-        tiles: direct,
-        maxZoom: maxZoom,
-        data: data,
-        cluster: cluster,
-        promoteId: from['promoteId'],
-        generateId: from['generateId'] == true,
-        cover: geoJson ? const TileCover() : TileCover.of(from),
-        signature: geoJson
-            ? 'g|${data is String ? data : identityHashCode(data)}'
+      geoJson
+          ? GeoJsonSource(
+              name: '$name',
+              data: data,
+              maxZoom: maxZoom,
+              cluster: cluster,
+              promoteId: from['promoteId'],
+              generateId: from['generateId'] == true,
+              signature:
+                  'g|${data is String ? data : identityHashCode(data)}'
                   '|${cluster?.signature}|${from['promoteId']}'
-                  '|${from['generateId']}'
-            : 'v|${from['url']}|$direct|${from['promoteId']}'
+                  '|${from['generateId']}',
+            )
+          : TiledSource(
+              name: '$name',
+              tileJsonUrl: from['url'] as String?,
+              tiles: direct,
+              maxZoom: maxZoom,
+              promoteId: from['promoteId'],
+              cover: TileCover.of(from),
+              signature:
+                  'v|${from['url']}|$direct|${from['promoteId']}'
                   '|${TileCover.of(from).signature}',
-      ),
+            ),
     );
     return _vectorSources.length - 1;
   });
@@ -216,56 +224,72 @@ class StyleCompiler {
   void _addRaster(_Layer layer) {
     final paint = layer.paint;
     final from = _sources[layer.raw['source']];
-    final relief = layer.type == 'hillshade';
     if (from is! Map) return;
-    final corners = relief || from['type'] != 'image'
+    final adjust = !paint.keys.any(_adjustKeys.contains)
         ? null
-        : _corners(from['coordinates']);
-    if (corners == null && from['type'] != (relief ? 'raster-dem' : 'raster')) {
-      return;
-    }
-    _rasterAt.add(_layers.length);
-    _rasters.add(
-      RasterLayer(
-        tileJsonUrl: corners == null ? from['url'] as String? : null,
-        picture: corners == null ? null : from['url'] as String?,
-        corners: corners,
-        nearest: paint['raster-resampling'] == 'nearest',
-        tiles: tileTemplate(from['tiles']),
-        tileSize: asNumber(from['tileSize']) ?? 512,
-        sourceMaxZoom: asNumber(from['maxzoom'])?.toInt(),
-        cover: TileCover.of(from),
+        : RasterAdjust(
+            hueRotate: compileExpr(paint['raster-hue-rotate'] ?? 0),
+            saturation: compileExpr(paint['raster-saturation'] ?? 0),
+            contrast: compileExpr(paint['raster-contrast'] ?? 0),
+            brightnessMin: compileExpr(paint['raster-brightness-min'] ?? 0),
+            brightnessMax: compileExpr(paint['raster-brightness-max'] ?? 1),
+          );
+    final nearest = paint['raster-resampling'] == 'nearest';
+    final opacity = compileExpr(paint['raster-opacity'] ?? 1);
+    final tileJsonUrl = from['url'] as String?;
+    final tiles = tileTemplate(from['tiles']);
+    final tileSize = asNumber(from['tileSize']) ?? 512;
+    final sourceMaxZoom = asNumber(from['maxzoom'])?.toInt();
+    final RasterLayer? made = switch ((layer.type, from['type'])) {
+      ('raster', 'image') => switch (_corners(from['coordinates'])) {
+        final corners? when tileJsonUrl != null => ImageLayer(
+          minZoom: layer.minZoom,
+          maxZoom: layer.maxZoom,
+          opacity: opacity,
+          picture: tileJsonUrl,
+          corners: corners,
+          nearest: nearest,
+          adjust: adjust,
+        ),
+        _ => null,
+      },
+      ('raster', 'raster') => PictureTileLayer(
         minZoom: layer.minZoom,
         maxZoom: layer.maxZoom,
-        opacity: compileExpr(relief ? 1 : paint['raster-opacity'] ?? 1),
-        adjust: relief || !paint.keys.any(_adjustKeys.contains)
-            ? null
-            : RasterAdjust(
-                hueRotate: compileExpr(paint['raster-hue-rotate'] ?? 0),
-                saturation: compileExpr(paint['raster-saturation'] ?? 0),
-                contrast: compileExpr(paint['raster-contrast'] ?? 0),
-                brightnessMin: compileExpr(paint['raster-brightness-min'] ?? 0),
-                brightnessMax: compileExpr(paint['raster-brightness-max'] ?? 1),
-              ),
-        relief: !relief
-            ? null
-            : ReliefPaint(
-                terrarium: from['encoding'] == 'terrarium',
-                exaggeration: compileExpr(
-                  paint['hillshade-exaggeration'] ?? 0.5,
-                ),
-                shadow: compileExpr(
-                  paint['hillshade-shadow-color'] ?? '#000000',
-                ),
-                highlight: compileExpr(
-                  paint['hillshade-highlight-color'] ?? '#ffffff',
-                ),
-                accent: _maybe(paint['hillshade-accent-color']),
-                direction:
-                    asNumber(paint['hillshade-illumination-direction']) ?? 335,
-              ),
+        opacity: opacity,
+        tileJsonUrl: tileJsonUrl,
+        tiles: tiles,
+        tileSize: tileSize,
+        sourceMaxZoom: sourceMaxZoom,
+        cover: TileCover.of(from),
+        nearest: nearest,
+        adjust: adjust,
       ),
-    );
+      ('hillshade', 'raster-dem') => HillshadeLayer(
+        minZoom: layer.minZoom,
+        maxZoom: layer.maxZoom,
+        opacity: compileExpr(1),
+        tileJsonUrl: tileJsonUrl,
+        tiles: tiles,
+        tileSize: tileSize,
+        sourceMaxZoom: sourceMaxZoom,
+        cover: TileCover.of(from),
+        relief: ReliefPaint(
+          terrarium: from['encoding'] == 'terrarium',
+          exaggeration: compileExpr(paint['hillshade-exaggeration'] ?? 0.5),
+          shadow: compileExpr(paint['hillshade-shadow-color'] ?? '#000000'),
+          highlight: compileExpr(
+            paint['hillshade-highlight-color'] ?? '#ffffff',
+          ),
+          accent: _maybe(paint['hillshade-accent-color']),
+          direction: asNumber(paint['hillshade-illumination-direction']) ?? 335,
+        ),
+      ),
+      _ => null,
+    };
+    if (made == null) return;
+    _rasterAt.add(_layers.length);
+    _rasters.add(made);
   }
 
   static const _symbolPaintReads = [

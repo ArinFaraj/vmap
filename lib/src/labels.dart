@@ -110,37 +110,22 @@ class LabelCandidate {
 /// A label drawn once, shared by every label with the same text and class:
 /// into an image, or where [directLabels] is set as a recording of its text
 /// that is played every frame.
-class _Sprite {
+/// A label's text drawn once, to be placed every frame.
+sealed class _Sprite {
   _Sprite(
-    this.image,
     this.width,
     this.height,
     this.textWidth,
     this.textHeight,
-    this.fontSize, {
-    this.picture,
-    this.paragraphs = const [],
-  });
-
-  final ui.Image? image;
-  final ui.Picture? picture;
-
-  /// The text [picture] plays, kept for as long as it is.
-  final List<ui.Paragraph> paragraphs;
+    this.fontSize,
+  );
 
   /// The size of what is drawn in its own units: the image's pixels, or the
   /// logical pixels of the recording.
-  double get pixelW => image?.width.toDouble() ?? width;
-  double get pixelH => image?.height.toDouble() ?? height;
+  double get pixelW;
+  double get pixelH;
 
-  void dispose() {
-    dropped = true;
-    image?.dispose();
-    picture?.dispose();
-    for (final paragraph in paragraphs) {
-      paragraph.dispose();
-    }
-  }
+  void dispose() => dropped = true;
 
   /// The size the text was drawn at. The image is scaled while the label's
   /// size stays close to it.
@@ -153,6 +138,65 @@ class _Sprite {
 
   /// Evicted from the cache; its image is gone.
   bool dropped = false;
+}
+
+/// Text turned into an image, which can be cut into strips along a road.
+final class _ImageSprite extends _Sprite {
+  _ImageSprite(
+    this.image,
+    super.width,
+    super.height,
+    super.textWidth,
+    super.textHeight,
+    super.fontSize,
+  );
+
+  final ui.Image image;
+
+  @override
+  double get pixelW => image.width.toDouble();
+
+  @override
+  double get pixelH => image.height.toDouble();
+
+  @override
+  void dispose() {
+    super.dispose();
+    image.dispose();
+  }
+}
+
+/// Text kept as a recording, played back sharp at any size.
+final class _PictureSprite extends _Sprite {
+  _PictureSprite(
+    this.picture,
+    this.paragraphs,
+    super.width,
+    super.height,
+    super.textWidth,
+    super.textHeight,
+    super.fontSize,
+  );
+
+  final ui.Picture picture;
+
+  /// The text [picture] plays, kept for as long as it is.
+  final List<ui.Paragraph> paragraphs;
+
+  @override
+  double get pixelW => width;
+
+  @override
+  double get pixelH => height;
+
+  @override
+  void dispose() {
+    super.dispose();
+    picture.dispose();
+    for (final paragraph in paragraphs) {
+      paragraph.dispose();
+    }
+  }
 }
 
 class _LabelState {
@@ -693,12 +737,10 @@ class LabelEngine {
       }
       _imagePaint.colorFilter = null;
       if (sprite == null || !wantsText) continue;
-      final image = sprite.image;
-      final picture = sprite.picture;
       final pixelW = sprite.pixelW;
       final pixelH = sprite.pixelH;
       _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
-      if (st.curve != null) {
+      if (sprite case _ImageSprite(:final image) when st.curve != null) {
         final textW = sprite.textWidth * st.scale;
         final n = _stripCount(textW, sprite.textHeight * st.scale);
         final strips = _layStrips(st, n, textW / n / world);
@@ -728,7 +770,7 @@ class LabelEngine {
           rects[j * 4 + 3] = pixelH;
         }
         canvas.drawRawAtlas(
-          image!,
+          image,
           transforms,
           rects,
           null,
@@ -744,7 +786,7 @@ class LabelEngine {
       final turn = st.screenAngle;
       final w = sprite.width * st.scale;
       final h = sprite.height * st.scale;
-      if (picture != null) {
+      if (sprite case _PictureSprite(:final picture)) {
         canvas.save();
         if (turn == 0) {
           canvas.translate(
@@ -772,6 +814,7 @@ class LabelEngine {
         canvas.restore();
         continue;
       }
+      final image = (sprite as _ImageSprite).image;
       final source = ui.Rect.fromLTWH(0, 0, pixelW, pixelH);
       if (turn == 0) {
         final left =
@@ -781,7 +824,7 @@ class LabelEngine {
             ((sy - h / 2) * devicePixelRatio).roundToDouble() /
             devicePixelRatio;
         canvas.drawImageRect(
-          image!,
+          image,
           source,
           ui.Rect.fromLTWH(left, top, w, h),
           _imagePaint,
@@ -792,7 +835,7 @@ class LabelEngine {
           ..translate(sx, sy)
           ..rotate(turn)
           ..drawImageRect(
-            image!,
+            image,
             source,
             ui.Rect.fromLTWH(-w / 2, -h / 2, w, h),
             _imagePaint,
@@ -1607,15 +1650,14 @@ class LabelEngine {
       final canvas = ui.Canvas(recorder);
       if (outline != null) canvas.drawParagraph(outline, at);
       canvas.drawParagraph(paragraph, at);
-      final sprite = _Sprite(
-        null,
+      final sprite = _PictureSprite(
+        recorder.endRecording(),
+        [paragraph, ?outline],
         textW + _haloPad * 2,
         textH + _haloPad * 2,
         textW,
         textH,
         fontSize,
-        picture: recorder.endRecording(),
-        paragraphs: [paragraph, ?outline],
       )..usedPass = _pass;
       _sprites.remove(st.candidate.spriteKey)?.dispose();
       return _sprites[st.candidate.spriteKey] = sprite;
@@ -1652,7 +1694,7 @@ class LabelEngine {
     final image = picture.toImageSync(pixelW, pixelH);
     imageMicrosTotal += _clock.elapsedMicroseconds - imageStart;
     imagesTotal++;
-    final sprite = _Sprite(
+    final sprite = _ImageSprite(
       image,
       pixelW / dpr,
       pixelH / dpr,

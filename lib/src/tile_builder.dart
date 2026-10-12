@@ -287,7 +287,7 @@ class TileBuilder {
       if (buckets.isEmpty && symbols.isEmpty) continue;
       final scale = tileExtent / layer.extent;
       final from = source < sheet.sources.length ? sheet.sources[source] : null;
-      final idKey = from == null || from.geoJson
+      final idKey = from == null || from is GeoJsonSource
           ? null
           : from.idKey(layer.name);
       for (final f in layer.features) {

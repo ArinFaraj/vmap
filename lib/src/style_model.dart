@@ -534,42 +534,25 @@ class TileCover {
   String get signature => '$minZoom|${bounds?.join(',')}|$tms';
 }
 
-class VectorSource {
+/// A source of vector features: tiles, or GeoJSON the package cuts into
+/// tiles.
+sealed class VectorSource {
   VectorSource({
     required this.name,
-    required this.geoJson,
-    required this.tileJsonUrl,
-    required this.tiles,
-    required this.maxZoom,
-    required this.data,
     required this.signature,
-    this.cluster,
+    this.maxZoom,
     this.promoteId,
-    this.generateId = false,
-    this.cover = const TileCover(),
   });
 
   final String name;
-  final bool geoJson;
-  final TileCover cover;
-
-  /// A TileJSON address, or the tile address itself.
-  final String? tileJsonUrl;
-  final String? tiles;
   final int? maxZoom;
 
-  /// A GeoJSON document, or the address of one.
-  final Object? data;
-
-  /// Set when a GeoJSON source asks for its points to be clustered.
-  final ClusterOptions? cluster;
+  /// The deepest zoom there are tiles for when the style does not say.
+  int get defaultMaxZoom;
 
   /// The source's `promoteId`: the property used as a feature's id, as one
   /// name or as a name per source layer.
   final Object? promoteId;
-
-  /// A GeoJSON source numbers its features in order, as `generateId` asks.
-  final bool generateId;
 
   /// The property that is the id of the features in [sourceLayer], or null
   /// when they keep the id they come with.
@@ -581,6 +564,52 @@ class VectorSource {
 
   /// Equal for two sources that give the same tiles.
   final String signature;
+}
+
+final class GeoJsonSource extends VectorSource {
+  GeoJsonSource({
+    required super.name,
+    required super.signature,
+    required this.data,
+    super.maxZoom,
+    super.promoteId,
+    this.cluster,
+    this.generateId = false,
+  });
+
+  /// A GeoJSON document, or the address of one.
+  final Object? data;
+
+  /// Set when the source asks for its points to be clustered.
+  final ClusterOptions? cluster;
+
+  /// The features are numbered in order, as `generateId` asks.
+  final bool generateId;
+
+  @override
+  int get defaultMaxZoom => 18;
+}
+
+final class TiledSource extends VectorSource {
+  TiledSource({
+    required super.name,
+    required super.signature,
+    this.tileJsonUrl,
+    this.tiles,
+    super.maxZoom,
+    super.promoteId,
+    this.cover = const TileCover(),
+  });
+
+  /// A TileJSON address, or a `pmtiles://` archive.
+  final String? tileJsonUrl;
+
+  /// The tile addresses, when the style lists them itself.
+  final String? tiles;
+  final TileCover cover;
+
+  @override
+  int get defaultMaxZoom => 14;
 }
 
 /// A stretch of the style drawn in one go: one raster layer, or consecutive

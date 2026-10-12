@@ -20,16 +20,17 @@ StyleSheet _sheet(
 
 void main() {
   test('an image source is one picture held by its four corners', () {
-    final layer = _sheet([
-      [-180, 85.0511],
-      [0, 85.0511],
-      [0, 0],
-      [-180, 0],
-    ]).rasters.single;
+    final layer =
+        _sheet([
+              [-180, 85.0511],
+              [0, 85.0511],
+              [0, 0],
+              [-180, 0],
+            ]).rasters.single
+            as ImageLayer;
     expect(layer.picture, 'https://example.org/scan.png');
-    expect(layer.tileJsonUrl, isNull);
     expect(layer.nearest, isFalse);
-    final corners = layer.corners!;
+    final corners = layer.corners;
     const want = [0, 0, 0.5, 0, 0.5, 0.5, 0, 0.5];
     for (var i = 0; i < 8; i++) {
       expect(corners[i], closeTo(want[i], 1e-5), reason: 'number $i');
@@ -48,15 +49,17 @@ void main() {
   });
 
   test('raster-resampling nearest keeps the pixels square', () {
-    final layer = _sheet(
-      [
-        [0, 1],
-        [1, 1],
-        [1, 0],
-        [0, 0],
-      ],
-      {'raster-resampling': 'nearest'},
-    ).rasters.single;
+    final layer =
+        _sheet(
+              [
+                [0, 1],
+                [1, 1],
+                [1, 0],
+                [0, 0],
+              ],
+              {'raster-resampling': 'nearest'},
+            ).rasters.single
+            as ImageLayer;
     expect(layer.nearest, isTrue);
   });
 }

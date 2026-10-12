@@ -209,7 +209,10 @@ void main() {
 
     test('layers that select the same features share one mesh', () {
       final sheet = StyleSheet.compile(style);
-      expect(sheet.sources.single.tileJsonUrl, 'https://example.org/planet');
+      expect(
+        (sheet.sources.single as TiledSource).tileJsonUrl,
+        'https://example.org/planet',
+      );
       expect(sheet.layers, hasLength(3));
       expect(sheet.buckets, hasLength(2));
       expect(sheet.layers[0].bucket, sheet.layers[1].bucket);
@@ -345,8 +348,9 @@ void main() {
           },
         },
       ]);
-      expect(sheet.rasters.single.tiles, contains('relief'));
-      expect(sheet.rasters.single.sourceMaxZoom, 6);
+      final relief = sheet.rasters.single as TiledRasterLayer;
+      expect(relief.tiles, contains('relief'));
+      expect(relief.sourceMaxZoom, 6);
       expect(sheet.layers[0].pattern!(at(12)), 'wetland');
       final circle = sheet.layers[1] as CircleLayer;
       expect(circle.width(at(12)), 8);

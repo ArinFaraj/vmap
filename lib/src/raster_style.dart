@@ -132,46 +132,114 @@ List<double> rasterColorMatrix(
   ];
 }
 
-/// A layer of picture tiles.
-class RasterLayer {
+/// A layer drawn from pictures: the one picture of an `image` source, or
+/// picture tiles, or tiles of heights shaded as a hillshade.
+sealed class RasterLayer {
   RasterLayer({
-    required this.tileJsonUrl,
-    required this.tiles,
-    required this.tileSize,
-    required this.sourceMaxZoom,
     required this.minZoom,
     required this.maxZoom,
     required this.opacity,
-    this.relief,
-    this.adjust,
-    this.cover = const TileCover(),
-    this.picture,
-    this.corners,
-    this.nearest = false,
   });
 
-  final TileCover cover;
+  final double minZoom;
+  final double maxZoom;
+  final Expr opacity;
 
-  /// For an `image` source: the address of its one picture, and where the
-  /// picture's corners sit as x,y pairs in a world one unit wide, from the
-  /// top left clockwise.
-  final String? picture;
-  final Float64List? corners;
+  /// Equal for two layers drawn from the same pictures the same way.
+  String get signature;
+}
+
+final class ImageLayer extends RasterLayer {
+  ImageLayer({
+    required super.minZoom,
+    required super.maxZoom,
+    required super.opacity,
+    required this.picture,
+    required this.corners,
+    this.nearest = false,
+    this.adjust,
+  });
+
+  /// The address of the picture.
+  final String picture;
+
+  /// Where the picture's corners sit as x,y pairs in a world one unit wide,
+  /// from the top left clockwise.
+  final Float64List corners;
 
   /// `raster-resampling` nearest: a picture drawn larger than it is shows
   /// its pixels as squares instead of being smoothed.
   final bool nearest;
 
-  /// Set for a hillshade layer, whose tiles hold heights to be shaded.
-  final ReliefPaint? relief;
-
-  /// Set when the layer changes the colours of its pictures.
+  /// Set when the layer changes the colours of its picture.
   final RasterAdjust? adjust;
+
+  @override
+  String get signature => 'image|$picture';
+}
+
+/// A layer drawn from tiles.
+sealed class TiledRasterLayer extends RasterLayer {
+  TiledRasterLayer({
+    required super.minZoom,
+    required super.maxZoom,
+    required super.opacity,
+    required this.tileJsonUrl,
+    required this.tiles,
+    required this.tileSize,
+    required this.sourceMaxZoom,
+    this.cover = const TileCover(),
+  });
+
+  /// A TileJSON address, or a `pmtiles://` archive.
   final String? tileJsonUrl;
+
+  /// The tile addresses, when the style lists them itself.
   final String? tiles;
   final double tileSize;
   final int? sourceMaxZoom;
-  final double minZoom;
-  final double maxZoom;
-  final Expr opacity;
+  final TileCover cover;
+
+  @override
+  String get signature =>
+      '$runtimeType|$tileJsonUrl|$tiles|$tileSize|${cover.signature}';
+}
+
+final class PictureTileLayer extends TiledRasterLayer {
+  PictureTileLayer({
+    required super.minZoom,
+    required super.maxZoom,
+    required super.opacity,
+    required super.tileJsonUrl,
+    required super.tiles,
+    required super.tileSize,
+    required super.sourceMaxZoom,
+    super.cover,
+    this.nearest = false,
+    this.adjust,
+  });
+
+  /// `raster-resampling` nearest: tiles drawn larger than they are show
+  /// their pixels as squares instead of being smoothed.
+  final bool nearest;
+
+  /// Set when the layer changes the colours of its tiles.
+  final RasterAdjust? adjust;
+}
+
+/// Tiles of heights, shaded as light falling on the ground.
+final class HillshadeLayer extends TiledRasterLayer {
+  HillshadeLayer({
+    required super.minZoom,
+    required super.maxZoom,
+    required super.opacity,
+    required super.tileJsonUrl,
+    required super.tiles,
+    required super.tileSize,
+    required super.sourceMaxZoom,
+    required this.relief,
+    super.cover,
+  });
+
+  final ReliefPaint relief;
 }

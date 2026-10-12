@@ -51,9 +51,14 @@ void main() {
         },
       ],
     });
-    expect(sheet.sources.single.cover.minZoom, 5);
-    expect(sheet.sources.single.cover.tms, isTrue);
-    expect(sheet.rasters.single.cover.bounds, [42, 34, 47, 38]);
+    expect((sheet.sources.single as TiledSource).cover.minZoom, 5);
+    expect((sheet.sources.single as TiledSource).cover.tms, isTrue);
+    expect((sheet.rasters.single as TiledRasterLayer).cover.bounds, [
+      42,
+      34,
+      47,
+      38,
+    ]);
     expect(sheet.attributions, ['Roads by us']);
   });
 }

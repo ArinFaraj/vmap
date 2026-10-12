@@ -112,7 +112,7 @@ void main() {
         {'id': 'dots', 'type': 'circle', 'source': 'mine'},
       ],
     });
-    final options = sheet.sources.single.cluster!;
+    final options = (sheet.sources.single as GeoJsonSource).cluster!;
     expect(options.radius, 30);
     expect(options.maxZoom, 12);
     expect(options.minPoints, 2);
@@ -178,6 +178,8 @@ void main() {
         {'id': 'dots', 'type': 'circle', 'source': 'mine'},
       ],
     });
-    expect(sheet.sources.single.cluster!.properties.keys, ['most']);
+    expect((sheet.sources.single as GeoJsonSource).cluster!.properties.keys, [
+      'most',
+    ]);
   });
 }

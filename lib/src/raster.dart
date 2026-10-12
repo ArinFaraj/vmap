@@ -41,30 +41,54 @@ class RasterTiles {
     required this.onLoaded,
     this.headers = const {},
     this.onError,
-  }) : _template =
-           layer.tiles ??
-           (PmTiles.handles(layer.tileJsonUrl) ? layer.tileJsonUrl : null),
-       _maxZoom = layer.sourceMaxZoom ?? 22 {
-    if (_template case final template?) _use(template);
-    if (_store?.archive case final archive?) {
-      if (layer.sourceMaxZoom == null) {
-        archive.maxZoom.then((deepest) {
-          _maxZoom = deepest;
-          if (!_closed) onLoaded();
-        }, onError: (_) {});
-      }
-    } else if (layer.picture != null) {
-      _loadPicture();
-    } else if (_template == null && layer.tileJsonUrl != null) {
-      _resolve();
+  }) : _maxZoom = switch (layer) {
+         TiledRasterLayer(:final sourceMaxZoom?) => sourceMaxZoom,
+         _ => 22,
+       } {
+    switch (layer) {
+      case ImageLayer(:final picture):
+        _loadPicture(picture);
+      case TiledRasterLayer(:final tiles?, :final cover):
+        _use(tiles, cover);
+      case TiledRasterLayer(
+            :final tileJsonUrl?,
+            :final cover,
+            :final sourceMaxZoom,
+          )
+          when PmTiles.handles(tileJsonUrl):
+        _use(tileJsonUrl, cover);
+        if (sourceMaxZoom == null) {
+          _store!.archive!.maxZoom.then((deepest) {
+            _maxZoom = deepest;
+            if (!_closed) onLoaded();
+          }, onError: (_) {});
+        }
+      case TiledRasterLayer(:final tileJsonUrl?, :final cover):
+        _resolve(tileJsonUrl, cover);
+      case TiledRasterLayer():
+        break;
     }
   }
+
+  ReliefPaint? get _relief => switch (layer) {
+    HillshadeLayer(:final relief) => relief,
+    _ => null,
+  };
+
+  bool get _nearest => switch (layer) {
+    ImageLayer(:final nearest) || PictureTileLayer(:final nearest) => nearest,
+    HillshadeLayer() => false,
+  };
+
+  RasterAdjust? get _adjust => switch (layer) {
+    ImageLayer(:final adjust) || PictureTileLayer(:final adjust) => adjust,
+    HillshadeLayer() => null,
+  };
 
   ui.Image? _picture;
   ui.ImageShader? _pictureShader;
 
-  Future<void> _loadPicture() async {
-    final url = layer.picture!;
+  Future<void> _loadPicture(String url) async {
     try {
       final reply = await _client.get(
         url,
@@ -86,9 +110,7 @@ class RasterTiles {
           ..[5] = 1
           ..[10] = 1
           ..[15] = 1,
-        filterQuality: layer.nearest
-            ? ui.FilterQuality.none
-            : ui.FilterQuality.low,
+        filterQuality: _nearest ? ui.FilterQuality.none : ui.FilterQuality.low,
       );
       onLoaded();
     } catch (e) {
@@ -104,8 +126,9 @@ class RasterTiles {
     ui.Offset origin,
     ui.Size size,
   ) {
-    final image = _picture, corners = layer.corners;
-    if (image == null || corners == null) return;
+    final image = _picture, shown = layer;
+    if (image == null || shown is! ImageLayer) return;
+    final corners = shown.corners;
     final world = 256.0 * math.pow(2, zoom);
     final w = image.width.toDouble(), h = image.height.toDouble();
     final first = (origin.dx / world).floor() - 1;
@@ -156,17 +179,19 @@ class RasterTiles {
   int _frame = 0;
   bool _closed = false;
 
-  Future<void> _resolve() async {
+  Future<void> _resolve(String tileJsonUrl, TileCover cover) async {
     try {
       final reply = await _client.get(
-        layer.tileJsonUrl!,
+        tileJsonUrl,
         headers,
         timeout: const Duration(seconds: 10),
       );
       final json = jsonDecode(utf8.decode(reply.bytes)) as Map<String, dynamic>;
       final deepest = json['maxzoom'];
       if (deepest is num) _maxZoom = deepest.toInt();
-      if (tileTemplate(json['tiles']) case final template?) _use(template);
+      if (tileTemplate(json['tiles']) case final template?) {
+        _use(template, cover);
+      }
       if (!_closed) onLoaded();
     } catch (e) {
       if (!_closed) onError?.call(e);
@@ -174,18 +199,20 @@ class RasterTiles {
   }
 
   /// The zoom of the tiles drawn at map zoom [zoom].
-  int tileZoom(double zoom) =>
-      (zoom + math.log(256 / layer.tileSize) / math.ln2).round().clamp(
-        0,
-        _maxZoom,
-      );
+  int tileZoom(double zoom) {
+    final size = switch (layer) {
+      TiledRasterLayer(:final tileSize) => tileSize,
+      ImageLayer() => 512.0,
+    };
+    return (zoom + math.log(256 / size) / math.ln2).round().clamp(0, _maxZoom);
+  }
 
-  void _use(String template) {
+  void _use(String template, TileCover cover) {
     _template = template;
     _store?.close();
     _store = TileStore(
       template,
-      cover: layer.cover,
+      cover: cover,
       folder: TileStore.folderOf('raster', template),
       client: _client,
       cacheDirectory: cacheDirectory,
@@ -212,11 +239,11 @@ class RasterTiles {
     if (styleZoom < layer.minZoom || styleZoom >= layer.maxZoom) return;
     final opacity = (asNumber(layer.opacity(context)) ?? 1).clamp(0.0, 1.0);
     if (opacity <= 0) return;
-    if (layer.picture != null) {
+    if (layer is ImageLayer) {
       _paint
         ..color = ui.Color.fromRGBO(255, 255, 255, opacity)
         ..isAntiAlias = true
-        ..colorFilter = layer.adjust?.filter(context);
+        ..colorFilter = _adjust?.filter(context);
       return _paintPicture(canvas, zoom, origin, size);
     }
     if (_template == null) return;
@@ -232,15 +259,13 @@ class RasterTiles {
     // them. See-through shading would be twice as dark in the lap, so its
     // tiles share their edges exactly, drawn without anti-aliasing so every
     // pixel belongs to one tile.
-    final shaded = layer.relief != null;
+    final shaded = layer is HillshadeLayer;
     final lap = shaded ? 0.0 : 0.5;
     _paint
-      ..filterQuality = layer.nearest
-          ? ui.FilterQuality.none
-          : ui.FilterQuality.low
+      ..filterQuality = _nearest ? ui.FilterQuality.none : ui.FilterQuality.low
       ..color = ui.Color.fromRGBO(255, 255, 255, opacity)
       ..isAntiAlias = !shaded
-      ..colorFilter = layer.adjust?.filter(context);
+      ..colorFilter = _adjust?.filter(context);
     for (var y = y0; y <= y1; y++) {
       for (var x = x0; x <= x1; x++) {
         final key = tileKey(z, x % n, y);
@@ -280,7 +305,7 @@ class RasterTiles {
 
   Future<void> _load(_RasterTile tile, int z, int x, int y) async {
     if (tile.loading || _loading >= _maxLoading) return;
-    if (!layer.cover.has(z, x, y)) return;
+    if (!(_store?.cover.has(z, x, y) ?? false)) return;
     if (tile.failedAtMs >= 0 &&
         _clock.elapsedMilliseconds - tile.failedAtMs < 5000) {
       return;
@@ -294,7 +319,7 @@ class RasterTiles {
       final frame = await codec.getNextFrame();
       codec.dispose();
       final image = frame.image;
-      if (layer.relief != null) {
+      if (layer is HillshadeLayer) {
         final data = await image.toByteData();
         tile
           ..pixels = data!.buffer.asUint8List()
@@ -374,7 +399,7 @@ class RasterTiles {
     try {
       do {
         tile.shadeAgain = false;
-        final relief = layer.relief;
+        final relief = _relief;
         final pixels = tile.pixels;
         if (relief == null || pixels == null) return;
         final n = 1 << z;

@@ -366,10 +366,7 @@ class VmapEngine extends ChangeNotifier {
       zoomOffset: from.zoomOffset,
     );
     final sameShape = _sheet != null && _sheet!.shape == sheet.shape;
-    final rasterKey = [
-      for (final r in sheet.rasters)
-        '${r.tileJsonUrl}|${r.tiles}|${r.tileSize}|${r.picture}',
-    ].join('\n');
+    final rasterKey = [for (final r in sheet.rasters) r.signature].join('\n');
     final rasters = _sheet == null || rasterKey != _rasterKey;
     _rasterKey = rasterKey;
     _sheet = sheet;
@@ -709,7 +706,10 @@ class VmapEngine extends ChangeNotifier {
 
   TilePool? _clustered(String source) {
     for (final s in _sources) {
-      if (s.def.name == source && s.def.cluster != null) return s.pool;
+      if (s.def case GeoJsonSource(:final name, cluster: _?)
+          when name == source) {
+        return s.pool;
+      }
     }
     return null;
   }
