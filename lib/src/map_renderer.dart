@@ -6,9 +6,9 @@ import 'style_model.dart';
 import 'tiles.dart' show TileDraw;
 import 'view.dart';
 
-/// Draws a tilted map's fill and line layers and its buildings in place of
-/// the canvas, from each tile's GPU stream. Labels, icons and raster
-/// layers stay on the canvas.
+/// Draws the map's fill, line and circle layers and its buildings in place
+/// of the canvas, from each tile's GPU stream, flat or tilted, whenever the
+/// camera has a view. Labels, icons and raster layers stay on the canvas.
 abstract class MapRenderer {
   /// Whether it draws [sheet]'s layers in the right order; when it does
   /// not, the canvas draws the map.
