@@ -129,6 +129,9 @@ class LabelState {
   /// The label's size now over the size its image was drawn at.
   double scale = 1;
 
+  /// How much a tilted map shrinks the label where it stands.
+  double perspective = 1;
+
   /// The image is too far from the label's size and wants drawing again.
   bool resize = false;
 

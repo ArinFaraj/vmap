@@ -10,6 +10,7 @@ import 'text_style.dart';
 import 'label_sprites.dart';
 import 'label_state.dart';
 import 'label_view.dart';
+import 'view.dart';
 import 'pins.dart';
 import 'point_labels.dart';
 import 'road_labels.dart';
@@ -172,6 +173,7 @@ class LabelEngine {
   }
 
   double _placedRotation = 0;
+  double _placedTilt = 0;
 
   /// While the zoom is changing a label's image is stretched further before
   /// it is drawn again, and sharpened once the zoom rests.
@@ -213,10 +215,19 @@ class LabelEngine {
     required double dt,
     required int rasterBudgetMicros,
     required bool zooming,
+    MapView? view,
   }) {
     lastPlaceMicros = 0;
+    if (view != null) rotation = 0;
     final world = 256.0 * math.pow(2, zoom);
-    _view.frame(rotation: rotation, size: size, world: world, origin: origin);
+    _view.frame(
+      rotation: rotation,
+      size: size,
+      world: world,
+      origin: origin,
+      tilted: view,
+    );
+    final tilt = view == null ? 0.0 : view.pitch * 1000 + view.bearing;
     if (_zooming && !zooming) _placeAgain = true;
     _zooming = zooming;
     final nowMs = _clock.elapsedMilliseconds;
@@ -224,6 +235,7 @@ class LabelEngine {
         zoom != _placedZoom ||
         origin != _placedOrigin ||
         rotation != _placedRotation ||
+        tilt != _placedTilt ||
         sourcesKey != _placedSourcesKey;
     var pending = false;
     if (moved || _placeAgain) {
@@ -239,6 +251,7 @@ class LabelEngine {
         _placedZoom = zoom;
         _placedOrigin = origin;
         _placedRotation = rotation;
+        _placedTilt = tilt;
         _placedSourcesKey = sourcesKey;
       } else {
         pending = true;
@@ -345,6 +358,10 @@ class LabelEngine {
     return animating;
   }
 
+  /// Labels a tilted map would shrink below this are left out, as MapLibre
+  /// does (`collision_index.ts`, `perspectiveRatioCutoff`).
+  static const _perspectiveCutoff = 0.6;
+
   /// Decides which labels show for this camera. Labels without an image yet
   /// are placed by an estimated size and drawn once rasterized.
   void _place(
@@ -365,6 +382,10 @@ class LabelEngine {
         _view.project(c.worldX, c.worldY);
         final sx = _view.x;
         final sy = _view.y;
+        if (_view.ratio < _perspectiveCutoff) continue;
+        if (_view.tilted != null && c is TileLabel && c.tile.line != null) {
+          continue;
+        }
         if (sx < -margin ||
             sy < -margin ||
             sx > size.width + margin ||
@@ -375,6 +396,7 @@ class LabelEngine {
         if (st.seenPass == _pass) continue;
         st
           ..seenPass = _pass
+          ..perspective = _view.ratio
           ..candidate = c
           ..sortKey = c.rank - (st.placed ? 45 : 0);
         states.add(st);
@@ -398,7 +420,7 @@ class LabelEngine {
       final layer = _symbolOf(c);
       final textPad = layer?.textPadding ?? CollisionBoxes.defaultPad;
       final iconPad = layer?.iconPadding ?? CollisionBoxes.defaultPad;
-      final fontSize = _size(c, styleZoom);
+      final fontSize = _size(c, styleZoom) * st.perspective;
       if (layer != null &&
           c is TileLabel &&
           c.tile.props != null &&
@@ -552,7 +574,7 @@ class LabelEngine {
     final symbol = _symbolOf(c);
     _context.zoom = styleZoom;
     _bind(c);
-    final fontSize = _size(c, styleZoom);
+    final fontSize = _size(c, styleZoom) * st.perspective;
     final isRoad = c is TileLabel && c.tile.line != null;
     final label = symbol?.uppercase ?? false ? c.text.toUpperCase() : c.text;
     final dark =

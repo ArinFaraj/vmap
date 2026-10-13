@@ -734,7 +734,7 @@ class VmapEngine extends ChangeNotifier {
 
     var animating = false;
     final labelsStarted = _clock.elapsedMicroseconds;
-    if (showLabels && view == null) {
+    if (showLabels) {
       final shown = [
         for (final s in _sources) ...[...s.ideal, ...s.fallback],
       ];
@@ -758,6 +758,7 @@ class VmapEngine extends ChangeNotifier {
         dt: dt,
         rasterBudgetMicros: _budget.spent > 1000 ? 1 : _labelBudgetMicros,
         zooming: _budget.zooming,
+        view: view,
       );
     }
     final finished = _clock.elapsedMicroseconds;

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'expr.dart';
+import 'view.dart';
 
 /// Where points of the world land on the screen for one frame, with the
 /// map's rotation undone so labels can be laid out upright.
@@ -19,16 +20,24 @@ class LabelView {
   double world = 256;
   ui.Offset origin = ui.Offset.zero;
 
-  /// Where [project] put the last point.
+  /// Set when the map is tilted: points are projected through it, and the
+  /// frame is already upright.
+  MapView? tilted;
+
+  /// Where [project] put the last point, and the label scale there: 1 on a
+  /// flat map, less farther from a tilted camera.
   double x = 0;
   double y = 0;
+  double ratio = 1;
 
   void frame({
     required double rotation,
     required ui.Size size,
     required double world,
     required ui.Offset origin,
+    MapView? tilted,
   }) {
+    this.tilted = tilted;
     this.rotation = rotation;
     cos = math.cos(rotation);
     sin = math.sin(rotation);
@@ -41,6 +50,16 @@ class LabelView {
   /// Sets [x] and [y] to where the point [wx], [wy] of the world, in
   /// fractions of it, is on the upright screen.
   void project(double wx, double wy) {
+    final view = tilted;
+    if (view != null) {
+      final gx = wx * view.worldSize, gy = wy * view.worldSize;
+      final p = view.project(gx, gy);
+      x = p.x;
+      y = p.y;
+      ratio = view.perspectiveRatio(gx, gy);
+      return;
+    }
+    ratio = 1;
     final px = wx * world - origin.dx;
     final py = wy * world - origin.dy;
     if (rotation == 0) {

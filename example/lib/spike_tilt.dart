@@ -26,7 +26,6 @@ class _TiltState extends State<_Tilt> {
     style: _styleName.isEmpty
         ? const VmapStyle.builtIn()
         : VmapStyle.url('https://tiles.openfreemap.org/styles/$_styleName'),
-    showLabels: false,
     maxCachedTiles: 400,
   );
   double pitch = 0;
