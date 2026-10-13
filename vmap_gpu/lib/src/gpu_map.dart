@@ -290,14 +290,14 @@ class GpuMap implements MapRenderer {
   };
 
   /// Past three quarters of the heap's cap, lets the tiles drawn longest
-  /// ago, and not in the last two seconds, give their memory back; such a
+  /// ago, and not in the last ten seconds, give their memory back; such a
   /// tile is sent again if it shows again, a tile standing in meanwhile.
   void _trim() {
     _held.removeWhere((data) => !identical(data.tile.rendererData, data));
     if (_heap.used <= GpuHeap.capBytes * 3 ~/ 4) return;
     final idle = [
       for (final data in _held)
-        if (_frame - data.drawnFrame > 240) data,
+        if (_frame - data.drawnFrame > 1200) data,
     ]..sort((a, b) => a.drawnFrame - b.drawnFrame);
     for (final data in idle) {
       if (_heap.used <= GpuHeap.capBytes ~/ 2) break;
@@ -550,7 +550,7 @@ class GpuMap implements MapRenderer {
     if (!_reveal.shows(layer)) return 0;
     for (final b in data.buildings) {
       if (b.extrusion.bucket != layer.bucket) continue;
-      return _reveal.motion(d.tile.id, layer, b).$2;
+      return _reveal.motion(d.tile, layer, b).$2;
     }
     return 0;
   }
@@ -881,7 +881,7 @@ class _MapPass {
         if (data == null) continue;
         for (final b in data.buildings) {
           if (b.extrusion.bucket != layer.bucket) continue;
-          final (fade, grow) = map._reveal.motion(d.tile.id, layer, b);
+          final (fade, grow) = map._reveal.motion(d.tile, layer, b);
           final scale = d.size / tileExtent;
           map._times(_clip, scale, perMetre, d.left, d.top, fade, grow);
           _pass

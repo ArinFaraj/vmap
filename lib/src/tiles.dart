@@ -1,3 +1,4 @@
+import 'dart:developer' show Timeline;
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -187,6 +188,10 @@ class LoadedTile {
     if (renderer != null && !renderer.upload(this, clock, deadline)) return;
     _built = null;
     _step = -1;
+    Timeline.instantSync(
+      'vmap.tile.ready',
+      arguments: {'id': '${id.z}/${id.x}/${id.y}'},
+    );
   }
 
   /// Opens a ready tile to a renderer's upload: one made ready for the
@@ -438,7 +443,7 @@ class TileSource {
       }
       wanted.add(id);
     }
-    _wantAhead(camera.ahead, frame, nowMs);
+    _wantAhead(camera.ahead, frame, nowMs, prepare);
     for (final t in picked) {
       if (t.z == 0) continue;
       final parent = tiles[TileId(t.z - 1, (t.x % (1 << t.z)) >> 1, t.y >> 1)];
@@ -451,8 +456,14 @@ class TileSource {
     return waiting;
   }
 
-  /// Asks, after what the screen needs now, for the tiles of [ahead].
-  void _wantAhead(MapView? ahead, int frame, int nowMs) {
+  /// Asks, after what the screen needs now, for the tiles of [ahead], and
+  /// gets those already here ready to draw.
+  void _wantAhead(
+    MapView? ahead,
+    int frame,
+    int nowMs,
+    void Function(LoadedTile tile, double scale) prepare,
+  ) {
     if (ahead == null) return;
     for (final t in ahead.cover(maxZoom: maxDataZoom)) {
       final n = 1 << t.z;
@@ -461,6 +472,7 @@ class TileSource {
       final have = tiles[id];
       if (have != null) {
         have.usedFrame = frame;
+        if (!have.prepared) prepare(have, ahead.worldSize / n / tileExtent);
         continue;
       }
       final failed = failedAt[id];

@@ -63,7 +63,7 @@ class GpuHeap {
 
   /// The most it holds; past three quarters, tiles not drawn lately let
   /// their ranges go.
-  static const capBytes = 64 << 20;
+  static const capBytes = 96 << 20;
 
   /// Free room kept ahead of what uploads ask for.
   static const _headroom = 12 << 20;

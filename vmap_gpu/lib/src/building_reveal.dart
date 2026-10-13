@@ -22,6 +22,10 @@ class BuildingReveal {
   static const _standingFrames = 90;
 
   final Map<ExtrusionLayer, double> _presence = Map.identity();
+
+  /// Tiles whose buildings stood once, which show standing from then on,
+  /// even when their GPU data is sent again.
+  final Expando<bool> _stood = Expando();
   final Map<int, int> _standing = {};
   int _at = 0, _frame = 0;
 
@@ -58,15 +62,17 @@ class BuildingReveal {
     return p * p * (3 - 2 * p);
   }
 
-  /// The opacity and height, as fractions, of [buildings] in tile [id].
+  /// The opacity and height, as fractions, of [buildings] in [tile].
   (double, double) motion(
-    TileId id,
+    LoadedTile tile,
     ExtrusionLayer layer,
     BuildingGpu buildings,
   ) {
+    final id = tile.id;
     final now = _clock.elapsedMicroseconds;
     if (buildings.shownAt < 0) {
-      final grows = risen(layer) >= 1 && !_standingNear(id);
+      final grows =
+          risen(layer) >= 1 && _stood[tile] == null && !_standingNear(id);
       buildings.shownAt = grows ? now : now - growMicros;
     }
     final t = math.min(1.0, (now - buildings.shownAt) / growMicros);
@@ -74,6 +80,7 @@ class BuildingReveal {
       animating = true;
     } else {
       _standing[tileKey(id.z, id.x, id.y)] = _frame;
+      _stood[tile] = true;
     }
     final rest = 1 - t;
     return (

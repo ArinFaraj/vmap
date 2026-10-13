@@ -1,3 +1,4 @@
+import 'dart:developer' show Timeline;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -69,7 +70,7 @@ class TilePool {
   final TileLoaded onLoaded;
   final TileFailed onFailed;
 
-  static const int _perWorker = 3;
+  static const int _perWorker = 6;
 
   final List<_Worker> _workers = [];
   final Map<int, TileId> _inflight = {};
@@ -309,6 +310,10 @@ class TilePool {
       final job = _nextJob++;
       _inflight[job] = id;
       _inflightIds.add(id);
+      Timeline.instantSync(
+        'vmap.tile.asked',
+        arguments: {'id': '${id.z}/${id.x}/${id.y}'},
+      );
       free.busy++;
       free.link.send(BuildTile(job, id, maxZoom: maxZoom).toWire());
     }
@@ -501,7 +506,16 @@ Future<void> tileWorkerMain(
     switch (request) {
       case BuildTile(:final job, :final tile, :final maxZoom):
         try {
+          final fetched = Timeline.now;
           final layers = await layersOf(tile);
+          Timeline.instantSync(
+            'vmap.tile.fetched',
+            arguments: {
+              'id': '${tile.z}/${tile.x}/${tile.y}',
+              'ms': '${(Timeline.now - fetched) ~/ 1000}',
+            },
+          );
+          final building = Timeline.now;
           final built = layers.isEmpty
               ? BuiltTile(const [], const [])
               : (builder.buildLayers(
@@ -516,6 +530,13 @@ Future<void> tileWorkerMain(
                   tile.y,
                   grid: geoJson == null ? 1024 : 1 << 24,
                 ));
+          Timeline.instantSync(
+            'vmap.tile.built',
+            arguments: {
+              'id': '${tile.z}/${tile.x}/${tile.y}',
+              'ms': '${(Timeline.now - building) ~/ 1000}',
+            },
+          );
           return TileBuilt(job, built);
         } catch (e) {
           return TileNotBuilt(job, '$e');
