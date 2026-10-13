@@ -1,9 +1,16 @@
 import 'dart:io';
 import 'dart:ui' as ui;
+import 'dart:ui' show FramePhase;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter_displaymode/flutter_displaymode.dart';
+import 'package:vmap/src/expr.dart';
+import 'package:vmap/src/extrusion.dart';
+import 'package:vmap/src/style_model.dart';
+import 'package:vmap/src/tiles.dart' show TileDraw;
+import 'package:vmap/src/view.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:vmap/vmap.dart';
 
@@ -15,6 +22,9 @@ const _script = bool.fromEnvironment('SCRIPT');
 const _oldText = bool.fromEnvironment('OLD_TEXT');
 const _gpu = bool.fromEnvironment('GPU');
 const _zoomTest = bool.fromEnvironment('ZOOMTEST');
+const _labels = bool.fromEnvironment('LABELS', defaultValue: true);
+const _buildings = bool.fromEnvironment('BUILDINGS', defaultValue: true);
+const _variant = String.fromEnvironment('VARIANT', defaultValue: 'full');
 
 const _erbil = MapCameraPosition(
   latitude: 36.1912,
@@ -45,7 +55,28 @@ const _places = {
   ),
 };
 
-void main() => runApp(const MaterialApp(home: _Demo()));
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (Platform.isAndroid) await FlutterDisplayMode.setHighRefreshRate();
+  runApp(const MaterialApp(home: _Demo()));
+}
+
+class _NoBuildings implements BuildingRenderer {
+  @override
+  bool paint(
+    Canvas canvas,
+    MapView view,
+    Offset origin,
+    StyleSheet sheet,
+    Iterable<TileDraw> tiles,
+    EvalContext context,
+    double styleZoom,
+    double devicePixelRatio,
+  ) => false;
+
+  @override
+  void dispose() {}
+}
 
 class _Demo extends StatefulWidget {
   const _Demo();
@@ -63,12 +94,15 @@ class _DemoState extends State<_Demo> {
         : VmapStyle.url('https://tiles.openfreemap.org/styles/$_styleName'),
     maxCachedTiles: 400,
     glyphText: !_oldText,
+    showLabels: _labels,
   );
 
   @override
   void initState() {
     super.initState();
-    if (_gpu) {
+    if (!_buildings) {
+      engine.buildingRenderer = _NoBuildings();
+    } else if (_gpu) {
       final buildings = GpuBuildings.create();
       if (buildings != null) engine.buildingRenderer = buildings;
     }
@@ -95,6 +129,7 @@ class _DemoState extends State<_Demo> {
     void listen(List<FrameTiming> t) => frames.addAll(t);
     SchedulerBinding.instance.addTimingsCallback(listen);
     engine.stats.timings.slowPaints.clear();
+    GpuBuildings.slow.clear();
     const base = MapCameraPosition(
       latitude: 36.1912,
       longitude: 44.0092,
@@ -103,13 +138,15 @@ class _DemoState extends State<_Demo> {
       bearing: -20,
     );
     controller.camera = base;
-    for (var i = 0; i < 3; i++) {
+    for (var i = 0; i < 2; i++) {
       await controller.easeTo(
         base.copyWith(zoom: 17, bearing: 10),
         duration: const Duration(seconds: 3),
       );
       await controller.easeTo(base, duration: const Duration(seconds: 3));
     }
+    await controller.flyTo(_places['Sulaymaniyah']!);
+    await controller.flyTo(base.copyWith(zoom: 15.5, pitch: 55));
     SchedulerBinding.instance.removeTimingsCallback(listen);
     int p(List<int> v, double q) {
       if (v.isEmpty) return 0;
@@ -120,14 +157,30 @@ class _DemoState extends State<_Demo> {
     final build = [for (final f in frames) f.buildDuration.inMicroseconds];
     final raster = [for (final f in frames) f.rasterDuration.inMicroseconds];
     final over = build.where((b) => b > 8000).length;
+    final total = [for (final f in frames) f.totalSpan.inMicroseconds];
+    final late8 = total.where((t) => t > 8333).length;
+    final late16 = total.where((t) => t > 16667).length;
+    final seconds = frames.isEmpty
+        ? 1
+        : (frames.last.timestampInMicroseconds(FramePhase.rasterFinish) -
+                  frames.first.timestampInMicroseconds(FramePhase.vsyncStart)) /
+              1e6;
     debugPrint(
-      'zoomtest: ${frames.length} frames, build p50 ${p(build, .5)} '
+      'zoomtest $_variant: ${(frames.length / seconds).toStringAsFixed(0)} fps, '
+      'frames over 8.3 ms $late8, over 16.7 ms $late16, '
+      'raster p95 ${p(raster, .95)} max ${p(raster, 1)} us',
+    );
+    debugPrint(
+      'zoomtest $_variant: ${frames.length} frames, build p50 ${p(build, .5)} '
       'p95 ${p(build, .95)} p99 ${p(build, .99)} max ${p(build, 1)} us, '
       'raster p50 ${p(raster, .5)} p99 ${p(raster, .99)} us, '
       'build over 8 ms: $over',
     );
     for (final line in engine.stats.timings.slowPaints.take(40)) {
       debugPrint('zoomtest slow: $line');
+    }
+    for (final line in GpuBuildings.slow.take(30)) {
+      debugPrint('zoomtest gpu: $line');
     }
     debugPrint('zoomtest: done');
   }

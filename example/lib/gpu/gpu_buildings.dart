@@ -38,7 +38,12 @@ class GpuBuildings implements BuildingRenderer {
   gpu.ShaderLibrary? _library;
   gpu.RenderPipeline? _pipeline;
   gpu.UniformSlot? _slot;
-  gpu.GpuImageSurface? _surface;
+
+  /// The textures frames are drawn into in turn. Three, so the one being
+  /// drawn is never one the raster thread may still be reading; an image
+  /// surface waits on the GPU for that instead, on the UI thread.
+  List<gpu.Texture> _ring = const [];
+  int _next = 0;
   gpu.Texture? _depth;
   gpu.Texture? _samples;
   late final bool _msaa = gpu.gpuContext.doesSupportOffscreenMSAA;
@@ -47,6 +52,10 @@ class GpuBuildings implements BuildingRenderer {
   final Map<BuiltExtrusion, _Mesh> _meshes = Map.identity();
   final List<(TileDraw, BuiltExtrusion)> _found = [];
   int _frame = 0;
+
+  /// What the last frame's steps cost, for profiling.
+  static String lastBreakdown = '';
+  static final List<String> slow = [];
   final Stopwatch _clock = Stopwatch()..start();
 
   /// How long a tile's buildings take to fade in once on the GPU.
@@ -81,15 +90,18 @@ class GpuBuildings implements BuildingRenderer {
   }
 
   void _size(int width, int height) {
-    if (width == _width && height == _height && _surface != null) return;
+    if (width == _width && height == _height && _ring.isNotEmpty) return;
     _width = width;
     _height = height;
-    final surface = _surface;
-    if (surface == null) {
-      _surface = gpu.gpuContext.createImageSurface(width, height);
-    } else {
-      surface.resize(width, height);
-    }
+    _ring = [
+      for (var i = 0; i < 3; i++)
+        gpu.gpuContext.createTexture(
+          gpu.StorageMode.devicePrivate,
+          width,
+          height,
+          format: gpu.gpuContext.defaultColorFormat,
+        ),
+    ];
     final samples = _msaa ? 4 : 1;
     _depth = gpu.gpuContext.createTexture(
       gpu.StorageMode.deviceTransient,
@@ -146,19 +158,19 @@ class GpuBuildings implements BuildingRenderer {
     final width = (view.width * devicePixelRatio).round();
     final height = (view.height * devicePixelRatio).round();
     if (width <= 0 || height <= 0) return false;
+    final watch = Stopwatch()..start();
     _size(width, height);
-    final frame = _surface!.acquireNextFrame();
+    final target = _ring[_next];
+    _next = (_next + 1) % _ring.length;
+    final tAcquire = watch.elapsedMicroseconds;
     final commands = gpu.gpuContext.createCommandBuffer();
     final pass = commands.createRenderPass(
       gpu.RenderTarget.singleColor(
         _samples == null
-            ? gpu.ColorAttachment(
-                texture: frame.colorTexture,
-                clearValue: Vector4.zero(),
-              )
+            ? gpu.ColorAttachment(texture: target, clearValue: Vector4.zero())
             : gpu.ColorAttachment(
                 texture: _samples!,
-                resolveTexture: frame.colorTexture,
+                resolveTexture: target,
                 storeAction: gpu.StoreAction.multisampleResolve,
                 clearValue: Vector4.zero(),
               ),
@@ -212,17 +224,23 @@ class GpuBuildings implements BuildingRenderer {
         ..bindUniform(_slot!, host.emplace(ByteData.sublistView(mvp)))
         ..draw(mesh.count);
     }
-    frame.present(commands);
+    final tEncode = watch.elapsedMicroseconds;
+    final tPresent = watch.elapsedMicroseconds;
     commands.submit();
-    final image = _surface!.currentImage;
-    if (image != null) {
-      canvas.drawImageRect(
-        image,
-        ui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
-        ui.Rect.fromLTWH(0, 0, view.width, view.height),
-        _paint,
-      );
-    }
+    final tSubmit = watch.elapsedMicroseconds;
+    final image = target.asImage();
+    final tImage = watch.elapsedMicroseconds;
+    lastBreakdown =
+        'acquire=$tAcquire encode=${tEncode - tAcquire} '
+        'present=${tPresent - tEncode} submit=${tSubmit - tPresent} '
+        'image=${tImage - tSubmit} tiles=${_found.length} uploads=$uploads';
+    if (tImage > 2000 && slow.length < 60) slow.add(lastBreakdown);
+    canvas.drawImageRect(
+      image,
+      ui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
+      ui.Rect.fromLTWH(0, 0, view.width, view.height),
+      _paint,
+    );
     if (_frame % 120 == 0) {
       _meshes.removeWhere((_, m) => _frame - m.usedFrame > 600);
     }
@@ -253,7 +271,7 @@ class GpuBuildings implements BuildingRenderer {
   @override
   void dispose() {
     _meshes.clear();
-    _surface = null;
+    _ring = const [];
     _depth = null;
     _samples = null;
   }
