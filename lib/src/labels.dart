@@ -9,6 +9,7 @@ import 'label_painter.dart';
 import 'text_style.dart';
 import 'label_sprites.dart';
 import 'label_state.dart';
+import 'occlusion.dart';
 import 'glyphs/glyph_layout.dart';
 import 'glyphs/glyph_pages.dart';
 import 'label_view.dart';
@@ -25,6 +26,10 @@ import 'tile_builder.dart';
 /// the engine's own text stack, so joined scripts shape correctly.
 class LabelEngine {
   LabelEngine(this.text);
+
+  /// Buildings that hide labels on a tilted map; placement leaves those
+  /// labels out, so they fade.
+  final occlusion = BuildingOcclusion();
 
   VmapTextStyle text;
   List<SymbolLayer> symbols = const [];
@@ -414,6 +419,7 @@ class LabelEngine {
         final sx = _view.x;
         final sy = _view.y;
         if (_view.ratio < _perspectiveCutoff) continue;
+        if (occlusion.hides(c.worldX, c.worldY)) continue;
         if (!_glyphText &&
             _view.tilted != null &&
             c is TileLabel &&

@@ -64,6 +64,17 @@ class MapView {
 
   WorldPoint get center => (x: _cx, y: _cy);
 
+  /// Where the camera is: over world point [x], [y] at [height], all in
+  /// world pixels.
+  ({double x, double y, double height}) get eye {
+    final back = cameraToCenterDistance * _sinP;
+    return (
+      x: _cx - _sinB * back,
+      y: _cy + _cosB * back,
+      height: cameraToCenterDistance * _cosP,
+    );
+  }
+
   /// Ground offset from the centre, turned so v points down the screen.
   (double, double) _uv(double x, double y) {
     final dx = x - _cx, dy = y - _cy;
@@ -195,10 +206,7 @@ class MapView {
   /// out. Columns past the world's edge are not wrapped.
   List<CoverTile> cover({required int maxZoom, int minZoom = 0}) {
     final quad = ground();
-    final camU = 0.0, camV = cameraToCenterDistance * _sinP;
-    final camX = _cx + _cosB * camU - _sinB * camV;
-    final camY = _cy + _sinB * camU + _cosB * camV;
-    final camH = cameraToCenterDistance * _cosP;
+    final (x: camX, y: camY, height: camH) = eye;
     final top = math.min(zoom.floor(), maxZoom);
     final out = <CoverTile>[];
 

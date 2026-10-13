@@ -862,6 +862,7 @@ class VmapEngine extends ChangeNotifier {
       final shown = [
         for (final s in _sources) ...[...s.ideal, ...s.fallback],
       ];
+      _labels.occlusion.update(view, shown, sheet, styleZoom);
       animating = _labels.paint(
         canvas,
         sources: [_markerLabels].followedBy(shown.map((d) => d.tile.labels)),
