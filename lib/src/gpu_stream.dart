@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'platform.dart';
 import 'style_model.dart';
 import 'tile_builder.dart' show BuiltMesh;
+import 'typed_buffer.dart';
 
 /// One tile's fill and line layers as a single stream the GPU draws in one
 /// call per [segments] entry: every layer's geometry in the style's order,
@@ -94,8 +95,8 @@ class GpuStream {
     for (final m in meshes) {
       (byBucket[m.bucket] ??= []).add(m);
     }
-    final vertices = <double>[];
-    final indices = <int>[];
+    final vertices = DoubleBuffer(1 << 14);
+    final indices = IndexBuffer(1 << 14);
     final slots = <(int, Map<String, Object?>?)>[];
     final segments = <int>[];
     var segmentStart = 0, segmentSlot = 0;
@@ -146,25 +147,27 @@ class GpuStream {
               (-1.0, 1.0),
             ]) {
               vertices
-                ..add(pos[v * 2])
-                ..add(pos[v * 2 + 1])
-                ..add(packPair(cx, cy))
-                ..add(0)
-                ..add((slot + kind * 16384).toDouble())
-                ..add(0);
+                ..add4(pos[v * 2], pos[v * 2 + 1], packPair(cx, cy), 0)
+                ..add2((slot + kind * 16384).toDouble(), 0);
             }
-            indices.addAll([at, at + 1, at + 2, at, at + 2, at + 3]);
+            for (final i in const [0, 1, 2, 0, 2, 3]) {
+              indices.add(at + i);
+            }
           }
           continue;
         }
         for (var v = 0; v < n; v++) {
           vertices
-            ..add(pos[v * 2])
-            ..add(pos[v * 2 + 1])
-            ..add(ext == null ? 0 : packPair(ext[v * 2], ext[v * 2 + 1]))
-            ..add(off == null ? 0 : packPair(off[v * 2], off[v * 2 + 1]))
-            ..add((slot + kind * 16384).toDouble())
-            ..add(along == null ? 0 : along[v * 2]);
+            ..add4(
+              pos[v * 2],
+              pos[v * 2 + 1],
+              ext == null ? 0 : packPair(ext[v * 2], ext[v * 2 + 1]),
+              off == null ? 0 : packPair(off[v * 2], off[v * 2 + 1]),
+            )
+            ..add2(
+              (slot + kind * 16384).toDouble(),
+              along == null ? 0 : along[v * 2],
+            );
         }
         for (final i in chunk.indices) {
           indices.add(base + i);
@@ -175,8 +178,8 @@ class GpuStream {
     layerFirst[sheet.layers.length] = indices.length;
     segments.addAll([segmentStart, indices.length - segmentStart, segmentSlot]);
     return GpuStream(
-      Float32List.fromList(vertices),
-      Uint32List.fromList(indices),
+      vertices.toFloat32List(),
+      indices.toList(),
       slots,
       Int32List.fromList(segments),
       layerFirst,

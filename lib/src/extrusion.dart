@@ -11,6 +11,7 @@ import 'style_model.dart';
 import 'tile_builder.dart' show tileExtent;
 import 'tiles.dart' show TileDraw;
 import 'view.dart';
+import 'typed_buffer.dart';
 
 /// One tile's buildings of one `fill-extrusion` bucket: their walls, roofs,
 /// heights and colours, in tile units.
@@ -80,10 +81,11 @@ class ExtrusionBuilder {
   ExtrusionBuilder(this.bucket);
 
   final int bucket;
-  final List<double> _walls = [];
-  final List<double> _roof = [];
-  final List<double> _indices = [];
-  final List<double> _info = [];
+  final _walls = DoubleBuffer();
+  final _roof = DoubleBuffer();
+  final _indices = DoubleBuffer();
+  final _info = DoubleBuffer();
+  final _ring = DoubleBuffer();
 
   /// Adds one feature: rings of x, y pairs in tile units between the point
   /// indices of [starts] and [ends].
@@ -97,7 +99,7 @@ class ExtrusionBuilder {
   ) {
     if (height <= base) return;
     var polygonStart = -1;
-    final ring = <double>[];
+    final ring = _ring..clear();
     final holes = <int>[];
     final wallsFrom = _walls.length ~/ 4;
     final roofFrom = _indices.length;
@@ -105,10 +107,10 @@ class ExtrusionBuilder {
 
     void roof() {
       if (polygonStart < 0 || ring.length < 6) return;
-      final flat = Float64List.fromList(ring);
+      final flat = ring.toFloat64List();
       final tris = Earcut.triangulateRaw(flat, holeIndices: holes);
       final at = _roof.length ~/ 2;
-      _roof.addAll(ring);
+      _roof.addBuffer(ring);
       for (final t in tris) {
         _indices.add((at + t).toDouble());
       }
@@ -149,35 +151,23 @@ class ExtrusionBuilder {
       }
       for (var i = 0; i < count; i++) {
         final x = coords[(start + i) * 2], y = coords[(start + i) * 2 + 1];
-        ring
-          ..add(x)
-          ..add(y);
+        ring.add2(x, y);
         final j = (i + 1) % count;
-        _walls.addAll([
-          x,
-          y,
-          coords[(start + j) * 2],
-          coords[(start + j) * 2 + 1],
-        ]);
+        _walls.add4(x, y, coords[(start + j) * 2], coords[(start + j) * 2 + 1]);
       }
     }
     roof();
     final walls = _walls.length ~/ 4 - wallsFrom;
     if (walls == 0 || area == 0) return;
-    _info.addAll([
-      height,
-      base,
-      sx / area,
-      sy / area,
-      wallsFrom.toDouble(),
-      walls.toDouble(),
-      roofFrom.toDouble(),
-      (_indices.length - roofFrom).toDouble(),
-      color.r,
-      color.g,
-      color.b,
-      color.a,
-    ]);
+    _info
+      ..add4(height, base, sx / area, sy / area)
+      ..add4(
+        wallsFrom.toDouble(),
+        walls.toDouble(),
+        roofFrom.toDouble(),
+        (_indices.length - roofFrom).toDouble(),
+      )
+      ..add4(color.r, color.g, color.b, color.a);
   }
 
   BuiltExtrusion? finish() {
@@ -228,10 +218,10 @@ class ExtrusionBuilder {
     }
     return BuiltExtrusion(
       bucket,
-      Float32List.fromList(_walls),
-      Float32List.fromList(_roof),
-      Float32List.fromList(_indices),
-      Float32List.fromList(_info),
+      _walls.toFloat32List(),
+      _roof.toFloat32List(),
+      _indices.toFloat32List(),
+      _info.toFloat32List(),
       out,
     );
   }

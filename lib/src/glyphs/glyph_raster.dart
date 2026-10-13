@@ -7,6 +7,7 @@ import 'dart:typed_data';
 // ignore: implementation_imports
 import 'package:payv/src/font/glyph_path.dart';
 
+import '../typed_buffer.dart';
 import 'glyph_layout.dart';
 
 /// The look a page is drawn in: glyphs this many device pixels to the em,
@@ -166,12 +167,12 @@ class GlyphRasterizer {
 
   /// The outline as polylines in pixels, y down: flat pairs of points,
   /// each contour closed, consecutive points joined.
-  static List<double> _flatten(GlyphPath outline, double s, double slant) {
-    final out = <double>[];
+  static DoubleBuffer _flatten(GlyphPath outline, double s, double slant) {
+    final out = DoubleBuffer();
     var cx = 0.0, cy = 0.0, sx = 0.0, sy = 0.0;
     var open = false;
     void close() {
-      if (open && (cx != sx || cy != sy)) _segment(out, cx, cy, sx, sy);
+      if (open && (cx != sx || cy != sy)) out.add4(cx, cy, sx, sy);
       open = false;
     }
 
@@ -186,7 +187,7 @@ class GlyphRasterizer {
           open = true;
         case LineTo():
           final x = px(c.x, c.y), y = py(c.y);
-          _segment(out, cx, cy, x, y);
+          out.add4(cx, cy, x, y);
           cx = x;
           cy = y;
         case QuadTo():
@@ -199,7 +200,7 @@ class GlyphRasterizer {
             final t = i / n, u = 1 - t;
             final nx = u * u * cx + 2 * u * t * qx + t * t * x;
             final ny = u * u * cy + 2 * u * t * qy + t * t * y;
-            _segment(out, lx, ly, nx, ny);
+            out.add4(lx, ly, nx, ny);
             lx = nx;
             ly = ny;
           }
@@ -227,7 +228,7 @@ class GlyphRasterizer {
                 3 * u * u * t * ay +
                 3 * u * t * t * by +
                 t * t * t * y;
-            _segment(out, lx, ly, nx, ny);
+            out.add4(lx, ly, nx, ny);
             lx = nx;
             ly = ny;
           }
@@ -245,25 +246,11 @@ class GlyphRasterizer {
 
   static double _len(double x, double y) => math.sqrt(x * x + y * y);
 
-  static void _segment(
-    List<double> out,
-    double x0,
-    double y0,
-    double x1,
-    double y1,
-  ) {
-    out
-      ..add(x0)
-      ..add(y0)
-      ..add(x1)
-      ..add(y1);
-  }
-
   /// Exact area coverage of the outline, nonzero, clamped to one: each
   /// edge adds its signed area to the cells it crosses, and a running sum
   /// along each row turns that into coverage.
   static Float32List _coverage(
-    List<double> segments,
+    DoubleBuffer segments,
     int w,
     int h,
     double dx,
