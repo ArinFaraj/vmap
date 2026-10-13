@@ -288,10 +288,31 @@ ShapedText? layoutText(
   List<String> stack = const [],
 }) {
   final order = fonts.orderFor(stack);
-  final scalars = text.runes.toList();
-  final lines = singleLine || maxWidth.isInfinite
-      ? [scalars]
-      : _breakLines(fonts, scalars, weight, letterSpacing, maxWidth, order);
+  final lines = <List<int>>[];
+  var paragraph = <int>[];
+  void endParagraph() {
+    if (singleLine || maxWidth.isInfinite) {
+      lines.add(paragraph);
+    } else {
+      lines.addAll(
+        _breakLines(fonts, paragraph, weight, letterSpacing, maxWidth, order),
+      );
+    }
+    paragraph = <int>[];
+  }
+
+  for (final c in text.runes) {
+    if (c == 0x0A || c == 0x0D || c == 0x2028 || c == 0x2029) {
+      if (singleLine) {
+        paragraph.add(0x20);
+      } else {
+        endParagraph();
+      }
+      continue;
+    }
+    paragraph.add(c == 0x09 ? 0x20 : c);
+  }
+  endParagraph();
   final shaped = <(List<double>, double)>[];
   for (final line in lines) {
     final one = _shapeLine(fonts, line, weight, letterSpacing, order);

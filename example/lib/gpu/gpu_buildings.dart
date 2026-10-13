@@ -164,6 +164,7 @@ class GpuBuildings implements BuildingRenderer {
     _next = (_next + 1) % _ring.length;
     final tAcquire = watch.elapsedMicroseconds;
     final commands = gpu.gpuContext.createCommandBuffer();
+    final tCommands = watch.elapsedMicroseconds;
     final pass = commands.createRenderPass(
       gpu.RenderTarget.singleColor(
         _samples == null
@@ -180,6 +181,7 @@ class GpuBuildings implements BuildingRenderer {
         ),
       ),
     );
+    final tPass = watch.elapsedMicroseconds;
     pass
       ..bindPipeline(_pipeline!)
       ..setDepthWriteEnable(true)
@@ -190,6 +192,8 @@ class GpuBuildings implements BuildingRenderer {
     final perMetre =
         view.worldSize /
         (40075016.686 * math.cos(latitudeAt(view.centerY) * math.pi / 180));
+    final tSetup = watch.elapsedMicroseconds;
+    var uploadMicros = 0;
     var uploads = 0, uploaded = 0;
     var fading = false, held = false;
     for (final (d, e) in _found) {
@@ -202,7 +206,9 @@ class GpuBuildings implements BuildingRenderer {
         }
         uploads++;
         uploaded += e.vertices.lengthInBytes;
+        final t0 = watch.elapsedMicroseconds;
         mesh = _meshes[e] = _Mesh.of(e)..shownAt = _clock.elapsedMicroseconds;
+        uploadMicros += watch.elapsedMicroseconds - t0;
       }
       mesh.usedFrame = _frame;
       if (mesh.count == 0) continue;
@@ -231,7 +237,10 @@ class GpuBuildings implements BuildingRenderer {
     final image = target.asImage();
     final tImage = watch.elapsedMicroseconds;
     lastBreakdown =
-        'acquire=$tAcquire encode=${tEncode - tAcquire} '
+        'acquire=$tAcquire commands=${tCommands - tAcquire} '
+        'pass=${tPass - tCommands} setup=${tSetup - tPass} '
+        'upload=$uploadMicros/${uploaded ~/ 1024}KB '
+        'draws=${tEncode - tSetup - uploadMicros} '
         'present=${tPresent - tEncode} submit=${tSubmit - tPresent} '
         'image=${tImage - tSubmit} tiles=${_found.length} uploads=$uploads';
     if (tImage > 2000 && slow.length < 60) slow.add(lastBreakdown);

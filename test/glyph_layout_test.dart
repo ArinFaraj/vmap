@@ -39,6 +39,11 @@ void main() {
     expect(shaped.width, lessThanOrEqualTo(8.5));
   });
 
+  test('a newline in a name starts a new line, and a road joins them', () {
+    expect(layoutText(fonts, 'Erbil\nهەولێر', maxWidth: 9)!.lines, 2);
+    expect(layoutText(fonts, 'Erbil\nهەولێر', singleLine: true)!.lines, 1);
+  });
+
   test('a road name never wraps', () {
     final shaped = layoutText(
       fonts,
