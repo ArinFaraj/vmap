@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'camera.dart';
 import 'extrusion.dart';
+import 'gpu_stream.dart';
 import 'label_state.dart';
 import 'style_model.dart';
 import 'tessellate.dart';
@@ -135,10 +136,14 @@ class LoadedTile {
   LoadedTile(this.id, BuiltTile built, this.sheet)
     : _built = built,
       extrusions = built.extrusions,
+      gpu = built.gpu,
       groups = List.filled(sheet.buckets.length, null);
 
   /// The buildings to stand up on a tilted map.
   final List<BuiltExtrusion> extrusions;
+
+  /// The fill and line layers for the GPU renderer, when it is on.
+  final GpuStream? gpu;
 
   final TileId id;
   final StyleSheet sheet;

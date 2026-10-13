@@ -11,6 +11,7 @@ import 'package:latlong2/latlong.dart' show LatLng;
 import 'camera.dart';
 import 'expr.dart';
 import 'extrusion.dart';
+import 'map_renderer.dart';
 import 'glyphs/glyph_layout.dart';
 import 'glyphs/vmap_font.dart';
 import 'label_state.dart';
@@ -59,6 +60,7 @@ class VmapEngine extends ChangeNotifier {
     bool curvedLabels = true,
     bool glyphText = false,
     List<VmapFont> fonts = const [],
+    this.renderer,
   }) : _labels = LabelEngine(text)
          ..pins = pins
          ..curvedRoads = curvedLabels {
@@ -71,6 +73,11 @@ class VmapEngine extends ChangeNotifier {
       _loadStyle();
     }
   }
+
+  /// Draws fill and line layers and buildings on the GPU on a tilted map,
+  /// or null to draw them with the canvas. Fixed when the engine is made,
+  /// since the tile workers build its streams.
+  final MapRenderer? renderer;
 
   /// The fonts' bytes and families, sent to the tile workers so they
   /// shape labels.
@@ -121,6 +128,7 @@ class VmapEngine extends ChangeNotifier {
   /// What draws buildings standing on a tilted map: the canvas unless set.
   set buildingRenderer(BuildingRenderer value) {
     _buildings.dispose();
+    renderer?.dispose();
     _buildings = value;
     notifyListeners();
   }
@@ -395,6 +403,7 @@ class VmapEngine extends ChangeNotifier {
         script: webWorker,
         fonts: _glyphFontBytes,
         families: _glyphFamilies,
+        gpu: renderer != null,
       );
       final before = byName[def.name];
       if (before != null) {
@@ -768,6 +777,8 @@ class VmapEngine extends ChangeNotifier {
           view.matrix(originX: camera.origin.dx, originY: camera.origin.dy),
         );
     }
+    final gpu = renderer;
+    final onGpu = view != null && gpu != null && gpu.supports(sheet);
     for (final run in sheet.runs) {
       if (run.raster >= 0) {
         _rasters[run.raster].paint(
@@ -779,6 +790,7 @@ class VmapEngine extends ChangeNotifier {
         );
         continue;
       }
+      if (onGpu) continue;
       final s = _sources[run.source];
       draws += _meshes.drawRun(
         canvas,
@@ -792,7 +804,24 @@ class VmapEngine extends ChangeNotifier {
 
     if (view != null) {
       canvas.restore();
-      if (sheet.extrusions.isNotEmpty) {
+      if (onGpu) {
+        final gpuStarted = _clock.elapsedMicroseconds;
+        final more = gpu.paint(
+          canvas,
+          view,
+          camera.origin,
+          sheet,
+          [
+            for (final s in _sources) ...s.fallback,
+            for (final s in _sources) ...s.ideal,
+          ],
+          _context,
+          styleZoom,
+          camera.devicePixelRatio,
+        );
+        _buildingMicros = _clock.elapsedMicroseconds - gpuStarted;
+        if (more) waiting = true;
+      } else if (sheet.extrusions.isNotEmpty) {
         final buildingsStarted = _clock.elapsedMicroseconds;
         final more = _buildings.paint(
           canvas,

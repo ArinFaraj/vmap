@@ -34,6 +34,7 @@ class TilePool {
     this.script,
     this.fonts,
     this.families,
+    this.gpu = false,
   }) : maxZoom =
            sheet.sources[source].maxZoom ??
            sheet.sources[source].defaultMaxZoom {
@@ -45,6 +46,9 @@ class TilePool {
   /// The fonts the workers shape labels with, or null, and their families.
   final List<Uint8List>? fonts;
   final List<String>? families;
+
+  /// Whether the workers build GPU streams too.
+  final bool gpu;
 
   /// In a browser, the script the workers run, or null to build tiles on
   /// the page's thread.
@@ -234,6 +238,7 @@ class TilePool {
         source: source,
         fonts: fonts,
         families: families,
+        gpu: gpu,
       ).toWire(),
       (message) {
         switch (WorkerReply.fromWire(message! as List<Object?>)) {
@@ -437,6 +442,7 @@ Future<void> tileWorkerMain(
     sheet,
     source: source,
     fonts: fonts == null ? null : GlyphFonts(fonts, families: setup.families),
+    gpu: setup.gpu,
   );
   void answer(WorkerReply reply) => send(reply.toWire());
 

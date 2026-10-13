@@ -1,0 +1,6 @@
+{
+  "MapVertex": { "type": "vertex", "file": "shaders/map.vert" },
+  "MapFragment": { "type": "fragment", "file": "shaders/map.frag" },
+  "BuildingVertex": { "type": "vertex", "file": "shaders/building.vert" },
+  "BuildingFragment": { "type": "fragment", "file": "shaders/building.frag" }
+}

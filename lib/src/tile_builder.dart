@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'expr.dart';
 import 'glyphs/glyph_layout.dart';
+import 'gpu_stream.dart';
 import 'extrusion.dart';
 import 'mvt.dart';
 import 'platform.dart';
@@ -79,7 +80,10 @@ class BuiltLabel {
 }
 
 class BuiltTile {
-  BuiltTile(this.meshes, this.labels, [this.extrusions = const []]);
+  BuiltTile(this.meshes, this.labels, [this.extrusions = const [], this.gpu]);
+
+  /// The tile's fill and line layers for the GPU renderer, when asked for.
+  final GpuStream? gpu;
 
   final List<BuiltMesh> meshes;
   final List<BuiltLabel> labels;
@@ -139,6 +143,7 @@ class BuiltTile {
     ],
     [for (final e in extrusions) e.toMessage()],
     _glyphMessage(),
+    gpu?.toMessage(),
   ];
 
   /// Every label's shaped glyphs in one buffer, so a tile of hundreds of
@@ -220,11 +225,18 @@ class BuiltTile {
               : null,
       );
     }
-    return BuiltTile(meshes, labels, [
-      if (message.length > 2)
-        for (final e in message[2]! as List)
-          BuiltExtrusion.fromMessage(e as List<Object?>),
-    ]);
+    return BuiltTile(
+      meshes,
+      labels,
+      [
+        if (message.length > 2)
+          for (final e in message[2]! as List)
+            BuiltExtrusion.fromMessage(e as List<Object?>),
+      ],
+      message.length > 4 && message[4] != null
+          ? GpuStream.fromMessage(message[4]! as List<Object?>)
+          : null,
+    );
   }
 }
 
@@ -243,7 +255,7 @@ class _Group {
 /// Turns one vector tile into the meshes and labels a style asks for.
 class TileBuilder {
   /// Builds the tiles of the style's source number [source].
-  TileBuilder(this.sheet, {this.source = 0, this.fonts}) {
+  TileBuilder(this.sheet, {this.source = 0, this.fonts, this.gpu = false}) {
     for (var i = 0; i < sheet.buckets.length; i++) {
       if (sheet.buckets[i].source != source) continue;
       (_buckets[sheet.buckets[i].sourceLayer] ??= []).add(i);
@@ -259,6 +271,9 @@ class TileBuilder {
 
   /// Shapes label text while the tile is built, so the page never has to.
   final GlyphFonts? fonts;
+
+  /// Builds each tile's GPU stream as well.
+  final bool gpu;
 
   void _shape(List<BuiltLabel> labels) {
     final fonts = this.fonts;
@@ -616,7 +631,7 @@ class TileBuilder {
     _shape(labels);
     return BuiltTile(meshes, labels, [
       for (final e in extruders.values) ?e.finish(),
-    ]);
+    ], gpu ? GpuStream.build(sheet, meshes) : null);
   }
 
   /// Calls [place] for points [spacing] tile units apart along every line in

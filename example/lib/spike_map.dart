@@ -13,6 +13,7 @@ import 'package:vmap/src/tiles.dart' show TileDraw;
 import 'package:vmap/src/view.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:vmap/vmap.dart';
+import 'package:vmap_gpu/vmap_gpu.dart';
 
 import 'gpu/gpu_buildings.dart';
 
@@ -95,17 +96,13 @@ class _DemoState extends State<_Demo> {
     maxCachedTiles: 400,
     glyphText: !_oldText,
     showLabels: _labels,
+    renderer: _gpu && _buildings ? GpuMap.create() : null,
   );
 
   @override
   void initState() {
     super.initState();
-    if (!_buildings) {
-      engine.buildingRenderer = _NoBuildings();
-    } else if (_gpu) {
-      final buildings = GpuBuildings.create();
-      if (buildings != null) engine.buildingRenderer = buildings;
-    }
+    if (!_buildings) engine.buildingRenderer = _NoBuildings();
     if (_script) _run();
     if (_zoomTest) _zoomRun();
   }

@@ -20,7 +20,11 @@ class WorkerSetup {
     required this.source,
     this.fonts,
     this.families,
+    this.gpu = false,
   });
+
+  /// Whether workers also build each tile's stream for the GPU renderer.
+  final bool gpu;
 
   /// The family of each of [fonts].
   final List<String>? families;
@@ -38,6 +42,7 @@ class WorkerSetup {
     source: wire[7]! as int,
     fonts: wire.length > 8 ? (wire[8] as List?)?.cast<Uint8List>() : null,
     families: wire.length > 9 ? (wire[9] as List?)?.cast<String>() : null,
+    gpu: wire.length > 10 && wire[10] == true,
   );
 
   /// The fonts labels are shaped with, or null to leave shaping to the page.
@@ -67,6 +72,7 @@ class WorkerSetup {
     source,
     fonts,
     families,
+    gpu,
   ];
 }
 

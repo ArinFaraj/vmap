@@ -1,0 +1,29 @@
+name: vmap_gpu
+description: >-
+  Draws vmap's maps on the GPU with Flutter GPU: fill and line layers in one
+  call per tile, and 3D buildings with a depth buffer.
+version: 0.1.0
+publish_to: none
+repository: https://github.com/ArinFaraj/vmap
+
+environment:
+  sdk: ">=3.13.0 <4.0.0"
+  flutter: ">=3.47.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_gpu:
+    sdk: flutter
+  flutter_gpu_shaders: ^0.5.2
+  hooks: ^2.0.0
+  vector_math: ^2.2.0
+  vmap:
+    path: ..
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+
+flutter:
+  assets:
+    - build/shaderbundles/vmap_gpu.shaderbundle
