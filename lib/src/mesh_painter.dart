@@ -93,13 +93,19 @@ class MeshPainter {
   }
 
   /// Works out each layer's colour and width at [styleZoom].
-  void startFrame(StyleSheet sheet, double styleZoom, double rotation) {
+  void startFrame(
+    StyleSheet sheet,
+    double styleZoom,
+    double rotation, {
+    bool standing = false,
+  }) {
     _rotation = rotation;
     for (var i = 0; i < sheet.layers.length; i++) {
       final layer = sheet.layers[i];
       _colors[i] = 0;
       _widths[i] = 0;
       if (styleZoom < layer.minZoom || styleZoom >= layer.maxZoom) continue;
+      if (standing && layer is FillLayer && layer.extruded) continue;
       if (layer.perFeature) {
         _colors[i] = 0xFF000000;
         continue;

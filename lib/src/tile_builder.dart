@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'expr.dart';
+import 'extrusion.dart';
 import 'mvt.dart';
 import 'platform.dart';
 import 'style_model.dart';
@@ -73,10 +74,11 @@ class BuiltLabel {
 }
 
 class BuiltTile {
-  BuiltTile(this.meshes, this.labels);
+  BuiltTile(this.meshes, this.labels, [this.extrusions = const []]);
 
   final List<BuiltMesh> meshes;
   final List<BuiltLabel> labels;
+  final List<BuiltExtrusion> extrusions;
 
   /// Names every label for the tile at [z], [x], [y]. A point's place is
   /// taken to [grid] steps across the world: coarse for vector tiles, where
@@ -126,6 +128,7 @@ class BuiltTile {
           l.props,
         ],
     ],
+    [for (final e in extrusions) e.toMessage()],
   ];
 
   static BuiltTile fromMessage(List<Object?> message) {
@@ -166,7 +169,11 @@ class BuiltTile {
           ..props = (parts[11] as Map?)?.cast<String, Object?>(),
       );
     }
-    return BuiltTile(meshes, labels);
+    return BuiltTile(meshes, labels, [
+      if (message.length > 2)
+        for (final e in message[2]! as List)
+          BuiltExtrusion.fromMessage(e as List<Object?>),
+    ]);
   }
 }
 
@@ -202,6 +209,8 @@ class TileBuilder {
   final Map<String, List<int>> _symbols = {};
   final EvalContext _context = EvalContext();
   final GeometrySink _sink = GeometrySink();
+  final List<int> _starts = [];
+  final List<int> _ends = [];
   Float64List _ring = Float64List(4096);
   final List<int> _holes = [];
 
@@ -245,6 +254,7 @@ class TileBuilder {
     final lastVariant = List<_Group?>.filled(sheet.buckets.length, null);
     final groups = <_Group>[];
     final labels = <BuiltLabel>[];
+    final extruders = <int, ExtrusionBuilder>{};
     final deepest = z >= maxZoom;
     final lineTolerance = deepest ? 0.75 : 2.0;
     final ringTolerance = deepest ? 0.0 : 2.0;
@@ -333,12 +343,33 @@ class TileBuilder {
         for (final b in buckets) {
           final bucket = sheet.buckets[b];
           final fits = switch (bucket.kind) {
-            BucketKind.fill => f.type == mvtPolygon,
+            BucketKind.fill || BucketKind.extrusion => f.type == mvtPolygon,
             BucketKind.circle => f.type == mvtPoint,
             BucketKind.line =>
               bucket.outline ? f.type == mvtPolygon : f.type != mvtPoint,
           };
           if (!fits || !bucket.filter(context)) continue;
+          if (bucket.extrude case final extrude?) {
+            scaled();
+            final height = asNumber(extrude.height(context)) ?? 0;
+            final base = asNumber(extrude.base(context)) ?? 0;
+            final color = Rgba.of(extrude.color(context)) ?? Rgba.black;
+            _starts.clear();
+            _ends.clear();
+            for (var r = 0; r < _sink.ringCount; r++) {
+              _starts.add(_sink.ringStart(r));
+              _ends.add(_sink.ringEnd(r));
+            }
+            (extruders[b] ??= ExtrusionBuilder(b)).add(
+              _sink.coords,
+              _starts,
+              _ends,
+              height.toDouble(),
+              base.toDouble(),
+              color,
+            );
+            continue;
+          }
           final group = groupFor(b, bucket);
           if (bucket.kind == BucketKind.fill) {
             geometry();
@@ -498,7 +529,9 @@ class TileBuilder {
         meshes.add(BuiltMesh(group.bucket, chunk, group.props));
       }
     }
-    return BuiltTile(meshes, labels);
+    return BuiltTile(meshes, labels, [
+      for (final e in extruders.values) ?e.finish(),
+    ]);
   }
 
   /// Calls [place] for points [spacing] tile units apart along every line in

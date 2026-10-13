@@ -9,7 +9,37 @@ import 'raster_style.dart';
 import 'style_compiler.dart';
 import 'tessellate.dart';
 
-enum BucketKind { fill, line, circle }
+enum BucketKind { fill, line, circle, extrusion }
+
+/// What a `fill-extrusion` layer reads per building.
+class Extrude {
+  const Extrude(this.height, this.base, this.color);
+
+  final Expr height;
+  final Expr base;
+  final Expr color;
+}
+
+/// A `fill-extrusion` layer drawn standing up on a tilted map, from its
+/// [bucket] of buildings. [fill] is the flat fill drawn in its place when
+/// the map is not.
+class ExtrusionLayer {
+  const ExtrusionLayer({
+    required this.id,
+    required this.bucket,
+    required this.fill,
+    required this.minZoom,
+    required this.maxZoom,
+    required this.opacity,
+  });
+
+  final String id;
+  final int bucket;
+  final int fill;
+  final double minZoom;
+  final double maxZoom;
+  final Expr opacity;
+}
 
 /// Features of one source layer that pass one filter, built into one mesh.
 /// Style layers that select the same features share it.
@@ -27,7 +57,11 @@ class Bucket {
     this.metered = false,
     this.join = LineJoin.miter,
     this.variantKeys = const [],
+    this.extrude,
   });
+
+  /// Set for a bucket of buildings to stand up.
+  final Extrude? extrude;
 
   /// Index into the style's sources.
   final int source;
@@ -144,10 +178,15 @@ final class FillLayer extends MeshLayer implements PatternedLayer {
     super.translateOnScreen,
     super.perFeature,
     this.pattern,
+    this.extruded = false,
   });
 
   @override
   final Expr? pattern;
+
+  /// The flat stand-in of a `fill-extrusion` layer, left out where the
+  /// buildings are drawn standing.
+  final bool extruded;
 }
 
 final class LineLayer extends MeshLayer
@@ -710,7 +749,11 @@ class StyleSheet {
     required this.backgroundPattern,
     required this.backgroundOpacity,
     required this.attributions,
+    this.extrusions = const [],
   });
+
+  /// The style's `fill-extrusion` layers, in order.
+  final List<ExtrusionLayer> extrusions;
 
   /// Compiles a MapLibre style document. [nameKeys] are the properties a
   /// label's name is read from, in turn, in place of the style's own.

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'camera.dart';
+import 'extrusion.dart';
 import 'label_state.dart';
 import 'style_model.dart';
 import 'tessellate.dart';
@@ -133,7 +134,11 @@ class TileMesh {
 class LoadedTile {
   LoadedTile(this.id, BuiltTile built, this.sheet)
     : _built = built,
+      extrusions = built.extrusions,
       groups = List.filled(sheet.buckets.length, null);
+
+  /// The buildings to stand up on a tilted map.
+  final List<BuiltExtrusion> extrusions;
 
   final TileId id;
   final StyleSheet sheet;
@@ -167,7 +172,8 @@ class LoadedTile {
         (groups[m.bucket] ??= []).add(switch (sheet.buckets[m.bucket].kind) {
           BucketKind.line => TileMesh.line(m.chunk, m.props),
           BucketKind.circle => TileMesh.points(m.chunk, m.props),
-          BucketKind.fill => TileMesh.fill(m.chunk, m.props),
+          BucketKind.fill ||
+          BucketKind.extrusion => TileMesh.fill(m.chunk, m.props),
         });
       }
       _step = 1;

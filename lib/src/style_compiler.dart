@@ -69,6 +69,7 @@ class StyleCompiler {
   final List<PaintLayer> _layers = [];
   final List<SymbolLayer> _symbols = [];
   final List<RasterLayer> _rasters = [];
+  final List<ExtrusionLayer> _extrusions = [];
 
   /// For each raster layer, how many paint layers come before it.
   final List<int> _rasterAt = [];
@@ -117,6 +118,7 @@ class StyleCompiler {
       rasters: _rasters,
       backgroundPattern: _backgroundPattern,
       backgroundOpacity: _backgroundOpacity,
+      extrusions: _extrusions,
       attributions: {
         for (final s in _sources.values)
           if (s is Map && s['attribution'] is String)
@@ -554,8 +556,50 @@ class StyleCompiler {
         opacity: compileExpr(opacity),
         pattern: image == null ? null : compileText(image),
         perFeature: names.isNotEmpty,
+        extruded: prefix == 'fill-extrusion',
       ),
     );
+    if (prefix == 'fill-extrusion') {
+      final key = jsonEncode([
+        'extrusion',
+        vector.source,
+        vector.sourceLayer,
+        vector.filter,
+        paint['fill-extrusion-height'],
+        paint['fill-extrusion-base'],
+        color,
+      ]);
+      final index = _bucketIndex.putIfAbsent(key, () {
+        _buckets.add(
+          Bucket(
+            vector.source,
+            vector.sourceLayer,
+            compileFilter(vector.filter),
+            BucketKind.extrusion,
+            extrude: Extrude(
+              compileExpr(paint['fill-extrusion-height'] ?? 0),
+              compileExpr(paint['fill-extrusion-base'] ?? 0),
+              compileExpr(color),
+            ),
+          ),
+        );
+        return _buckets.length - 1;
+      });
+      final bucket = _buckets[index];
+      if (layer.minZoom < bucket.minZoom) bucket.minZoom = layer.minZoom;
+      if (layer.maxZoom > bucket.maxZoom) bucket.maxZoom = layer.maxZoom;
+      _shape.write(jsonEncode([key, layer.minZoom, layer.maxZoom]));
+      _extrusions.add(
+        ExtrusionLayer(
+          id: layer.id,
+          bucket: index,
+          fill: _layers.length - 1,
+          minZoom: layer.minZoom,
+          maxZoom: layer.maxZoom,
+          opacity: compileExpr(opacity),
+        ),
+      );
+    }
     final edge = paint['fill-outline-color'];
     if (edge == null || image != null || paint['fill-antialias'] == false) {
       return;

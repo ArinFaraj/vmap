@@ -81,6 +81,25 @@ class MapView {
     return (x: u / w + width / 2, y: _cosP * v / w + height / 2);
   }
 
+  /// Where the camera stands on the ground, in world pixels.
+  WorldPoint get cameraGround {
+    final v = cameraToCenterDistance * _sinP;
+    return (x: _cx - _sinB * v, y: _cy + _cosB * v);
+  }
+
+  /// [depth] for a point [z] world pixels above the ground: at or below
+  /// zero the point is behind the camera.
+  double depth3(double x, double y, double z) =>
+      1 - _k * _uv(x, y).$2 - z * _cosP / cameraToCenterDistance;
+
+  /// Where the point [x], [y] world pixels, [z] world pixels above the
+  /// ground, lands on the screen.
+  ({double x, double y}) project3(double x, double y, double z) {
+    final (u, v) = _uv(x, y);
+    final w = 1 - _k * v - z * _cosP / cameraToCenterDistance;
+    return (x: u / w + width / 2, y: (_cosP * v - _sinP * z) / w + height / 2);
+  }
+
   /// MapLibre's scale for labels at a ground point
   /// (`projection.ts`, `getPerspectiveRatio`).
   double perspectiveRatio(double x, double y) => 0.5 + 0.5 / depth(x, y);

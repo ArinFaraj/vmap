@@ -10,6 +10,7 @@ import 'package:latlong2/latlong.dart' show LatLng;
 
 import 'camera.dart';
 import 'expr.dart';
+import 'extrusion.dart';
 import 'glyphs/glyph_layout.dart';
 import 'label_state.dart';
 import 'labels.dart';
@@ -95,6 +96,7 @@ class VmapEngine extends ChangeNotifier {
   final List<RasterDrawing<RasterLayer>> _rasters = [];
   final VmapStats stats = VmapStats();
   final EvalContext _context = EvalContext();
+  final ExtrusionPainter _extrusions = ExtrusionPainter();
   VmapStyle _style;
   int _frame = 0;
   int _lastPaintMicros = 0;
@@ -705,7 +707,12 @@ class VmapEngine extends ChangeNotifier {
     final styleZoom = dataZoom + sheet.zoomOffset;
     _context.zoom = styleZoom;
     final background = _meshes.drawBackground(canvas, sheet, camera);
-    _meshes.startFrame(sheet, styleZoom, camera.rotation);
+    _meshes.startFrame(
+      sheet,
+      styleZoom,
+      camera.rotation,
+      standing: camera.view != null && sheet.extrusions.isNotEmpty,
+    );
     _budget.start(zooming: (camera.zoom - _lastZoom).abs() > 0.002);
     var waiting = false;
     _lastZoom = camera.zoom;
@@ -753,7 +760,20 @@ class VmapEngine extends ChangeNotifier {
       );
     }
 
-    if (view != null) canvas.restore();
+    if (view != null) {
+      canvas.restore();
+      if (sheet.extrusions.isNotEmpty) {
+        _extrusions.paint(
+          canvas,
+          view,
+          camera.origin,
+          sheet,
+          [for (final s in _sources) ...s.ideal],
+          _context,
+          styleZoom,
+        );
+      }
+    }
 
     var animating = false;
     final labelsStarted = _clock.elapsedMicroseconds;

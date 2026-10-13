@@ -173,7 +173,7 @@ List<TileHit> queryTile(
         final paint = sheet.layers[p];
         final bucket = sheet.buckets[paint.bucket];
         final fits = switch (bucket.kind) {
-          BucketKind.fill => f.type == mvtPolygon,
+          BucketKind.fill || BucketKind.extrusion => f.type == mvtPolygon,
           BucketKind.circle => f.type == mvtPoint,
           BucketKind.line => f.type != mvtPoint,
         };
