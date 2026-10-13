@@ -238,13 +238,13 @@ class LabelPainter {
     }
     var complete = true;
     for (var i = 0; i < n; i++) {
-      final found = pages.cell(key, g[i * 5].toInt(), g[i * 5 + 1].toInt());
-      if (found == null) {
+      final cell = pages.cell(key, g[i * 5].toInt(), g[i * 5 + 1].toInt());
+      if (cell == null) {
         sprite.cells[i] = null;
         complete = false;
         continue;
       }
-      final (cell, page) = found;
+      final page = pages.found;
       sprite.cells[i] = cell;
       sprite.cellEms[i] = page.em;
       if (page.key != key) complete = false;

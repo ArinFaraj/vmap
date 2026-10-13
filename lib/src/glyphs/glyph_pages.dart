@@ -197,31 +197,38 @@ class GlyphPages {
 
   /// The cell of a glyph in [key]'s page, or while that page waits, in the
   /// nearest size of the same look that has it, so a label never blinks
-  /// out while its size steps. The page the cell came from is returned with
-  /// it, for its scale.
-  (GlyphCell, GlyphPage)? cell(PageKey key, int face, int glyph) {
+  /// out while its size steps. The page the cell came from is left in
+  /// [found], for its scale.
+  GlyphCell? cell(PageKey key, int face, int glyph) {
     final page = this.page(key);
     final exact = page.cell(face, glyph);
-    if (exact != null) return (exact, page);
+    if (exact != null) {
+      found = page;
+      return exact;
+    }
     for (var step = 1; step <= 4; step++) {
-      for (final size in [key.size + step, key.size - step]) {
+      for (var sign = 1; sign >= -1; sign -= 2) {
         final near =
             _pages[(
-              size: size,
+              size: key.size + step * sign,
               weight: key.weight,
               italic: key.italic,
               halo: key.halo,
               blur: key.blur,
             )];
-        final found = near?.peek(face, glyph);
-        if (found != null) {
+        final cell = near?.peek(face, glyph);
+        if (cell != null) {
           near!.usedFrame = _frame;
-          return (found, near);
+          found = near;
+          return cell;
         }
       }
     }
     return null;
   }
+
+  /// The page of the cell [cell] last returned.
+  late GlyphPage found;
 
   /// Glyphs rasterized in one frame at most; the rest wait a frame.
   static const glyphsPerFrame = 160;
