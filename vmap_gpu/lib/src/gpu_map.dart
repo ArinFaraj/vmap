@@ -1,3 +1,4 @@
+import 'dart:developer' show Timeline;
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -338,6 +339,7 @@ class GpuMap implements MapRenderer {
     bool clips(int source) => _stencil != null && ideal[source].length < 255;
 
     var flat = false;
+    Timeline.startSync('vmap.gpu.flat');
     for (final run in sheet.runs) {
       if (run.source < 0 || run.source >= ideal.length) continue;
       final source = run.source;
@@ -376,6 +378,8 @@ class GpuMap implements MapRenderer {
       pass.setStencilConfig(gpu.StencilConfig());
     }
 
+    Timeline.finishSync();
+    if (sheet.extrusions.isNotEmpty) Timeline.startSync('vmap.gpu.buildings');
     if (sheet.extrusions.isNotEmpty) {
       for (var source = 0; source < ideal.length; source++) {
         bool built(List<TileDraw> tiles) =>
@@ -402,9 +406,10 @@ class GpuMap implements MapRenderer {
         }
       }
     }
+    if (sheet.extrusions.isNotEmpty) Timeline.finishSync();
     final more = _more;
 
-    commands.submit();
+    Timeline.timeSync('vmap.gpu.submit', commands.submit);
     canvas.drawImageRect(
       target.asImage(),
       ui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
@@ -484,7 +489,10 @@ class GpuMap implements MapRenderer {
         return;
       }
       _budget -= bytes;
-      buffers = _tiles[stream] = _TileBuffers(stream);
+      buffers = _tiles[stream] = Timeline.timeSync(
+        'vmap.gpu.upload.tile',
+        () => _TileBuffers(stream),
+      );
     }
     buffers.usedFrame = _frame;
     final host = _host!;
@@ -597,7 +605,10 @@ class GpuMap implements MapRenderer {
       for (final d in tiles) {
         for (final e in d.tile.extrusions) {
           if (e.bucket != layer.bucket) continue;
-          final b = _built[e] ??= _BuildingBuffers(e);
+          final b = _built[e] ??= Timeline.timeSync(
+            'vmap.gpu.upload.building',
+            () => _BuildingBuffers(e),
+          );
           b.usedFrame = _frame;
           while (b.uploaded < b.chunks) {
             final bytes = b.chunkBytes(b.uploaded);
