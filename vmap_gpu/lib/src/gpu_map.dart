@@ -55,7 +55,7 @@ class GpuMap implements MapRenderer {
   static const _bytesPerFrame = 256 * 1024;
   static const _fadeMicros = 250000;
 
-  final Float32List _frameInfo = Float32List(20);
+  final Float32List _frameInfo = Float32List(28);
   late final ByteData _frameBytes = ByteData.sublistView(_frameInfo);
   final Float32List _slots = Float32List(240 * 4);
   late final ByteData _slotBytes = ByteData.sublistView(_slots);
@@ -273,6 +273,7 @@ class GpuMap implements MapRenderer {
     );
     final host = _host!..reset();
     final clip = view.clipMatrix(originX: origin.dx, originY: origin.dy);
+    _setFog(sheet, context, view);
     _budget = _bytesPerFrame;
     _more = false;
     _layerPaint.clear();
@@ -508,6 +509,23 @@ class GpuMap implements MapRenderer {
         }
       }
     }
+  }
+
+  /// Distance haze in the style's background colour: none on a flat map,
+  /// growing with pitch, from 1.25 times the camera's distance to the
+  /// centre to 2.6 times, about where the far edge of a 60 degree view on a
+  /// phone held upright lies.
+  void _setFog(StyleSheet sheet, EvalContext context, MapView view) {
+    final background =
+        Rgba.of(sheet.background(context)) ?? const Rgba(1, 1, 1, 1);
+    final strength = ((view.pitch - 20) / 40).clamp(0.0, 1.0) * 0.75;
+    _frameInfo
+      ..[20] = background.r
+      ..[21] = background.g
+      ..[22] = background.b
+      ..[23] = strength
+      ..[24] = 1.25
+      ..[25] = 2.6;
   }
 
   /// [clip] times a tile's placement into the frame info block: tile units

@@ -1,5 +1,8 @@
 uniform FrameInfo {
   mat4 mvp;
+  vec4 fade;
+  vec4 fog_color;
+  vec4 fog_range;
 }
 frame_info;
 
@@ -15,6 +18,7 @@ in vec2 position;
 in vec4 packed_data;
 out vec4 v_color;
 out vec3 v_dash;
+out vec4 v_fog;
 
 // Two 12 bit numbers packed in one float as the stream writes them.
 vec2 unpack_pair(float v) {
@@ -36,4 +40,6 @@ void main() {
   v_color = color;
   v_dash = vec3(packed_data.w, p.z, p.w);
   gl_Position = frame_info.mvp * vec4(pos, 0.0, 1.0);
+  float far = smoothstep(frame_info.fog_range.x, frame_info.fog_range.y, gl_Position.w);
+  v_fog = vec4(frame_info.fog_color.rgb, far * frame_info.fog_color.a);
 }
