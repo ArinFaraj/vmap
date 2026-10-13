@@ -136,7 +136,11 @@ class TextLook {
     required this.layoutWidth,
     required this.fontFamily,
     required this.fontFamilyFallback,
+    this.fontStack = const [],
   });
+
+  /// The style's `text-font` for this label.
+  final List<String> fontStack;
 
   final String text;
   final double fontSize;
@@ -250,6 +254,7 @@ class LabelSprites {
           _ => 0,
         },
         singleLine: look.road,
+        stack: look.fontStack,
       );
       work.layoutMicros += _clock.elapsedMicroseconds - started;
       if (shaped != null) {

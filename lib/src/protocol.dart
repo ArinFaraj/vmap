@@ -19,7 +19,11 @@ class WorkerSetup {
     required this.zoomOffset,
     required this.source,
     this.fonts,
+    this.families,
   });
+
+  /// The family of each of [fonts].
+  final List<String>? families;
 
   factory WorkerSetup.fromWire(List<Object?> wire) => WorkerSetup(
     template: wire[0]! as String,
@@ -33,6 +37,7 @@ class WorkerSetup {
     zoomOffset: (wire[6]! as num).toDouble(),
     source: wire[7]! as int,
     fonts: wire.length > 8 ? (wire[8] as List?)?.cast<Uint8List>() : null,
+    families: wire.length > 9 ? (wire[9] as List?)?.cast<String>() : null,
   );
 
   /// The fonts labels are shaped with, or null to leave shaping to the page.
@@ -61,6 +66,7 @@ class WorkerSetup {
     zoomOffset,
     source,
     fonts,
+    families,
   ];
 }
 

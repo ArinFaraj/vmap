@@ -12,6 +12,7 @@ import 'camera.dart';
 import 'expr.dart';
 import 'extrusion.dart';
 import 'glyphs/glyph_layout.dart';
+import 'glyphs/vmap_font.dart';
 import 'label_state.dart';
 import 'labels.dart';
 import 'text_style.dart';
@@ -57,13 +58,13 @@ class VmapEngine extends ChangeNotifier {
     this._edits = const [],
     bool curvedLabels = true,
     bool glyphText = false,
-    List<Uint8List>? glyphFonts,
+    List<VmapFont> fonts = const [],
   }) : _labels = LabelEngine(text)
          ..pins = pins
          ..curvedRoads = curvedLabels {
     _labels.stateOf = (source, id) => _states[_sources[source].def.name]?[id];
     if (glyphText) {
-      _loadGlyphFonts(glyphFonts).whenComplete(() {
+      _loadGlyphFonts(fonts).whenComplete(() {
         if (!_disposed) _loadStyle();
       });
     } else {
@@ -71,22 +72,31 @@ class VmapEngine extends ChangeNotifier {
     }
   }
 
-  /// The fonts' bytes, sent to the tile workers so they shape labels.
+  /// The fonts' bytes and families, sent to the tile workers so they
+  /// shape labels.
   List<Uint8List>? _glyphFontBytes;
+  List<String>? _glyphFamilies;
 
   /// The font labels are shaped with when the app gives none: Vazirmatn,
   /// one variable font with every weight, for Arabic script and Latin.
   static const defaultGlyphFont =
       'packages/vmap/assets/fonts/Vazirmatn-Variable.ttf';
 
-  Future<void> _loadGlyphFonts(List<Uint8List>? given) async {
+  Future<void> _loadGlyphFonts(List<VmapFont> given) async {
     try {
-      final faces =
-          given ??
-          [(await rootBundle.load(defaultGlyphFont)).buffer.asUint8List()];
+      final all = [
+        ...given,
+        VmapFont(
+          'Vazirmatn',
+          (await rootBundle.load(defaultGlyphFont)).buffer.asUint8List(),
+        ),
+      ];
       if (_disposed) return;
+      final faces = [for (final f in all) f.bytes];
+      final families = [for (final f in all) f.family];
       _glyphFontBytes = faces;
-      _labels.useGlyphs(GlyphFonts(faces));
+      _glyphFamilies = families;
+      _labels.useGlyphs(GlyphFonts(faces, families: families));
       notifyListeners();
     } catch (e) {
       onError?.call(e);
@@ -384,6 +394,7 @@ class VmapEngine extends ChangeNotifier {
         },
         script: webWorker,
         fonts: _glyphFontBytes,
+        families: _glyphFamilies,
       );
       final before = byName[def.name];
       if (before != null) {

@@ -33,6 +33,7 @@ class TilePool {
     required this.onFailed,
     this.script,
     this.fonts,
+    this.families,
   }) : maxZoom =
            sheet.sources[source].maxZoom ??
            sheet.sources[source].defaultMaxZoom {
@@ -41,8 +42,9 @@ class TilePool {
 
   final TileSourceConfig config;
 
-  /// The fonts the workers shape labels with, or null.
+  /// The fonts the workers shape labels with, or null, and their families.
   final List<Uint8List>? fonts;
+  final List<String>? families;
 
   /// In a browser, the script the workers run, or null to build tiles on
   /// the page's thread.
@@ -231,6 +233,7 @@ class TilePool {
         zoomOffset: sheet.zoomOffset,
         source: source,
         fonts: fonts,
+        families: families,
       ).toWire(),
       (message) {
         switch (WorkerReply.fromWire(message! as List<Object?>)) {
@@ -433,7 +436,7 @@ Future<void> tileWorkerMain(
   final builder = TileBuilder(
     sheet,
     source: source,
-    fonts: fonts == null ? null : GlyphFonts(fonts),
+    fonts: fonts == null ? null : GlyphFonts(fonts, families: setup.families),
   );
   void answer(WorkerReply reply) => send(reply.toWire());
 

@@ -253,6 +253,7 @@ class TileBuilder {
           _ => 0,
         },
         singleLine: road,
+        stack: symbol.fontStack,
       );
     }
   }

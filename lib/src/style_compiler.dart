@@ -352,6 +352,7 @@ class StyleCompiler {
         haloWidth: compileExpr(paint['text-halo-width'] ?? 0),
         weight: _weight(font),
         italic: font.contains('italic') || font.contains('oblique'),
+        fontStack: _fontStack(layout['text-font']),
         uppercase: layout['text-transform'] == 'uppercase',
         letterSpacing: asNumber(layout['text-letter-spacing']) ?? 0,
         lineHeight: asNumber(layout['text-line-height']),
@@ -784,6 +785,19 @@ class StyleCompiler {
       if (i.isOdd) gaps += v;
     }
     return gaps <= 0 ? null : out;
+  }
+
+  /// The names in a `text-font`: a list, or a list given as a literal.
+  static List<String> _fontStack(Object? value) {
+    final list = switch (value) {
+      ['literal', final List<Object?> names] => names,
+      final List<Object?> names => names,
+      _ => const <Object?>[],
+    };
+    return [
+      for (final n in list)
+        if (n is String) n,
+    ];
   }
 
   static int _weight(String font) {

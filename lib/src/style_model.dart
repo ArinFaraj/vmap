@@ -456,6 +456,7 @@ class SymbolLayer {
     required this.haloWidth,
     required this.weight,
     required this.italic,
+    this.fontStack = const [],
     required this.uppercase,
     required this.letterSpacing,
     required this.haloBlur,
@@ -511,6 +512,9 @@ class SymbolLayer {
   final Expr haloWidth;
   final int weight;
   final bool italic;
+
+  /// The style's `text-font`: the fonts to try first, by name.
+  final List<String> fontStack;
   final bool uppercase;
 
   /// In ems.

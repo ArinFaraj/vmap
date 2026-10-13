@@ -17,10 +17,73 @@ bool textIsRightToLeft(String text) {
 /// The fonts labels are shaped with, first to last: a run of text takes the
 /// first font that has every one of its glyphs.
 class GlyphFonts {
-  GlyphFonts(List<Uint8List> faces)
-    : _faces = [for (final bytes in faces) OpenTypeFont.parse(bytes)];
+  /// [faces] in the order they are tried when a label's style names none
+  /// of them, each with its family in [families].
+  GlyphFonts(List<Uint8List> faces, {List<String>? families})
+    : _faces = [for (final bytes in faces) OpenTypeFont.parse(bytes)],
+      _families = [
+        for (var i = 0; i < faces.length; i++)
+          _family(families != null && i < families.length ? families[i] : ''),
+      ];
 
   final List<OpenTypeFont> _faces;
+  final List<String> _families;
+  final Map<String, List<int>> _orders = {};
+
+  /// Words a style's font name carries for weight and slant, which the
+  /// family a font is registered under does not.
+  static const _styleWords = {
+    'thin',
+    'hairline',
+    'extralight',
+    'ultralight',
+    'light',
+    'regular',
+    'normal',
+    'book',
+    'medium',
+    'semibold',
+    'demibold',
+    'demi',
+    'bold',
+    'extrabold',
+    'ultrabold',
+    'black',
+    'heavy',
+    'italic',
+    'oblique',
+    'condensed',
+    'semicondensed',
+    'expanded',
+    'extra',
+    'semi',
+    'ultra',
+  };
+
+  static String _family(String name) => [
+    for (final w in name.toLowerCase().split(RegExp(r'[\s_-]+')))
+      if (w.isNotEmpty && !_styleWords.contains(w)) w,
+  ].join();
+
+  /// The order to try the faces in for a style's `text-font` [stack]: its
+  /// fonts first, in its order, then every other face.
+  List<int> orderFor(List<String> stack) {
+    final key = stack.join('\u0001');
+    return _orders[key] ??= () {
+      final out = <int>[];
+      for (final name in stack) {
+        final family = _family(name);
+        for (var i = 0; i < _faces.length; i++) {
+          if (_families[i] == family && !out.contains(i)) out.add(i);
+        }
+      }
+      for (var i = 0; i < _faces.length; i++) {
+        if (!out.contains(i)) out.add(i);
+      }
+      return out;
+    }();
+  }
+
   final Map<int, OpenTypeFont> _instances = {};
   final Map<int, Shaper> _shapers = {};
 
@@ -96,6 +159,7 @@ bool _space(int c) => c == 0x20 || c == 0xA0 || c == 0x3000;
   List<int> scalars,
   int weight,
   double letterSpacing,
+  List<int> order,
 ) {
   final out = <double>[];
   var pen = 0.0;
@@ -109,7 +173,8 @@ bool _space(int c) => c == 0x20 || c == 0xA0 || c == 0x3000;
       final text = sub.sublist(piece.start, piece.end);
       ShapedRun? shaped;
       var face = 0;
-      for (; face < fonts.length; face++) {
+      for (final next in order) {
+        face = next;
         final candidate = fonts
             .shaper(face, weight)
             .shapeScalars(
@@ -161,6 +226,7 @@ List<List<int>> _breakLines(
   int weight,
   double letterSpacing,
   double maxWidth,
+  List<int> order,
 ) {
   final words = <List<int>>[];
   var current = <int>[];
@@ -175,10 +241,10 @@ List<List<int>> _breakLines(
   if (current.isNotEmpty) words.add(current);
   if (words.length < 2) return [scalars];
   final space =
-      _shapeLine(fonts, const [0x20], weight, letterSpacing)?.$2 ?? 0.25;
+      _shapeLine(fonts, const [0x20], weight, letterSpacing, order)?.$2 ?? 0.25;
   final widths = [
     for (final w in words)
-      _shapeLine(fonts, w, weight, letterSpacing)?.$2 ?? w.length * 0.5,
+      _shapeLine(fonts, w, weight, letterSpacing, order)?.$2 ?? w.length * 0.5,
   ];
   final total =
       widths.fold<double>(0, (a, b) => a + b) + space * (words.length - 1);
@@ -219,19 +285,21 @@ ShapedText? layoutText(
   double maxWidth = double.infinity,
   int align = 0,
   bool singleLine = false,
+  List<String> stack = const [],
 }) {
+  final order = fonts.orderFor(stack);
   final scalars = text.runes.toList();
   final lines = singleLine || maxWidth.isInfinite
       ? [scalars]
-      : _breakLines(fonts, scalars, weight, letterSpacing, maxWidth);
+      : _breakLines(fonts, scalars, weight, letterSpacing, maxWidth, order);
   final shaped = <(List<double>, double)>[];
   for (final line in lines) {
-    final one = _shapeLine(fonts, line, weight, letterSpacing);
+    final one = _shapeLine(fonts, line, weight, letterSpacing, order);
     if (one == null) return null;
     shaped.add(one);
   }
   final width = shaped.fold<double>(0, (a, l) => math.max(a, l.$2));
-  final (ascent, descent) = fonts.metrics(0);
+  final (ascent, descent) = fonts.metrics(order.first);
   final lead = (lineHeight - ascent - descent) / 2;
   final out = <double>[];
   for (final (i, (glyphs, w)) in shaped.indexed) {

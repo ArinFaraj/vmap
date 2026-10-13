@@ -70,6 +70,20 @@ void main() {
     expect(lastEnd, closeTo(shaped.width, 0.05));
   });
 
+  test("a style's text-font names its fonts first, by family", () {
+    final bytes = File('assets/fonts/Vazirmatn-Variable.ttf').readAsBytesSync();
+    final two = GlyphFonts(
+      [bytes, bytes],
+      families: ['Noto Sans', 'Vazirmatn'],
+    );
+    expect(two.orderFor(['Vazirmatn Bold']), [1, 0]);
+    expect(two.orderFor(['Noto Sans Regular', 'Vazirmatn Regular']), [0, 1]);
+    expect(two.orderFor(['Open Sans Semibold Italic']), [0, 1]);
+    expect(two.orderFor(const []), [0, 1]);
+    final shaped = layoutText(two, 'هەولێر', stack: ['Vazirmatn Medium'])!;
+    expect(shaped.glyphs[0], 1);
+  });
+
   test('a point along a path, and past its end', () {
     final path = Float64List.fromList([0, 0, 10, 0, 10, 10]);
     final out = Float64List(3);

@@ -657,6 +657,7 @@ class LabelEngine {
         layoutWidth: (isRoad ? 60.0 : (symbol?.maxWidth ?? 9)) * fontSize,
         fontFamily: text.fontFamily,
         fontFamilyFallback: text.fontFamilyFallback,
+        fontStack: symbol?.fontStack ?? const [],
       ),
       dpr: dpr,
       pass: _pass,

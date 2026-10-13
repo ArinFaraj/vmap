@@ -1,5 +1,6 @@
 export 'src/camera.dart' show VmapCamera;
 export 'src/engine.dart' show VmapEngine;
+export 'src/glyphs/vmap_font.dart' show VmapFont;
 export 'src/gestures.dart' show VmapGestures;
 export 'src/text_style.dart' show VmapTextStyle;
 export 'src/map_camera.dart' show FlyPath, MapCameraPosition, defaultEasing;
