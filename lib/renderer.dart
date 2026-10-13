@@ -11,5 +11,6 @@ export 'src/mercator.dart' show latitudeAt, worldX, worldY;
 export 'src/sprites.dart' show SpriteImage, SpriteSheet;
 export 'src/style_model.dart';
 export 'src/tile_builder.dart' show tileExtent;
+export 'src/tile_id.dart' show TileId, tileKey;
 export 'src/tiles.dart' show LoadedTile, TileDraw;
 export 'src/view.dart' show MapView;

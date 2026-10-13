@@ -69,7 +69,40 @@ class GpuMap implements MapRenderer {
 
   /// Bytes of new geometry sent to the GPU in one frame; the rest waits.
   static const _bytesPerFrame = 256 * 1024;
-  static const _fadeMicros = 250000;
+  static const _fadeMicros = 180000;
+
+  /// Buildings rise from the ground over this long when they first show
+  /// somewhere, easing out.
+  static const _growMicros = 520000;
+
+  /// The frame each tile last drew its buildings at full height, so a tile
+  /// replacing it while zooming shows its own buildings standing at once
+  /// instead of growing them again.
+  final Map<int, int> _standing = {};
+
+  bool _standingNear(TileId id) {
+    bool recent(int z, int x, int y) {
+      final at = _standing[tileKey(z, x, y)];
+      return at != null && _frame - at < 90;
+    }
+
+    var z = id.z, x = id.x, y = id.y;
+    for (var up = 0; up <= 4 && z >= 0; up++) {
+      if (recent(z, x, y)) return true;
+      z--;
+      x >>= 1;
+      y >>= 1;
+    }
+    for (var down = 1; down <= 2; down++) {
+      final n = 1 << down;
+      for (var dy = 0; dy < n; dy++) {
+        for (var dx = 0; dx < n; dx++) {
+          if (recent(id.z + down, id.x * n + dx, id.y * n + dy)) return true;
+        }
+      }
+    }
+    return false;
+  }
 
   final Float32List _frameInfo = Float32List(28);
   late final ByteData _frameBytes = ByteData.sublistView(_frameInfo);
@@ -456,6 +489,7 @@ class GpuMap implements MapRenderer {
       _paint,
     );
     if (_frame % 120 == 0) {
+      _standing.removeWhere((_, at) => _frame - at > 600);
       _tiles.removeWhere((_, b) {
         if (_frame - b.usedFrame <= 600) return false;
         _pool.give(b.buffer);
@@ -700,6 +734,7 @@ class GpuMap implements MapRenderer {
             () => _BuildingBuffers(e),
           );
           b.usedFrame = _frame;
+          final now = _clock.elapsedMicroseconds;
           while (b.uploaded < b.chunks) {
             final bytes = b.chunkBytes(b.uploaded);
             if (_budget < _bytesPerFrame && bytes > _budget) {
@@ -707,16 +742,20 @@ class GpuMap implements MapRenderer {
               break;
             }
             _budget -= bytes;
-            b.upload(_clock.elapsedMicroseconds);
+            b.upload(_standingNear(d.tile.id) ? now - _growMicros : now);
           }
           final scale = d.size / tileExtent;
+          var grown = b.uploaded > 0;
           for (var c = 0; c < b.uploaded; c++) {
-            final fade = math.min(
-              1.0,
-              (_clock.elapsedMicroseconds - b.shownAt[c]) / _fadeMicros,
-            );
-            if (fade < 1) _more = true;
-            _times(clip, scale, perMetre, d.left, d.top, fade);
+            final t = math.min(1.0, (now - b.shownAt[c]) / _growMicros);
+            final fade = math.min(1.0, t * _growMicros / _fadeMicros);
+            final rest = 1 - t;
+            final grow = 1 - rest * rest * rest;
+            if (t < 1) {
+              _more = true;
+              grown = false;
+            }
+            _times(clip, scale, perMetre, d.left, d.top, fade, grow);
             pass
               ..bindVertexBuffer(
                 gpu.BufferView(
@@ -727,6 +766,10 @@ class GpuMap implements MapRenderer {
               )
               ..bindUniform(_buildingFrame!, host.emplace(_frameBytes))
               ..draw(b.chunkBytes(c) ~/ _BuildingBuffers._stride);
+          }
+          if (grown) {
+            final id = d.tile.id;
+            _standing[tileKey(id.z, id.x, id.y)] = _frame;
           }
         }
       }
@@ -758,13 +801,14 @@ class GpuMap implements MapRenderer {
     double perMetre,
     double left,
     double top,
-    double fade,
-  ) {
+    double fade, [
+    double grow = 1,
+  ]) {
     final out = _frameInfo;
     for (var r = 0; r < 4; r++) {
       out[r] = clip[r] * scale;
       out[4 + r] = clip[4 + r] * scale;
-      out[8 + r] = clip[8 + r] * perMetre;
+      out[8 + r] = clip[8 + r] * perMetre * grow;
       out[12 + r] = clip[r] * left + clip[4 + r] * top + clip[12 + r];
     }
     out[16] = fade;
