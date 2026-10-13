@@ -126,3 +126,23 @@ On the emulator (Impeller OpenGL ES) it draws Erbil correctly: the houses
 inside the citadel no longer show through its roof. It lives in the
 example until it moves into a package of its own, so vmap itself needs no
 shader hook and still builds for the web.
+
+### Profiling on the phone (Vivo V2514, Vulkan)
+
+Scripted zoom and fly test, `--dart-define=ZOOMTEST=true`, with variants:
+
+| Run | fps | Frames over 16.7 ms | Build p50 / p95 / p99 | Raster p50 / p95 |
+| --- | --- | --- | --- | --- |
+| full, 60 Hz | 59 | 98 | 3.7 / 6.9 / 10.1 ms | 3.7 / 6.6 ms |
+| no labels, 60 Hz | 60 | 3 | 3.1 / 6.7 / 9.4 ms | 4.0 / 5.8 ms |
+| full, surface voting 120 Hz | 114 | 103 | 2.4 / 4.9 / 7.8 ms | 3.3 / 5.1 ms |
+
+- Android 15 draws a surface that casts no frame rate vote at the display's
+  normal category, 60 Hz here, even with a 120 Hz preferred display mode.
+  Voting with `Surface.setFrameRate` on Flutter's surface gives 120 Hz.
+  This belongs in vmap itself (a small Android plugin), not each app.
+- `GpuImageSurface.acquireNextFrame` blocked the UI thread 2 to 5 ms in
+  most frames, waiting on the GPU. A ring of three textures shown with
+  `Texture.asImage` avoids the wait; its phone numbers are still to take.
+- Labels are the other cost: shaping new labels (up to 6 ms in one frame)
+  and placing them, on the UI thread.
