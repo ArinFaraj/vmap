@@ -33,8 +33,13 @@ abstract class MapRenderer {
 
   /// Sends [tile]'s flat layers and buildings to the GPU until [clock]
   /// passes [deadline], at least a piece of them, and returns true once all
-  /// of them are there.
+  /// of them are there. What it keeps goes in [LoadedTile.rendererData].
   bool upload(LoadedTile tile, Stopwatch clock, int deadline);
 
+  void dispose();
+}
+
+/// What a [MapRenderer] keeps for one tile, released with the tile.
+abstract interface class RendererTileData {
   void dispose();
 }

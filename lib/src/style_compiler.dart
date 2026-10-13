@@ -79,6 +79,28 @@ class StyleCompiler {
   Expr? _backgroundPattern;
   Expr _backgroundOpacity = (_) => 1;
 
+  /// See [StyleSheet.footprints]. Widens each footprint's bucket by a zoom,
+  /// so tiles past the footprints' range still carry them.
+  Map<int, ExtrusionLayer> _footprints() {
+    final found = <int, ExtrusionLayer>{};
+    for (final (p, layer) in _layers.indexed) {
+      if (layer is! FillLayer || layer.extruded) continue;
+      final flat = _buckets[layer.bucket];
+      for (final building in _extrusions) {
+        final tall = _buckets[building.bucket];
+        if (layer.maxZoom != building.minZoom ||
+            flat.source != tall.source ||
+            flat.sourceLayer != tall.sourceLayer) {
+          continue;
+        }
+        found[p] = building;
+        flat.maxZoom = math.max(flat.maxZoom, layer.maxZoom + 1);
+        break;
+      }
+    }
+    return found;
+  }
+
   StyleSheet compile() {
     for (final raw in (json['layers'] as List?) ?? const []) {
       if (raw is! Map) continue;
@@ -101,6 +123,7 @@ class StyleCompiler {
       }
     }
     final sprite = json['sprite'];
+    final footprints = _footprints();
     return StyleSheet(
       background: _background,
       buckets: _buckets,
@@ -119,6 +142,7 @@ class StyleCompiler {
       backgroundPattern: _backgroundPattern,
       backgroundOpacity: _backgroundOpacity,
       extrusions: _extrusions,
+      footprints: footprints,
       attributions: {
         for (final s in _sources.values)
           if (s is Map && s['attribution'] is String)

@@ -754,7 +754,15 @@ class VmapEngine extends ChangeNotifier {
     );
     _budget.start(zooming: (camera.zoom - _lastZoom).abs() > 0.002);
     final gpu = renderer;
-    _onGpu = camera.view != null && gpu != null && gpu.supports(sheet);
+    final onGpu = camera.view != null && gpu != null && gpu.supports(sheet);
+    if (onGpu && !_onGpu) {
+      for (final s in _sources) {
+        for (final t in s.tiles.values.followedBy(s.previous.values)) {
+          t.uploadAgain();
+        }
+      }
+    }
+    _onGpu = onGpu;
     var waiting = false;
     _lastZoom = camera.zoom;
     for (final s in _sources) {
@@ -779,7 +787,6 @@ class VmapEngine extends ChangeNotifier {
           view.matrix(originX: camera.origin.dx, originY: camera.origin.dy),
         );
     }
-    final onGpu = _onGpu;
     for (final run in sheet.runs) {
       if (run.raster >= 0) {
         _rasters[run.raster].paint(
@@ -807,7 +814,7 @@ class VmapEngine extends ChangeNotifier {
       canvas.restore();
       if (onGpu) {
         final gpuStarted = _clock.elapsedMicroseconds;
-        final more = gpu!.paint(
+        final more = gpu.paint(
           canvas,
           view,
           camera.origin,
@@ -938,15 +945,13 @@ class VmapEngine extends ChangeNotifier {
   void _prepare(LoadedTile tile, double scale) {
     if (_budget.spentUp) return;
     final started = _clock.elapsedMicroseconds;
-    final deadline = started + FrameBudget.micros - _budget.spent;
-    final onGpu = _onGpu && (tile.gpu != null || tile.extrusions.isNotEmpty);
-    if (onGpu) tile.gpuWaiting = true;
-    if (!tile.stepsDone) {
-      tile.prepare(_meshes.widths, scale, _clock, deadline, meshes: !onGpu);
-    }
-    if (onGpu && tile.stepsDone) {
-      tile.gpuWaiting = !renderer!.upload(tile, _clock, deadline);
-    }
+    tile.prepare(
+      _meshes.widths,
+      scale,
+      _clock,
+      started + FrameBudget.micros - _budget.spent,
+      renderer: _onGpu ? renderer : null,
+    );
     final spent = _clock.elapsedMicroseconds - started;
     _budget.spent += spent;
     stats.timings.tileSetup(spent);

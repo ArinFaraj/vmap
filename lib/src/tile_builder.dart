@@ -387,12 +387,7 @@ class TileBuilder {
     for (final layer in tileLayers) {
       final buckets = [
         for (final b in _buckets[layer.name] ?? const <int>[])
-          if (drawnAt(
-            sheet.buckets[b].minZoom,
-            sheet.buckets[b].maxZoom +
-                (sheet.handoverBuckets.contains(b) ? 1 : 0),
-          ))
-            b,
+          if (drawnAt(sheet.buckets[b].minZoom, sheet.buckets[b].maxZoom)) b,
       ];
       final symbols = [
         for (final s in _symbols[layer.name] ?? const <int>[])

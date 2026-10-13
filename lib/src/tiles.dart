@@ -6,6 +6,7 @@ import 'camera.dart';
 import 'extrusion.dart';
 import 'gpu_stream.dart';
 import 'label_state.dart';
+import 'map_renderer.dart';
 import 'style_model.dart';
 import 'tessellate.dart';
 import 'tile_builder.dart';
@@ -152,38 +153,59 @@ class LoadedTile {
   final List<LabelCandidate> labels = [];
   int usedFrame = 0;
 
-  /// Set while the GPU renderer has not yet got all of [gpu].
-  bool gpuWaiting = false;
+  /// What a renderer keeps for this tile, let go with it.
+  RendererTileData? rendererData;
 
-  bool get prepared => _step < 0 && !gpuWaiting;
+  bool get prepared => _step < 0;
 
-  /// Whether [prepare] has nothing left to do.
-  bool get stepsDone => _step < 0;
-
-  /// 0 uploads the geometry, 1..layers widen one line layer each, then
-  /// labels.
+  /// 0 makes the canvas meshes, 1..layers widen one line layer each, then
+  /// labels, then a renderer's upload.
   int _step = 0;
   int _uploaded = 0;
   int _labelAt = 0;
 
-  /// Uploads the geometry and widens every line to [widths], so the first
-  /// frame that draws this tile has nothing left to compute. Works in steps
-  /// and returns once [clock] passes [deadline]; call again to continue.
-  /// Without [meshes], as on the GPU renderer, only the labels are made.
+  /// Gets the tile ready to draw, so the first frame that draws it has
+  /// nothing left to compute: the canvas meshes with every line widened to
+  /// [widths], or with a [renderer] instead its upload, and the labels.
+  /// Works in steps and returns once [clock] passes [deadline]; call again
+  /// to continue.
   void prepare(
     Float64List widths,
     double scale,
     Stopwatch clock,
     int deadline, {
-    bool meshes = true,
+    MapRenderer? renderer,
   }) {
-    final built = _built!;
-    if (!meshes && _step >= 0 && _step <= sheet.layers.length) {
-      _step = sheet.layers.length + 1;
+    final built = _built;
+    if (built != null) {
+      if (renderer != null && _step <= sheet.layers.length) {
+        _step = sheet.layers.length + 1;
+      }
+      if (!_meshes(built, widths, scale, clock, deadline)) return;
+      if (!_labels(built, clock, deadline)) return;
     }
+    if (renderer != null && !renderer.upload(this, clock, deadline)) return;
+    _built = null;
+    _step = -1;
+  }
+
+  /// Opens a tile made ready for the canvas to a renderer's upload.
+  void uploadAgain() {
+    if (_step < 0 && rendererData == null) _step = 0;
+  }
+
+  bool _meshes(
+    BuiltTile built,
+    Float64List widths,
+    double scale,
+    Stopwatch clock,
+    int deadline,
+  ) {
     if (_step == 0) {
       while (_uploaded < built.meshes.length) {
-        if (_uploaded > 0 && clock.elapsedMicroseconds > deadline) return;
+        if (_uploaded > 0 && clock.elapsedMicroseconds > deadline) {
+          return false;
+        }
         final m = built.meshes[_uploaded++];
         (groups[m.bucket] ??= []).add(switch (sheet.buckets[m.bucket].kind) {
           BucketKind.line => TileMesh.line(m.chunk, m.props),
@@ -193,7 +215,7 @@ class LoadedTile {
         });
       }
       _step = 1;
-      if (clock.elapsedMicroseconds > deadline) return;
+      if (clock.elapsedMicroseconds > deadline) return false;
     }
     while (_step <= sheet.layers.length) {
       final p = _step - 1;
@@ -210,18 +232,23 @@ class LoadedTile {
       for (final m in meshes) {
         m.build(p, halfWidth);
       }
-      if (clock.elapsedMicroseconds > deadline) return;
+      if (clock.elapsedMicroseconds > deadline) return false;
     }
+    return true;
+  }
+
+  bool _labels(BuiltTile built, Stopwatch clock, int deadline) {
     final span = 1 / (1 << id.z);
     final tx = id.x * span;
     final ty = id.y * span;
     while (_labelAt < built.labels.length) {
       final l = built.labels[_labelAt++];
       labels.add(TileLabel(l.key, l, tx, ty, span));
-      if (_labelAt & 127 == 0 && clock.elapsedMicroseconds > deadline) return;
+      if (_labelAt & 127 == 0 && clock.elapsedMicroseconds > deadline) {
+        return false;
+      }
     }
-    _built = null;
-    _step = -1;
+    return true;
   }
 
   void dispose() {
@@ -231,6 +258,8 @@ class LoadedTile {
         m.dispose();
       }
     }
+    rendererData?.dispose();
+    rendererData = null;
   }
 }
 

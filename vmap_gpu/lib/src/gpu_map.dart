@@ -8,6 +8,10 @@ import 'package:flutter_gpu/gpu.dart' as gpu;
 import 'package:vector_math/vector_math.dart' show Vector4;
 import 'package:vmap/renderer.dart';
 
+import 'building_reveal.dart';
+import 'gpu_buffers.dart';
+import 'layer_paint.dart';
+
 const _bundle = 'packages/vmap_gpu/build/shaderbundles/vmap_gpu.shaderbundle';
 
 /// Draws vmap's fill and line layers and its buildings on the GPU: every
@@ -31,7 +35,7 @@ class GpuMap implements MapRenderer {
   }
 
   gpu.ShaderLibrary? _library;
-  gpu.RenderPipeline? _flat, _buildings;
+  gpu.RenderPipeline? _flat, _buildings, _stencil;
   gpu.UniformSlot? _flatFrame, _flatSlots, _buildingFrame, _stencilFrame;
   gpu.UniformSlot? _flatFrag, _flatSprites;
   SpriteSheet? _sheet;
@@ -45,11 +49,11 @@ class GpuMap implements MapRenderer {
   )..overwrite(ByteData(4));
   final Float32List _fragInfo = Float32List(4);
   late final ByteData _fragBytes = ByteData.sublistView(_fragInfo);
-  gpu.RenderPipeline? _stencil;
 
   /// A tile's square in tile units, two triangles.
   gpu.DeviceBuffer? _quad;
-  _Uniforms? _host;
+  UniformArena? _host;
+  final _pool = BufferPool();
   List<gpu.Texture> _ring = const [];
   List<ui.Image> _images = const [];
   ui.Image? _lastImage;
@@ -62,71 +66,9 @@ class GpuMap implements MapRenderer {
       gpu.gpuContext.defaultColorFormat == gpu.PixelFormat.unknown
       ? gpu.PixelFormat.r8g8b8a8UNormInt
       : gpu.gpuContext.defaultColorFormat;
-  final Map<GpuStream, _TileBuffers> _tiles = Map.identity();
-  final Map<BuiltExtrusion, _BuildingBuffers> _built = Map.identity();
   final Stopwatch _clock = Stopwatch()..start();
+  late final _reveal = BuildingReveal(_clock);
   final ui.Paint _paint = ui.Paint()..filterQuality = ui.FilterQuality.low;
-
-  /// Bytes of new geometry sent to the GPU in one frame; the rest waits.
-  static const _bytesPerFrame = 256 * 1024;
-  static const _fadeMicros = 180000;
-
-  /// Buildings rise from the ground over this long when they first show
-  /// somewhere, easing out.
-  static const _growMicros = 520000;
-
-  /// The frame each tile last drew its buildings at full height, so a tile
-  /// replacing it while zooming shows its own buildings standing at once
-  /// instead of growing them again.
-  final Map<int, int> _standing = {};
-
-  /// How far each building layer has risen out of its footprints: it rises
-  /// over [_riseMicros] once the zoom enters the layer's range and sinks
-  /// back when it leaves, instead of every building appearing at once.
-  final Map<ExtrusionLayer, double> _presence = Map.identity();
-  int _presenceAt = 0;
-  static const _riseMicros = 400000;
-
-  void _updatePresence(StyleSheet sheet, double styleZoom) {
-    final now = _clock.elapsedMicroseconds;
-    final step = math.min(1.0, (now - _presenceAt) / _riseMicros);
-    _presenceAt = now;
-    for (final layer in sheet.extrusions) {
-      final target = styleZoom >= layer.minZoom && styleZoom < layer.maxZoom
-          ? 1.0
-          : 0.0;
-      final was = _presence[layer] ?? target;
-      final next = was < target
-          ? math.min(target, was + step)
-          : math.max(target, was - step);
-      _presence[layer] = next;
-      if (next != target) _more = true;
-    }
-  }
-
-  bool _standingNear(TileId id) {
-    bool recent(int z, int x, int y) {
-      final at = _standing[tileKey(z, x, y)];
-      return at != null && _frame - at < 90;
-    }
-
-    var z = id.z, x = id.x, y = id.y;
-    for (var up = 0; up <= 4 && z >= 0; up++) {
-      if (recent(z, x, y)) return true;
-      z--;
-      x >>= 1;
-      y >>= 1;
-    }
-    for (var down = 1; down <= 2; down++) {
-      final n = 1 << down;
-      for (var dy = 0; dy < n; dy++) {
-        for (var dx = 0; dx < n; dx++) {
-          if (recent(id.z + down, id.x * n + dx, id.y * n + dy)) return true;
-        }
-      }
-    }
-    return false;
-  }
 
   final Float32List _frameInfo = Float32List(28);
   late final ByteData _frameBytes = ByteData.sublistView(_frameInfo);
@@ -134,7 +76,16 @@ class GpuMap implements MapRenderer {
   late final ByteData _slotBytes = ByteData.sublistView(_slots);
 
   /// One layer's paint this frame, in screen pixels, before a tile's scale.
-  final Map<int, _Paint> _layerPaint = {};
+  final Map<int, LayerPaint> _layerPaint = {};
+
+  /// Premultiplied source over, which also leaves the colour untouched
+  /// where the stencil pass writes its transparent squares.
+  static final _over = gpu.ColorBlendEquation(
+    sourceColorBlendFactor: gpu.BlendFactor.one,
+    destinationColorBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha,
+    sourceAlphaBlendFactor: gpu.BlendFactor.one,
+    destinationAlphaBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha,
+  );
 
   Future<void> _load() async {
     try {
@@ -253,7 +204,7 @@ class GpuMap implements MapRenderer {
         ),
       );
     }
-    _host = _Uniforms();
+    _host = UniformArena();
     return true;
   }
 
@@ -314,6 +265,25 @@ class GpuMap implements MapRenderer {
   }
 
   @override
+  bool upload(LoadedTile tile, Stopwatch clock, int deadline) {
+    final data = switch (tile.rendererData) {
+      final TileGpu known => known,
+      _ => tile.rendererData = TileGpu(tile, _pool),
+    };
+    return Timeline.timeSync(
+      'vmap.gpu.upload',
+      () => data.send(clock, deadline),
+    );
+  }
+
+  /// [d]'s data on the GPU. The engine hands over only tiles it uploaded,
+  /// so this is null only for a tile with nothing for the GPU.
+  static TileGpu? _gpuOf(TileDraw d) => switch (d.tile.rendererData) {
+    final TileGpu data when data.ready => data,
+    _ => null,
+  };
+
+  @override
   bool paint(
     ui.Canvas canvas,
     MapView view,
@@ -329,6 +299,7 @@ class GpuMap implements MapRenderer {
     if (!_ready()) return true;
     _sheet = sprites;
     _frame++;
+    _pool.frame = _frame;
     final width = (view.width * devicePixelRatio).round();
     final height = (view.height * devicePixelRatio).round();
     if (width <= 0 || height <= 0) return false;
@@ -336,22 +307,47 @@ class GpuMap implements MapRenderer {
     // A GPU that falls behind blocks the thread that queues more work for
     // it, so while two frames are still in flight the last image is shown
     // again and the frame comes back once one finishes.
-    final shown = _lastImage;
-    if (_inFlight >= 2 && shown != null) {
-      canvas.drawImageRect(
-        shown,
-        ui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
-        ui.Rect.fromLTWH(0, 0, view.width, view.height),
-        _paint,
-      );
+    final last = _lastImage;
+    if (_inFlight >= 2 && last != null) {
+      _present(canvas, last, view);
       return true;
     }
     final target = _ring[_next];
     final image = _images[_next];
     _next = (_next + 1) % _ring.length;
     final commands = gpu.gpuContext.createCommandBuffer();
+    _host!.reset();
+    _setFog(sheet, context, view);
+    _reveal.begin(sheet, styleZoom);
+    _layerPaint.clear();
+    final pass = _MapPass(
+      this,
+      _beginPass(commands, target),
+      view,
+      view.clipMatrix(originX: origin.dx, originY: origin.dy),
+      sheet,
+      context,
+      styleZoom,
+      fallback,
+      ideal,
+    );
+    Timeline.timeSync('vmap.gpu.flat', pass.drawRuns);
+    if (sheet.extrusions.isNotEmpty) {
+      Timeline.timeSync('vmap.gpu.buildings', pass.drawBuildings);
+    }
+    _inFlight++;
+    Timeline.timeSync(
+      'vmap.gpu.submit',
+      () => commands.submit(completionCallback: (_) => _inFlight--),
+    );
+    _lastImage = image;
+    _present(canvas, image, view);
+    return _reveal.animating;
+  }
+
+  gpu.RenderPass _beginPass(gpu.CommandBuffer commands, gpu.Texture target) {
     final samples = _samples;
-    final pass = commands.createRenderPass(
+    return commands.createRenderPass(
       gpu.RenderTarget.singleColor(
         samples == null
             ? gpu.ColorAttachment(texture: target, clearValue: Vector4.zero())
@@ -367,250 +363,15 @@ class GpuMap implements MapRenderer {
         ),
       ),
     );
-    final host = _host!..reset();
-    final clip = view.clipMatrix(originX: origin.dx, originY: origin.dy);
-    _setFog(sheet, context, view);
-    _budget = _bytesPerFrame;
-    _more = false;
-    _updatePresence(sheet, styleZoom);
-    _layerPaint.clear();
+  }
 
-    // Each tile writes its number over its square, and draws only where
-    // its number is: a tile's data runs a little past its square, and a
-    // translucent fill drawn twice there shows a seam. A tile standing in
-    // for a missing one draws where no number is. Tilted, a square is no
-    // rectangle on the screen, so scissors cannot do it. Sources tile the
-    // map apart, so the numbers are rewritten when the source changes.
-    for (final tiles in ideal) {
-      for (final d in tiles) {
-        _upload(d, all: true);
-      }
-    }
-    for (final tiles in fallback) {
-      for (final d in tiles) {
-        _upload(d, all: false);
-      }
-    }
-
-    var marked = -1;
-    void mark(int source) {
-      if (source == marked || _stencil == null) return;
-      pass
-        ..clearBindings()
-        ..bindPipeline(_stencil!)
-        ..setCullMode(gpu.CullMode.none)
-        ..setDepthWriteEnable(false)
-        ..setDepthCompareOperation(gpu.CompareFunction.always)
-        ..setColorBlendEnable(true)
-        ..setColorBlendEquation(_over)
-        ..setStencilConfig(
-          gpu.StencilConfig(
-            depthStencilPassOperation: gpu.StencilOperation.setToReferenceValue,
-          ),
-        )
-        ..bindVertexBuffer(
-          gpu.BufferView(_quad!, offsetInBytes: 0, lengthInBytes: 48),
-        );
-      void cover(List<TileDraw> tiles, bool clear) {
-        for (final (i, d) in tiles.indexed) {
-          if (!_shown(d)) continue;
-          _times(clip, d.size / tileExtent, 1, d.left, d.top, 1);
-          pass
-            ..setStencilReference(clear ? 0 : i + 1)
-            ..bindUniform(_stencilFrame!, host.emplace(_frameBytes))
-            ..draw(6);
-        }
-      }
-
-      if (marked >= 0) cover(ideal[marked], true);
-      cover(ideal[source], false);
-      marked = source;
-      pass.clearBindings();
-    }
-
-    bool clips(int source) => _stencil != null && ideal[source].length < 255;
-
-    var flat = false;
-    Timeline.startSync('vmap.gpu.flat');
-    for (final run in sheet.runs) {
-      if (run.source < 0 || run.source >= ideal.length) continue;
-      final source = run.source;
-      final clipped = clips(source);
-      if (clipped && marked != source) {
-        mark(source);
-        flat = false;
-      }
-      if (!flat) {
-        pass
-          ..bindPipeline(_flat!)
-          ..setDepthWriteEnable(false)
-          ..setDepthCompareOperation(gpu.CompareFunction.always)
-          ..setCullMode(gpu.CullMode.none)
-          ..setColorBlendEnable(true)
-          ..setColorBlendEquation(_over);
-        _bindSprites(pass);
-        flat = true;
-      }
-      if (clipped) {
-        pass
-          ..setStencilReference(0)
-          ..setStencilConfig(
-            gpu.StencilConfig(compareFunction: gpu.CompareFunction.equal),
-          );
-        for (final d in fallback[source]) {
-          _drawFlat(pass, d, sheet, run, clip, context, styleZoom);
-        }
-      } else {
-        pass.setStencilConfig(gpu.StencilConfig());
-      }
-      for (final (i, d) in ideal[source].indexed) {
-        if (clipped) pass.setStencilReference(i + 1);
-        _drawFlat(pass, d, sheet, run, clip, context, styleZoom);
-      }
-      pass.setStencilConfig(gpu.StencilConfig());
-    }
-
-    Timeline.finishSync();
-    if (sheet.extrusions.isNotEmpty) Timeline.startSync('vmap.gpu.buildings');
-    if (sheet.extrusions.isNotEmpty) {
-      for (var source = 0; source < ideal.length; source++) {
-        bool built(List<TileDraw> tiles) =>
-            tiles.any((d) => d.tile.extrusions.isNotEmpty);
-        final standIn = built(fallback[source]) && clips(source);
-        if (!built(ideal[source]) && !standIn) continue;
-        if (standIn) mark(source);
-        pass
-          ..clearBindings()
-          ..bindPipeline(_buildings!)
-          ..setCullMode(gpu.CullMode.none)
-          ..setColorBlendEnable(true)
-          ..setStencilConfig(gpu.StencilConfig())
-          ..setDepthWriteEnable(true)
-          ..setDepthCompareOperation(gpu.CompareFunction.lessEqual);
-        _drawBuildings(pass, view, sheet, ideal[source], clip, styleZoom);
-        if (standIn) {
-          pass
-            ..setStencilReference(0)
-            ..setStencilConfig(
-              gpu.StencilConfig(compareFunction: gpu.CompareFunction.equal),
-            );
-          _drawBuildings(pass, view, sheet, fallback[source], clip, styleZoom);
-        }
-      }
-    }
-    if (sheet.extrusions.isNotEmpty) Timeline.finishSync();
-    final more = _more;
-
-    _inFlight++;
-    Timeline.timeSync(
-      'vmap.gpu.submit',
-      () => commands.submit(completionCallback: (_) => _inFlight--),
-    );
-    _lastImage = image;
+  void _present(ui.Canvas canvas, ui.Image image, MapView view) {
     canvas.drawImageRect(
       image,
-      ui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
+      ui.Rect.fromLTWH(0, 0, _width.toDouble(), _height.toDouble()),
       ui.Rect.fromLTWH(0, 0, view.width, view.height),
       _paint,
     );
-    if (_frame % 120 == 0) {
-      _standing.removeWhere((_, at) => _frame - at > 600);
-      _tiles.removeWhere((_, b) {
-        if (_frame - b.usedFrame <= 600) return false;
-        _pool.give(b.buffer);
-        return true;
-      });
-      _built.removeWhere((_, b) => _frame - b.usedFrame > 600);
-    }
-    return more;
-  }
-
-  /// Premultiplied source over, which also leaves the colour untouched
-  /// where the stencil pass writes its transparent squares.
-  static final _over = gpu.ColorBlendEquation(
-    sourceColorBlendFactor: gpu.BlendFactor.one,
-    destinationColorBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha,
-    sourceAlphaBlendFactor: gpu.BlendFactor.one,
-    destinationAlphaBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha,
-  );
-
-  int _budget = 0;
-  bool _more = false;
-  final _pool = _BufferPool();
-
-  /// Whether [d]'s geometry is all on the GPU, so it draws and claims its
-  /// square; a tile still arriving leaves its square to stand-ins.
-  bool _shown(TileDraw d) {
-    final stream = d.tile.gpu;
-    return stream != null && (_tiles[stream]?.ready ?? false);
-  }
-
-  @override
-  bool upload(LoadedTile tile, Stopwatch clock, int deadline) {
-    final stream = tile.gpu;
-    if (stream != null && !_uploadStream(stream, clock, deadline)) {
-      return false;
-    }
-    for (final e in tile.extrusions) {
-      final b = _built[e] ??= _BuildingBuffers(e);
-      b.usedFrame = _frame;
-      while (b.uploaded < b.chunks) {
-        Timeline.timeSync('vmap.gpu.upload.building', b.upload);
-        if (clock.elapsedMicroseconds >= deadline) break;
-      }
-      if (b.uploaded < b.chunks) return false;
-    }
-    return true;
-  }
-
-  bool _uploadStream(GpuStream stream, Stopwatch clock, int deadline) {
-    final buffers = _tiles[stream] ??= Timeline.timeSync(
-      'vmap.gpu.upload.alloc',
-      () => _TileBuffers(stream, _pool),
-    );
-    buffers.usedFrame = _frame;
-    Timeline.timeSync('vmap.gpu.upload.copy', () {
-      do {
-        buffers.send(_piece);
-      } while (!buffers.ready && clock.elapsedMicroseconds < deadline);
-    });
-    return buffers.ready;
-  }
-
-  static const _piece = 256 * 1024;
-
-  /// Sends what this frame's budget allows of [d]'s geometry, or with
-  /// [all] all of it: a tile the engine counts as ready, whose buffers were
-  /// let go while it sat unused, must not leave a hole.
-  void _upload(TileDraw d, {required bool all}) {
-    final stream = d.tile.gpu;
-    if (stream == null) return;
-    final known = _tiles[stream];
-    if (known != null && known.ready) return;
-    if (all) {
-      _uploadStream(stream, _clock, 0);
-      final buffers = _tiles[stream]!;
-      while (!buffers.ready) {
-        buffers.send(_piece);
-      }
-      return;
-    }
-    if (_budget <= 0) {
-      _more = true;
-      return;
-    }
-    final buffers =
-        known ??
-        (_tiles[stream] = Timeline.timeSync(
-          'vmap.gpu.upload.alloc',
-          () => _TileBuffers(stream, _pool),
-        ));
-    buffers.usedFrame = _frame;
-    _budget -= Timeline.timeSync(
-      'vmap.gpu.upload.copy',
-      () => buffers.send(_budget),
-    );
-    if (!buffers.ready) _more = true;
   }
 
   /// The style's sprite sheet as a texture, for patterned fills.
@@ -643,63 +404,9 @@ class GpuMap implements MapRenderer {
       );
   }
 
-  /// Draws [run]'s layers of tile [d].
-  void _drawFlat(
-    gpu.RenderPass pass,
-    TileDraw d,
-    StyleSheet sheet,
-    StyleRun run,
-    Float64List clip,
-    EvalContext context,
-    double styleZoom,
-  ) {
-    final stream = d.tile.gpu;
-    if (stream == null) return;
-    final from = stream.layerFirst[run.first];
-    final to = stream.layerFirst[run.end];
-    if (from == to) return;
-    final buffers = _tiles[stream];
-    if (buffers == null || !buffers.ready) return;
-    buffers.usedFrame = _frame;
-    final host = _host!;
-    final scale = d.size / tileExtent;
-    _times(clip, scale, 1, d.left, d.top, 1);
-    pass
-      ..bindVertexBuffer(
-        gpu.BufferView(
-          buffers.buffer,
-          offsetInBytes: 0,
-          lengthInBytes: stream.vertices.lengthInBytes,
-        ),
-      )
-      ..bindUniform(_flatFrame!, host.emplace(_frameBytes));
-    final segments = stream.segments;
-    for (var s = 0; s < segments.length; s += 3) {
-      final first = math.max(segments[s], from);
-      final count = math.min(segments[s] + segments[s + 1], to) - first;
-      if (count <= 0) continue;
-      final slotBase = segments[s + 2];
-      final slotEnd = s + 5 < segments.length
-          ? segments[s + 5]
-          : stream.slots.length;
-      _fillSlots(sheet, stream, slotBase, slotEnd, scale, context, styleZoom);
-      pass
-        ..bindUniform(_flatSlots!, host.emplace(_slotBytes))
-        ..bindIndexBuffer(
-          gpu.BufferView(
-            buffers.buffer,
-            offsetInBytes: buffers.indexOffset + first * 4,
-            lengthInBytes: count * 4,
-          ),
-          gpu.IndexType.int32,
-        )
-        ..drawIndexed(count);
-    }
-  }
-
-  /// A layer's paint, with footprints that hand over to buildings kept past
-  /// their range and faded as the buildings rise.
-  _Paint _paintOf(
+  /// A layer's paint, with footprints kept past their range and faded as
+  /// their buildings rise.
+  LayerPaint _paintOf(
     StyleSheet sheet,
     int layerIndex,
     EvalContext context,
@@ -707,13 +414,14 @@ class GpuMap implements MapRenderer {
     Map<String, Object?>? props,
   ) {
     final layer = sheet.layers[layerIndex];
-    final building = sheet.handovers[layerIndex];
-    if (building == null) return _Paint.of(layer, context, styleZoom, props);
-    final present = _presence[sheet.extrusions[building]] ?? 0;
-    final risen = present * present * (3 - 2 * present);
-    if (risen >= 1) return _Paint._clear;
+    final building = sheet.footprints[layerIndex];
+    if (building == null) {
+      return LayerPaint.of(layer, context, styleZoom, props);
+    }
+    final risen = _reveal.risen(building);
+    if (risen >= 1) return LayerPaint.clear;
     final zoom = math.min(styleZoom, layer.maxZoom - 1e-3);
-    return _Paint.of(layer, context, zoom, props).scaled(1 - risen);
+    return LayerPaint.of(layer, context, zoom, props).scaled(1 - risen);
   }
 
   /// Writes the slots [from] to [to] of [stream] into the slot table, in
@@ -775,80 +483,6 @@ class GpuMap implements MapRenderer {
     }
   }
 
-  /// Draws the buildings of [tiles]. The flat layers leave an index buffer
-  /// bound, which the caller clears first, or these draws would read their
-  /// vertices through it.
-  void _drawBuildings(
-    gpu.RenderPass pass,
-    MapView view,
-    StyleSheet sheet,
-    List<TileDraw> tiles,
-    Float64List clip,
-    double styleZoom,
-  ) {
-    final perMetre =
-        view.worldSize /
-        (40075016.686 * math.cos(latitudeAt(view.centerY) * math.pi / 180));
-    final host = _host!;
-    final now = _clock.elapsedMicroseconds;
-    for (final layer in sheet.extrusions) {
-      final present = _presence[layer] ?? 0;
-      if (present <= 0) continue;
-      final rise = present * present * (3 - 2 * present);
-      for (final d in tiles) {
-        for (final e in d.tile.extrusions) {
-          if (e.bucket != layer.bucket) continue;
-          final b = _built[e] ??= Timeline.timeSync(
-            'vmap.gpu.upload.building',
-            () => _BuildingBuffers(e),
-          );
-          b.usedFrame = _frame;
-          while (b.uploaded < b.chunks) {
-            final bytes = b.chunkBytes(b.uploaded);
-            if (_budget < _bytesPerFrame && bytes > _budget) {
-              _more = true;
-              break;
-            }
-            _budget -= bytes;
-            b.upload();
-          }
-          // All of a tile's buildings show together or not at all.
-          if (b.uploaded < b.chunks) continue;
-          // While the layer rises out of its footprints, that rise is the
-          // only animation; a tile growing on its own as well is too slow.
-          if (b.shownAt < 0) {
-            b.shownAt = present < 1 || _standingNear(d.tile.id)
-                ? now - _growMicros
-                : now;
-          }
-          final scale = d.size / tileExtent;
-          final t = math.min(1.0, (now - b.shownAt) / _growMicros);
-          final fade = math.min(1.0, t * _growMicros / _fadeMicros);
-          final rest = 1 - t;
-          final grow = (1 - rest * rest * rest) * rise;
-          if (t < 1) _more = true;
-          for (var c = 0; c < b.uploaded; c++) {
-            _times(clip, scale, perMetre, d.left, d.top, fade, grow);
-            pass
-              ..bindVertexBuffer(
-                gpu.BufferView(
-                  b.buffers[c],
-                  offsetInBytes: 0,
-                  lengthInBytes: b.chunkBytes(c),
-                ),
-              )
-              ..bindUniform(_buildingFrame!, host.emplace(_frameBytes))
-              ..draw(b.chunkBytes(c) ~/ _BuildingBuffers._stride);
-          }
-          if (t >= 1) {
-            final id = d.tile.id;
-            _standing[tileKey(id.z, id.x, id.y)] = _frame;
-          }
-        }
-      }
-    }
-  }
-
   /// Distance haze in the style's background colour: none on a flat map,
   /// growing with pitch, from 1.25 times the camera's distance to the
   /// centre to 2.6 times, about where the far edge of a 60 degree view on a
@@ -867,7 +501,8 @@ class GpuMap implements MapRenderer {
   }
 
   /// [clip] times a tile's placement into the frame info block: tile units
-  /// scaled by [scale] and moved to [left], [top], heights by [perMetre].
+  /// scaled by [scale] and moved to [left], [top], heights by [perMetre]
+  /// times [grow].
   void _times(
     Float64List clip,
     double scale,
@@ -890,9 +525,7 @@ class GpuMap implements MapRenderer {
 
   @override
   void dispose() {
-    _tiles.clear();
     _pool.clear();
-    _built.clear();
     _ring = const [];
     for (final image in _images) {
       image.dispose();
@@ -904,304 +537,231 @@ class GpuMap implements MapRenderer {
   }
 }
 
-/// A fill or line layer's paint for one frame, in screen pixels.
-class _Paint {
-  _Paint(
-    this.r,
-    this.g,
-    this.b,
-    this.a,
-    this.halfWidth,
-    this.offset,
-    this.translateX,
-    this.translateY,
-    this.dashOn,
-    this.dashPeriod, [
-    this.pattern,
-    this.circle = false,
-  ]);
+/// One frame's render pass: the style's runs in order, then the buildings.
+class _MapPass {
+  _MapPass(
+    this._map,
+    this._pass,
+    this._view,
+    this._clip,
+    this._sheet,
+    this._context,
+    this._styleZoom,
+    this._fallback,
+    this._ideal,
+  );
 
-  /// A circle: [halfWidth] is its radius, [offset] its ring's width,
-  /// [dashOn] its ring's colour packed as red plus 256 green plus 65536
-  /// blue and [dashPeriod] the ring's alpha.
-  final bool circle;
+  final GpuMap _map;
+  final gpu.RenderPass _pass;
+  final MapView _view;
+  final Float64List _clip;
+  final StyleSheet _sheet;
+  final EvalContext _context;
+  final double _styleZoom;
 
-  /// The sprite a patterned fill repeats.
-  final String? pattern;
+  /// Per source, the tiles standing in for missing ones and the tiles
+  /// wanted, both indexed by the style's sources.
+  final List<List<TileDraw>> _fallback, _ideal;
 
-  final double r, g, b, a;
-  final double halfWidth, offset, translateX, translateY, dashOn, dashPeriod;
+  /// The source whose tiles' numbers are in the stencil, or -1.
+  int _marked = -1;
 
-  static final _clear = _Paint(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+  bool _clips(int source) =>
+      _map._stencil != null && _ideal[source].length < 255;
 
-  /// This paint with its colour, premultiplied, times [k].
-  _Paint scaled(double k) => k >= 1
-      ? this
-      : _Paint(
-          r * k,
-          g * k,
-          b * k,
-          a * k,
-          halfWidth,
-          offset,
-          translateX,
-          translateY,
-          dashOn,
-          dashPeriod,
-          pattern,
-          circle,
-        );
-
-  static _Paint of(
-    PaintLayer layer,
-    EvalContext context,
-    double styleZoom, [
-    Map<String, Object?>? props,
-  ]) {
-    if (styleZoom < layer.minZoom || styleZoom >= layer.maxZoom) {
-      return _clear;
-    }
-    if (props != null) context.props = props;
-    try {
-      final color = Rgba.of(layer.color(context));
-      if (color == null) return _clear;
-      final a = (color.a * (asNumber(layer.opacity(context)) ?? 1)).clamp(
-        0.0,
-        1.0,
+  /// Each tile writes its number over its square, and draws only where its
+  /// number is: a tile's data runs a little past its square, and a
+  /// translucent fill drawn twice there shows a seam. A tile standing in
+  /// for a missing one draws where no number is. Tilted, a square is no
+  /// rectangle on the screen, so scissors cannot do it. Sources tile the
+  /// map apart, so the numbers are rewritten when the source changes.
+  void _mark(int source) {
+    if (source == _marked) return;
+    final map = _map;
+    _pass
+      ..clearBindings()
+      ..bindPipeline(map._stencil!)
+      ..setCullMode(gpu.CullMode.none)
+      ..setDepthWriteEnable(false)
+      ..setDepthCompareOperation(gpu.CompareFunction.always)
+      ..setColorBlendEnable(true)
+      ..setColorBlendEquation(GpuMap._over)
+      ..setStencilConfig(
+        gpu.StencilConfig(
+          depthStencilPassOperation: gpu.StencilOperation.setToReferenceValue,
+        ),
+      )
+      ..bindVertexBuffer(
+        gpu.BufferView(map._quad!, offsetInBytes: 0, lengthInBytes: 48),
       );
-      var width = 0.0, offset = 0.0, dashOn = 0.0, dashPeriod = 0.0;
-      if (layer is LineLayer) {
-        width = (asNumber(layer.width(context)) ?? 0).toDouble();
-        offset = (asNumber(layer.offset?.call(context)) ?? 0).toDouble();
-        final dash = layer.dash;
-        if (dash != null && dash.length >= 2 && width > 0) {
-          dashOn = dash[0] * width;
-          dashPeriod = (dash[0] + dash[1]) * width;
+    void cover(List<TileDraw> tiles, bool clear) {
+      for (final (i, d) in tiles.indexed) {
+        if (GpuMap._gpuOf(d) == null) continue;
+        map._times(_clip, d.size / tileExtent, 1, d.left, d.top, 1);
+        _pass
+          ..setStencilReference(clear ? 0 : i + 1)
+          ..bindUniform(map._stencilFrame!, map._host!.emplace(map._frameBytes))
+          ..draw(6);
+      }
+    }
+
+    if (_marked >= 0) cover(_ideal[_marked], true);
+    cover(_ideal[source], false);
+    _marked = source;
+    _pass.clearBindings();
+  }
+
+  void _stencilEquals(int reference) => _pass
+    ..setStencilReference(reference)
+    ..setStencilConfig(
+      gpu.StencilConfig(compareFunction: gpu.CompareFunction.equal),
+    );
+
+  void drawRuns() {
+    var bound = false;
+    for (final run in _sheet.runs) {
+      if (run.source < 0 || run.source >= _ideal.length) continue;
+      final source = run.source;
+      final clipped = _clips(source);
+      if (clipped && _marked != source) {
+        _mark(source);
+        bound = false;
+      }
+      if (!bound) {
+        _pass
+          ..bindPipeline(_map._flat!)
+          ..setDepthWriteEnable(false)
+          ..setDepthCompareOperation(gpu.CompareFunction.always)
+          ..setCullMode(gpu.CullMode.none)
+          ..setColorBlendEnable(true)
+          ..setColorBlendEquation(GpuMap._over);
+        _map._bindSprites(_pass);
+        bound = true;
+      }
+      if (clipped) {
+        _stencilEquals(0);
+        for (final d in _fallback[source]) {
+          _drawFlat(d, run);
         }
       }
-      if (layer is CircleLayer) {
-        final diameter = (asNumber(layer.width(context)) ?? 0).toDouble();
-        final ring = layer.ring;
-        var ringWidth = 0.0, ringRgb = 0.0, ringAlpha = 0.0;
-        if (ring != null) {
-          ringWidth = (asNumber(ring.width(context)) ?? 0).toDouble();
-          final ringColor = Rgba.of(ring.color(context));
-          if (ringColor != null && ringWidth > 0) {
-            int c(double v) => (v * 255).round().clamp(0, 255);
-            ringRgb =
-                (c(ringColor.r) + c(ringColor.g) * 256 + c(ringColor.b) * 65536)
-                    .toDouble();
-            ringAlpha = (ringColor.a * (asNumber(ring.opacity(context)) ?? 1))
-                .clamp(0.0, 1.0);
-          } else {
-            ringWidth = 0;
+      for (final (i, d) in _ideal[source].indexed) {
+        if (clipped) _stencilEquals(i + 1);
+        _drawFlat(d, run);
+      }
+      _pass.setStencilConfig(gpu.StencilConfig());
+    }
+  }
+
+  /// Draws [run]'s layers of tile [d].
+  void _drawFlat(TileDraw d, StyleRun run) {
+    final data = GpuMap._gpuOf(d);
+    final stream = data?.stream;
+    if (data == null || stream == null) return;
+    final from = stream.layerFirst[run.first];
+    final to = stream.layerFirst[run.end];
+    if (from == to) return;
+    final map = _map;
+    final host = map._host!;
+    final scale = d.size / tileExtent;
+    map._times(_clip, scale, 1, d.left, d.top, 1);
+    _pass
+      ..bindVertexBuffer(
+        gpu.BufferView(
+          data.buffer!,
+          offsetInBytes: 0,
+          lengthInBytes: stream.vertices.lengthInBytes,
+        ),
+      )
+      ..bindUniform(map._flatFrame!, host.emplace(map._frameBytes));
+    final segments = stream.segments;
+    for (var s = 0; s < segments.length; s += 3) {
+      final first = math.max(segments[s], from);
+      final count = math.min(segments[s] + segments[s + 1], to) - first;
+      if (count <= 0) continue;
+      final slotBase = segments[s + 2];
+      final slotEnd = s + 5 < segments.length
+          ? segments[s + 5]
+          : stream.slots.length;
+      map._fillSlots(
+        _sheet,
+        stream,
+        slotBase,
+        slotEnd,
+        scale,
+        _context,
+        _styleZoom,
+      );
+      _pass
+        ..bindUniform(map._flatSlots!, host.emplace(map._slotBytes))
+        ..bindIndexBuffer(
+          gpu.BufferView(
+            data.buffer!,
+            offsetInBytes: data.indexOffset + first * 4,
+            lengthInBytes: count * 4,
+          ),
+          gpu.IndexType.int32,
+        )
+        ..drawIndexed(count);
+    }
+  }
+
+  /// Buildings after the flat layers, with depth. The flat layers leave an
+  /// index buffer bound, cleared first, or these draws would read their
+  /// vertices through it.
+  void drawBuildings() {
+    bool built(List<TileDraw> tiles) =>
+        tiles.any((d) => d.tile.extrusions.isNotEmpty);
+    for (var source = 0; source < _ideal.length; source++) {
+      final standIn = built(_fallback[source]) && _clips(source);
+      if (!built(_ideal[source]) && !standIn) continue;
+      if (standIn) _mark(source);
+      _pass
+        ..clearBindings()
+        ..bindPipeline(_map._buildings!)
+        ..setCullMode(gpu.CullMode.none)
+        ..setColorBlendEnable(true)
+        ..setStencilConfig(gpu.StencilConfig())
+        ..setDepthWriteEnable(true)
+        ..setDepthCompareOperation(gpu.CompareFunction.lessEqual);
+      _drawBuildingsOf(_ideal[source]);
+      if (standIn) {
+        _stencilEquals(0);
+        _drawBuildingsOf(_fallback[source]);
+      }
+    }
+  }
+
+  void _drawBuildingsOf(List<TileDraw> tiles) {
+    final map = _map;
+    final view = _view;
+    final perMetre =
+        view.worldSize /
+        (40075016.686 * math.cos(latitudeAt(view.centerY) * math.pi / 180));
+    final host = map._host!;
+    for (final layer in _sheet.extrusions) {
+      if (!map._reveal.shows(layer)) continue;
+      for (final d in tiles) {
+        final data = GpuMap._gpuOf(d);
+        if (data == null) continue;
+        for (final b in data.buildings) {
+          if (b.extrusion.bucket != layer.bucket) continue;
+          final (fade, grow) = map._reveal.motion(d.tile.id, layer, b);
+          final scale = d.size / tileExtent;
+          for (var c = 0; c < b.buffers.length; c++) {
+            map._times(_clip, scale, perMetre, d.left, d.top, fade, grow);
+            _pass
+              ..bindVertexBuffer(
+                gpu.BufferView(
+                  b.buffers[c],
+                  offsetInBytes: 0,
+                  lengthInBytes: b.chunkBytes(c),
+                ),
+              )
+              ..bindUniform(map._buildingFrame!, host.emplace(map._frameBytes))
+              ..draw(b.chunkBytes(c) ~/ BuildingGpu.stride);
           }
         }
-        return _Paint(
-          color.r * a,
-          color.g * a,
-          color.b * a,
-          a,
-          diameter / 2,
-          ringWidth,
-          0,
-          0,
-          ringRgb,
-          ringAlpha,
-          null,
-          true,
-        );
       }
-      var tx = 0.0, ty = 0.0;
-      if (layer is MeshLayer) {
-        final moved = layer.translate?.call(context);
-        if (moved is List && moved.length == 2) {
-          tx = (asNumber(moved[0]) ?? 0).toDouble();
-          ty = (asNumber(moved[1]) ?? 0).toDouble();
-        }
-      }
-      final pattern = layer is FillLayer ? layer.pattern?.call(context) : null;
-      return _Paint(
-        color.r * a,
-        color.g * a,
-        color.b * a,
-        a,
-        width / 2,
-        offset,
-        tx,
-        ty,
-        dashOn,
-        dashPeriod,
-        pattern is String && pattern.isNotEmpty ? pattern : null,
-      );
-    } finally {
-      if (props != null) context.props = const {};
     }
-  }
-}
-
-/// One tile's stream in one host visible buffer, vertices then indices,
-/// filled over as many frames as the upload budget needs.
-/// Uniform data for the frames the GPU may still be reading, in host
-/// visible blocks reused frame after frame. Flutter's HostBuffer checks a
-/// block's room without the write's length and never reuses a block it
-/// added (flutter/flutter#186526, #192392).
-class _Uniforms {
-  static const _frames = 4;
-  static const _blockBytes = 1 << 20;
-  final List<List<gpu.DeviceBuffer>> _blocks = [
-    for (var i = 0; i < _frames; i++) [],
-  ];
-  late final int _align = math.max(
-    16,
-    gpu.gpuContext.minimumUniformByteAlignment,
-  );
-  int _frame = 0, _block = 0, _offset = 0;
-
-  void reset() {
-    _frame = (_frame + 1) % _frames;
-    _block = 0;
-    _offset = 0;
-  }
-
-  gpu.BufferView emplace(ByteData bytes) {
-    final length = bytes.lengthInBytes;
-    var at = (_offset + _align - 1) ~/ _align * _align;
-    final blocks = _blocks[_frame];
-    if (blocks.isEmpty || at + length > _blockBytes) {
-      if (blocks.isNotEmpty) _block++;
-      at = 0;
-    }
-    while (blocks.length <= _block) {
-      blocks.add(
-        gpu.gpuContext.createDeviceBuffer(
-          gpu.StorageMode.hostVisible,
-          math.max(_blockBytes, length),
-        ),
-      );
-    }
-    final buffer = blocks[_block];
-    buffer.overwrite(bytes, destinationOffsetInBytes: at);
-    _offset = at + length;
-    return gpu.BufferView(buffer, offsetInBytes: at, lengthInBytes: length);
-  }
-}
-
-class _TileBuffers {
-  _TileBuffers(this.stream, _BufferPool pool)
-    : indexOffset = _align(stream.vertices.lengthInBytes),
-      buffer = pool.take(
-        _align(stream.vertices.lengthInBytes) + stream.indices.lengthInBytes,
-      );
-
-  final GpuStream stream;
-  final gpu.DeviceBuffer buffer;
-  final int indexOffset;
-  int usedFrame = 0;
-  int _sent = 0;
-
-  static int _align(int bytes) => (bytes + 255) & ~255;
-
-  int get _vertexBytes => stream.vertices.lengthInBytes;
-  int get _total => _vertexBytes + stream.indices.lengthInBytes;
-  bool get ready => _sent >= _total;
-
-  /// Copies up to [most] more bytes and returns how many it copied.
-  int send(int most) {
-    var left = most;
-    while (left > 0 && !ready) {
-      final inVertices = _sent < _vertexBytes;
-      final source = inVertices
-          ? ByteData.sublistView(stream.vertices)
-          : ByteData.sublistView(stream.indices);
-      final from = inVertices ? _sent : _sent - _vertexBytes;
-      final n = math.min(left, source.lengthInBytes - from);
-      final at = inVertices ? from : indexOffset + from;
-      buffer.overwrite(
-        ByteData.sublistView(source, from, from + n),
-        destinationOffsetInBytes: at,
-      );
-      buffer.flush(offsetInBytes: at, lengthInBytes: n);
-      _sent += n;
-      left -= n;
-    }
-    return most - left;
-  }
-}
-
-/// Host visible buffers kept for reuse in power of two sizes, so a new
-/// tile rarely asks the driver for memory.
-class _BufferPool {
-  final Map<int, List<gpu.DeviceBuffer>> _free = {};
-  int _freeBytes = 0;
-  static const _keepBytes = 32 << 20;
-
-  static int _size(int bytes) {
-    var size = 64 << 10;
-    while (size < bytes) {
-      size <<= 1;
-    }
-    return size;
-  }
-
-  gpu.DeviceBuffer take(int bytes) {
-    final size = _size(bytes);
-    final list = _free[size];
-    if (list != null && list.isNotEmpty) {
-      _freeBytes -= size;
-      return list.removeLast();
-    }
-    return gpu.gpuContext.createDeviceBuffer(gpu.StorageMode.hostVisible, size);
-  }
-
-  void give(gpu.DeviceBuffer buffer) {
-    final size = buffer.sizeInBytes;
-    if (_freeBytes + size > _keepBytes) return;
-    (_free[size] ??= []).add(buffer);
-    _freeBytes += size;
-  }
-
-  void clear() {
-    _free.clear();
-    _freeBytes = 0;
-  }
-}
-
-/// One tile's buildings on the GPU, sent in pieces so no frame copies
-/// megabytes.
-class _BuildingBuffers {
-  _BuildingBuffers(this._built)
-    : chunks =
-          (_built.vertices.length ~/ BuiltExtrusion.floatsPerVertex +
-              BuiltExtrusion.chunk -
-              1) ~/
-          BuiltExtrusion.chunk;
-
-  final BuiltExtrusion _built;
-  final int chunks;
-  final List<gpu.DeviceBuffer> buffers = [];
-
-  /// When the buildings were first drawn, on the renderer's clock.
-  int shownAt = -1;
-  int usedFrame = 0;
-
-  int get uploaded => buffers.length;
-
-  static const _stride = BuiltExtrusion.floatsPerVertex * 4;
-
-  int chunkBytes(int c) {
-    final vertices = _built.vertices.length ~/ BuiltExtrusion.floatsPerVertex;
-    final from = c * BuiltExtrusion.chunk;
-    return math.min(BuiltExtrusion.chunk, vertices - from) * _stride;
-  }
-
-  void upload() {
-    final c = buffers.length;
-    final from = c * BuiltExtrusion.chunk * BuiltExtrusion.floatsPerVertex;
-    buffers.add(
-      gpu.gpuContext.createDeviceBufferWithCopy(
-        ByteData.sublistView(_built.vertices, from, from + chunkBytes(c) ~/ 4),
-      ),
-    );
   }
 }
