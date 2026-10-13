@@ -69,7 +69,7 @@ class LabelEngine {
     final symbol => styleZoom >= symbol.minZoom && styleZoom < symbol.maxZoom,
   };
 
-  static const double _fadeSeconds = 0.2;
+  static const double _fadeSeconds = 0.3;
 
   /// UI-thread time a frame may spend drawing new labels into images.
   /// Candidates weighed per placement, best priority first. The rest are the

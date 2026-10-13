@@ -939,19 +939,13 @@ class VmapEngine extends ChangeNotifier {
     if (_budget.spentUp) return;
     final started = _clock.elapsedMicroseconds;
     final deadline = started + FrameBudget.micros - _budget.spent;
-    final stream = _onGpu ? tile.gpu : null;
-    if (stream != null) tile.gpuWaiting = true;
+    final onGpu = _onGpu && (tile.gpu != null || tile.extrusions.isNotEmpty);
+    if (onGpu) tile.gpuWaiting = true;
     if (!tile.stepsDone) {
-      tile.prepare(
-        _meshes.widths,
-        scale,
-        _clock,
-        deadline,
-        meshes: stream == null,
-      );
+      tile.prepare(_meshes.widths, scale, _clock, deadline, meshes: !onGpu);
     }
-    if (stream != null && tile.stepsDone) {
-      tile.gpuWaiting = !renderer!.upload(stream, _clock, deadline);
+    if (onGpu && tile.stepsDone) {
+      tile.gpuWaiting = !renderer!.upload(tile, _clock, deadline);
     }
     final spent = _clock.elapsedMicroseconds - started;
     _budget.spent += spent;

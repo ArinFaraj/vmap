@@ -80,6 +80,30 @@ class GpuMap implements MapRenderer {
   /// instead of growing them again.
   final Map<int, int> _standing = {};
 
+  /// How far each building layer has risen out of its footprints: it rises
+  /// over [_riseMicros] once the zoom enters the layer's range and sinks
+  /// back when it leaves, instead of every building appearing at once.
+  final Map<ExtrusionLayer, double> _presence = Map.identity();
+  int _presenceAt = 0;
+  static const _riseMicros = 400000;
+
+  void _updatePresence(StyleSheet sheet, double styleZoom) {
+    final now = _clock.elapsedMicroseconds;
+    final step = math.min(1.0, (now - _presenceAt) / _riseMicros);
+    _presenceAt = now;
+    for (final layer in sheet.extrusions) {
+      final target = styleZoom >= layer.minZoom && styleZoom < layer.maxZoom
+          ? 1.0
+          : 0.0;
+      final was = _presence[layer] ?? target;
+      final next = was < target
+          ? math.min(target, was + step)
+          : math.max(target, was - step);
+      _presence[layer] = next;
+      if (next != target) _more = true;
+    }
+  }
+
   bool _standingNear(TileId id) {
     bool recent(int z, int x, int y) {
       final at = _standing[tileKey(z, x, y)];
@@ -348,6 +372,7 @@ class GpuMap implements MapRenderer {
     _setFog(sheet, context, view);
     _budget = _bytesPerFrame;
     _more = false;
+    _updatePresence(sheet, styleZoom);
     _layerPaint.clear();
 
     // Each tile writes its number over its square, and draws only where
@@ -521,7 +546,24 @@ class GpuMap implements MapRenderer {
   }
 
   @override
-  bool upload(GpuStream stream, Stopwatch clock, int deadline) {
+  bool upload(LoadedTile tile, Stopwatch clock, int deadline) {
+    final stream = tile.gpu;
+    if (stream != null && !_uploadStream(stream, clock, deadline)) {
+      return false;
+    }
+    for (final e in tile.extrusions) {
+      final b = _built[e] ??= _BuildingBuffers(e);
+      b.usedFrame = _frame;
+      while (b.uploaded < b.chunks) {
+        Timeline.timeSync('vmap.gpu.upload.building', b.upload);
+        if (clock.elapsedMicroseconds >= deadline) break;
+      }
+      if (b.uploaded < b.chunks) return false;
+    }
+    return true;
+  }
+
+  bool _uploadStream(GpuStream stream, Stopwatch clock, int deadline) {
     final buffers = _tiles[stream] ??= Timeline.timeSync(
       'vmap.gpu.upload.alloc',
       () => _TileBuffers(stream, _pool),
@@ -546,7 +588,7 @@ class GpuMap implements MapRenderer {
     final known = _tiles[stream];
     if (known != null && known.ready) return;
     if (all) {
-      upload(stream, _clock, 0);
+      _uploadStream(stream, _clock, 0);
       final buffers = _tiles[stream]!;
       while (!buffers.ready) {
         buffers.send(_piece);
@@ -724,8 +766,11 @@ class GpuMap implements MapRenderer {
         view.worldSize /
         (40075016.686 * math.cos(latitudeAt(view.centerY) * math.pi / 180));
     final host = _host!;
+    final now = _clock.elapsedMicroseconds;
     for (final layer in sheet.extrusions) {
-      if (styleZoom < layer.minZoom || styleZoom >= layer.maxZoom) continue;
+      final present = _presence[layer] ?? 0;
+      if (present <= 0) continue;
+      final rise = present * present * (3 - 2 * present);
       for (final d in tiles) {
         for (final e in d.tile.extrusions) {
           if (e.bucket != layer.bucket) continue;
@@ -734,7 +779,6 @@ class GpuMap implements MapRenderer {
             () => _BuildingBuffers(e),
           );
           b.usedFrame = _frame;
-          final now = _clock.elapsedMicroseconds;
           while (b.uploaded < b.chunks) {
             final bytes = b.chunkBytes(b.uploaded);
             if (_budget < _bytesPerFrame && bytes > _budget) {
@@ -742,19 +786,20 @@ class GpuMap implements MapRenderer {
               break;
             }
             _budget -= bytes;
-            b.upload(_standingNear(d.tile.id) ? now - _growMicros : now);
+            b.upload();
+          }
+          // All of a tile's buildings show together or not at all.
+          if (b.uploaded < b.chunks) continue;
+          if (b.shownAt < 0) {
+            b.shownAt = _standingNear(d.tile.id) ? now - _growMicros : now;
           }
           final scale = d.size / tileExtent;
-          var grown = b.uploaded > 0;
+          final t = math.min(1.0, (now - b.shownAt) / _growMicros);
+          final fade = math.min(1.0, t * _growMicros / _fadeMicros);
+          final rest = 1 - t;
+          final grow = (1 - rest * rest * rest) * rise;
+          if (t < 1) _more = true;
           for (var c = 0; c < b.uploaded; c++) {
-            final t = math.min(1.0, (now - b.shownAt[c]) / _growMicros);
-            final fade = math.min(1.0, t * _growMicros / _fadeMicros);
-            final rest = 1 - t;
-            final grow = 1 - rest * rest * rest;
-            if (t < 1) {
-              _more = true;
-              grown = false;
-            }
             _times(clip, scale, perMetre, d.left, d.top, fade, grow);
             pass
               ..bindVertexBuffer(
@@ -767,7 +812,7 @@ class GpuMap implements MapRenderer {
               ..bindUniform(_buildingFrame!, host.emplace(_frameBytes))
               ..draw(b.chunkBytes(c) ~/ _BuildingBuffers._stride);
           }
-          if (grown) {
+          if (t >= 1) {
             final id = d.tile.id;
             _standing[tileKey(id.z, id.x, id.y)] = _frame;
           }
@@ -1089,7 +1134,9 @@ class _BuildingBuffers {
   final BuiltExtrusion _built;
   final int chunks;
   final List<gpu.DeviceBuffer> buffers = [];
-  final List<int> shownAt = [];
+
+  /// When the buildings were first drawn, on the renderer's clock.
+  int shownAt = -1;
   int usedFrame = 0;
 
   int get uploaded => buffers.length;
@@ -1102,7 +1149,7 @@ class _BuildingBuffers {
     return math.min(BuiltExtrusion.chunk, vertices - from) * _stride;
   }
 
-  void upload(int now) {
+  void upload() {
     final c = buffers.length;
     final from = c * BuiltExtrusion.chunk * BuiltExtrusion.floatsPerVertex;
     buffers.add(
@@ -1110,6 +1157,5 @@ class _BuildingBuffers {
         ByteData.sublistView(_built.vertices, from, from + chunkBytes(c) ~/ 4),
       ),
     );
-    shownAt.add(now);
   }
 }
