@@ -18,20 +18,12 @@ class GlyphCell {
   final double left, top;
 }
 
-/// The look a page is drawn in: glyphs this many device pixels to the em,
-/// this weight and slant, with a halo this many device pixels wide and
-/// soft. Sizes come in quarters of an octave and a glyph is rasterized at
-/// the step at or above the size it is drawn at, so it is only ever shrunk,
-/// by at most 16%, which keeps it sharp.
-typedef PageKey = ({int size, int weight, bool italic, int halo, int blur});
-
 /// One look's glyphs, rasterized from the fonts' own outlines in another
 /// isolate. Glyphs asked for and missing are sent off as one batch when
 /// [flush] runs and come back as a new image; once a page has many images,
 /// one batch packs all its glyphs into a single image again.
 class GlyphPage {
-  GlyphPage(this.key, this._worker, this._changed)
-    : em = math.pow(2, key.size / 4).toDouble();
+  GlyphPage(this.key, this._worker, this._changed) : em = emOf(key.size);
 
   final PageKey key;
   final GlyphRasterWorker _worker;
@@ -46,14 +38,6 @@ class GlyphPage {
   int _inFlight = 0;
   bool _merging = false;
   bool _disposed = false;
-
-  RasterLook get _look => (
-    em: em,
-    weight: key.weight,
-    italic: key.italic,
-    halo: key.halo,
-    blur: key.blur,
-  );
 
   static int _id(int face, int glyph) => face << 20 | glyph;
 
@@ -96,7 +80,7 @@ class GlyphPage {
   void _send(List<int> ids, {required bool merge}) {
     _inFlight++;
     _worker
-        .draw(_look, ids)
+        .draw(key, ids)
         .then(
           (r) async {
             final image = await _image(r);
@@ -164,7 +148,7 @@ class GlyphPage {
     _chunks.clear();
     _cells.clear();
     _pending.clear();
-    _worker.forget(_look);
+    _worker.forget(key);
   }
 }
 

@@ -9,9 +9,16 @@ import 'package:payv/src/font/glyph_path.dart';
 
 import 'glyph_layout.dart';
 
-/// A page look as the rasterizer needs it: device pixels to the em, weight,
-/// slant, and halo width and softness in quarter pixels.
-typedef RasterLook = ({double em, int weight, bool italic, int halo, int blur});
+/// The look a page is drawn in: glyphs this many device pixels to the em,
+/// this weight and slant, with a halo this many device pixels wide and
+/// soft, the last two in quarter pixels. Sizes come in quarters of an
+/// octave and a glyph is rasterized at the step at or above the size it is
+/// drawn at, so it is only ever shrunk, by at most 16%, which keeps it
+/// sharp.
+typedef PageKey = ({int size, int weight, bool italic, int halo, int blur});
+
+/// Device pixels to the em of a page of [size].
+double emOf(int size) => math.pow(2, size / 4).toDouble();
 
 /// One drawn batch: a premultiplied white RGBA image [width] wide, and per
 /// glyph [stride] numbers: its id, the ink cell's x, y, width and height, the
@@ -37,29 +44,26 @@ class _Bitmap {
 }
 
 /// Draws glyph outlines into coverage bitmaps on the CPU, with halos from a
-/// distance transform, and packs them into pages. Bitmaps are kept per look,
+/// distance transform, and packs them into pages. Bitmaps are kept per page,
 /// so packing a page again from glyphs drawn before costs only copies.
 class GlyphRasterizer {
   GlyphRasterizer(this.fonts);
 
   final GlyphFonts fonts;
   final Map<int, GlyphPath?> _outlines = {};
-  final Map<String, Map<int, _Bitmap?>> _bitmaps = {};
+  final Map<PageKey, Map<int, _Bitmap?>> _bitmaps = {};
 
-  static String lookId(RasterLook look) =>
-      '${look.em}/${look.weight}/${look.italic}/${look.halo}/${look.blur}';
+  void forget(PageKey key) => _bitmaps.remove(key);
 
-  void forget(RasterLook look) => _bitmaps.remove(lookId(look));
-
-  GlyphRaster draw(RasterLook look, List<int> ids) {
-    final kept = _bitmaps.putIfAbsent(lookId(look), () => {});
+  GlyphRaster draw(PageKey key, List<int> ids) {
+    final kept = _bitmaps.putIfAbsent(key, () => {});
     final drawn = <(int, _Bitmap)>[];
     for (final id in ids) {
-      final b = kept.containsKey(id) ? kept[id] : kept[id] = _glyph(look, id);
+      final b = kept.containsKey(id) ? kept[id] : kept[id] = _glyph(key, id);
       if (b != null) drawn.add((id, b));
     }
     const width = 1024;
-    final twin = look.halo > 0;
+    final twin = key.halo > 0;
     var x = 0, y = 0, row = 0;
     final places = <(int, int)>[];
     for (final (_, b) in drawn) {
@@ -124,12 +128,12 @@ class GlyphRasterizer {
     return _outlines[key] = o == null || o.isEmpty ? null : o;
   }
 
-  _Bitmap? _glyph(RasterLook look, int id) {
+  _Bitmap? _glyph(PageKey key, int id) {
     final face = id >> 20, glyph = id & 0xFFFFF;
-    final outline = _outline(face, look.weight, glyph);
+    final outline = _outline(face, key.weight, glyph);
     if (outline == null) return null;
-    final s = look.em / fonts.unitsPerEm(face);
-    final slant = look.italic ? 0.2 * s : 0.0;
+    final s = emOf(key.size) / fonts.unitsPerEm(face);
+    final slant = key.italic ? 0.2 * s : 0.0;
     final lines = _flatten(outline, s, slant);
     if (lines.isEmpty) return null;
     var minX = double.infinity, minY = double.infinity;
@@ -140,7 +144,7 @@ class GlyphRasterizer {
       minY = math.min(minY, lines[i + 1]);
       maxY = math.max(maxY, lines[i + 1]);
     }
-    final halo = look.halo / 4, blur = look.blur / 4;
+    final halo = key.halo / 4, blur = key.blur / 4;
     final pad = (halo + blur * 2 + 2).ceilToDouble();
     final w = (maxX - minX + pad * 2).ceil();
     final h = (maxY - minY + pad * 2).ceil();
@@ -154,7 +158,7 @@ class GlyphRasterizer {
       w,
       h,
       ink,
-      look.halo > 0 ? _halo(coverage, w, h, halo, blur) : null,
+      key.halo > 0 ? _halo(coverage, w, h, halo, blur) : null,
       minX - pad,
       minY - pad,
     );
@@ -488,53 +492,43 @@ class GlyphRasterWorker {
 
   final _replies = ReceivePort();
   final Map<int, Completer<GlyphRaster>> _waiting = {};
-  final List<Object?> _queued = [];
+  final List<_Request> _queued = [];
   SendPort? _port;
   Isolate? _isolate;
   int _next = 0;
   bool _disposed = false;
 
-  Future<GlyphRaster> draw(RasterLook look, List<int> ids) {
+  Future<GlyphRaster> draw(PageKey key, List<int> ids) {
     final id = _next++;
     final done = _waiting[id] = Completer<GlyphRaster>();
-    _send([
-      0,
-      id,
-      look.em,
-      look.weight,
-      look.italic,
-      look.halo,
-      look.blur,
-      Int32List.fromList(ids),
-    ]);
+    _send(_Draw(id, key, Int32List.fromList(ids)));
     return done.future;
   }
 
-  void forget(RasterLook look) =>
-      _send([1, look.em, look.weight, look.italic, look.halo, look.blur]);
+  void forget(PageKey key) => _send(_Forget(key));
 
-  void _send(Object? message) {
+  void _send(_Request request) {
     if (_disposed) return;
     final port = _port;
     if (port == null) {
-      _queued.add(message);
+      _queued.add(request);
     } else {
-      port.send(message);
+      port.send(request);
     }
   }
 
   void _reply(Object? message) {
-    final m = message! as List;
-    final done = _waiting.remove(m[0] as int);
-    if (done == null) return;
-    done.complete(
-      GlyphRaster(
-        m[1] as int,
-        m[2] as int,
-        (m[3] as TransferableTypedData).materialize().asUint8List(),
-        m[4] as Float64List,
-      ),
-    );
+    final drawn = message! as _Drawn;
+    _waiting
+        .remove(drawn.id)
+        ?.complete(
+          GlyphRaster(
+            drawn.width,
+            drawn.height,
+            drawn.pixels.materialize().asUint8List(),
+            drawn.cells,
+          ),
+        );
   }
 
   void dispose() {
@@ -555,27 +549,46 @@ class GlyphRasterWorker {
     );
     final requests = ReceivePort();
     ready.send(requests.sendPort);
-    requests.listen((message) {
-      final m = message! as List;
-      final look = (
-        em: m[m[0] == 0 ? 2 : 1] as double,
-        weight: m[m[0] == 0 ? 3 : 2] as int,
-        italic: m[m[0] == 0 ? 4 : 3] as bool,
-        halo: m[m[0] == 0 ? 5 : 4] as int,
-        blur: m[m[0] == 0 ? 6 : 5] as int,
-      );
-      if (m[0] == 1) {
-        rasterizer.forget(look);
-        return;
+    requests.listen((request) {
+      switch (request as _Request) {
+        case _Forget(:final key):
+          rasterizer.forget(key);
+        case _Draw(:final id, :final key, :final ids):
+          final r = rasterizer.draw(key, ids);
+          replies.send(
+            _Drawn(
+              id,
+              r.width,
+              r.height,
+              TransferableTypedData.fromList([r.pixels]),
+              r.cells,
+            ),
+          );
       }
-      final r = rasterizer.draw(look, m[7] as Int32List);
-      replies.send([
-        m[1],
-        r.width,
-        r.height,
-        TransferableTypedData.fromList([r.pixels]),
-        r.cells,
-      ]);
     });
   }
+}
+
+sealed class _Request {}
+
+final class _Draw extends _Request {
+  _Draw(this.id, this.key, this.ids);
+
+  final int id;
+  final PageKey key;
+  final Int32List ids;
+}
+
+final class _Forget extends _Request {
+  _Forget(this.key);
+
+  final PageKey key;
+}
+
+final class _Drawn {
+  _Drawn(this.id, this.width, this.height, this.pixels, this.cells);
+
+  final int id, width, height;
+  final TransferableTypedData pixels;
+  final Float64List cells;
 }
