@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 
 import 'camera.dart';
 import 'engine.dart';
+import 'frame_rate.dart';
 import 'map_camera.dart';
 import 'view.dart';
 import 'style.dart';
@@ -91,6 +92,7 @@ class VMapController extends ChangeNotifier {
     }
     if (clamped == _camera) return;
     _camera = clamped;
+    FrameRateVote.moving();
     notifyListeners();
   }
 
@@ -399,6 +401,7 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    FrameRateVote.attach();
     _attach(widget.controller);
   }
 
@@ -426,6 +429,7 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
 
   @override
   void dispose() {
+    FrameRateVote.detach();
     widget.controller
       ..stop()
       .._ticker = null;
@@ -489,6 +493,7 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
   }
 
   void _onDown(PointerDownEvent e) {
+    FrameRateVote.moving();
     _c.stop();
     _fingers[e.pointer] = e.localPosition;
     _downAt[e.pointer] = e.timeStamp;

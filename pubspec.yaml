@@ -37,6 +37,11 @@ dev_dependencies:
     sdk: flutter
 
 flutter:
+  plugin:
+    platforms:
+      android:
+        package: dev.vmap.vmap
+        pluginClass: VmapPlugin
   assets:
     - assets/fonts/Vazirmatn-Variable.ttf
     - path: assets/vmap_worker.js
