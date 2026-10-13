@@ -366,6 +366,7 @@ class GpuMap implements MapRenderer {
     final commands = gpu.gpuContext.createCommandBuffer();
     _host!.reset();
     _setFog(sheet, context, view);
+    _frameInfo[26] = devicePixelRatio;
     _reveal.begin(sheet, styleZoom);
     _presence.begin(sheet, styleZoom, ideal);
     _layerPaint.clear();

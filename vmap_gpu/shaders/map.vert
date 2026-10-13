@@ -22,6 +22,7 @@ out vec4 v_fog;
 out vec4 v_pattern;
 out vec3 v_uv;
 out vec4 v_circle;
+out vec3 v_edge;
 
 // Two 12 bit numbers packed in one float as the stream writes them.
 vec2 unpack_pair(float v) {
@@ -37,8 +38,21 @@ void main() {
   vec4 color = slot_info.slot[s * 2];
   vec4 p = slot_info.slot[s * 2 + 1];
   vec2 pos = position;
+  v_edge = vec3(0.0);
   if (kind > 0.5 && kind < 1.5) {
-    pos += unpack_pair(packed_data.x) * p.x + unpack_pair(packed_data.y) * p.y;
+    // A line is drawn half a device pixel wider and its outermost pixel
+    // faded, as MapLibre does, so its edges are smooth without
+    // multisampling. fade.y is screen pixels per tile unit at the centre of
+    // a flat view, w how much farther than the centre a point is, and
+    // fog_range.z the device pixel ratio: one device pixel here is this
+    // many tile units.
+    vec2 ext = unpack_pair(packed_data.x);
+    vec2 centre = pos + unpack_pair(packed_data.y) * p.y;
+    float w = (frame_info.mvp * vec4(centre, 0.0, 1.0)).w;
+    float pixel = w / max(frame_info.fade.y * frame_info.fog_range.z, 1e-6);
+    float outer = p.x + pixel * 0.5;
+    pos = centre + ext * outer;
+    v_edge = vec3(ext, outer / pixel);
   }
   // A circle: p.x its radius and p.y its ring's width in tile units, p.z
   // its ring's colour packed as red plus 256 green plus 65536 blue, p.w the
