@@ -697,6 +697,25 @@ class GpuMap implements MapRenderer {
     }
   }
 
+  /// A layer's paint, with footprints that hand over to buildings kept past
+  /// their range and faded as the buildings rise.
+  _Paint _paintOf(
+    StyleSheet sheet,
+    int layerIndex,
+    EvalContext context,
+    double styleZoom,
+    Map<String, Object?>? props,
+  ) {
+    final layer = sheet.layers[layerIndex];
+    final building = sheet.handovers[layerIndex];
+    if (building == null) return _Paint.of(layer, context, styleZoom, props);
+    final present = _presence[sheet.extrusions[building]] ?? 0;
+    final risen = present * present * (3 - 2 * present);
+    if (risen >= 1) return _Paint._clear;
+    final zoom = math.min(styleZoom, layer.maxZoom - 1e-3);
+    return _Paint.of(layer, context, zoom, props).scaled(1 - risen);
+  }
+
   /// Writes the slots [from] to [to] of [stream] into the slot table, in
   /// tile units for a tile [scale] screen pixels to the unit.
   void _fillSlots(
@@ -711,10 +730,15 @@ class GpuMap implements MapRenderer {
     final out = _slots;
     for (var i = from; i < to; i++) {
       final (layerIndex, props) = stream.slots[i];
-      final layer = sheet.layers[layerIndex];
       final paint = props == null
-          ? (_layerPaint[layerIndex] ??= _Paint.of(layer, context, styleZoom))
-          : _Paint.of(layer, context, styleZoom, props);
+          ? (_layerPaint[layerIndex] ??= _paintOf(
+              sheet,
+              layerIndex,
+              context,
+              styleZoom,
+              null,
+            ))
+          : _paintOf(sheet, layerIndex, context, styleZoom, props);
       final o = (i - from) * 8;
       if (paint.circle) {
         out[o] = paint.r;
@@ -790,8 +814,12 @@ class GpuMap implements MapRenderer {
           }
           // All of a tile's buildings show together or not at all.
           if (b.uploaded < b.chunks) continue;
+          // While the layer rises out of its footprints, that rise is the
+          // only animation; a tile growing on its own as well is too slow.
           if (b.shownAt < 0) {
-            b.shownAt = _standingNear(d.tile.id) ? now - _growMicros : now;
+            b.shownAt = present < 1 || _standingNear(d.tile.id)
+                ? now - _growMicros
+                : now;
           }
           final scale = d.size / tileExtent;
           final t = math.min(1.0, (now - b.shownAt) / _growMicros);
@@ -905,6 +933,24 @@ class _Paint {
   final double halfWidth, offset, translateX, translateY, dashOn, dashPeriod;
 
   static final _clear = _Paint(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+  /// This paint with its colour, premultiplied, times [k].
+  _Paint scaled(double k) => k >= 1
+      ? this
+      : _Paint(
+          r * k,
+          g * k,
+          b * k,
+          a * k,
+          halfWidth,
+          offset,
+          translateX,
+          translateY,
+          dashOn,
+          dashPeriod,
+          pattern,
+          circle,
+        );
 
   static _Paint of(
     PaintLayer layer,

@@ -796,4 +796,26 @@ class StyleSheet {
 
   /// Raster layers, each drawn where [runs] puts it.
   final List<RasterLayer> rasters;
+
+  /// Flat fill layers that hand over to a building layer, by paint layer
+  /// index, to the index in [extrusions]: they read the same data and end
+  /// at the zoom the buildings start, as footprints that the buildings
+  /// replace. They stay a zoom longer, fading as the buildings rise.
+  late final Map<int, int> handovers = {
+    for (var p = 0; p < layers.length; p++)
+      for (var e = 0; e < extrusions.length; e++)
+        if (_handsOver(layers[p], extrusions[e])) p: e,
+  };
+
+  /// The buckets of [handovers], kept in tiles a zoom past their range.
+  late final Set<int> handoverBuckets = {
+    for (final p in handovers.keys) layers[p].bucket,
+  };
+
+  bool _handsOver(PaintLayer layer, ExtrusionLayer building) {
+    if (layer is! FillLayer || layer.extruded) return false;
+    if (layer.maxZoom != building.minZoom) return false;
+    final flat = buckets[layer.bucket], tall = buckets[building.bucket];
+    return flat.source == tall.source && flat.sourceLayer == tall.sourceLayer;
+  }
 }
