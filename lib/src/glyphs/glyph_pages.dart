@@ -2,11 +2,8 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-// payv exports the command type but not its cases.
-// ignore: implementation_imports
-import 'package:payv/src/font/glyph_path.dart';
-
 import 'glyph_layout.dart';
+import 'glyph_raster.dart';
 
 /// Where one glyph sits in a page, in the page image's pixels, and where
 /// its cell starts relative to the glyph's origin on the baseline.
@@ -28,16 +25,17 @@ class GlyphCell {
 /// by at most 16%, which keeps it sharp.
 typedef PageKey = ({int size, int weight, bool italic, int halo, int blur});
 
-/// One look's glyphs, rasterized by Flutter from the fonts' own outlines.
-/// Glyphs asked for and missing are drawn into a new chunk when [flush]
-/// runs, and chunks merge once there are many.
+/// One look's glyphs, rasterized from the fonts' own outlines in another
+/// isolate. Glyphs asked for and missing are sent off as one batch when
+/// [flush] runs and come back as a new image; once a page has many images,
+/// one batch packs all its glyphs into a single image again.
 class GlyphPage {
-  GlyphPage(this.key, this._fonts, this._paths)
+  GlyphPage(this.key, this._worker, this._changed)
     : em = math.pow(2, key.size / 4).toDouble();
 
   final PageKey key;
-  final GlyphFonts _fonts;
-  final OutlineCache _paths;
+  final GlyphRasterWorker _worker;
+  final void Function() _changed;
 
   /// Device pixels per em.
   final double em;
@@ -45,11 +43,21 @@ class GlyphPage {
   final List<int> _pending = [];
   final List<ui.Image> _chunks = [];
   int usedFrame = 0;
+  int _inFlight = 0;
   bool _merging = false;
+  bool _disposed = false;
+
+  RasterLook get _look => (
+    em: em,
+    weight: key.weight,
+    italic: key.italic,
+    halo: key.halo,
+    blur: key.blur,
+  );
 
   static int _id(int face, int glyph) => face << 20 | glyph;
 
-  /// The cell of [glyph] in [face], or null while it waits for [flush].
+  /// The cell of [glyph] in [face], or null while it is being drawn.
   GlyphCell? cell(int face, int glyph) {
     final id = _id(face, glyph);
     final found = _cells[id];
@@ -62,187 +70,127 @@ class GlyphPage {
   }
 
   bool get hasPending => _pending.isNotEmpty;
+  bool get busy => _inFlight > 0;
 
   /// The cell of [glyph] if it is drawn already, without asking for it.
   GlyphCell? peek(int face, int glyph) => _cells[_id(face, glyph)];
 
-  /// Draws up to [most] of the glyphs asked for since the last flush into a
-  /// new image, and returns how many it drew.
+  /// Sends up to [most] of the glyphs asked for since the last flush to be
+  /// drawn, and returns how many it sent.
   int flush([int most = 1 << 30]) {
-    if (_pending.isEmpty) return 0;
+    if (_pending.isEmpty || _merging) return 0;
+    if (_chunks.length >= 6 && _inFlight == 0) {
+      final all = _cells.keys.toList();
+      _pending.clear();
+      _merging = true;
+      _send(all, merge: true);
+      return all.length;
+    }
     final take = math.min(most, _pending.length);
     final ids = _pending.sublist(0, take);
     _pending.removeRange(0, take);
-    if (_chunks.length >= 6) {
-      _merging = true;
-      for (final c in _chunks) {
-        c.dispose();
-      }
-      _chunks.clear();
-      ids.addAll(_cells.keys.where((id) => !ids.contains(id)));
-    }
-    _draw(ids);
+    _send(ids, merge: false);
     return take;
   }
 
-  void _draw(List<int> ids) {
-    final halo = key.halo / 4;
-    final blur = key.blur / 4;
-    final pad = (halo + blur * 2 + 2).ceilToDouble();
-    final slant = key.italic ? 0.2 : 0.0;
-    final shapes = <(int, ui.Path, ui.Rect)>[];
-    for (final id in ids) {
-      final face = id >> 20, glyph = id & 0xFFFFF;
-      final path = _paths.path(_fonts, face, key.weight, glyph);
-      if (path == null) continue;
-      final scale = em / _fonts.unitsPerEm(face);
-      final sized = path.transform(
-        Float64List.fromList([
-          scale, 0, 0, 0, //
-          -slant * scale, scale, 0, 0,
-          0, 0, 1, 0,
-          0, 0, 0, 1,
-        ]),
-      );
-      shapes.add((id, sized, sized.getBounds()));
-    }
-    if (shapes.isEmpty) {
-      for (final id in ids) {
-        _cells.remove(id);
-      }
-      return;
-    }
-    const width = 1024.0;
-    var x = 0.0, y = 0.0, row = 0.0;
-    final places = <(double, double)>[];
-    final twin = key.halo > 0;
-    for (final (_, _, b) in shapes) {
-      final w = (b.width + pad * 2).ceilToDouble();
-      final h = (b.height + pad * 2).ceilToDouble();
-      final need = twin ? w * 2 + 1 : w;
-      if (x + need > width) {
-        x = 0;
-        y += row + 1;
-        row = 0;
-      }
-      places.add((x, y));
-      x += need + 1;
-      row = math.max(row, h);
-    }
-    final height = y + row + 1;
-    final recorder = ui.PictureRecorder();
-    final canvas = ui.Canvas(recorder);
-    final fill = ui.Paint()..color = const ui.Color(0xFFFFFFFF);
-    final ring = ui.Paint()
-      ..color = const ui.Color(0xFFFFFFFF)
-      ..style = ui.PaintingStyle.stroke
-      ..strokeWidth = halo * 2
-      ..strokeJoin = ui.StrokeJoin.round
-      ..maskFilter = blur > 0
-          ? ui.MaskFilter.blur(ui.BlurStyle.normal, blur)
-          : null;
-    final ringFill = ui.Paint()
-      ..color = const ui.Color(0xFFFFFFFF)
-      ..maskFilter = ring.maskFilter;
-    for (final (i, (_, path, b)) in shapes.indexed) {
-      final (px, py) = places[i];
-      final w = (b.width + pad * 2).ceilToDouble();
-      canvas
-        ..save()
-        ..translate(px + pad - b.left, py + pad - b.top)
-        ..drawPath(path, fill)
-        ..restore();
-      if (twin) {
-        canvas
-          ..save()
-          ..translate(px + w + 1 + pad - b.left, py + pad - b.top)
-          ..drawPath(path, ring)
-          ..drawPath(path, ringFill)
-          ..restore();
-      }
-    }
-    final picture = recorder.endRecording();
-    final image = picture.toImageSync(width.toInt(), height.ceil());
-    picture.dispose();
-    _chunks.add(image);
-    for (final (i, (id, _, b)) in shapes.indexed) {
-      final (px, py) = places[i];
-      final w = (b.width + pad * 2).ceilToDouble();
-      final h = (b.height + pad * 2).ceilToDouble();
-      _cells[id] = GlyphCell(
+  void _send(List<int> ids, {required bool merge}) {
+    _inFlight++;
+    _worker
+        .draw(_look, ids)
+        .then(
+          (r) async {
+            final image = await _image(r);
+            _inFlight--;
+            if (_disposed) {
+              image?.dispose();
+              return;
+            }
+            if (merge) {
+              for (final c in _chunks) {
+                c.dispose();
+              }
+              _chunks.clear();
+              _merging = false;
+            }
+            if (image != null) {
+              _chunks.add(image);
+              _place(image, r.cells);
+            }
+            if (merge) _changed();
+          },
+          onError: (Object _) {
+            _inFlight--;
+          },
+        );
+  }
+
+  void _place(ui.Image image, Float64List cells) {
+    for (var i = 0; i < cells.length; i += GlyphRaster.stride) {
+      final x = cells[i + 1], y = cells[i + 2];
+      final w = cells[i + 3], h = cells[i + 4];
+      final haloX = cells[i + 5];
+      _cells[cells[i].toInt()] = GlyphCell(
         image,
-        ui.Rect.fromLTWH(px, py, w, h),
-        twin ? ui.Rect.fromLTWH(px + w + 1, py, w, h) : null,
-        b.left - pad,
-        b.top - pad,
+        ui.Rect.fromLTWH(x, y, w, h),
+        haloX < 0 ? null : ui.Rect.fromLTWH(haloX, y, w, h),
+        cells[i + 6],
+        cells[i + 7],
       );
     }
   }
 
+  static Future<ui.Image?> _image(GlyphRaster r) async {
+    if (r.cells.isEmpty) return null;
+    final buffer = await ui.ImmutableBuffer.fromUint8List(r.pixels);
+    final descriptor = ui.ImageDescriptor.raw(
+      buffer,
+      width: r.width,
+      height: r.height,
+      pixelFormat: ui.PixelFormat.rgba8888,
+    );
+    final codec = await descriptor.instantiateCodec();
+    final frame = await codec.getNextFrame();
+    codec.dispose();
+    descriptor.dispose();
+    buffer.dispose();
+    return frame.image;
+  }
+
   void dispose() {
+    _disposed = true;
     for (final c in _chunks) {
       c.dispose();
     }
     _chunks.clear();
     _cells.clear();
     _pending.clear();
-  }
-}
-
-/// Glyph outlines as paths of one unit per font unit, y down.
-class OutlineCache {
-  final Map<int, ui.Path?> _byId = {};
-
-  ui.Path? path(GlyphFonts fonts, int face, int weight, int glyph) {
-    final id = (face * 10 + GlyphFonts.snapWeight(weight) ~/ 100) << 20 | glyph;
-    if (_byId.containsKey(id)) return _byId[id];
-    final outline = fonts.font(face, weight).outline(glyph);
-    return _byId[id] = outline == null || outline.isEmpty
-        ? null
-        : _toPath(outline);
-  }
-
-  static ui.Path _toPath(GlyphPath outline) {
-    final p = ui.Path();
-    for (final c in outline.commands) {
-      switch (c) {
-        case MoveTo():
-          p.moveTo(c.x, -c.y);
-        case LineTo():
-          p.lineTo(c.x, -c.y);
-        case QuadTo():
-          p.quadraticBezierTo(c.cx, -c.cy, c.x, -c.y);
-        case CubicTo():
-          p.cubicTo(c.c1x, -c.c1y, c.c2x, -c.c2y, c.x, -c.y);
-        case ClosePath():
-          p.close();
-      }
-    }
-    return p;
+    _worker.forget(_look);
   }
 }
 
 /// Every page in use, and the batches of glyphs one frame draws from them:
 /// all halos first, then all text, one atlas draw per image.
 class GlyphPages {
-  GlyphPages(this.fonts);
+  GlyphPages(this.fonts) : _worker = GlyphRasterWorker(fonts);
 
   final GlyphFonts fonts;
-  final _paths = OutlineCache();
+  final GlyphRasterWorker _worker;
   final Map<PageKey, GlyphPage> _pages = {};
   final Map<ui.Image, _Batch> _halos = {};
   final Map<ui.Image, _Batch> _inks = {};
   int _frame = 0;
 
   /// Moves on whenever a cell handed out may have gone stale: a page was
-  /// dropped or redrawn into one image.
+  /// dropped, glyphs arrived, or a page was packed into one image.
   int generation = 0;
+
+  void _landed() => generation++;
 
   static int sizeOf(double devicePixelsPerEm) =>
       (math.log(math.max(devicePixelsPerEm, 1)) / math.ln2 * 4).ceil();
 
   GlyphPage page(PageKey key) {
-    final page = _pages[key] ??= GlyphPage(key, fonts, _paths);
+    final page = _pages[key] ??= GlyphPage(key, _worker, _landed);
     page.usedFrame = _frame;
     return page;
   }
@@ -321,23 +269,17 @@ class GlyphPages {
     }
   }
 
-  /// Rasterizes waiting glyphs; true when some were, so a frame should
-  /// follow to draw them.
+  /// Sends waiting glyphs to be drawn; true while any are being drawn, so
+  /// frames go on until they land.
   bool rasterizePending() {
     var any = false;
-
     final watch = Stopwatch()..start();
     var glyphs = 0;
     for (final page in _pages.values) {
-      if (!page.hasPending) continue;
-      final left = glyphsPerFrame - glyphs;
-      if (left <= 0) return true;
-      glyphs += page.flush(left);
-      if (page._merging) {
-        page._merging = false;
-        generation++;
+      if (page.hasPending && glyphs < glyphsPerFrame) {
+        glyphs += page.flush(glyphsPerFrame - glyphs);
       }
-      any = true;
+      if (page.busy || page.hasPending) any = true;
     }
     lastRasterized = glyphs;
     lastRasterMicros = watch.elapsedMicroseconds;
@@ -366,6 +308,7 @@ class GlyphPages {
       p.dispose();
     }
     _pages.clear();
+    _worker.dispose();
   }
 }
 

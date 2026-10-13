@@ -20,11 +20,17 @@ class GlyphFonts {
   /// [faces] in the order they are tried when a label's style names none
   /// of them, each with its family in [families].
   GlyphFonts(List<Uint8List> faces, {List<String>? families})
-    : _faces = [for (final bytes in faces) OpenTypeFont.parse(bytes)],
+    : faceBytes = faces,
+      familyNames = families,
+      _faces = [for (final bytes in faces) OpenTypeFont.parse(bytes)],
       _families = [
         for (var i = 0; i < faces.length; i++)
           _family(families != null && i < families.length ? families[i] : ''),
       ];
+
+  /// What the fonts were made from, for another isolate to make them again.
+  final List<Uint8List> faceBytes;
+  final List<String>? familyNames;
 
   final List<OpenTypeFont> _faces;
   final List<String> _families;
