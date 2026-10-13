@@ -15,8 +15,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:vmap/vmap.dart';
 import 'package:vmap_gpu/vmap_gpu.dart';
 
-import 'gpu/gpu_buildings.dart';
-
 const _out = String.fromEnvironment('OUT', defaultValue: '/tmp/vmap_fly');
 const _styleName = String.fromEnvironment('STYLE');
 const _script = bool.fromEnvironment('SCRIPT');
@@ -134,7 +132,6 @@ class _DemoState extends State<_Demo> {
       ..tileSetupMicros = 0
       ..labelMicros = 0
       ..placeMicros = 0;
-    GpuBuildings.slow.clear();
     const base = MapCameraPosition(
       latitude: 36.1912,
       longitude: 44.0092,
@@ -197,9 +194,6 @@ class _DemoState extends State<_Demo> {
     );
     for (final line in engine.stats.timings.slowPaints.take(40)) {
       debugPrint('zoomtest slow: $line');
-    }
-    for (final line in GpuBuildings.slow.take(30)) {
-      debugPrint('zoomtest gpu: $line');
     }
     debugPrint('zoomtest: done');
   }

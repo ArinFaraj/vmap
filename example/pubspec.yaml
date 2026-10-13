@@ -45,8 +45,6 @@ dependencies:
   payv: ^0.1.2
   flutter_gpu:
     sdk: flutter
-  flutter_gpu_shaders: ^0.5.2
-  hooks: ^2.0.0
   vector_math: ^2.2.0
   vector_map_tiles: 9.0.0-beta.13
 
@@ -73,7 +71,6 @@ flutter:
   uses-material-design: true
   assets:
     - assets/bench_labels.json
-    - build/shaderbundles/vmap.shaderbundle
 
   fonts:
     - family: GoogleSansFlex

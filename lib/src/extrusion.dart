@@ -24,12 +24,14 @@ class BuiltExtrusion {
     this.vertices,
   );
 
-  /// Every wall and roof as triangles ready for the GPU, three 32 bit words
-  /// a vertex: x and y in half tile units plus 16384, 16 bits each; height
-  /// in decimetres; and the colour, lit from the north west and darker at
-  /// the foot, as red, green, blue and alpha bytes. A third of the size of
-  /// floats, so a tile goes to the GPU in a third of the time.
-  final Uint32List vertices;
+  /// Every wall and roof as triangles ready for the GPU, five floats a
+  /// vertex: x and y in tile units, height in metres, the colour lit from
+  /// the north west and darker at the foot as red plus 256 green plus 65536
+  /// blue, from 0 to 255 each, and alpha from 0 to 255. Every one exact, so
+  /// OpenGL ES 2 shaders, which have no integers, unpack them.
+  final Float32List vertices;
+
+  static const floatsPerVertex = 5;
 
   /// Vertices per piece the GPU takes at once, whole triangles.
   static const chunk = 8190;
@@ -60,13 +62,7 @@ class BuiltExtrusion {
     pack(roof),
     pack(roofIndices),
     pack(info),
-    pack(
-      Float32List.view(
-        vertices.buffer,
-        vertices.offsetInBytes,
-        vertices.length,
-      ),
-    ),
+    pack(vertices),
   ];
 
   static BuiltExtrusion fromMessage(List<Object?> m) => BuiltExtrusion(
@@ -75,10 +71,7 @@ class BuiltExtrusion {
     unpackFloats(m[2]!),
     unpackFloats(m[3]!),
     unpackFloats(m[4]!),
-    () {
-      final words = unpackFloats(m[5]!);
-      return words.buffer.asUint32List(words.offsetInBytes, words.length);
-    }(),
+    unpackFloats(m[5]!),
   );
 }
 
@@ -193,21 +186,19 @@ class ExtrusionBuilder {
     for (var i = 0; i < _info.length; i += BuiltExtrusion.stride) {
       count += _info[i + 5].toInt() * 6 + _info[i + 7].toInt();
     }
-    final out = Uint32List(count * 3);
+    final out = Float32List(count * BuiltExtrusion.floatsPerVertex);
     var o = 0;
-    int coord(double v) => ((v + 8192) * 2).round().clamp(0, 0xFFFF);
     for (var i = 0; i < _info.length; i += BuiltExtrusion.stride) {
       final top = _info[i], bottom = _info[i + 1];
       final r = _info[i + 8], g = _info[i + 9], b = _info[i + 10];
-      final a = (_info[i + 11] * 255).round().clamp(0, 255);
+      final a = (_info[i + 11] * 255).roundToDouble().clamp(0.0, 255.0);
       void vertex(double x, double y, double z, double light) {
-        out[o++] = coord(x) | coord(y) << 16;
-        out[o++] = (z * 10).round().clamp(0, 0xFFFF);
-        out[o++] =
-            (r * light * 255).round().clamp(0, 255) |
-            (g * light * 255).round().clamp(0, 255) << 8 |
-            (b * light * 255).round().clamp(0, 255) << 16 |
-            a << 24;
+        int c(double v) => (v * light * 255).round().clamp(0, 255);
+        out[o++] = x;
+        out[o++] = y;
+        out[o++] = z;
+        out[o++] = (c(r) + c(g) * 256 + c(b) * 65536).toDouble();
+        out[o++] = a;
       }
 
       final firstWall = _info[i + 4].toInt(), walls = _info[i + 5].toInt();

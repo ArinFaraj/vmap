@@ -42,7 +42,7 @@ class _BenchState extends State<_Bench> {
 
   Future<void> _setUp() async {
     final library = await gpu.ShaderLibrary.fromAsset(
-      'build/shaderbundles/vmap.shaderbundle',
+      'packages/vmap_gpu/build/shaderbundles/vmap_gpu.shaderbundle',
     );
     SchedulerBinding.instance.addPostFrameCallback((_) {
       final vertex = library!['BuildingVertex']!;
@@ -52,11 +52,16 @@ class _BenchState extends State<_Bench> {
         vertexLayout: const gpu.VertexLayout(
           buffers: [
             gpu.VertexBuffer(
-              strideInBytes: 12,
+              strideInBytes: 20,
               attributes: [
                 gpu.VertexAttribute(
-                  name: 'packed_vertex',
-                  format: gpu.VertexFormat.uint32x3,
+                  name: 'position',
+                  format: gpu.VertexFormat.float32x3,
+                ),
+                gpu.VertexAttribute(
+                  name: 'color_data',
+                  format: gpu.VertexFormat.float32x2,
+                  offsetInBytes: 12,
                 ),
               ],
             ),
@@ -64,11 +69,13 @@ class _BenchState extends State<_Bench> {
         ),
       );
       _slot = vertex.getUniformSlot('FrameInfo');
-      final words = Uint32List(3 * 300);
-      for (var i = 0; i < words.length; i += 3) {
-        words[i] = (16384 + i * 4) | (16384 + i * 2) << 16;
-        words[i + 1] = 100;
-        words[i + 2] = 0xFF808080;
+      final words = Float32List(5 * 300);
+      for (var i = 0; i < words.length; i += 5) {
+        words[i] = i * 2.0;
+        words[i + 1] = i * 1.0;
+        words[i + 2] = 10;
+        words[i + 3] = 128 + 128 * 256 + 128 * 65536;
+        words[i + 4] = 255;
       }
       _mesh = gpu.gpuContext.createDeviceBufferWithCopy(
         ByteData.sublistView(words),
@@ -99,7 +106,7 @@ class _BenchState extends State<_Bench> {
       final view = gpu.BufferView(
         _mesh!,
         offsetInBytes: 0,
-        lengthInBytes: 3600,
+        lengthInBytes: 6000,
       );
       final bytes = ByteData.sublistView(_info);
       for (var i = 0; i < count; i++) {

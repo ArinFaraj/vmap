@@ -4,21 +4,16 @@ uniform FrameInfo {
 }
 frame_info;
 
-in uvec3 packed_vertex;
+in vec3 position;
+in vec2 color_data;
 out vec4 v_color;
 
 void main() {
-  uint xy = packed_vertex.x;
-  float x = float(xy & 65535u) * 0.5 - 8192.0;
-  float y = float(xy >> 16u) * 0.5 - 8192.0;
-  float z = float(packed_vertex.y & 65535u) * 0.1;
-  uint c = packed_vertex.z;
-  vec4 color = vec4(
-    float(c & 255u),
-    float((c >> 8u) & 255u),
-    float((c >> 16u) & 255u),
-    float(c >> 24u)
-  ) / 255.0;
-  v_color = vec4(color.rgb, color.a * frame_info.fade.x);
-  gl_Position = frame_info.mvp * vec4(x, y, z, 1.0);
+  float rgb = color_data.x;
+  float b = floor(rgb / 65536.0);
+  float g = floor((rgb - b * 65536.0) / 256.0);
+  float r = rgb - b * 65536.0 - g * 256.0;
+  v_color = vec4(r, g, b, color_data.y) / 255.0;
+  v_color.a *= frame_info.fade.x;
+  gl_Position = frame_info.mvp * vec4(position, 1.0);
 }

@@ -53,7 +53,7 @@ class GpuMap implements MapRenderer {
 
   final Float32List _frameInfo = Float32List(20);
   late final ByteData _frameBytes = ByteData.sublistView(_frameInfo);
-  final Float32List _slots = Float32List(360 * 4);
+  final Float32List _slots = Float32List(240 * 4);
   late final ByteData _slotBytes = ByteData.sublistView(_slots);
 
   /// One layer's paint this frame, in screen pixels, before a tile's scale.
@@ -105,11 +105,16 @@ class GpuMap implements MapRenderer {
       vertexLayout: const gpu.VertexLayout(
         buffers: [
           gpu.VertexBuffer(
-            strideInBytes: 16,
+            strideInBytes: 24,
             attributes: [
               gpu.VertexAttribute(
-                name: 'packed_vertex',
-                format: gpu.VertexFormat.uint32x4,
+                name: 'position',
+                format: gpu.VertexFormat.float32x2,
+              ),
+              gpu.VertexAttribute(
+                name: 'packed_data',
+                format: gpu.VertexFormat.float32x4,
+                offsetInBytes: 8,
               ),
             ],
           ),
@@ -124,11 +129,16 @@ class GpuMap implements MapRenderer {
       vertexLayout: const gpu.VertexLayout(
         buffers: [
           gpu.VertexBuffer(
-            strideInBytes: 12,
+            strideInBytes: 20,
             attributes: [
               gpu.VertexAttribute(
-                name: 'packed_vertex',
-                format: gpu.VertexFormat.uint32x3,
+                name: 'position',
+                format: gpu.VertexFormat.float32x3,
+              ),
+              gpu.VertexAttribute(
+                name: 'color_data',
+                format: gpu.VertexFormat.float32x2,
+                offsetInBytes: 12,
               ),
             ],
           ),
@@ -334,19 +344,15 @@ class GpuMap implements MapRenderer {
       final paint = props == null
           ? (_layerPaint[layerIndex] ??= _Paint.of(layer, context, styleZoom))
           : _Paint.of(layer, context, styleZoom, props);
-      final o = (i - from) * 12;
+      final o = (i - from) * 8;
       out[o] = paint.r;
       out[o + 1] = paint.g;
       out[o + 2] = paint.b;
       out[o + 3] = paint.a;
       out[o + 4] = paint.halfWidth / scale;
       out[o + 5] = paint.offset / scale;
-      out[o + 6] = paint.translateX / scale;
-      out[o + 7] = paint.translateY / scale;
-      out[o + 8] = paint.dashOn / scale;
-      out[o + 9] = paint.dashPeriod / scale;
-      out[o + 10] = 0;
-      out[o + 11] = 0;
+      out[o + 6] = paint.dashOn / scale;
+      out[o + 7] = paint.dashPeriod / scale;
     }
   }
 
@@ -404,7 +410,7 @@ class GpuMap implements MapRenderer {
                 ),
               )
               ..bindUniform(_buildingFrame!, host.emplace(_frameBytes))
-              ..draw(b.chunkBytes(c) ~/ 12);
+              ..draw(b.chunkBytes(c) ~/ _BuildingBuffers._stride);
           }
         }
       }
@@ -534,7 +540,9 @@ class _TileBuffers {
 class _BuildingBuffers {
   _BuildingBuffers(this._built)
     : chunks =
-          (_built.vertices.length ~/ 3 + BuiltExtrusion.chunk - 1) ~/
+          (_built.vertices.length ~/ BuiltExtrusion.floatsPerVertex +
+              BuiltExtrusion.chunk -
+              1) ~/
           BuiltExtrusion.chunk;
 
   final BuiltExtrusion _built;
@@ -545,15 +553,17 @@ class _BuildingBuffers {
 
   int get uploaded => buffers.length;
 
+  static const _stride = BuiltExtrusion.floatsPerVertex * 4;
+
   int chunkBytes(int c) {
-    final vertices = _built.vertices.length ~/ 3;
+    final vertices = _built.vertices.length ~/ BuiltExtrusion.floatsPerVertex;
     final from = c * BuiltExtrusion.chunk;
-    return math.min(BuiltExtrusion.chunk, vertices - from) * 12;
+    return math.min(BuiltExtrusion.chunk, vertices - from) * _stride;
   }
 
   void upload(int now) {
     final c = buffers.length;
-    final from = c * BuiltExtrusion.chunk * 3;
+    final from = c * BuiltExtrusion.chunk * BuiltExtrusion.floatsPerVertex;
     buffers.add(
       gpu.gpuContext.createDeviceBufferWithCopy(
         ByteData.sublistView(_built.vertices, from, from + chunkBytes(c) ~/ 4),

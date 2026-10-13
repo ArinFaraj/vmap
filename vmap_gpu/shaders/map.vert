@@ -3,40 +3,37 @@ uniform FrameInfo {
 }
 frame_info;
 
-// Three vec4 per slot: colour, premultiplied; half width, offset and
-// translate in tile units; dash length and period in tile units.
+// Two vec4 per slot: the colour, premultiplied; and the half width, the
+// offset, the dash length and the dash period, all in tile units. 240 vec4
+// fit the 256 uniform vectors every OpenGL ES 3 vertex shader has.
 uniform SlotInfo {
-  vec4 slot[360];
+  vec4 slot[240];
 }
 slot_info;
 
-in uvec4 packed_vertex;
+in vec2 position;
+in vec4 packed_data;
 out vec4 v_color;
 out vec3 v_dash;
 
-float signed16(uint v) {
-  int i = int(v & 65535u);
-  if (i > 32767) {
-    i -= 65536;
-  }
-  return float(i) / 2048.0;
+// Two 12 bit numbers packed in one float as the stream writes them.
+vec2 unpack_pair(float v) {
+  float high = floor(v / 4096.0);
+  float low = v - high * 4096.0;
+  return (vec2(low, high) - 2048.0) / 128.0;
 }
 
 void main() {
-  uint w0 = packed_vertex.x;
-  vec2 pos = vec2(float(w0 & 65535u), float(w0 >> 16u)) * 0.5 - 8192.0;
-  uint w2 = packed_vertex.z;
-  int s = int(w2 & 16383u);
-  uint kind = (w2 >> 14u) & 3u;
-  vec4 p = slot_info.slot[s * 3 + 1];
-  pos += p.zw;
-  if (kind == 1u) {
-    vec2 ext = vec2(signed16(packed_vertex.y), signed16(packed_vertex.y >> 16u));
-    vec2 off = vec2(signed16(packed_vertex.w), signed16(packed_vertex.w >> 16u));
-    pos += ext * p.x + off * p.y;
+  float slot_kind = packed_data.z;
+  float kind = floor(slot_kind / 16384.0);
+  int s = int(slot_kind - kind * 16384.0 + 0.5);
+  vec4 color = slot_info.slot[s * 2];
+  vec4 p = slot_info.slot[s * 2 + 1];
+  vec2 pos = position;
+  if (kind > 0.5) {
+    pos += unpack_pair(packed_data.x) * p.x + unpack_pair(packed_data.y) * p.y;
   }
-  vec4 dash = slot_info.slot[s * 3 + 2];
-  v_color = slot_info.slot[s * 3];
-  v_dash = vec3(float(w2 >> 16u) * 0.5, dash.x, dash.y);
+  v_color = color;
+  v_dash = vec3(packed_data.w, p.z, p.w);
   gl_Position = frame_info.mvp * vec4(pos, 0.0, 1.0);
 }
