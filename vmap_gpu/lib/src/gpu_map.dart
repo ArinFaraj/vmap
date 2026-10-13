@@ -94,7 +94,7 @@ class GpuMap implements MapRenderer {
       meshSeen = true;
     }
     for (final layer in sheet.layers) {
-      if (layer is CircleLayer || layer is HeatmapLayer) return false;
+      if (layer is HeatmapLayer) return false;
     }
     return _library != null;
   }
@@ -253,8 +253,8 @@ class GpuMap implements MapRenderer {
     MapView view,
     ui.Offset origin,
     StyleSheet sheet,
-    List<TileDraw> fallback,
-    List<TileDraw> ideal,
+    List<List<TileDraw>> fallback,
+    List<List<TileDraw>> ideal,
     EvalContext context,
     double styleZoom,
     double devicePixelRatio,
@@ -298,15 +298,19 @@ class GpuMap implements MapRenderer {
     // its number is: a tile's data runs a little past its square, and a
     // translucent fill drawn twice there shows a seam. A tile standing in
     // for a missing one draws where no number is. Tilted, a square is no
-    // rectangle on the screen, so scissors cannot do it.
-    final clipped = _stencil != null && ideal.length < 255;
-    final stand = fallback.isNotEmpty && clipped;
-    if (clipped) {
+    // rectangle on the screen, so scissors cannot do it. Sources tile the
+    // map apart, so the numbers are rewritten when the source changes.
+    var marked = -1;
+    void mark(int source) {
+      if (source == marked || _stencil == null) return;
       pass
+        ..clearBindings()
         ..bindPipeline(_stencil!)
         ..setCullMode(gpu.CullMode.none)
         ..setDepthWriteEnable(false)
         ..setDepthCompareOperation(gpu.CompareFunction.always)
+        ..setColorBlendEnable(true)
+        ..setColorBlendEquation(_over)
         ..setStencilConfig(
           gpu.StencilConfig(
             depthStencilPassOperation: gpu.StencilOperation.setToReferenceValue,
@@ -315,66 +319,87 @@ class GpuMap implements MapRenderer {
         ..bindVertexBuffer(
           gpu.BufferView(_quad!, offsetInBytes: 0, lengthInBytes: 48),
         );
-      for (final (i, d) in ideal.indexed) {
-        _times(clip, d.size / tileExtent, 1, d.left, d.top, 1);
-        pass
-          ..setStencilReference(i + 1)
-          ..bindUniform(_stencilFrame!, host.emplace(_frameBytes))
-          ..draw(6);
+      void cover(List<TileDraw> tiles, bool clear) {
+        for (final (i, d) in tiles.indexed) {
+          _times(clip, d.size / tileExtent, 1, d.left, d.top, 1);
+          pass
+            ..setStencilReference(clear ? 0 : i + 1)
+            ..bindUniform(_stencilFrame!, host.emplace(_frameBytes))
+            ..draw(6);
+        }
       }
+
+      if (marked >= 0) cover(ideal[marked], true);
+      cover(ideal[source], false);
+      marked = source;
       pass.clearBindings();
     }
 
-    pass
-      ..bindPipeline(_flat!)
-      ..setDepthWriteEnable(false)
-      ..setDepthCompareOperation(gpu.CompareFunction.always)
-      ..setCullMode(gpu.CullMode.none)
-      ..setColorBlendEnable(true)
-      ..setColorBlendEquation(
-        gpu.ColorBlendEquation(
-          sourceColorBlendFactor: gpu.BlendFactor.one,
-          destinationColorBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha,
-          sourceAlphaBlendFactor: gpu.BlendFactor.one,
-          destinationAlphaBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha,
-        ),
-      );
-    _bindSprites(pass);
-    if (stand) {
-      pass
-        ..setStencilReference(0)
-        ..setStencilConfig(
-          gpu.StencilConfig(compareFunction: gpu.CompareFunction.equal),
-        );
-      for (final d in fallback) {
-        _drawFlat(pass, d, sheet, clip, context, styleZoom);
-      }
-    }
-    if (clipped) {
-      pass.setStencilConfig(
-        gpu.StencilConfig(compareFunction: gpu.CompareFunction.equal),
-      );
-    }
-    for (final (i, d) in ideal.indexed) {
-      if (clipped) pass.setStencilReference(i + 1);
-      _drawFlat(pass, d, sheet, clip, context, styleZoom);
-    }
-    if (clipped) pass.setStencilConfig(gpu.StencilConfig());
+    bool clips(int source) => _stencil != null && ideal[source].length < 255;
 
-    if (sheet.extrusions.isNotEmpty) {
-      pass
-        ..clearBindings()
-        ..bindPipeline(_buildings!)
-        ..setDepthWriteEnable(true)
-        ..setDepthCompareOperation(gpu.CompareFunction.lessEqual);
-      _drawBuildings(pass, view, sheet, ideal, clip, styleZoom);
-      if (stand) {
+    var flat = false;
+    for (final run in sheet.runs) {
+      if (run.source < 0 || run.source >= ideal.length) continue;
+      final source = run.source;
+      final clipped = clips(source);
+      if (clipped && marked != source) {
+        mark(source);
+        flat = false;
+      }
+      if (!flat) {
+        pass
+          ..bindPipeline(_flat!)
+          ..setDepthWriteEnable(false)
+          ..setDepthCompareOperation(gpu.CompareFunction.always)
+          ..setCullMode(gpu.CullMode.none)
+          ..setColorBlendEnable(true)
+          ..setColorBlendEquation(_over);
+        _bindSprites(pass);
+        flat = true;
+      }
+      if (clipped) {
         pass
           ..setStencilReference(0)
           ..setStencilConfig(
             gpu.StencilConfig(compareFunction: gpu.CompareFunction.equal),
           );
-        _drawBuildings(pass, view, sheet, fallback, clip, styleZoom);
+        for (final d in fallback[source]) {
+          _drawFlat(pass, d, sheet, run, clip, context, styleZoom);
+        }
+      } else {
+        pass.setStencilConfig(gpu.StencilConfig());
+      }
+      for (final (i, d) in ideal[source].indexed) {
+        if (clipped) pass.setStencilReference(i + 1);
+        _drawFlat(pass, d, sheet, run, clip, context, styleZoom);
+      }
+      pass.setStencilConfig(gpu.StencilConfig());
+    }
+
+    if (sheet.extrusions.isNotEmpty) {
+      for (var source = 0; source < ideal.length; source++) {
+        bool built(List<TileDraw> tiles) =>
+            tiles.any((d) => d.tile.extrusions.isNotEmpty);
+        final standIn = built(fallback[source]) && clips(source);
+        if (!built(ideal[source]) && !standIn) continue;
+        if (standIn) mark(source);
+        pass
+          ..clearBindings()
+          ..bindPipeline(_buildings!)
+          ..setCullMode(gpu.CullMode.none)
+          ..setColorBlendEnable(true)
+          ..setStencilConfig(gpu.StencilConfig())
+          ..setDepthWriteEnable(true)
+          ..setDepthCompareOperation(gpu.CompareFunction.lessEqual);
+        _drawBuildings(pass, view, sheet, ideal[source], clip, styleZoom);
+        if (standIn) {
+          pass
+            ..setStencilReference(0)
+            ..setStencilConfig(
+              gpu.StencilConfig(compareFunction: gpu.CompareFunction.equal),
+            );
+          _drawBuildings(pass, view, sheet, fallback[source], clip, styleZoom);
+        }
       }
     }
     final more = _more;
@@ -392,6 +417,15 @@ class GpuMap implements MapRenderer {
     }
     return more;
   }
+
+  /// Premultiplied source over, which also leaves the colour untouched
+  /// where the stencil pass writes its transparent squares.
+  static final _over = gpu.ColorBlendEquation(
+    sourceColorBlendFactor: gpu.BlendFactor.one,
+    destinationColorBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha,
+    sourceAlphaBlendFactor: gpu.BlendFactor.one,
+    destinationAlphaBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha,
+  );
 
   int _budget = 0;
   bool _more = false;
@@ -426,16 +460,21 @@ class GpuMap implements MapRenderer {
       );
   }
 
+  /// Draws [run]'s layers of tile [d].
   void _drawFlat(
     gpu.RenderPass pass,
     TileDraw d,
     StyleSheet sheet,
+    StyleRun run,
     Float64List clip,
     EvalContext context,
     double styleZoom,
   ) {
     final stream = d.tile.gpu;
     if (stream == null) return;
+    final from = stream.layerFirst[run.first];
+    final to = stream.layerFirst[run.end];
+    if (from == to) return;
     var buffers = _tiles[stream];
     if (buffers == null) {
       final bytes =
@@ -462,7 +501,9 @@ class GpuMap implements MapRenderer {
       ..bindUniform(_flatFrame!, host.emplace(_frameBytes));
     final segments = stream.segments;
     for (var s = 0; s < segments.length; s += 3) {
-      final first = segments[s], count = segments[s + 1];
+      final first = math.max(segments[s], from);
+      final count = math.min(segments[s] + segments[s + 1], to) - first;
+      if (count <= 0) continue;
       final slotBase = segments[s + 2];
       final slotEnd = s + 5 < segments.length
           ? segments[s + 5]
@@ -501,6 +542,17 @@ class GpuMap implements MapRenderer {
           ? (_layerPaint[layerIndex] ??= _Paint.of(layer, context, styleZoom))
           : _Paint.of(layer, context, styleZoom, props);
       final o = (i - from) * 8;
+      if (paint.circle) {
+        out[o] = paint.r;
+        out[o + 1] = paint.g;
+        out[o + 2] = paint.b;
+        out[o + 3] = paint.a;
+        out[o + 4] = paint.halfWidth / scale;
+        out[o + 5] = paint.offset / scale;
+        out[o + 6] = paint.dashOn;
+        out[o + 7] = paint.dashPeriod;
+        continue;
+      }
       final pattern = paint.pattern;
       if (pattern != null) {
         final entry = _sheet?.entries[pattern];
@@ -642,7 +694,13 @@ class _Paint {
     this.dashOn,
     this.dashPeriod, [
     this.pattern,
+    this.circle = false,
   ]);
+
+  /// A circle: [halfWidth] is its radius, [offset] its ring's width,
+  /// [dashOn] its ring's colour packed as red plus 256 green plus 65536
+  /// blue and [dashPeriod] the ring's alpha.
+  final bool circle;
 
   /// The sprite a patterned fill repeats.
   final String? pattern;
@@ -678,6 +736,39 @@ class _Paint {
           dashOn = dash[0] * width;
           dashPeriod = (dash[0] + dash[1]) * width;
         }
+      }
+      if (layer is CircleLayer) {
+        final diameter = (asNumber(layer.width(context)) ?? 0).toDouble();
+        final ring = layer.ring;
+        var ringWidth = 0.0, ringRgb = 0.0, ringAlpha = 0.0;
+        if (ring != null) {
+          ringWidth = (asNumber(ring.width(context)) ?? 0).toDouble();
+          final ringColor = Rgba.of(ring.color(context));
+          if (ringColor != null && ringWidth > 0) {
+            int c(double v) => (v * 255).round().clamp(0, 255);
+            ringRgb =
+                (c(ringColor.r) + c(ringColor.g) * 256 + c(ringColor.b) * 65536)
+                    .toDouble();
+            ringAlpha = (ringColor.a * (asNumber(ring.opacity(context)) ?? 1))
+                .clamp(0.0, 1.0);
+          } else {
+            ringWidth = 0;
+          }
+        }
+        return _Paint(
+          color.r * a,
+          color.g * a,
+          color.b * a,
+          a,
+          diameter / 2,
+          ringWidth,
+          0,
+          0,
+          ringRgb,
+          ringAlpha,
+          null,
+          true,
+        );
       }
       var tx = 0.0, ty = 0.0;
       if (layer is MeshLayer) {

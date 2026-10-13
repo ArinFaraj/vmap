@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'dart:ui' show FramePhase;
 
@@ -20,6 +21,7 @@ const _styleName = String.fromEnvironment('STYLE');
 const _script = bool.fromEnvironment('SCRIPT');
 const _oldText = bool.fromEnvironment('OLD_TEXT');
 const _gpu = bool.fromEnvironment('GPU');
+const _circles = bool.fromEnvironment('CIRCLES');
 const _zoomTest = bool.fromEnvironment('ZOOMTEST');
 const _labels = bool.fromEnvironment('LABELS', defaultValue: true);
 const _buildings = bool.fromEnvironment('BUILDINGS', defaultValue: true);
@@ -53,6 +55,45 @@ const _places = {
     pitch: 30,
   ),
 };
+
+/// Points around Erbil drawn as circles with rings, to check circle layers.
+final _stations = VmapOverlay(
+  sources: {
+    'stations': {
+      'type': 'geojson',
+      'data': {
+        'type': 'FeatureCollection',
+        'features': [
+          for (var i = 0; i < 60; i++)
+            {
+              'type': 'Feature',
+              'properties': {'n': i},
+              'geometry': {
+                'type': 'Point',
+                'coordinates': [
+                  44.0092 + 0.012 * math.cos(i * 0.7) * (1 + i / 30),
+                  36.1912 + 0.009 * math.sin(i * 0.7) * (1 + i / 30),
+                ],
+              },
+            },
+        ],
+      },
+    },
+  },
+  layers: [
+    {
+      'id': 'stations',
+      'type': 'circle',
+      'source': 'stations',
+      'paint': {
+        'circle-radius': 9,
+        'circle-color': '#1E88E5',
+        'circle-stroke-width': 3,
+        'circle-stroke-color': '#ffffff',
+      },
+    },
+  ],
+);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -92,6 +133,7 @@ class _DemoState extends State<_Demo> {
         ? const VmapStyle.builtIn()
         : VmapStyle.url('https://tiles.openfreemap.org/styles/$_styleName'),
     maxCachedTiles: 400,
+    overlay: _circles ? _stations : null,
     glyphText: !_oldText,
     showLabels: _labels,
     renderer: _gpu && _buildings ? GpuMap.create() : null,

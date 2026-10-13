@@ -16,11 +16,22 @@ import 'tile_builder.dart' show BuiltMesh;
 /// - a line vertex's extrusion from its centre line, x and y in 1/128ths
 ///   plus 2048, the second times 4096, zero for a fill;
 /// - an offset line's sideways vector, packed as the extrusion is;
-/// - the slot within its segment, plus 16384 for a line or 32768 for a
-///   fill drawn with a pattern;
+/// - the slot within its segment, plus 16384 for a line, 32768 for a fill
+///   drawn with a pattern, or 49152 for a circle;
 /// - the distance along the line in tile units.
 class GpuStream {
-  GpuStream(this.vertices, this.indices, this.slots, this.segments);
+  GpuStream(
+    this.vertices,
+    this.indices,
+    this.slots,
+    this.segments,
+    this.layerFirst,
+  );
+
+  /// For each of the style's paint layers, the first index of its geometry,
+  /// and one more entry for the end: a run of the style's layers is the
+  /// indices from its first layer's entry to the entry after its last.
+  final Int32List layerFirst;
 
   final Float32List vertices;
   final Uint32List indices;
@@ -43,7 +54,7 @@ class GpuStream {
     return (q(x) + q(y) * 4096).toDouble();
   }
 
-  static const fill = 0, line = 1, patterned = 2;
+  static const fill = 0, line = 1, patterned = 2, circle = 3;
 
   List<Object?> toMessage() => [
     pack(vertices),
@@ -54,6 +65,7 @@ class GpuStream {
       for (final (layer, props) in slots) [layer, props],
     ],
     segments,
+    layerFirst,
   ];
 
   static GpuStream fromMessage(List<Object?> m) {
@@ -62,10 +74,16 @@ class GpuStream {
       return f.buffer.asUint32List(f.offsetInBytes, f.length);
     }
 
-    return GpuStream(unpackFloats(m[0]!), words(m[1]!), [
-      for (final s in m[2]! as List)
-        ((s as List)[0]! as int, (s[1] as Map?)?.cast<String, Object?>()),
-    ], m[3]! as Int32List);
+    return GpuStream(
+      unpackFloats(m[0]!),
+      words(m[1]!),
+      [
+        for (final s in m[2]! as List)
+          ((s as List)[0]! as int, (s[1] as Map?)?.cast<String, Object?>()),
+      ],
+      m[3]! as Int32List,
+      m[4]! as Int32List,
+    );
   }
 
   /// Builds the stream for [meshes] in [sheet]'s layer order, leaving out
@@ -81,19 +99,23 @@ class GpuStream {
     final slots = <(int, Map<String, Object?>?)>[];
     final segments = <int>[];
     var segmentStart = 0, segmentSlot = 0;
+    final layerFirst = Int32List(sheet.layers.length + 1);
 
     for (var p = 0; p < sheet.layers.length; p++) {
+      layerFirst[p] = indices.length;
       final layer = sheet.layers[p];
       final kind = switch (layer) {
         FillLayer(pattern: null, extruded: false) => fill,
         FillLayer(extruded: false) => patterned,
+        CircleLayer() => circle,
         LineLayer(pattern: null, gradient: null) => line,
         _ => -1,
       };
       if (kind < 0) continue;
       for (final m in byBucket[layer.bucket] ?? const <BuiltMesh>[]) {
         final chunk = m.chunk;
-        if (chunk.indices.isEmpty) continue;
+        if (kind != circle && chunk.indices.isEmpty) continue;
+        if (kind == circle && chunk.positions.isEmpty) continue;
         if (slots.length - segmentSlot >= slotsPerDraw) {
           segments.addAll([
             segmentStart,
@@ -111,6 +133,30 @@ class GpuStream {
         final off = kind == line ? chunk.offsets : null;
         final along = kind == line ? chunk.distances : null;
         final n = pos.length ~/ 2;
+        if (kind == circle) {
+          // A circle is a square around its centre, each corner carrying
+          // where it lies in the square, which the shader scales by the
+          // radius and cuts round.
+          for (var v = 0; v < n; v++) {
+            final at = vertices.length ~/ floatsPerVertex;
+            for (final (cx, cy) in const [
+              (-1.0, -1.0),
+              (1.0, -1.0),
+              (1.0, 1.0),
+              (-1.0, 1.0),
+            ]) {
+              vertices
+                ..add(pos[v * 2])
+                ..add(pos[v * 2 + 1])
+                ..add(packPair(cx, cy))
+                ..add(0)
+                ..add((slot + kind * 16384).toDouble())
+                ..add(0);
+            }
+            indices.addAll([at, at + 1, at + 2, at, at + 2, at + 3]);
+          }
+          continue;
+        }
         for (var v = 0; v < n; v++) {
           vertices
             ..add(pos[v * 2])
@@ -126,12 +172,14 @@ class GpuStream {
       }
     }
     if (indices.isEmpty) return null;
+    layerFirst[sheet.layers.length] = indices.length;
     segments.addAll([segmentStart, indices.length - segmentStart, segmentSlot]);
     return GpuStream(
       Float32List.fromList(vertices),
       Uint32List.fromList(indices),
       slots,
       Int32List.fromList(segments),
+      layerFirst,
     );
   }
 }

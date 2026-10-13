@@ -21,6 +21,7 @@ out vec3 v_dash;
 out vec4 v_fog;
 out vec4 v_pattern;
 out vec3 v_uv;
+out vec4 v_circle;
 
 // Two 12 bit numbers packed in one float as the stream writes them.
 vec2 unpack_pair(float v) {
@@ -39,13 +40,21 @@ void main() {
   if (kind > 0.5 && kind < 1.5) {
     pos += unpack_pair(packed_data.x) * p.x + unpack_pair(packed_data.y) * p.y;
   }
+  // A circle: p.x its radius and p.y its ring's width in tile units, p.z
+  // its ring's colour packed as red plus 256 green plus 65536 blue, p.w the
+  // ring's alpha.
+  vec2 corner = unpack_pair(packed_data.x);
+  if (kind > 2.5) {
+    pos += corner * (p.x + p.y);
+  }
   // A patterned fill: p is the pattern's place in the sprite sheet in its
   // pixels, colour.r its pixel ratio, and fade.y the tile's screen pixels
   // per tile unit; v_uv.z tells the fragment shader to sample.
   v_pattern = p;
-  v_uv = vec3(pos * color.r * frame_info.fade.y, kind > 1.5 ? 1.0 : 0.0);
+  v_uv = vec3(pos * color.r * frame_info.fade.y, kind > 1.5 && kind < 2.5 ? 1.0 : 0.0);
   v_color = color;
   v_dash = vec3(packed_data.w, p.z, kind > 1.5 ? 0.0 : p.w);
+  v_circle = vec4(corner, kind > 2.5 ? 1.0 : 0.0, 1.0 / max(frame_info.fade.y, 1e-6));
   gl_Position = frame_info.mvp * vec4(pos, 0.0, 1.0);
   float far = smoothstep(frame_info.fog_range.x, frame_info.fog_range.y, gl_Position.w);
   v_fog = vec4(frame_info.fog_color.rgb, far * frame_info.fog_color.a);
