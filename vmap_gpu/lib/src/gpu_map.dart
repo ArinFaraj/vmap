@@ -11,6 +11,7 @@ import 'package:vmap/renderer.dart';
 import 'building_reveal.dart';
 import 'gpu_buffers.dart';
 import 'layer_paint.dart';
+import 'layer_presence.dart';
 
 const _bundle = 'packages/vmap_gpu/build/shaderbundles/vmap_gpu.shaderbundle';
 
@@ -68,6 +69,7 @@ class GpuMap implements MapRenderer {
       : gpu.gpuContext.defaultColorFormat;
   final Stopwatch _clock = Stopwatch()..start();
   late final _reveal = BuildingReveal(_clock);
+  late final _presence = LayerPresence(_clock);
   final ui.Paint _paint = ui.Paint()..filterQuality = ui.FilterQuality.low;
 
   final Float32List _frameInfo = Float32List(28);
@@ -349,6 +351,7 @@ class GpuMap implements MapRenderer {
     _host!.reset();
     _setFog(sheet, context, view);
     _reveal.begin(sheet, styleZoom);
+    _presence.begin(sheet, styleZoom);
     _layerPaint.clear();
     final pass = _MapPass(
       this,
@@ -372,7 +375,7 @@ class GpuMap implements MapRenderer {
     );
     _lastImage = image;
     _present(canvas, image, view);
-    return _reveal.animating || _spritesLoading;
+    return _reveal.animating || _presence.animating || _spritesLoading;
   }
 
   bool _warm = false;
@@ -521,9 +524,10 @@ class GpuMap implements MapRenderer {
       );
   }
 
-  /// A layer's paint for tile [d], with footprints kept past their range
-  /// and faded as the tile's own buildings rise out of them, so they stay
-  /// until those buildings are there.
+  /// A layer's paint for tile [d]: faded in and out as the zoom enters and
+  /// leaves its range, and for footprints, kept past their range and faded
+  /// as the tile's own buildings rise out of them, so they stay until those
+  /// buildings are there.
   LayerPaint _paintOf(
     StyleSheet sheet,
     int layerIndex,
@@ -536,7 +540,11 @@ class GpuMap implements MapRenderer {
     final layer = sheet.layers[layerIndex];
     final building = sheet.footprints[layerIndex];
     if (building == null) {
-      return LayerPaint.of(layer, context, styleZoom, props);
+      final present = _presence.of(layerIndex);
+      if (present <= 0) return LayerPaint.clear;
+      if (present >= 1) return LayerPaint.of(layer, context, styleZoom, props);
+      final zoom = styleZoom.clamp(layer.minZoom, layer.maxZoom - 1e-3);
+      return LayerPaint.of(layer, context, zoom, props).scaled(present);
     }
     final risen = _risenIn(d, data, building);
     if (risen >= 1) return LayerPaint.clear;
