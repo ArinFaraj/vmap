@@ -47,6 +47,13 @@ class GpuBuildings implements BuildingRenderer {
   gpu.Texture? _depth;
   gpu.Texture? _samples;
   late final bool _msaa = gpu.gpuContext.doesSupportOffscreenMSAA;
+  bool _transient = true;
+
+  /// Flutter GPU reports no default colour format on macOS.
+  late final gpu.PixelFormat _colorFormat =
+      gpu.gpuContext.defaultColorFormat == gpu.PixelFormat.unknown
+      ? gpu.PixelFormat.r8g8b8a8UNormInt
+      : gpu.gpuContext.defaultColorFormat;
   gpu.HostBuffer? _host;
   int _width = 0, _height = 0;
   final Map<BuiltExtrusion, _Mesh> _meshes = Map.identity();
@@ -64,7 +71,7 @@ class GpuBuildings implements BuildingRenderer {
 
   /// Bytes of new tiles sent to the GPU in one frame; the rest wait a
   /// frame. The first tile of a frame always goes.
-  static const _bytesPerFrame = 384 * 1024;
+  static const _bytesPerFrame = 192 * 1024;
 
   Future<void> _load() async {
     try {
@@ -83,7 +90,23 @@ class GpuBuildings implements BuildingRenderer {
     final vertex = library['BuildingVertex'],
         fragment = library['BuildingFragment'];
     if (vertex == null || fragment == null) return false;
-    _pipeline = gpu.gpuContext.createRenderPipeline(vertex, fragment);
+    _pipeline = gpu.gpuContext.createRenderPipeline(
+      vertex,
+      fragment,
+      vertexLayout: const gpu.VertexLayout(
+        buffers: [
+          gpu.VertexBuffer(
+            strideInBytes: 12,
+            attributes: [
+              gpu.VertexAttribute(
+                name: 'packed_vertex',
+                format: gpu.VertexFormat.uint32x3,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
     _slot = vertex.getUniformSlot('FrameInfo');
     _host = gpu.gpuContext.createHostBuffer();
     return true;
@@ -99,26 +122,45 @@ class GpuBuildings implements BuildingRenderer {
           gpu.StorageMode.devicePrivate,
           width,
           height,
-          format: gpu.gpuContext.defaultColorFormat,
+          format: _colorFormat,
         ),
     ];
     final samples = _msaa ? 4 : 1;
-    _depth = gpu.gpuContext.createTexture(
-      gpu.StorageMode.deviceTransient,
+    _depth = _scratch(
       width,
       height,
-      format: gpu.gpuContext.defaultDepthStencilFormat,
-      sampleCount: samples,
+      gpu.gpuContext.defaultDepthStencilFormat,
+      samples,
     );
-    _samples = _msaa
-        ? gpu.gpuContext.createTexture(
-            gpu.StorageMode.deviceTransient,
-            width,
-            height,
-            format: gpu.gpuContext.defaultColorFormat,
-            sampleCount: samples,
-          )
-        : null;
+    _samples = _msaa ? _scratch(width, height, _colorFormat, samples) : null;
+  }
+
+  /// A texture only the GPU touches within a pass: kept in tile memory
+  /// where the GPU has it, which desktop GPUs do not.
+  gpu.Texture _scratch(
+    int width,
+    int height,
+    gpu.PixelFormat format,
+    int samples,
+  ) {
+    for (final mode in [
+      if (_transient) gpu.StorageMode.deviceTransient,
+      gpu.StorageMode.devicePrivate,
+    ]) {
+      try {
+        return gpu.gpuContext.createTexture(
+          mode,
+          width,
+          height,
+          format: format,
+          sampleCount: samples,
+          enableShaderReadUsage: false,
+        );
+      } catch (_) {
+        _transient = false;
+      }
+    }
+    throw StateError('vmap: no texture for the building pass');
   }
 
   @override
@@ -197,38 +239,40 @@ class GpuBuildings implements BuildingRenderer {
     var uploads = 0, uploaded = 0;
     var fading = false, held = false;
     for (final (d, e) in _found) {
-      var mesh = _meshes[e];
-      if (mesh == null) {
-        if (uploads > 0 &&
-            uploaded + e.vertices.lengthInBytes > _bytesPerFrame) {
-          held = true;
-          continue;
-        }
-        uploads++;
-        uploaded += e.vertices.lengthInBytes;
-        final t0 = watch.elapsedMicroseconds;
-        mesh = _meshes[e] = _Mesh.of(e)..shownAt = _clock.elapsedMicroseconds;
-        uploadMicros += watch.elapsedMicroseconds - t0;
-      }
+      final mesh = _meshes[e] ??= _Mesh(e);
       mesh.usedFrame = _frame;
-      if (mesh.count == 0) continue;
+      while (mesh.uploaded < mesh.chunks) {
+        final bytes = mesh.chunkBytes(mesh.uploaded);
+        if (uploaded > 0 && uploaded + bytes > _bytesPerFrame) {
+          held = true;
+          break;
+        }
+        final t0 = watch.elapsedMicroseconds;
+        mesh.upload(_clock.elapsedMicroseconds);
+        uploadMicros += watch.elapsedMicroseconds - t0;
+        uploads++;
+        uploaded += bytes;
+      }
+      if (mesh.uploaded == 0) continue;
       final scale = d.size / tileExtent;
-      final fade = math.min(
-        1.0,
-        (_clock.elapsedMicroseconds - mesh.shownAt) / _fadeMicros,
-      );
-      if (fade < 1) fading = true;
-      final mvp = _times(clip, scale, perMetre, d.left, d.top, fade);
-      pass
-        ..bindVertexBuffer(
-          gpu.BufferView(
-            mesh.buffer,
-            offsetInBytes: 0,
-            lengthInBytes: mesh.bytes,
-          ),
-        )
-        ..bindUniform(_slot!, host.emplace(ByteData.sublistView(mvp)))
-        ..draw(mesh.count);
+      for (var c = 0; c < mesh.uploaded; c++) {
+        final fade = math.min(
+          1.0,
+          (_clock.elapsedMicroseconds - mesh.shownAt[c]) / _fadeMicros,
+        );
+        if (fade < 1) fading = true;
+        final mvp = _times(clip, scale, perMetre, d.left, d.top, fade);
+        pass
+          ..bindVertexBuffer(
+            gpu.BufferView(
+              mesh.buffers[c],
+              offsetInBytes: 0,
+              lengthInBytes: mesh.chunkBytes(c),
+            ),
+          )
+          ..bindUniform(_slot!, host.emplace(ByteData.sublistView(mvp)))
+          ..draw(mesh.chunkBytes(c) ~/ 12);
+      }
     }
     final tEncode = watch.elapsedMicroseconds;
     final tPresent = watch.elapsedMicroseconds;
@@ -286,22 +330,37 @@ class GpuBuildings implements BuildingRenderer {
   }
 }
 
-/// One tile's buildings on the GPU: x and y in tile units, z in metres,
-/// then colour, seven floats a vertex, lit once when built.
+/// One tile's buildings on the GPU, sent in pieces of a few dozen
+/// kilobytes so no frame copies megabytes.
 class _Mesh {
-  _Mesh(this.buffer, this.bytes, this.count);
+  _Mesh(this._built)
+    : chunks =
+          (_built.vertices.length ~/ 3 + BuiltExtrusion.chunk - 1) ~/
+          BuiltExtrusion.chunk;
 
-  final gpu.DeviceBuffer buffer;
-  final int bytes;
-  final int count;
+  final BuiltExtrusion _built;
+  final int chunks;
+  final List<gpu.DeviceBuffer> buffers = [];
+  final List<int> shownAt = [];
   int usedFrame = 0;
-  int shownAt = 0;
 
-  static _Mesh of(BuiltExtrusion e) {
-    final data = e.vertices;
-    final buffer = gpu.gpuContext.createDeviceBufferWithCopy(
-      ByteData.sublistView(data),
+  int get uploaded => buffers.length;
+
+  int chunkBytes(int c) {
+    final vertices = _built.vertices.length ~/ 3;
+    final from = c * BuiltExtrusion.chunk;
+    return math.min(BuiltExtrusion.chunk, vertices - from) * 12;
+  }
+
+  void upload(int now) {
+    final c = buffers.length;
+    final words = _built.vertices;
+    final from = c * BuiltExtrusion.chunk * 3;
+    buffers.add(
+      gpu.gpuContext.createDeviceBufferWithCopy(
+        ByteData.sublistView(words, from, from + chunkBytes(c) ~/ 4),
+      ),
     );
-    return _Mesh(buffer, data.lengthInBytes, data.length ~/ 7);
+    shownAt.add(now);
   }
 }

@@ -24,10 +24,15 @@ class BuiltExtrusion {
     this.vertices,
   );
 
-  /// Every wall and roof as triangles ready for the GPU: x and y in tile
-  /// units, z in metres, then red, green, blue and alpha, lit from the
-  /// north west and darker at the foot. Seven floats a vertex.
-  final Float32List vertices;
+  /// Every wall and roof as triangles ready for the GPU, three 32 bit words
+  /// a vertex: x and y in half tile units plus 16384, 16 bits each; height
+  /// in decimetres; and the colour, lit from the north west and darker at
+  /// the foot, as red, green, blue and alpha bytes. A third of the size of
+  /// floats, so a tile goes to the GPU in a third of the time.
+  final Uint32List vertices;
+
+  /// Vertices per piece the GPU takes at once, whole triangles.
+  static const chunk = 8190;
 
   final int bucket;
 
@@ -55,7 +60,13 @@ class BuiltExtrusion {
     pack(roof),
     pack(roofIndices),
     pack(info),
-    pack(vertices),
+    pack(
+      Float32List.view(
+        vertices.buffer,
+        vertices.offsetInBytes,
+        vertices.length,
+      ),
+    ),
   ];
 
   static BuiltExtrusion fromMessage(List<Object?> m) => BuiltExtrusion(
@@ -64,7 +75,10 @@ class BuiltExtrusion {
     unpackFloats(m[2]!),
     unpackFloats(m[3]!),
     unpackFloats(m[4]!),
-    unpackFloats(m[5]!),
+    () {
+      final words = unpackFloats(m[5]!);
+      return words.buffer.asUint32List(words.offsetInBytes, words.length);
+    }(),
   );
 }
 
@@ -179,20 +193,21 @@ class ExtrusionBuilder {
     for (var i = 0; i < _info.length; i += BuiltExtrusion.stride) {
       count += _info[i + 5].toInt() * 6 + _info[i + 7].toInt();
     }
-    final out = Float32List(count * 7);
+    final out = Uint32List(count * 3);
     var o = 0;
+    int coord(double v) => ((v + 8192) * 2).round().clamp(0, 0xFFFF);
     for (var i = 0; i < _info.length; i += BuiltExtrusion.stride) {
       final top = _info[i], bottom = _info[i + 1];
       final r = _info[i + 8], g = _info[i + 9], b = _info[i + 10];
-      final a = _info[i + 11];
+      final a = (_info[i + 11] * 255).round().clamp(0, 255);
       void vertex(double x, double y, double z, double light) {
-        out[o++] = x;
-        out[o++] = y;
-        out[o++] = z;
-        out[o++] = math.min(1, r * light);
-        out[o++] = math.min(1, g * light);
-        out[o++] = math.min(1, b * light);
-        out[o++] = a;
+        out[o++] = coord(x) | coord(y) << 16;
+        out[o++] = (z * 10).round().clamp(0, 0xFFFF);
+        out[o++] =
+            (r * light * 255).round().clamp(0, 255) |
+            (g * light * 255).round().clamp(0, 255) << 8 |
+            (b * light * 255).round().clamp(0, 255) << 16 |
+            a << 24;
       }
 
       final firstWall = _info[i + 4].toInt(), walls = _info[i + 5].toInt();
