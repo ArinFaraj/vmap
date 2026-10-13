@@ -13,14 +13,16 @@ abstract class MapRenderer {
   /// not, the canvas draws the map.
   bool supports(StyleSheet sheet);
 
-  /// Draws [tiles], those standing in for missing ones first, and returns
-  /// true when it held work back for the next frame.
+  /// Draws the [ideal] tiles and, where none of them is, the [fallback]
+  /// tiles standing in for missing ones, and returns true when it held
+  /// work back for the next frame.
   bool paint(
     ui.Canvas canvas,
     MapView view,
     ui.Offset origin,
     StyleSheet sheet,
-    List<TileDraw> tiles,
+    List<TileDraw> fallback,
+    List<TileDraw> ideal,
     EvalContext context,
     double styleZoom,
     double devicePixelRatio,

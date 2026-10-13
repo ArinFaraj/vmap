@@ -31,7 +31,11 @@ class GpuMap implements MapRenderer {
 
   gpu.ShaderLibrary? _library;
   gpu.RenderPipeline? _flat, _buildings;
-  gpu.UniformSlot? _flatFrame, _flatSlots, _buildingFrame;
+  gpu.UniformSlot? _flatFrame, _flatSlots, _buildingFrame, _stencilFrame;
+  gpu.RenderPipeline? _stencil;
+
+  /// A tile's square in tile units, two triangles.
+  gpu.DeviceBuffer? _quad;
   gpu.HostBuffer? _host;
   List<gpu.Texture> _ring = const [];
   gpu.Texture? _depth, _samples;
@@ -146,6 +150,34 @@ class GpuMap implements MapRenderer {
       ),
     );
     _buildingFrame = buildingVertex.getUniformSlot('FrameInfo');
+    final stencilVertex = library['StencilVertex'];
+    final stencilFragment = library['StencilFragment'];
+    if (stencilVertex != null && stencilFragment != null) {
+      _stencil = gpu.gpuContext.createRenderPipeline(
+        stencilVertex,
+        stencilFragment,
+        vertexLayout: const gpu.VertexLayout(
+          buffers: [
+            gpu.VertexBuffer(
+              strideInBytes: 8,
+              attributes: [
+                gpu.VertexAttribute(
+                  name: 'position',
+                  format: gpu.VertexFormat.float32x2,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      _stencilFrame = stencilVertex.getUniformSlot('FrameInfo');
+      const e = tileExtent;
+      _quad = gpu.gpuContext.createDeviceBufferWithCopy(
+        ByteData.sublistView(
+          Float32List.fromList([0, 0, e, 0, e, e, 0, 0, e, e, 0, e]),
+        ),
+      );
+    }
     _host = gpu.gpuContext.createHostBuffer();
     return true;
   }
@@ -207,7 +239,8 @@ class GpuMap implements MapRenderer {
     MapView view,
     ui.Offset origin,
     StyleSheet sheet,
-    List<TileDraw> tiles,
+    List<TileDraw> fallback,
+    List<TileDraw> ideal,
     EvalContext context,
     double styleZoom,
     double devicePixelRatio,
@@ -240,10 +273,38 @@ class GpuMap implements MapRenderer {
     );
     final host = _host!..reset();
     final clip = view.clipMatrix(originX: origin.dx, originY: origin.dy);
-    var budget = _bytesPerFrame;
-    var more = false;
-
+    _budget = _bytesPerFrame;
+    _more = false;
     _layerPaint.clear();
+
+    // Each tile drawn in full marks its square, and a tile standing in for
+    // a missing one draws only where none is marked: tilted, a tile's
+    // square is no rectangle on the screen, so scissors cannot do it.
+    final stand = fallback.isNotEmpty && _stencil != null;
+    if (stand) {
+      pass
+        ..bindPipeline(_stencil!)
+        ..setCullMode(gpu.CullMode.none)
+        ..setDepthWriteEnable(false)
+        ..setDepthCompareOperation(gpu.CompareFunction.always)
+        ..setStencilReference(1)
+        ..setStencilConfig(
+          gpu.StencilConfig(
+            depthStencilPassOperation: gpu.StencilOperation.setToReferenceValue,
+          ),
+        )
+        ..bindVertexBuffer(
+          gpu.BufferView(_quad!, offsetInBytes: 0, lengthInBytes: 48),
+        );
+      for (final d in ideal) {
+        _times(clip, d.size / tileExtent, 1, d.left, d.top, 1);
+        pass
+          ..bindUniform(_stencilFrame!, host.emplace(_frameBytes))
+          ..draw(6);
+      }
+      pass.clearBindings();
+    }
+
     pass
       ..bindPipeline(_flat!)
       ..setDepthWriteEnable(false)
@@ -258,59 +319,38 @@ class GpuMap implements MapRenderer {
           destinationAlphaBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha,
         ),
       );
-    for (final d in tiles) {
-      final stream = d.tile.gpu;
-      if (stream == null) continue;
-      var buffers = _tiles[stream];
-      if (buffers == null) {
-        final bytes =
-            stream.vertices.lengthInBytes + stream.indices.lengthInBytes;
-        if (budget < _bytesPerFrame && bytes > budget) {
-          more = true;
-          continue;
-        }
-        budget -= bytes;
-        buffers = _tiles[stream] = _TileBuffers(stream);
-      }
-      buffers.usedFrame = _frame;
-      final scale = d.size / tileExtent;
-      _times(clip, scale, 1, d.left, d.top, 1);
+    if (stand) {
       pass
-        ..bindVertexBuffer(
-          gpu.BufferView(
-            buffers.vertices,
-            offsetInBytes: 0,
-            lengthInBytes: stream.vertices.lengthInBytes,
-          ),
-        )
-        ..bindUniform(_flatFrame!, host.emplace(_frameBytes));
-      final segments = stream.segments;
-      for (var s = 0; s < segments.length; s += 3) {
-        final first = segments[s], count = segments[s + 1];
-        final slotBase = segments[s + 2];
-        final slotEnd = s + 5 < segments.length
-            ? segments[s + 5]
-            : stream.slots.length;
-        _fillSlots(sheet, stream, slotBase, slotEnd, scale, context, styleZoom);
-        pass
-          ..bindUniform(_flatSlots!, host.emplace(_slotBytes))
-          ..bindIndexBuffer(
-            gpu.BufferView(
-              buffers.indices,
-              offsetInBytes: first * 4,
-              lengthInBytes: count * 4,
-            ),
-            gpu.IndexType.int32,
-          )
-          ..drawIndexed(count);
+        ..setStencilReference(0)
+        ..setStencilConfig(
+          gpu.StencilConfig(compareFunction: gpu.CompareFunction.equal),
+        );
+      for (final d in fallback) {
+        _drawFlat(pass, d, sheet, clip, context, styleZoom);
       }
+      pass.setStencilConfig(gpu.StencilConfig());
+    }
+    for (final d in ideal) {
+      _drawFlat(pass, d, sheet, clip, context, styleZoom);
     }
 
     if (sheet.extrusions.isNotEmpty) {
-      more =
-          _drawBuildings(pass, view, sheet, tiles, clip, styleZoom, budget) ||
-          more;
+      pass
+        ..clearBindings()
+        ..bindPipeline(_buildings!)
+        ..setDepthWriteEnable(true)
+        ..setDepthCompareOperation(gpu.CompareFunction.lessEqual);
+      _drawBuildings(pass, view, sheet, ideal, clip, styleZoom);
+      if (stand) {
+        pass
+          ..setStencilReference(0)
+          ..setStencilConfig(
+            gpu.StencilConfig(compareFunction: gpu.CompareFunction.equal),
+          );
+        _drawBuildings(pass, view, sheet, fallback, clip, styleZoom);
+      }
     }
+    final more = _more;
 
     commands.submit();
     canvas.drawImageRect(
@@ -324,6 +364,65 @@ class GpuMap implements MapRenderer {
       _built.removeWhere((_, b) => _frame - b.usedFrame > 600);
     }
     return more;
+  }
+
+  int _budget = 0;
+  bool _more = false;
+
+  void _drawFlat(
+    gpu.RenderPass pass,
+    TileDraw d,
+    StyleSheet sheet,
+    Float64List clip,
+    EvalContext context,
+    double styleZoom,
+  ) {
+    final stream = d.tile.gpu;
+    if (stream == null) return;
+    var buffers = _tiles[stream];
+    if (buffers == null) {
+      final bytes =
+          stream.vertices.lengthInBytes + stream.indices.lengthInBytes;
+      if (_budget < _bytesPerFrame && bytes > _budget) {
+        _more = true;
+        return;
+      }
+      _budget -= bytes;
+      buffers = _tiles[stream] = _TileBuffers(stream);
+    }
+    buffers.usedFrame = _frame;
+    final host = _host!;
+    final scale = d.size / tileExtent;
+    _times(clip, scale, 1, d.left, d.top, 1);
+    pass
+      ..bindVertexBuffer(
+        gpu.BufferView(
+          buffers.vertices,
+          offsetInBytes: 0,
+          lengthInBytes: stream.vertices.lengthInBytes,
+        ),
+      )
+      ..bindUniform(_flatFrame!, host.emplace(_frameBytes));
+    final segments = stream.segments;
+    for (var s = 0; s < segments.length; s += 3) {
+      final first = segments[s], count = segments[s + 1];
+      final slotBase = segments[s + 2];
+      final slotEnd = s + 5 < segments.length
+          ? segments[s + 5]
+          : stream.slots.length;
+      _fillSlots(sheet, stream, slotBase, slotEnd, scale, context, styleZoom);
+      pass
+        ..bindUniform(_flatSlots!, host.emplace(_slotBytes))
+        ..bindIndexBuffer(
+          gpu.BufferView(
+            buffers.indices,
+            offsetInBytes: first * 4,
+            lengthInBytes: count * 4,
+          ),
+          gpu.IndexType.int32,
+        )
+        ..drawIndexed(count);
+    }
   }
 
   /// Writes the slots [from] to [to] of [stream] into the slot table, in
@@ -356,23 +455,17 @@ class GpuMap implements MapRenderer {
     }
   }
 
-  bool _drawBuildings(
+  /// Draws the buildings of [tiles]. The flat layers leave an index buffer
+  /// bound, which the caller clears first, or these draws would read their
+  /// vertices through it.
+  void _drawBuildings(
     gpu.RenderPass pass,
     MapView view,
     StyleSheet sheet,
     List<TileDraw> tiles,
     Float64List clip,
     double styleZoom,
-    int budget,
   ) {
-    var more = false;
-    // The flat layers leave an index buffer bound, which a plain draw would
-    // otherwise read its vertices through.
-    pass
-      ..clearBindings()
-      ..bindPipeline(_buildings!)
-      ..setDepthWriteEnable(true)
-      ..setDepthCompareOperation(gpu.CompareFunction.lessEqual);
     final perMetre =
         view.worldSize /
         (40075016.686 * math.cos(latitudeAt(view.centerY) * math.pi / 180));
@@ -386,11 +479,11 @@ class GpuMap implements MapRenderer {
           b.usedFrame = _frame;
           while (b.uploaded < b.chunks) {
             final bytes = b.chunkBytes(b.uploaded);
-            if (budget < _bytesPerFrame && bytes > budget) {
-              more = true;
+            if (_budget < _bytesPerFrame && bytes > _budget) {
+              _more = true;
               break;
             }
-            budget -= bytes;
+            _budget -= bytes;
             b.upload(_clock.elapsedMicroseconds);
           }
           final scale = d.size / tileExtent;
@@ -399,7 +492,7 @@ class GpuMap implements MapRenderer {
               1.0,
               (_clock.elapsedMicroseconds - b.shownAt[c]) / _fadeMicros,
             );
-            if (fade < 1) more = true;
+            if (fade < 1) _more = true;
             _times(clip, scale, perMetre, d.left, d.top, fade);
             pass
               ..bindVertexBuffer(
@@ -415,7 +508,6 @@ class GpuMap implements MapRenderer {
         }
       }
     }
-    return more;
   }
 
   /// [clip] times a tile's placement into the frame info block: tile units

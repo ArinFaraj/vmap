@@ -811,10 +811,8 @@ class VmapEngine extends ChangeNotifier {
           view,
           camera.origin,
           sheet,
-          [
-            for (final s in _sources) ...s.fallback,
-            for (final s in _sources) ...s.ideal,
-          ],
+          [for (final s in _sources) ...s.fallback],
+          [for (final s in _sources) ...s.ideal],
           _context,
           styleZoom,
           camera.devicePixelRatio,

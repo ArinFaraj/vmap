@@ -1,6 +1,26 @@
 {
-  "MapVertex": { "type": "vertex", "file": "shaders/map.vert" },
-  "MapFragment": { "type": "fragment", "file": "shaders/map.frag" },
-  "BuildingVertex": { "type": "vertex", "file": "shaders/building.vert" },
-  "BuildingFragment": { "type": "fragment", "file": "shaders/building.frag" }
+  "MapVertex": {
+    "type": "vertex",
+    "file": "shaders/map.vert"
+  },
+  "MapFragment": {
+    "type": "fragment",
+    "file": "shaders/map.frag"
+  },
+  "BuildingVertex": {
+    "type": "vertex",
+    "file": "shaders/building.vert"
+  },
+  "BuildingFragment": {
+    "type": "fragment",
+    "file": "shaders/building.frag"
+  },
+  "StencilVertex": {
+    "type": "vertex",
+    "file": "shaders/stencil.vert"
+  },
+  "StencilFragment": {
+    "type": "fragment",
+    "file": "shaders/stencil.frag"
+  }
 }
