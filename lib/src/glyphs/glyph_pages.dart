@@ -77,35 +77,32 @@ class GlyphPage {
     return take;
   }
 
-  void _send(List<int> ids, {required bool merge}) {
+  Future<void> _send(List<int> ids, {required bool merge}) async {
     _inFlight++;
-    _worker
-        .draw(key, ids)
-        .then(
-          (r) async {
-            final image = await _image(r);
-            _inFlight--;
-            if (_disposed) {
-              image?.dispose();
-              return;
-            }
-            if (merge) {
-              for (final c in _chunks) {
-                c.dispose();
-              }
-              _chunks.clear();
-              _merging = false;
-            }
-            if (image != null) {
-              _chunks.add(image);
-              _place(image, r.cells);
-            }
-            if (merge) _changed();
-          },
-          onError: (Object _) {
-            _inFlight--;
-          },
-        );
+    try {
+      final r = await _worker.draw(key, ids);
+      final image = await _image(r);
+      if (_disposed) {
+        image?.dispose();
+        return;
+      }
+      if (merge) {
+        for (final c in _chunks) {
+          c.dispose();
+        }
+        _chunks.clear();
+      }
+      if (image != null) {
+        _chunks.add(image);
+        _place(image, r.cells);
+      }
+      if (merge) _changed();
+    } catch (_) {
+      // A batch that failed leaves its glyphs undrawn, not the page stuck.
+    } finally {
+      _inFlight--;
+      if (merge) _merging = false;
+    }
   }
 
   void _place(ui.Image image, Float64List cells) {

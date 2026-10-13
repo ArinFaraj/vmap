@@ -59,12 +59,12 @@ class GlyphRasterizer {
   GlyphRaster draw(PageKey key, List<int> ids) {
     final kept = _bitmaps.putIfAbsent(key, () => {});
     final drawn = <(int, _Bitmap)>[];
-    for (final id in ids) {
-      final b = kept.containsKey(id) ? kept[id] : kept[id] = _glyph(key, id);
-      if (b != null) drawn.add((id, b));
-    }
     const width = 1024;
     final twin = key.halo > 0;
+    for (final id in ids) {
+      final b = kept.containsKey(id) ? kept[id] : kept[id] = _tryGlyph(key, id);
+      if (b != null && (twin ? b.w * 2 + 1 : b.w) <= width) drawn.add((id, b));
+    }
     var x = 0, y = 0, row = 0;
     final places = <(int, int)>[];
     for (final (_, b) in drawn) {
@@ -127,6 +127,16 @@ class GlyphRasterizer {
     if (_outlines.containsKey(key)) return _outlines[key];
     final o = fonts.font(face, weight).outline(glyph);
     return _outlines[key] = o == null || o.isEmpty ? null : o;
+  }
+
+  /// A glyph whose outline cannot be read or drawn is left out, not the
+  /// whole batch.
+  _Bitmap? _tryGlyph(PageKey key, int id) {
+    try {
+      return _glyph(key, id);
+    } catch (_) {
+      return null;
+    }
   }
 
   _Bitmap? _glyph(PageKey key, int id) {
@@ -448,25 +458,23 @@ class GlyphRasterWorker {
   GlyphRasterWorker(GlyphFonts fonts) {
     final ready = ReceivePort();
     _replies.listen(_reply);
-    Isolate.spawn(_main, (
-      ready.sendPort,
-      _replies.sendPort,
-      [
-        for (final b in fonts.faceBytes) TransferableTypedData.fromList([b]),
-      ],
-      fonts.familyNames,
-    ), debugName: 'vmap glyphs').then(
-      (isolate) {
-        _isolate = isolate;
-        if (_disposed) isolate.kill();
-      },
-      onError: (Object e) {
-        for (final c in _waiting.values) {
-          c.completeError(e);
-        }
-        _waiting.clear();
-      },
-    );
+    _gone.listen((_) => _fail());
+    Isolate.spawn(
+      _main,
+      (
+        ready.sendPort,
+        _replies.sendPort,
+        [
+          for (final b in fonts.faceBytes) TransferableTypedData.fromList([b]),
+        ],
+        fonts.familyNames,
+      ),
+      debugName: 'vmap glyphs',
+      onExit: _gone.sendPort,
+    ).then((isolate) {
+      _isolate = isolate;
+      if (_disposed) isolate.kill();
+    }, onError: (Object _) => _fail());
     ready.first.then((port) {
       ready.close();
       _port = port as SendPort;
@@ -478,6 +486,19 @@ class GlyphRasterWorker {
   }
 
   final _replies = ReceivePort();
+  final _gone = ReceivePort();
+
+  /// The isolate died: every batch waiting and asked for later fails, so
+  /// no page waits forever.
+  void _fail() {
+    _dead = true;
+    for (final c in _waiting.values) {
+      c.completeError(StateError('vmap glyphs: the isolate is gone'));
+    }
+    _waiting.clear();
+  }
+
+  bool _dead = false;
   final Map<int, Completer<GlyphRaster>> _waiting = {};
   final List<_Request> _queued = [];
   SendPort? _port;
@@ -486,6 +507,8 @@ class GlyphRasterWorker {
   bool _disposed = false;
 
   Future<GlyphRaster> draw(PageKey key, List<int> ids) {
+    if (_dead)
+      return Future.error(StateError('vmap glyphs: the isolate is gone'));
     final id = _next++;
     final done = _waiting[id] = Completer<GlyphRaster>();
     _send(_Draw(id, key, Int32List.fromList(ids)));
@@ -522,6 +545,7 @@ class GlyphRasterWorker {
     _disposed = true;
     _isolate?.kill();
     _replies.close();
+    _gone.close();
     _waiting.clear();
   }
 
@@ -541,7 +565,12 @@ class GlyphRasterWorker {
         case _Forget(:final key):
           rasterizer.forget(key);
         case _Draw(:final id, :final key, :final ids):
-          final r = rasterizer.draw(key, ids);
+          GlyphRaster r;
+          try {
+            r = rasterizer.draw(key, ids);
+          } catch (_) {
+            r = GlyphRaster(1, 1, Uint8List(4), Float64List(0));
+          }
           replies.send(
             _Drawn(
               id,
