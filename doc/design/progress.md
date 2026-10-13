@@ -205,3 +205,8 @@ hand, until Arin called it smooth.
   tiles are fetched at once. In a recording a fetch took 160 ms and a
   build 18 ms, so the network sets how fast a new city fills.
 - Every tile is marked in the timeline as asked, fetched, built and ready.
+
+Tried and dropped the same evening: crossfading tiles when the zoom level
+swaps (7dfc0b7, reverted in 5fbbe35). Fading every swap made roads and
+lines visibly shift during each change; a clean swap read better on the
+phone.
