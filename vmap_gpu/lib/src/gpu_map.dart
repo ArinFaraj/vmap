@@ -11,7 +11,6 @@ import 'package:vmap/renderer.dart';
 import 'building_reveal.dart';
 import 'gpu_buffers.dart';
 import 'layer_paint.dart';
-import 'tile_fade.dart';
 
 const _bundle = 'packages/vmap_gpu/build/shaderbundles/vmap_gpu.shaderbundle';
 
@@ -69,7 +68,6 @@ class GpuMap implements MapRenderer {
       : gpu.gpuContext.defaultColorFormat;
   final Stopwatch _clock = Stopwatch()..start();
   late final _reveal = BuildingReveal(_clock);
-  late final _fade = TileFade(_clock);
   final ui.Paint _paint = ui.Paint()..filterQuality = ui.FilterQuality.low;
 
   final Float32List _frameInfo = Float32List(28);
@@ -351,16 +349,6 @@ class GpuMap implements MapRenderer {
     _host!.reset();
     _setFog(sheet, context, view);
     _reveal.begin(sheet, styleZoom);
-    _fade.begin(
-      fallback,
-      ideal,
-      view,
-      origin,
-      (tile) => switch (tile.rendererData) {
-        final TileGpu data => data.ready,
-        _ => false,
-      },
-    );
     _layerPaint.clear();
     final pass = _MapPass(
       this,
@@ -384,7 +372,7 @@ class GpuMap implements MapRenderer {
     );
     _lastImage = image;
     _present(canvas, image, view);
-    return _reveal.animating || _fade.animating || _spritesLoading;
+    return _reveal.animating || _spritesLoading;
   }
 
   bool _warm = false;
@@ -785,35 +773,22 @@ class _MapPass {
         _map._bindSprites(_pass);
         bound = true;
       }
-      final fade = _map._fade;
-      final leaving = clipped ? fade.leaving[source] : const <TileDraw>[];
       if (clipped) {
         _stencilEquals(0);
-        for (final d in leaving) {
-          _drawFlat(d, run, 1);
-        }
         for (final d in _fallback[source]) {
-          _drawFlat(d, run, fade.alpha(d.tile));
+          _drawFlat(d, run);
         }
       }
       for (final (i, d) in _ideal[source].indexed) {
         if (clipped) _stencilEquals(i + 1);
-        final alpha = fade.alpha(d.tile);
-        if (alpha < 1 && clipped) {
-          for (final under in leaving.followedBy(_fallback[source])) {
-            if (TileFade.overlap(under.tile.id, d.tile.id)) {
-              _drawFlat(under, run, fade.alpha(under.tile));
-            }
-          }
-        }
-        _drawFlat(d, run, alpha);
+        _drawFlat(d, run);
       }
       _pass.setStencilConfig(gpu.StencilConfig());
     }
   }
 
-  /// Draws [run]'s layers of tile [d] at [alpha] opacity.
-  void _drawFlat(TileDraw d, StyleRun run, double alpha) {
+  /// Draws [run]'s layers of tile [d].
+  void _drawFlat(TileDraw d, StyleRun run) {
     final data = _map._gpuOf(d);
     final stream = data?.stream;
     if (data == null || stream == null) return;
@@ -823,7 +798,7 @@ class _MapPass {
     final map = _map;
     final host = map._host!;
     final scale = d.size / tileExtent;
-    map._times(_clip, scale, 1, d.left, d.top, alpha);
+    map._times(_clip, scale, 1, d.left, d.top, 1);
     _pass
       ..bindVertexBuffer(
         gpu.BufferView(

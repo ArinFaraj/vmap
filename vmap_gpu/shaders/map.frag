@@ -4,7 +4,6 @@ in vec4 v_fog;
 in vec4 v_pattern;
 in vec3 v_uv;
 in vec4 v_circle;
-in float v_alpha;
 
 uniform FragInfo {
   vec4 sheet_size;
@@ -43,6 +42,5 @@ void main() {
     color = texture(sprite_sheet, at / frag_info.sheet_size.xy) * v_color.a;
   }
   // Toward the haze with distance, the colour staying premultiplied.
-  frag_color = vec4(mix(color.rgb, v_fog.rgb * color.a, v_fog.a), color.a) *
-      v_alpha;
+  frag_color = vec4(mix(color.rgb, v_fog.rgb * color.a, v_fog.a), color.a);
 }
