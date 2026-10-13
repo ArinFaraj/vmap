@@ -109,3 +109,20 @@ Known limit, the reason for the Flutter GPU tier: painter's order sorts by
 each building's centre, so a low building inside a tall one's footprint
 and nearer the camera (houses inside Erbil's citadel) draws over the tall
 one's roof. A depth buffer fixes it; the canvas tier keeps it.
+
+### Buildings on the GPU
+
+`BuildingRenderer` (in `extrusion.dart`) is the seam; the canvas painter is
+the default. `example/lib/gpu/gpu_buildings.dart` is the Flutter GPU one:
+each tile's walls and roofs, lit once in world space, go to a device buffer
+the first time the tile is drawn; a frame binds one matrix per tile
+(`MapView.clipMatrix` times the tile's placement) and draws into an image
+surface with a depth buffer and 4x MSAA where `doesSupportOffscreenMSAA`
+holds. The pipeline is made on the first frame drawn, never before, so the
+OpenGL ES deadlock (flutter/flutter#193890) cannot happen. Shaders are a
+`flutter_gpu_shaders` bundle built by the example's hook.
+
+On the emulator (Impeller OpenGL ES) it draws Erbil correctly: the houses
+inside the citadel no longer show through its roof. It lives in the
+example until it moves into a package of its own, so vmap itself needs no
+shader hook and still builds for the web.
