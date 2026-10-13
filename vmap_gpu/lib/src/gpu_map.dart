@@ -351,7 +351,7 @@ class GpuMap implements MapRenderer {
     _host!.reset();
     _setFog(sheet, context, view);
     _reveal.begin(sheet, styleZoom);
-    _presence.begin(sheet, styleZoom);
+    _presence.begin(sheet, styleZoom, ideal);
     _layerPaint.clear();
     final pass = _MapPass(
       this,
@@ -546,10 +546,10 @@ class GpuMap implements MapRenderer {
       final zoom = styleZoom.clamp(layer.minZoom, layer.maxZoom - 1e-3);
       return LayerPaint.of(layer, context, zoom, props).scaled(present);
     }
-    final risen = _risenIn(d, data, building);
-    if (risen >= 1) return LayerPaint.clear;
-    final zoom = math.min(styleZoom, layer.maxZoom - 1e-3);
-    return LayerPaint.of(layer, context, zoom, props).scaled(1 - risen);
+    final shown = _presence.of(layerIndex) * (1 - _risenIn(d, data, building));
+    if (shown <= 0) return LayerPaint.clear;
+    final zoom = styleZoom.clamp(layer.minZoom, layer.maxZoom - 1e-3);
+    return LayerPaint.of(layer, context, zoom, props).scaled(shown);
   }
 
   /// How far [layer]'s buildings in tile [d] stand, as a fraction of their
