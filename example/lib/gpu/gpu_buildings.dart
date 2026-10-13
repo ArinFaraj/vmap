@@ -261,7 +261,7 @@ class GpuBuildings implements BuildingRenderer {
           (_clock.elapsedMicroseconds - mesh.shownAt[c]) / _fadeMicros,
         );
         if (fade < 1) fading = true;
-        final mvp = _times(clip, scale, perMetre, d.left, d.top, fade);
+        _times(clip, scale, perMetre, d.left, d.top, fade);
         pass
           ..bindVertexBuffer(
             gpu.BufferView(
@@ -270,7 +270,7 @@ class GpuBuildings implements BuildingRenderer {
               lengthInBytes: mesh.chunkBytes(c),
             ),
           )
-          ..bindUniform(_slot!, host.emplace(ByteData.sublistView(mvp)))
+          ..bindUniform(_slot!, host.emplace(_infoBytes))
           ..draw(mesh.chunkBytes(c) ~/ 12);
       }
     }
@@ -302,6 +302,11 @@ class GpuBuildings implements BuildingRenderer {
 
   /// [clip] times a tile's model matrix: tile units scaled by [scale] and
   /// moved to [left], [top], metres up scaled by [perMetre].
+  /// One frame info block, reused for every draw: the host buffer copies
+  /// it, so making a new one per draw only fed the collector.
+  static final Float32List _info = Float32List(20);
+  static final ByteData _infoBytes = ByteData.sublistView(_info);
+
   static Float32List _times(
     Float64List clip,
     double scale,
@@ -310,7 +315,7 @@ class GpuBuildings implements BuildingRenderer {
     double top,
     double fade,
   ) {
-    final out = Float32List(20);
+    final out = _info;
     out[16] = fade;
     for (var r = 0; r < 4; r++) {
       out[r] = clip[r] * scale;

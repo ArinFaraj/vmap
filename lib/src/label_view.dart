@@ -52,11 +52,10 @@ class LabelView {
   void project(double wx, double wy) {
     final view = tilted;
     if (view != null) {
-      final gx = wx * view.worldSize, gy = wy * view.worldSize;
-      final p = view.project(gx, gy);
-      x = p.x;
-      y = p.y;
-      ratio = view.perspectiveRatio(gx, gy);
+      view.projectTo(wx * view.worldSize, wy * view.worldSize);
+      x = view.outX;
+      y = view.outY;
+      ratio = 0.5 + 0.5 / view.outDepth;
       return;
     }
     ratio = 1;

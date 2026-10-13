@@ -132,15 +132,39 @@ class BuiltTile {
           l.turns,
           l.props,
           if (l.shaped case final s?)
-            [pack(s.glyphs), s.width, s.height, s.lines]
+            [s.width, s.height, s.lines, s.glyphs.length]
           else
             null,
         ],
     ],
     [for (final e in extrusions) e.toMessage()],
+    _glyphMessage(),
   ];
 
+  /// Every label's shaped glyphs in one buffer, so a tile of hundreds of
+  /// labels crosses to the page as one transfer, not one per label.
+  Object? _glyphMessage() {
+    var n = 0;
+    for (final l in labels) {
+      n += l.shaped?.glyphs.length ?? 0;
+    }
+    if (n == 0) return null;
+    final all = Float32List(n);
+    var at = 0;
+    for (final l in labels) {
+      final g = l.shaped?.glyphs;
+      if (g == null) continue;
+      all.setAll(at, g);
+      at += g.length;
+    }
+    return pack(all);
+  }
+
   static BuiltTile fromMessage(List<Object?> message) {
+    final glyphs = message.length > 3 && message[3] != null
+        ? unpackFloats(message[3]!)
+        : null;
+    var glyphAt = 0;
     final meshes = <BuiltMesh>[];
     for (final m in message[0]! as List) {
       final parts = m as List;
@@ -176,14 +200,21 @@ class BuiltTile {
           )
           ..key = parts[9] as String
           ..props = (parts[11] as Map?)?.cast<String, Object?>()
-          ..shaped = parts.length > 12 && parts[12] != null
+          ..shaped = parts.length > 12 && parts[12] != null && glyphs != null
               ? () {
                   final s = parts[12]! as List;
+                  final length = s[3]! as int;
+                  final view = Float32List.sublistView(
+                    glyphs,
+                    glyphAt,
+                    glyphAt + length,
+                  );
+                  glyphAt += length;
                   return ShapedText(
-                    unpackFloats(s[0]! as Object),
+                    view,
+                    (s[0]! as num).toDouble(),
                     (s[1]! as num).toDouble(),
-                    (s[2]! as num).toDouble(),
-                    s[3]! as int,
+                    s[2]! as int,
                   );
                 }()
               : null,

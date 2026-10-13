@@ -32,12 +32,29 @@ class FrameRateVote {
     if (_users == 0) _send(false);
   }
 
-  /// The map is moving or being touched: draw it fast.
+  static final Stopwatch _clock = Stopwatch()..start();
+  static int _lastMove = 0;
+
+  /// The map is moving or being touched: draw it fast. Called every frame
+  /// the camera moves, so it only notes the time; one timer looks at it.
   static void moving() {
     if (!_supported) return;
-    _release?.cancel();
-    _release = Timer(_rest, () => _send(false));
+    _lastMove = _clock.elapsedMilliseconds;
     if (!_fast) _send(true);
+    _release ??= Timer(_rest, _check);
+  }
+
+  static void _check() {
+    final idle = _clock.elapsedMilliseconds - _lastMove;
+    if (idle >= _rest.inMilliseconds) {
+      _release = null;
+      _send(false);
+    } else {
+      _release = Timer(
+        Duration(milliseconds: _rest.inMilliseconds - idle),
+        _check,
+      );
+    }
   }
 
   static void _send(bool fast) {

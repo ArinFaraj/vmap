@@ -72,7 +72,24 @@ class MapView {
 
   /// How far a ground point is from the camera relative to the centre: 1 at
   /// the centre, more behind it.
-  double depth(double x, double y) => 1 - _k * _uv(x, y).$2;
+  double depth(double x, double y) =>
+      1 - _k * (-_sinB * (x - _cx) + _cosB * (y - _cy));
+
+  /// Where [projectTo] put the last point on the screen, and its [depth].
+  double outX = 0, outY = 0, outDepth = 1;
+
+  /// [project] without making an object: the result goes to [outX],
+  /// [outY] and [outDepth]. Labels project thousands of points a frame,
+  /// and a record per point kept the collector busy.
+  void projectTo(double x, double y) {
+    final dx = x - _cx, dy = y - _cy;
+    final u = _cosB * dx + _sinB * dy;
+    final v = -_sinB * dx + _cosB * dy;
+    final w = 1 - _k * v;
+    outX = u / w + width / 2;
+    outY = _cosP * v / w + height / 2;
+    outDepth = w;
+  }
 
   /// Where a ground point lands on the screen, in logical pixels.
   ({double x, double y}) project(double x, double y) {
@@ -232,27 +249,22 @@ class MapView {
     if (maxX < left || minX > right || maxY < top || minY > bottom) {
       return false;
     }
-    final corners = [
-      (left, top),
-      (right, top),
-      (right, bottom),
-      (left, bottom),
-    ];
-    for (var i = 0; i < quad.length; i++) {
-      final a = quad[i], b = quad[(i + 1) % quad.length];
+    final n = quad.length;
+    for (var i = 0; i < n; i++) {
+      final a = quad[i], b = quad[(i + 1) % n];
       final nx = b.y - a.y, ny = a.x - b.x;
-      final quadSide = quad
-          .map((p) => (p.x - a.x) * nx + (p.y - a.y) * ny)
-          .reduce((s, t) => s.abs() > t.abs() ? s : t);
-      var allOut = true;
-      for (final (cx, cy) in corners) {
-        final s = (cx - a.x) * nx + (cy - a.y) * ny;
-        if (s * quadSide > 0 || s == 0) {
-          allOut = false;
-          break;
-        }
+      var quadSide = 0.0;
+      for (var j = 0; j < n; j++) {
+        final d = (quad[j].x - a.x) * nx + (quad[j].y - a.y) * ny;
+        if (d.abs() > quadSide.abs()) quadSide = d;
       }
-      if (allOut) return false;
+      final ax = a.x, ay = a.y;
+      if (((left - ax) * nx + (top - ay) * ny) * quadSide < 0 &&
+          ((right - ax) * nx + (top - ay) * ny) * quadSide < 0 &&
+          ((right - ax) * nx + (bottom - ay) * ny) * quadSide < 0 &&
+          ((left - ax) * nx + (bottom - ay) * ny) * quadSide < 0) {
+        return false;
+      }
     }
     return true;
   }

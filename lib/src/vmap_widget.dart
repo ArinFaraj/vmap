@@ -738,10 +738,14 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
           onPointerMove: _onMove,
           onPointerUp: _onUp,
           onPointerCancel: _onUp,
-          child: RepaintBoundary(
-            child: CustomPaint(
-              size: constraints.biggest,
-              painter: _VMapPainter(_engine, _c, dpr),
+          // The map paints every frame it moves; left in the semantics tree
+          // it has an accessibility service walk the tree every frame.
+          child: ExcludeSemantics(
+            child: RepaintBoundary(
+              child: CustomPaint(
+                size: constraints.biggest,
+                painter: _VMapPainter(_engine, _c, dpr),
+              ),
             ),
           ),
         );

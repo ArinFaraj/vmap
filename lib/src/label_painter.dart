@@ -256,7 +256,8 @@ class LabelPainter {
 
   void _glyphs(LabelState st, GlyphSprite sprite, double devicePixelRatio) {
     final pages = glyphs!;
-    final (sx, sy, _, _) = _textBox(st, sprite);
+    _view.project(st.worldX, st.worldY);
+    final sx = _view.x + st.dx, sy = _view.y + st.dy;
     final em = sprite.fontSize * st.scale;
     _resolve(sprite, em, devicePixelRatio);
     final cells = sprite.cells, ems = sprite.cellEms;
