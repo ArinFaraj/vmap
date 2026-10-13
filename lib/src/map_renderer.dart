@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'expr.dart';
+import 'gpu_stream.dart';
 import 'sprites.dart';
 import 'style_model.dart';
 import 'tiles.dart' show TileDraw;
@@ -30,6 +31,10 @@ abstract class MapRenderer {
     double devicePixelRatio,
     SpriteSheet? sprites,
   );
+
+  /// Sends [stream] to the GPU until [clock] passes [deadline], at least a
+  /// piece of it, and returns true once all of it is there.
+  bool upload(GpuStream stream, Stopwatch clock, int deadline);
 
   void dispose();
 }

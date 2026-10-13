@@ -152,7 +152,13 @@ class LoadedTile {
   final List<LabelCandidate> labels = [];
   int usedFrame = 0;
 
-  bool get prepared => _step < 0;
+  /// Set while the GPU renderer has not yet got all of [gpu].
+  bool gpuWaiting = false;
+
+  bool get prepared => _step < 0 && !gpuWaiting;
+
+  /// Whether [prepare] has nothing left to do.
+  bool get stepsDone => _step < 0;
 
   /// 0 uploads the geometry, 1..layers widen one line layer each, then
   /// labels.
@@ -163,13 +169,18 @@ class LoadedTile {
   /// Uploads the geometry and widens every line to [widths], so the first
   /// frame that draws this tile has nothing left to compute. Works in steps
   /// and returns once [clock] passes [deadline]; call again to continue.
+  /// Without [meshes], as on the GPU renderer, only the labels are made.
   void prepare(
     Float64List widths,
     double scale,
     Stopwatch clock,
-    int deadline,
-  ) {
+    int deadline, {
+    bool meshes = true,
+  }) {
     final built = _built!;
+    if (!meshes && _step >= 0 && _step <= sheet.layers.length) {
+      _step = sheet.layers.length + 1;
+    }
     if (_step == 0) {
       while (_uploaded < built.meshes.length) {
         if (_uploaded > 0 && clock.elapsedMicroseconds > deadline) return;

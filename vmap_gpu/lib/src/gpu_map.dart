@@ -323,9 +323,14 @@ class GpuMap implements MapRenderer {
     // for a missing one draws where no number is. Tilted, a square is no
     // rectangle on the screen, so scissors cannot do it. Sources tile the
     // map apart, so the numbers are rewritten when the source changes.
-    for (final tiles in [...ideal, ...fallback]) {
+    for (final tiles in ideal) {
       for (final d in tiles) {
-        _upload(d);
+        _upload(d, all: true);
+      }
+    }
+    for (final tiles in fallback) {
+      for (final d in tiles) {
+        _upload(d, all: false);
       }
     }
 
@@ -481,12 +486,39 @@ class GpuMap implements MapRenderer {
     return stream != null && (_tiles[stream]?.ready ?? false);
   }
 
-  /// Sends what this frame's budget allows of [d]'s geometry.
-  void _upload(TileDraw d) {
+  @override
+  bool upload(GpuStream stream, Stopwatch clock, int deadline) {
+    final buffers = _tiles[stream] ??= Timeline.timeSync(
+      'vmap.gpu.upload.alloc',
+      () => _TileBuffers(stream, _pool),
+    );
+    buffers.usedFrame = _frame;
+    Timeline.timeSync('vmap.gpu.upload.copy', () {
+      do {
+        buffers.send(_piece);
+      } while (!buffers.ready && clock.elapsedMicroseconds < deadline);
+    });
+    return buffers.ready;
+  }
+
+  static const _piece = 256 * 1024;
+
+  /// Sends what this frame's budget allows of [d]'s geometry, or with
+  /// [all] all of it: a tile the engine counts as ready, whose buffers were
+  /// let go while it sat unused, must not leave a hole.
+  void _upload(TileDraw d, {required bool all}) {
     final stream = d.tile.gpu;
     if (stream == null) return;
     final known = _tiles[stream];
     if (known != null && known.ready) return;
+    if (all) {
+      upload(stream, _clock, 0);
+      final buffers = _tiles[stream]!;
+      while (!buffers.ready) {
+        buffers.send(_piece);
+      }
+      return;
+    }
     if (_budget <= 0) {
       _more = true;
       return;

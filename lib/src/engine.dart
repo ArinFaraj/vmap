@@ -753,6 +753,8 @@ class VmapEngine extends ChangeNotifier {
       standing: camera.view != null && sheet.extrusions.isNotEmpty,
     );
     _budget.start(zooming: (camera.zoom - _lastZoom).abs() > 0.002);
+    final gpu = renderer;
+    _onGpu = camera.view != null && gpu != null && gpu.supports(sheet);
     var waiting = false;
     _lastZoom = camera.zoom;
     for (final s in _sources) {
@@ -777,8 +779,7 @@ class VmapEngine extends ChangeNotifier {
           view.matrix(originX: camera.origin.dx, originY: camera.origin.dy),
         );
     }
-    final gpu = renderer;
-    final onGpu = view != null && gpu != null && gpu.supports(sheet);
+    final onGpu = _onGpu;
     for (final run in sheet.runs) {
       if (run.raster >= 0) {
         _rasters[run.raster].paint(
@@ -806,7 +807,7 @@ class VmapEngine extends ChangeNotifier {
       canvas.restore();
       if (onGpu) {
         final gpuStarted = _clock.elapsedMicroseconds;
-        final more = gpu.paint(
+        final more = gpu!.paint(
           canvas,
           view,
           camera.origin,
@@ -931,15 +932,27 @@ class VmapEngine extends ChangeNotifier {
   final FrameBudget _budget = FrameBudget();
   late final MeshPainter _meshes = MeshPainter(_budget, stats, _context);
 
+  /// Whether this frame's flat layers are drawn by [renderer].
+  bool _onGpu = false;
+
   void _prepare(LoadedTile tile, double scale) {
     if (_budget.spentUp) return;
     final started = _clock.elapsedMicroseconds;
-    tile.prepare(
-      _meshes.widths,
-      scale,
-      _clock,
-      started + FrameBudget.micros - _budget.spent,
-    );
+    final deadline = started + FrameBudget.micros - _budget.spent;
+    final stream = _onGpu ? tile.gpu : null;
+    if (stream != null) tile.gpuWaiting = true;
+    if (!tile.stepsDone) {
+      tile.prepare(
+        _meshes.widths,
+        scale,
+        _clock,
+        deadline,
+        meshes: stream == null,
+      );
+    }
+    if (stream != null && tile.stepsDone) {
+      tile.gpuWaiting = !renderer!.upload(stream, _clock, deadline);
+    }
     final spent = _clock.elapsedMicroseconds - started;
     _budget.spent += spent;
     stats.timings.tileSetup(spent);
