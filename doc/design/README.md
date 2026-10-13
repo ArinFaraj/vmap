@@ -11,6 +11,7 @@ labels, better routes and lines, and 3D that looks deliberate.
 | File | What it holds |
 | --- | --- |
 | [decisions.md](decisions.md) | Decisions that are settled, with the reason for each |
+| [progress.md](progress.md) | What has been built and measured, by date |
 | [open-decisions.md](open-decisions.md) | Questions only measurement answers, and which decision each could reopen |
 | [research/renderers.md](research/renderers.md) | Flutter GPU, Impeller backends per device, and the existing Flutter map packages |
 | [research/labels-in-3d.md](research/labels-in-3d.md) | How MapLibre, Mapbox, Google, Apple and Cesium place labels and pins in 3D |
