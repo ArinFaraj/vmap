@@ -1,7 +1,9 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'glyphs/glyph_layout.dart';
+import 'glyphs/glyph_pages.dart';
 import 'platform.dart';
 import 'stats.dart';
 
@@ -109,6 +111,13 @@ final class GlyphSprite extends LabelSprite {
 
   final ShapedText shaped;
   final TextLook look;
+
+  /// The cells this label's glyphs were last drawn from, kept while its
+  /// page look and the pages stay the same, so a frame does no lookups.
+  int cellsKey = -1;
+  int cellsGeneration = -1;
+  List<GlyphCell?> cells = const [];
+  Float64List cellEms = Float64List(0);
 
   @override
   double get pixelW => width;

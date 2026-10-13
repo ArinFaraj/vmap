@@ -3,6 +3,7 @@ package dev.vmap.vmap
 import android.app.Activity
 import android.os.Build
 import android.view.Surface
+import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
@@ -23,6 +24,8 @@ import io.flutter.plugin.common.MethodChannel
 class VmapPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware {
     private var channel: MethodChannel? = null
     private var activity: Activity? = null
+    private var fast = false
+    private val watched = java.util.WeakHashMap<SurfaceView, Boolean>()
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel = MethodChannel(binding.binaryMessenger, "vmap/frame_rate").also {
@@ -62,31 +65,46 @@ class VmapPlugin : FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware
     }
 
     private fun vote(fast: Boolean) {
-        if (Build.VERSION.SDK_INT < 30) return
+        this.fast = fast
+        val activity = activity ?: return
+        forEachSurfaceView(activity.window.decorView) { view ->
+            // A surface made or remade later gets the current vote too: a vote
+            // cast before Flutter's surface exists would otherwise be lost.
+            if (watched.put(view, true) == null) {
+                view.holder.addCallback(object : SurfaceHolder.Callback {
+                    override fun surfaceCreated(holder: SurfaceHolder) = apply(holder.surface)
+                    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) =
+                        apply(holder.surface)
+                    override fun surfaceDestroyed(holder: SurfaceHolder) {}
+                })
+            }
+            view.holder.surface?.let { apply(it) }
+        }
+    }
+
+    private fun apply(surface: Surface?) {
+        if (Build.VERSION.SDK_INT < 30 || surface == null || !surface.isValid) return
         val activity = activity ?: return
         val display = activity.display ?: return
         val rate = if (fast) display.supportedModes
             .filter { it.physicalWidth == display.mode.physicalWidth && it.physicalHeight == display.mode.physicalHeight }
             .maxOfOrNull { it.refreshRate } ?: 0f
         else 0f
-        forEachSurface(activity.window.decorView) { surface ->
-            if (!surface.isValid) return@forEachSurface
-            if (Build.VERSION.SDK_INT >= 31) {
-                surface.setFrameRate(
-                    rate,
-                    Surface.FRAME_RATE_COMPATIBILITY_DEFAULT,
-                    if (fast) Surface.CHANGE_FRAME_RATE_ALWAYS else Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS,
-                )
-            } else {
-                surface.setFrameRate(rate, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT)
-            }
+        if (Build.VERSION.SDK_INT >= 31) {
+            surface.setFrameRate(
+                rate,
+                Surface.FRAME_RATE_COMPATIBILITY_DEFAULT,
+                if (fast) Surface.CHANGE_FRAME_RATE_ALWAYS else Surface.CHANGE_FRAME_RATE_ONLY_IF_SEAMLESS,
+            )
+        } else {
+            surface.setFrameRate(rate, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT)
         }
     }
 
-    private fun forEachSurface(view: View, action: (Surface) -> Unit) {
-        if (view is SurfaceView) view.holder.surface?.let(action)
+    private fun forEachSurfaceView(view: View, action: (SurfaceView) -> Unit) {
+        if (view is SurfaceView) action(view)
         if (view is ViewGroup) {
-            for (i in 0 until view.childCount) forEachSurface(view.getChildAt(i), action)
+            for (i in 0 until view.childCount) forEachSurfaceView(view.getChildAt(i), action)
         }
     }
 }

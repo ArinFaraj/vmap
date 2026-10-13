@@ -45,6 +45,7 @@ class GlyphPage {
   final List<int> _pending = [];
   final List<ui.Image> _chunks = [];
   int usedFrame = 0;
+  bool _merging = false;
 
   static int _id(int face, int glyph) => face << 20 | glyph;
 
@@ -73,6 +74,7 @@ class GlyphPage {
     final ids = _pending.sublist(0, take);
     _pending.removeRange(0, take);
     if (_chunks.length >= 6) {
+      _merging = true;
       for (final c in _chunks) {
         c.dispose();
       }
@@ -232,6 +234,10 @@ class GlyphPages {
   final Map<ui.Image, _Batch> _inks = {};
   int _frame = 0;
 
+  /// Moves on whenever a cell handed out may have gone stale: a page was
+  /// dropped or redrawn into one image.
+  int generation = 0;
+
   static int sizeOf(double devicePixelsPerEm) =>
       (math.log(math.max(devicePixelsPerEm, 1)) / math.ln2 * 4).ceil();
 
@@ -319,6 +325,7 @@ class GlyphPages {
   /// follow to draw them.
   bool rasterizePending() {
     var any = false;
+
     final watch = Stopwatch()..start();
     var glyphs = 0;
     for (final page in _pages.values) {
@@ -326,6 +333,10 @@ class GlyphPages {
       final left = glyphsPerFrame - glyphs;
       if (left <= 0) return true;
       glyphs += page.flush(left);
+      if (page._merging) {
+        page._merging = false;
+        generation++;
+      }
       any = true;
     }
     lastRasterized = glyphs;
@@ -345,6 +356,7 @@ class GlyphPages {
     _pages.removeWhere((key, page) {
       if (_frame - page.usedFrame < 600) return false;
       page.dispose();
+      generation++;
       return true;
     });
   }

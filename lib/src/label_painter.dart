@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'expr.dart';
+import 'glyphs/glyph_layout.dart';
 import 'glyphs/glyph_pages.dart';
 import 'label_path.dart';
 import 'label_sprites.dart';
@@ -200,25 +201,65 @@ class LabelPainter {
   static int _faded(int argb, double opacity) =>
       (((argb >>> 24) * opacity).round() << 24) | (argb & 0xFFFFFF);
 
-  /// The look of the page [sprite] draws from at [fontPx] logical pixels
-  /// to the em.
-  PageKey _page(GlyphSprite sprite, double fontPx, double devicePixelRatio) {
+  /// Fills [sprite]'s cells for its size now, from its cache when the look
+  /// and the pages are unchanged, so a steady frame allocates nothing.
+  void _resolve(GlyphSprite sprite, double em, double devicePixelRatio) {
+    final pages = glyphs!;
     final look = sprite.look;
-    final halo = look.halo == null ? 0.0 : look.haloWidth;
-    return (
-      size: GlyphPages.sizeOf(fontPx * devicePixelRatio),
+    final haloWidth = look.halo == null ? 0.0 : look.haloWidth;
+    final size = GlyphPages.sizeOf(em * devicePixelRatio);
+    final halo = (haloWidth * devicePixelRatio * 4).round();
+    final int blur = haloWidth == 0
+        ? 0
+        : (look.haloBlur * devicePixelRatio * 4).round();
+    final weight = GlyphFonts.snapWeight(look.weight);
+    final int code =
+        ((((size + 128) * 10 + weight ~/ 100) * 2 + (look.italic ? 1 : 0)) *
+                    256 +
+                halo) *
+            256 +
+        blur;
+    if (code == sprite.cellsKey && sprite.cellsGeneration == pages.generation) {
+      return;
+    }
+    final key = (
+      size: size,
       weight: look.weight,
       italic: look.italic,
-      halo: (halo * devicePixelRatio * 4).round(),
-      blur: halo == 0 ? 0 : (look.haloBlur * devicePixelRatio * 4).round(),
+      halo: halo,
+      blur: blur,
     );
+    final g = sprite.shaped.glyphs;
+    final n = g.length ~/ 5;
+    if (sprite.cells.length != n) {
+      sprite
+        ..cells = List<GlyphCell?>.filled(n, null)
+        ..cellEms = Float64List(n);
+    }
+    var complete = true;
+    for (var i = 0; i < n; i++) {
+      final found = pages.cell(key, g[i * 5].toInt(), g[i * 5 + 1].toInt());
+      if (found == null) {
+        sprite.cells[i] = null;
+        complete = false;
+        continue;
+      }
+      final (cell, page) = found;
+      sprite.cells[i] = cell;
+      sprite.cellEms[i] = page.em;
+      if (page.key != key) complete = false;
+    }
+    sprite
+      ..cellsKey = complete ? code : -1
+      ..cellsGeneration = pages.generation;
   }
 
   void _glyphs(LabelState st, GlyphSprite sprite, double devicePixelRatio) {
     final pages = glyphs!;
     final (sx, sy, _, _) = _textBox(st, sprite);
     final em = sprite.fontSize * st.scale;
-    final key = _page(sprite, em, devicePixelRatio);
+    _resolve(sprite, em, devicePixelRatio);
+    final cells = sprite.cells, ems = sprite.cellEms;
     final turn = st.screenAngle;
     final c = math.cos(turn), s = math.sin(turn);
     final shaped = sprite.shaped;
@@ -234,10 +275,9 @@ class LabelPainter {
         : _faded(sprite.look.halo!, st.opacity);
     final g = shaped.glyphs;
     for (var i = 0; i < g.length; i += 5) {
-      final found = pages.cell(key, g[i].toInt(), g[i + 1].toInt());
-      if (found == null) continue;
-      final (cell, page) = found;
-      final k = em / page.em;
+      final cell = cells[i ~/ 5];
+      if (cell == null) continue;
+      final k = em / ems[i ~/ 5];
       final lx = left + g[i + 2] * em, ly = top + g[i + 3] * em;
       pages.add(
         cell,
@@ -261,7 +301,8 @@ class LabelPainter {
   ) {
     final pages = glyphs!;
     final em = sprite.fontSize * st.scale;
-    final key = _page(sprite, em, devicePixelRatio);
+    _resolve(sprite, em, devicePixelRatio);
+    final cells = sprite.cells, ems = sprite.cellEms;
     final shaped = sprite.shaped;
     final path = st.curve!;
     final world = _view.world;
@@ -274,10 +315,9 @@ class LabelPainter {
         : _faded(sprite.look.halo!, st.opacity);
     final g = shaped.glyphs;
     for (var i = 0; i < g.length; i += 5) {
-      final found = pages.cell(key, g[i].toInt(), g[i + 1].toInt());
-      if (found == null) continue;
-      final (cell, page) = found;
-      final k = em / page.em;
+      final cell = cells[i ~/ 5];
+      if (cell == null) continue;
+      final k = em / ems[i ~/ 5];
       final advance = g[i + 4] * em;
       var mid = g[i + 2] * em + advance / 2 - half;
       if (flip) mid = -mid;

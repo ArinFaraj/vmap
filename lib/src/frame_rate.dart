@@ -4,13 +4,16 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// Asks the platform for the display's fastest refresh rate while the map
-/// moves, and gives it back a moment after the map rests, so a still map
-/// does not keep the screen at 120 Hz.
+/// moves, and gives it back a few seconds after the map rests, so a still
+/// map does not keep the screen at 120 Hz.
 class FrameRateVote {
   FrameRateVote._();
 
   static const _channel = MethodChannel('vmap/frame_rate');
-  static const _rest = Duration(milliseconds: 600);
+
+  /// Long enough that the display does not switch modes at the start of
+  /// every gesture, a switch some panels show as a hitch.
+  static const _rest = Duration(seconds: 3);
   static bool _fast = false;
   static Timer? _release;
   static int _users = 0;
@@ -19,7 +22,10 @@ class FrameRateVote {
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   /// A map is shown and may vote.
-  static void attach() => _users++;
+  static void attach() {
+    _users++;
+    moving();
+  }
 
   static void detach() {
     _users = (_users - 1).clamp(0, 1 << 30);

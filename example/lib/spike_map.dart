@@ -129,6 +129,14 @@ class _DemoState extends State<_Demo> {
     void listen(List<FrameTiming> t) => frames.addAll(t);
     SchedulerBinding.instance.addTimingsCallback(listen);
     engine.stats.timings.slowPaints.clear();
+    engine.stats.timings
+      ..frames = 0
+      ..paintMicros = 0
+      ..strokeMicros = 0
+      ..strokesBuilt = 0
+      ..tileSetupMicros = 0
+      ..labelMicros = 0
+      ..placeMicros = 0;
     GpuBuildings.slow.clear();
     const base = MapCameraPosition(
       latitude: 36.1912,
@@ -157,24 +165,38 @@ class _DemoState extends State<_Demo> {
     final build = [for (final f in frames) f.buildDuration.inMicroseconds];
     final raster = [for (final f in frames) f.rasterDuration.inMicroseconds];
     final over = build.where((b) => b > 8000).length;
-    final total = [for (final f in frames) f.totalSpan.inMicroseconds];
-    final late8 = total.where((t) => t > 8333).length;
-    final late16 = total.where((t) => t > 16667).length;
-    final seconds = frames.isEmpty
-        ? 1
-        : (frames.last.timestampInMicroseconds(FramePhase.rasterFinish) -
-                  frames.first.timestampInMicroseconds(FramePhase.vsyncStart)) /
-              1e6;
+    final starts = [
+      for (final f in frames) f.timestampInMicroseconds(FramePhase.vsyncStart),
+    ]..sort();
+    final gaps = [
+      for (var i = 1; i < starts.length; i++) starts[i] - starts[i - 1],
+    ];
+    final interval = p(gaps, .5);
+    final missed = gaps
+        .where((g) => g > interval * 1.5)
+        .fold<int>(0, (n, g) => n + (g / interval).round() - 1);
+    final seconds = starts.isEmpty ? 1 : (starts.last - starts.first) / 1e6;
+    final budget = interval == 0 ? 8333 : interval;
     debugPrint(
-      'zoomtest $_variant: ${(frames.length / seconds).toStringAsFixed(0)} fps, '
-      'frames over 8.3 ms $late8, over 16.7 ms $late16, '
-      'raster p95 ${p(raster, .95)} max ${p(raster, 1)} us',
+      'zoomtest $_variant: ${(frames.length / seconds).toStringAsFixed(0)} fps '
+      'at a ${(1e6 / budget).toStringAsFixed(0)} Hz vsync, missed vsyncs '
+      '$missed (${(100 * missed / (frames.length + missed)).toStringAsFixed(1)}%), '
+      'build over budget ${build.where((b) => b > budget).length}, '
+      'raster over budget ${raster.where((r) => r > budget).length}',
     );
     debugPrint(
       'zoomtest $_variant: ${frames.length} frames, build p50 ${p(build, .5)} '
       'p95 ${p(build, .95)} p99 ${p(build, .99)} max ${p(build, 1)} us, '
       'raster p50 ${p(raster, .5)} p99 ${p(raster, .99)} us, '
       'build over 8 ms: $over',
+    );
+    final t = engine.stats.timings;
+    debugPrint(
+      'zoomtest work: strokes ${t.strokesBuilt} in ${t.strokeMicros ~/ 1000} ms, '
+      'tile setup ${t.tileSetupMicros ~/ 1000} ms (max ${t.maxTileSetupMicros} us), '
+      'labels ${t.labelMicros ~/ 1000} ms, place ${t.placeMicros ~/ 1000} ms '
+      '(max ${t.maxPlaceMicros} us), paint ${t.paintMicros ~/ 1000} ms over '
+      '${t.frames} frames',
     );
     for (final line in engine.stats.timings.slowPaints.take(40)) {
       debugPrint('zoomtest slow: $line');
