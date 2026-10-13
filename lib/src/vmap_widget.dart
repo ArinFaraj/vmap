@@ -46,6 +46,9 @@ class VMapController extends ChangeNotifier {
   /// speed: the speed falls to a third in this time.
   static const glideSeconds = 0.32;
 
+  /// Zoom, turn and tilt settle a little sooner than a slide does.
+  static const _zoomSeconds = 0.24, _turnSeconds = 0.28, _tiltSeconds = 0.22;
+
   MapCameraPosition get camera => _camera;
 
   /// Jumps to [to] at once, stopping any animation.
@@ -151,25 +154,29 @@ class VMapController extends ChangeNotifier {
         tilt.abs() < 10) {
       return;
     }
-    const tau = glideSeconds;
-    const seconds = tau * 4.5;
+    const seconds = glideSeconds * 4.5;
     final start = _camera;
     final startView = start.view(_size.width, _size.height);
+    double eased(double tau, double t) =>
+        tau * (1 - math.exp(-t * seconds / tau));
     unawaited(
       _run(
         _Motion(Duration(microseconds: (seconds * 1e6).round()), (t) {
-          final k = tau * (1 - math.exp(-t * seconds / tau));
+          final k = eased(glideSeconds, t);
+          final kZoom = eased(_zoomSeconds, t);
+          final kTurn = eased(_turnSeconds, t);
+          final kTilt = eased(_tiltSeconds, t);
           var at = start;
           if (zoom != 0 || turn != 0) {
             at = at.around(
               startView,
               focal.dx,
               focal.dy,
-              newZoom: start.zoom + zoom * k,
-              turn: turn * k,
+              newZoom: start.zoom + zoom * kZoom,
+              turn: turn * kTurn,
             );
           }
-          if (tilt != 0) at = at.copyWith(pitch: start.pitch + tilt * k);
+          if (tilt != 0) at = at.copyWith(pitch: start.pitch + tilt * kTilt);
           if (speed != Offset.zero) {
             at = at.panned(
               at.view(_size.width, _size.height),
@@ -313,15 +320,28 @@ class _Rate {
     }
   }
 
-  /// Change per second, or 0 when the gesture paused before it ended.
+  /// Change per second, the slope of a least squares line through the
+  /// samples, or 0 when the fingers held still before letting go.
   double perSecond(Duration end) {
-    if (_samples.length < 2) return 0;
-    final (t0, v0) = _samples.first;
-    final (t1, v1) = _samples.last;
-    if (end.inMicroseconds - t1 > 60000) return 0;
-    final dt = (t1 - t0) / 1e6;
-    if (dt < 0.012) return 0;
-    return (v1 - v0) / dt;
+    final n = _samples.length;
+    if (n < 2) return 0;
+    final t1 = _samples.last.$1;
+    if (end.inMicroseconds - t1 > 50000) return 0;
+    final t0 = _samples.first.$1;
+    if ((t1 - t0) < 12000) return 0;
+    var st = 0.0, sv = 0.0;
+    for (final (t, v) in _samples) {
+      st += (t - t0) / 1e6;
+      sv += v;
+    }
+    final mt = st / n, mv = sv / n;
+    var num = 0.0, den = 0.0;
+    for (final (t, v) in _samples) {
+      final dt = (t - t0) / 1e6 - mt;
+      num += dt * (v - mv);
+      den += dt * dt;
+    }
+    return den == 0 ? 0 : num / den;
   }
 }
 
@@ -356,11 +376,6 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
   final _turnRate = _Rate(), _tiltRate = _Rate();
   double _zoomTotal = 0, _turnTotal = 0, _tiltTotal = 0;
 
-  /// The speeds of a pinch or tilt whose first finger has lifted, kept for
-  /// a moment: two fingers never lift together, and the second lifting
-  /// soon after should still let the zoom, turn or tilt coast.
-  ({Duration at, Offset focal, double zoom, double turn, double tilt})?
-  _released;
   Offset _panTotal = Offset.zero;
 
   /// The last short tap, which a second touch close by in time and place
@@ -450,8 +465,9 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
     _tiltRate.add(at, _tiltTotal);
   }
 
-  /// Starts reading the fingers afresh: a finger came or went.
-  void _restart(Duration at) {
+  /// Reads the fingers from where they are now: a finger came or went. The
+  /// movement carries on; only a gesture's first finger starts it afresh.
+  void _restart(Duration at, {bool fresh = false}) {
     _lastFocal = _focal;
     _fingersAtStart
       ..clear()
@@ -465,12 +481,15 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
     } else if (_gesture != _Gesture.quickZoom) {
       _gesture = _Gesture.pan;
     }
-    _resetChannels(at);
+    if (fresh) {
+      _resetChannels(at);
+    } else {
+      _record(at);
+    }
   }
 
   void _onDown(PointerDownEvent e) {
     _c.stop();
-    _released = null;
     _fingers[e.pointer] = e.localPosition;
     _downAt[e.pointer] = e.timeStamp;
     _most = math.max(_most, _fingers.length);
@@ -490,7 +509,7 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
       _secondTap = false;
       if (_gesture == _Gesture.quickZoom) _gesture = _Gesture.undecided;
     }
-    _restart(e.timeStamp);
+    _restart(e.timeStamp, fresh: _fingers.length == 1);
   }
 
   void _onMove(PointerMoveEvent e) {
@@ -637,30 +656,7 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
         !_moved;
     _fingers.remove(e.pointer);
     if (_fingers.isNotEmpty) {
-      if (gesture == _Gesture.pinch || gesture == _Gesture.tilt) {
-        _released = (
-          at: end,
-          focal: focal,
-          zoom: gesture == _Gesture.pinch ? _zoomRate.perSecond(end) : 0.0,
-          turn: gesture == _Gesture.pinch ? _turnRate.perSecond(end) : 0.0,
-          tilt: gesture == _Gesture.tilt ? _tiltRate.perSecond(end) : 0.0,
-        );
-      }
       _restart(end);
-      return;
-    }
-    final released = _released;
-    _released = null;
-    if (released != null &&
-        end - released.at < const Duration(milliseconds: 160)) {
-      _tapUpAt = null;
-      _c._coast(
-        focal: released.focal,
-        zoom: released.zoom,
-        turn: released.turn,
-        tilt: released.tilt,
-      );
-      _gesture = _Gesture.undecided;
       return;
     }
     _most = 0;
@@ -675,8 +671,7 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
         _zoomBy(1, e.localPosition);
         return;
       }
-      _c._coast(focal: focal, zoom: _zoomRate.perSecond(end));
-      _gesture = _Gesture.undecided;
+      _coastAll(focal, end);
       return;
     }
     if (wasMost == 1 && short) {
@@ -686,12 +681,18 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
       return;
     }
     _tapUpAt = null;
+    _coastAll(focal, end);
+  }
+
+  /// Lets every part of the movement coast together at the speed it had:
+  /// a pan that was zooming keeps zooming as it slides.
+  void _coastAll(Offset focal, Duration end) {
     _c._coast(
       focal: focal,
       pan: Offset(_focalX.perSecond(end), _focalY.perSecond(end)),
-      zoom: gesture == _Gesture.pinch ? _zoomRate.perSecond(end) : 0,
-      turn: gesture == _Gesture.pinch ? _turnRate.perSecond(end) : 0,
-      tilt: gesture == _Gesture.tilt ? _tiltRate.perSecond(end) : 0,
+      zoom: _zoomRate.perSecond(end),
+      turn: _turnRate.perSecond(end),
+      tilt: _tiltRate.perSecond(end),
     );
     _gesture = _Gesture.undecided;
   }
