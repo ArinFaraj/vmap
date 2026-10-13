@@ -62,9 +62,17 @@ class VmapEngine extends ChangeNotifier {
          ..pins = pins
          ..curvedRoads = curvedLabels {
     _labels.stateOf = (source, id) => _states[_sources[source].def.name]?[id];
-    _loadStyle();
-    if (glyphText) _loadGlyphFonts(glyphFonts);
+    if (glyphText) {
+      _loadGlyphFonts(glyphFonts).whenComplete(() {
+        if (!_disposed) _loadStyle();
+      });
+    } else {
+      _loadStyle();
+    }
   }
+
+  /// The fonts' bytes, sent to the tile workers so they shape labels.
+  List<Uint8List>? _glyphFontBytes;
 
   /// The font labels are shaped with when the app gives none: Vazirmatn,
   /// one variable font with every weight, for Arabic script and Latin.
@@ -77,6 +85,7 @@ class VmapEngine extends ChangeNotifier {
           given ??
           [(await rootBundle.load(defaultGlyphFont)).buffer.asUint8List()];
       if (_disposed) return;
+      _glyphFontBytes = faces;
       _labels.useGlyphs(GlyphFonts(faces));
       notifyListeners();
     } catch (e) {
@@ -374,6 +383,7 @@ class VmapEngine extends ChangeNotifier {
           onError?.call(error);
         },
         script: webWorker,
+        fonts: _glyphFontBytes,
       );
       final before = byName[def.name];
       if (before != null) {

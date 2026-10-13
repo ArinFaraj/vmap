@@ -10,6 +10,7 @@ import 'pmtiles.dart';
 import 'protocol.dart';
 import 'source_config.dart';
 import 'tile_id.dart';
+import 'glyphs/glyph_layout.dart';
 import 'style_model.dart';
 import 'tile_builder.dart';
 import 'tile_store.dart';
@@ -31,6 +32,7 @@ class TilePool {
     required this.onLoaded,
     required this.onFailed,
     this.script,
+    this.fonts,
   }) : maxZoom =
            sheet.sources[source].maxZoom ??
            sheet.sources[source].defaultMaxZoom {
@@ -38,6 +40,9 @@ class TilePool {
   }
 
   final TileSourceConfig config;
+
+  /// The fonts the workers shape labels with, or null.
+  final List<Uint8List>? fonts;
 
   /// In a browser, the script the workers run, or null to build tiles on
   /// the page's thread.
@@ -225,6 +230,7 @@ class TilePool {
         nameKeys: nameKeys,
         zoomOffset: sheet.zoomOffset,
         source: source,
+        fonts: fonts,
       ).toWire(),
       (message) {
         switch (WorkerReply.fromWire(message! as List<Object?>)) {
@@ -423,7 +429,12 @@ Future<void> tileWorkerMain(
   );
   final source = setup.source;
   final def = sheet.sources[source];
-  final builder = TileBuilder(sheet, source: source);
+  final fonts = setup.fonts;
+  final builder = TileBuilder(
+    sheet,
+    source: source,
+    fonts: fonts == null ? null : GlyphFonts(fonts),
+  );
   void answer(WorkerReply reply) => send(reply.toWire());
 
   Future<GeoJsonTiles>? geoJson;

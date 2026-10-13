@@ -3,6 +3,17 @@ import 'dart:typed_data';
 
 import 'package:payv/payv.dart';
 
+/// Whether [text] is written right to left, by its first strong letter.
+bool textIsRightToLeft(String text) {
+  for (final unit in text.codeUnits) {
+    if (unit >= 0x0590 && unit <= 0x08FF || unit >= 0xFB1D && unit <= 0xFEFC) {
+      return true;
+    }
+    if (unit >= 0x41 && unit <= 0x24F) return false;
+  }
+  return false;
+}
+
 /// The fonts labels are shaped with, first to last: a run of text takes the
 /// first font that has every one of its glyphs.
 class GlyphFonts {

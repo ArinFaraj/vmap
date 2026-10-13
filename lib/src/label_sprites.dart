@@ -230,11 +230,12 @@ class LabelSprites {
     TextLook look, {
     required double dpr,
     required int pass,
+    ShapedText? shaped,
   }) {
     final fonts = glyphFonts;
     if (fonts != null) {
       final started = _clock.elapsedMicroseconds;
-      final shaped = layoutText(
+      shaped ??= layoutText(
         fonts,
         look.text,
         weight: look.weight,
@@ -408,12 +409,4 @@ class LabelSprites {
 }
 
 /// Whether [text] is written right to left.
-bool isRightToLeft(String text) {
-  for (final unit in text.codeUnits) {
-    if (unit >= 0x0590 && unit <= 0x08FF || unit >= 0xFB1D && unit <= 0xFEFC) {
-      return true;
-    }
-    if (unit >= 0x41 && unit <= 0x24F) return false;
-  }
-  return false;
-}
+bool isRightToLeft(String text) => textIsRightToLeft(text);

@@ -1,7 +1,9 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'expr.dart';
+import 'glyphs/glyph_layout.dart';
 import 'extrusion.dart';
 import 'mvt.dart';
 import 'platform.dart';
@@ -71,6 +73,9 @@ class BuiltLabel {
   /// The feature's values of what its layer's paint reads. Null when the
   /// paint reads nothing from the feature.
   Map<String, Object?>? props;
+
+  /// The text shaped by the worker, or null when it was not.
+  ShapedText? shaped;
 }
 
 class BuiltTile {
@@ -126,6 +131,10 @@ class BuiltTile {
           l.key,
           l.turns,
           l.props,
+          if (l.shaped case final s?)
+            [pack(s.glyphs), s.width, s.height, s.lines]
+          else
+            null,
         ],
     ],
     [for (final e in extrusions) e.toMessage()],
@@ -166,7 +175,18 @@ class BuiltTile {
             turns: parts[10] as bool,
           )
           ..key = parts[9] as String
-          ..props = (parts[11] as Map?)?.cast<String, Object?>(),
+          ..props = (parts[11] as Map?)?.cast<String, Object?>()
+          ..shaped = parts.length > 12 && parts[12] != null
+              ? () {
+                  final s = parts[12]! as List;
+                  return ShapedText(
+                    unpackFloats(s[0]! as Object),
+                    (s[1]! as num).toDouble(),
+                    (s[2]! as num).toDouble(),
+                    s[3]! as int,
+                  );
+                }()
+              : null,
       );
     }
     return BuiltTile(meshes, labels, [
@@ -192,7 +212,7 @@ class _Group {
 /// Turns one vector tile into the meshes and labels a style asks for.
 class TileBuilder {
   /// Builds the tiles of the style's source number [source].
-  TileBuilder(this.sheet, {this.source = 0}) {
+  TileBuilder(this.sheet, {this.source = 0, this.fonts}) {
     for (var i = 0; i < sheet.buckets.length; i++) {
       if (sheet.buckets[i].source != source) continue;
       (_buckets[sheet.buckets[i].sourceLayer] ??= []).add(i);
@@ -205,6 +225,38 @@ class TileBuilder {
 
   final StyleSheet sheet;
   final int source;
+
+  /// Shapes label text while the tile is built, so the page never has to.
+  final GlyphFonts? fonts;
+
+  void _shape(List<BuiltLabel> labels) {
+    final fonts = this.fonts;
+    if (fonts == null) return;
+    for (final l in labels) {
+      if (l.layer < 0 || l.text.isEmpty) continue;
+      final symbol = sheet.symbols[l.layer];
+      final text = symbol.uppercase ? l.text.toUpperCase() : l.text;
+      final rtl = textIsRightToLeft(text);
+      final road = l.line != null;
+      l.shaped = layoutText(
+        fonts,
+        text,
+        weight: symbol.weight,
+        letterSpacing: symbol.letterSpacing,
+        lineHeight: symbol.lineHeight ?? 1.15,
+        maxWidth: road ? 60 : symbol.maxWidth,
+        align: switch (symbol.justify) {
+          ui.TextAlign.left => rtl ? 1 : -1,
+          ui.TextAlign.right => rtl ? -1 : 1,
+          ui.TextAlign.start => rtl ? 1 : -1,
+          ui.TextAlign.end => rtl ? -1 : 1,
+          _ => 0,
+        },
+        singleLine: road,
+      );
+    }
+  }
+
   final Map<String, List<int>> _buckets = {};
   final Map<String, List<int>> _symbols = {};
   final EvalContext _context = EvalContext();
@@ -529,6 +581,7 @@ class TileBuilder {
         meshes.add(BuiltMesh(group.bucket, chunk, group.props));
       }
     }
+    _shape(labels);
     return BuiltTile(meshes, labels, [
       for (final e in extruders.values) ?e.finish(),
     ]);

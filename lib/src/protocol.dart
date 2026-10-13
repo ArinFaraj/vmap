@@ -3,6 +3,8 @@
 /// both carry, and is read back into one of the types here.
 library;
 
+import 'dart:typed_data';
+
 import 'source_config.dart';
 import 'tile_builder.dart' show BuiltTile;
 import 'tile_id.dart';
@@ -16,6 +18,7 @@ class WorkerSetup {
     required this.nameKeys,
     required this.zoomOffset,
     required this.source,
+    this.fonts,
   });
 
   factory WorkerSetup.fromWire(List<Object?> wire) => WorkerSetup(
@@ -29,7 +32,11 @@ class WorkerSetup {
     nameKeys: (wire[5] as List?)?.cast<String>(),
     zoomOffset: (wire[6]! as num).toDouble(),
     source: wire[7]! as int,
+    fonts: wire.length > 8 ? (wire[8] as List?)?.cast<Uint8List>() : null,
   );
+
+  /// The fonts labels are shaped with, or null to leave shaping to the page.
+  final List<Uint8List>? fonts;
 
   /// The addresses of the tiles, `geojson` for data the style holds, or a
   /// `pmtiles://` archive.
@@ -53,6 +60,7 @@ class WorkerSetup {
     nameKeys,
     zoomOffset,
     source,
+    fonts,
   ];
 }
 

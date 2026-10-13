@@ -660,6 +660,7 @@ class LabelEngine {
       ),
       dpr: dpr,
       pass: _pass,
+      shaped: c is TileLabel ? c.tile.shaped : null,
     );
   }
 }
