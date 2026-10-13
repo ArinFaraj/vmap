@@ -196,6 +196,9 @@ class VMapController extends ChangeNotifier {
   }
 
   /// Stops any animation where it is.
+  /// Where the running camera animation ends, while one runs.
+  MapCameraPosition? get destination => _motion?.at(1);
+
   void stop() {
     final motion = _motion;
     if (motion == null) return;
@@ -777,6 +780,7 @@ class _VMapPainter extends CustomPainter {
         rotation: camera.bearing * math.pi / 180,
         devicePixelRatio: dpr,
         view: view,
+        ahead: controller.destination?.view(size.width, size.height),
       ),
     );
   }

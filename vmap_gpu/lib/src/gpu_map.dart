@@ -53,7 +53,7 @@ class GpuMap implements MapRenderer {
   /// A tile's square in tile units, two triangles.
   gpu.DeviceBuffer? _quad;
   UniformArena? _host;
-  final _pool = BufferPool();
+  final _heap = GpuHeap();
   List<gpu.Texture> _ring = const [];
   List<ui.Image> _images = const [];
   ui.Image? _lastImage;
@@ -264,24 +264,50 @@ class GpuMap implements MapRenderer {
     throw StateError('vmap_gpu: no texture for the map pass');
   }
 
+  /// Every tile holding GPU memory.
+  final Set<TileGpu> _held = Set.identity();
+
   @override
   bool upload(LoadedTile tile, Stopwatch clock, int deadline) {
-    final data = switch (tile.rendererData) {
-      final TileGpu known => known,
-      _ => tile.rendererData = TileGpu(tile, _pool),
-    };
+    var data = tile.rendererData;
+    if (data is! TileGpu) {
+      data = TileGpu(tile, _heap);
+      tile.rendererData = data;
+      _held.add(data);
+    }
+    final sending = data;
     return Timeline.timeSync(
       'vmap.gpu.upload',
-      () => data.send(clock, deadline),
+      () => sending.send(clock, deadline),
     );
   }
 
   /// [d]'s data on the GPU. The engine hands over only tiles it uploaded,
   /// so this is null only for a tile with nothing for the GPU.
-  static TileGpu? _gpuOf(TileDraw d) => switch (d.tile.rendererData) {
-    final TileGpu data when data.ready => data,
+  TileGpu? _gpuOf(TileDraw d) => switch (d.tile.rendererData) {
+    final TileGpu data when data.ready => data..drawnFrame = _frame,
     _ => null,
   };
+
+  /// Past three quarters of the heap's cap, lets the tiles drawn longest
+  /// ago, and not in the last two seconds, give their memory back; such a
+  /// tile is sent again if it shows again, a tile standing in meanwhile.
+  void _trim() {
+    _held.removeWhere((data) => !identical(data.tile.rendererData, data));
+    if (_heap.used <= GpuHeap.capBytes * 3 ~/ 4) return;
+    final idle = [
+      for (final data in _held)
+        if (_frame - data.drawnFrame > 240) data,
+    ]..sort((a, b) => a.drawnFrame - b.drawnFrame);
+    for (final data in idle) {
+      if (_heap.used <= GpuHeap.capBytes ~/ 2) break;
+      _held.remove(data);
+      data.tile
+        ..rendererData = null
+        ..uploadAgain();
+      data.dispose();
+    }
+  }
 
   @override
   bool paint(
@@ -299,7 +325,10 @@ class GpuMap implements MapRenderer {
     if (!_ready()) return true;
     _sheet = sprites;
     _frame++;
-    _pool.frame = _frame;
+    _heap
+      ..frame = _frame
+      ..topUp();
+    _trim();
     final width = (view.width * devicePixelRatio).round();
     final height = (view.height * devicePixelRatio).round();
     if (width <= 0 || height <= 0) return false;
@@ -350,7 +379,7 @@ class GpuMap implements MapRenderer {
 
   /// Draws nothing in every state a frame uses, once: a GPU makes a
   /// pipeline variant the first time a state is drawn in, which stalls that
-  /// frame for several milliseconds.
+  /// frame for several milliseconds. Tile memory is set aside here too.
   void _warmUp() {
     _warm = true;
     final commands = gpu.gpuContext.createCommandBuffer();
@@ -631,7 +660,7 @@ class GpuMap implements MapRenderer {
 
   @override
   void dispose() {
-    _pool.clear();
+    _heap.clear();
     _ring = const [];
     for (final image in _images) {
       image.dispose();
@@ -702,7 +731,7 @@ class _MapPass {
       );
     void cover(List<TileDraw> tiles, bool clear) {
       for (final (i, d) in tiles.indexed) {
-        if (GpuMap._gpuOf(d) == null) continue;
+        if (_map._gpuOf(d) == null) continue;
         map._times(_clip, d.size / tileExtent, 1, d.left, d.top, 1);
         _pass
           ..setStencilReference(clear ? 0 : i + 1)
@@ -760,7 +789,7 @@ class _MapPass {
 
   /// Draws [run]'s layers of tile [d].
   void _drawFlat(TileDraw d, StyleRun run) {
-    final data = GpuMap._gpuOf(d);
+    final data = _map._gpuOf(d);
     final stream = data?.stream;
     if (data == null || stream == null) return;
     final from = stream.layerFirst[run.first];
@@ -774,7 +803,7 @@ class _MapPass {
       ..bindVertexBuffer(
         gpu.BufferView(
           data.buffer!,
-          offsetInBytes: 0,
+          offsetInBytes: data.vertexOffset,
           lengthInBytes: stream.vertices.lengthInBytes,
         ),
       )
@@ -848,7 +877,7 @@ class _MapPass {
     for (final layer in _sheet.extrusions) {
       if (!map._reveal.shows(layer)) continue;
       for (final d in tiles) {
-        final data = GpuMap._gpuOf(d);
+        final data = _map._gpuOf(d);
         if (data == null) continue;
         for (final b in data.buildings) {
           if (b.extrusion.bucket != layer.bucket) continue;

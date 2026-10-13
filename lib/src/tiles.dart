@@ -189,10 +189,14 @@ class LoadedTile {
     _step = -1;
   }
 
-  /// Opens a tile made ready for the canvas to a renderer's upload.
+  /// Opens a ready tile to a renderer's upload: one made ready for the
+  /// canvas, or one whose upload the renderer let go.
   void uploadAgain() {
     if (_step < 0 && rendererData == null) _step = 0;
   }
+
+  /// Ready but for a renderer's upload, after [uploadAgain].
+  bool get waitsForUpload => _built == null && _step >= 0;
 
   bool _meshes(
     BuiltTile built,
@@ -434,6 +438,7 @@ class TileSource {
       }
       wanted.add(id);
     }
+    _wantAhead(camera.ahead, frame, nowMs);
     for (final t in picked) {
       if (t.z == 0) continue;
       final parent = tiles[TileId(t.z - 1, (t.x % (1 << t.z)) >> 1, t.y >> 1)];
@@ -444,6 +449,24 @@ class TileSource {
     }
     hadWanted = wanted.isNotEmpty;
     return waiting;
+  }
+
+  /// Asks, after what the screen needs now, for the tiles of [ahead].
+  void _wantAhead(MapView? ahead, int frame, int nowMs) {
+    if (ahead == null) return;
+    for (final t in ahead.cover(maxZoom: maxDataZoom)) {
+      final n = 1 << t.z;
+      if (t.y < 0 || t.y >= n) continue;
+      final id = TileId(t.z, t.x % n, t.y);
+      final have = tiles[id];
+      if (have != null) {
+        have.usedFrame = frame;
+        continue;
+      }
+      final failed = failedAt[id];
+      if (failed != null && nowMs - failed < 3000) continue;
+      if (!wanted.contains(id)) wanted.add(id);
+    }
   }
 
   /// Covers a missing tile with the nearest loaded ancestor, or failing that

@@ -961,7 +961,7 @@ class VmapEngine extends ChangeNotifier {
     if (_budget.spentUp) return;
     for (final s in _sources) {
       for (final tile in s.tiles.values) {
-        if (tile.prepared) continue;
+        if (tile.prepared || tile.waitsForUpload) continue;
         _prepare(tile, 256.0 * math.pow(2, zoom - tile.id.z) / tileExtent);
         _budget.stale = true;
         return;

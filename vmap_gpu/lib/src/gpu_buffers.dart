@@ -52,89 +52,193 @@ class UniformArena {
   }
 }
 
-/// Host visible buffers kept for reuse in power of two sizes, so a new
-/// tile rarely asks the driver for memory. A buffer given back waits out
-/// the frames still in flight before it is handed out again.
-class BufferPool {
-  final Map<int, List<(gpu.DeviceBuffer, int)>> _free = {};
-  int _freeBytes = 0;
-  static const _keepBytes = 32 << 20;
+/// Host visible memory in slabs, handed out in ranges, so a tile on its
+/// way to the GPU rarely makes the driver allocate: an allocation stalls
+/// the frame that asks, about a millisecond for every 2 MB on a phone. A
+/// range given back waits out the frames still in flight before it is
+/// handed out again.
+class GpuHeap {
+  static const _slabBytes = 4 << 20;
+  static const align = 256;
 
-  /// The renderer's frame count, which a given back buffer is stamped with.
+  /// The most it holds; past three quarters, tiles not drawn lately let
+  /// their ranges go.
+  static const capBytes = 64 << 20;
+
+  /// Free room kept ahead of what uploads ask for.
+  static const _headroom = 12 << 20;
+
+  final List<_Slab> _slabs = [];
+  final List<(GpuRange, int)> _given = [];
+  int used = 0;
+
+  /// The renderer's frame count, which a given back range is stamped with.
   int frame = 0;
 
-  static int _size(int bytes) {
-    var size = 64 << 10;
-    while (size < bytes) {
-      size <<= 1;
+  int get _total => _slabs.length * _slabBytes;
+
+  /// Adds a slab while free room is short, one a frame, so uploads find
+  /// room without allocating.
+  void topUp() {
+    _release();
+    if (_total - used < _headroom && _total + _slabBytes <= capBytes) {
+      _slabs.add(_Slab(_create(_slabBytes), _slabBytes));
     }
-    return size;
   }
 
-  gpu.DeviceBuffer take(int bytes) {
-    final size = _size(bytes);
-    final list = _free[size];
-    if (list != null &&
-        list.isNotEmpty &&
-        frame - list.first.$2 > framesInFlight) {
-      _freeBytes -= size;
-      return list.removeAt(0).$1;
+  GpuRange take(int bytes) {
+    _release();
+    final size = (bytes + align - 1) ~/ align * align;
+    used += size;
+    if (size > _slabBytes) return GpuRange(_create(size), 0, size, null);
+    for (final slab in _slabs) {
+      final at = slab.take(size);
+      if (at >= 0) return GpuRange(slab.buffer, at, size, slab);
     }
-    return gpu.gpuContext.createDeviceBuffer(gpu.StorageMode.hostVisible, size);
+    final slab = _Slab(_create(_slabBytes), _slabBytes);
+    _slabs.add(slab);
+    return GpuRange(slab.buffer, slab.take(size), size, slab);
   }
 
-  void give(gpu.DeviceBuffer buffer) {
-    final size = buffer.sizeInBytes;
-    if (_freeBytes + size > _keepBytes) return;
-    (_free[size] ??= []).add((buffer, frame));
-    _freeBytes += size;
+  void give(GpuRange range) => _given.add((range, frame));
+
+  void _release() {
+    while (_given.isNotEmpty && frame - _given.first.$2 > framesInFlight) {
+      final range = _given.removeAt(0).$1;
+      used -= range.size;
+      range.slab?.give(range.offset, range.size);
+    }
   }
+
+  static gpu.DeviceBuffer _create(int bytes) => Timeline.timeSync(
+    'vmap.gpu.alloc',
+    () => gpu.gpuContext.createDeviceBuffer(gpu.StorageMode.hostVisible, bytes),
+  );
 
   void clear() {
-    _free.clear();
-    _freeBytes = 0;
+    _slabs.clear();
+    _given.clear();
+    used = 0;
   }
 }
 
-/// A tile on the GPU, all in one pooled buffer: its flat layers' vertices
-/// and indices, then each building layer's vertices. Filled over as many
-/// frames as the engine's budget needs; drawn once [ready].
-class TileGpu implements RendererTileData {
-  TileGpu(LoadedTile tile, this._pool) : stream = tile.gpu {
-    var at = 0;
-    void part(TypedData data) {
-      _parts.add((ByteData.sublistView(data), at));
-      at = _align(at + data.lengthInBytes);
-    }
+/// Part of a [GpuHeap] slab, or a buffer of its own when too big for one.
+class GpuRange {
+  GpuRange(this.buffer, this.offset, this.size, this.slab);
 
-    final stream = this.stream;
-    if (stream != null) {
-      part(stream.vertices);
-      indexOffset = at;
-      part(stream.indices);
+  final gpu.DeviceBuffer buffer;
+  final int offset, size;
+  final _Slab? slab;
+}
+
+/// One slab's free ranges, by offset, merged where they touch.
+class _Slab {
+  _Slab(this.buffer, int size) : _free = [(0, size)];
+
+  final gpu.DeviceBuffer buffer;
+  final List<(int, int)> _free;
+
+  /// The offset of [size] free bytes, taken, or -1.
+  int take(int size) {
+    for (var i = 0; i < _free.length; i++) {
+      final (at, room) = _free[i];
+      if (room < size) continue;
+      if (room == size) {
+        _free.removeAt(i);
+      } else {
+        _free[i] = (at + size, room - size);
+      }
+      return at;
     }
-    for (final e in tile.extrusions) {
-      buildings.add(BuildingGpu(e, at));
-      part(e.vertices);
-    }
-    if (at > 0) {
-      buffer = Timeline.timeSync('vmap.gpu.alloc', () => _pool.take(at));
-    }
+    return -1;
   }
 
-  final BufferPool _pool;
+  void give(int at, int size) {
+    var i = 0;
+    while (i < _free.length && _free[i].$1 < at) {
+      i++;
+    }
+    _free.insert(i, (at, size));
+    if (i + 1 < _free.length && at + size == _free[i + 1].$1) {
+      _free[i] = (at, size + _free[i + 1].$2);
+      _free.removeAt(i + 1);
+    }
+    if (i > 0 && _free[i - 1].$1 + _free[i - 1].$2 == at) {
+      _free[i - 1] = (_free[i - 1].$1, _free[i - 1].$2 + _free[i].$2);
+      _free.removeAt(i);
+    }
+  }
+}
+
+/// A tile on the GPU, all in one range of a [GpuHeap]: its flat layers'
+/// vertices and indices, then each building layer's vertices. Filled over
+/// as many frames as the engine's budget needs; drawn once [ready].
+class TileGpu implements RendererTileData {
+  factory TileGpu(LoadedTile tile, GpuHeap heap) {
+    final parts = <(ByteData, int)>[];
+    var at = 0;
+    int part(TypedData data) {
+      final start = at;
+      parts.add((ByteData.sublistView(data), at));
+      at =
+          (at + data.lengthInBytes + GpuHeap.align - 1) ~/
+          GpuHeap.align *
+          GpuHeap.align;
+      return start;
+    }
+
+    final stream = tile.gpu;
+    var indexAt = 0;
+    if (stream != null) {
+      part(stream.vertices);
+      indexAt = part(stream.indices);
+    }
+    final buildingsAt = [
+      for (final e in tile.extrusions) (e, part(e.vertices)),
+    ];
+    final range = at > 0 ? heap.take(at) : null;
+    final base = range?.offset ?? 0;
+    return TileGpu._(
+      tile,
+      heap,
+      stream,
+      range,
+      base + indexAt,
+      [for (final (e, offset) in buildingsAt) BuildingGpu(e, base + offset)],
+      [for (final (data, offset) in parts) (data, base + offset)],
+    );
+  }
+
+  TileGpu._(
+    this.tile,
+    this._heap,
+    this.stream,
+    this._range,
+    this.indexOffset,
+    this.buildings,
+    this._parts,
+  );
+
+  final LoadedTile tile;
+  final GpuHeap _heap;
   final GpuStream? stream;
-  final List<BuildingGpu> buildings = [];
-  gpu.DeviceBuffer? buffer;
-  int indexOffset = 0;
+
+  /// The renderer's frame this tile was last drawn in.
+  int drawnFrame = 0;
+  GpuRange? _range;
+  final List<BuildingGpu> buildings;
+
+  /// Where the flat layers' vertices and indices start in [buffer].
+  int get vertexOffset => _range?.offset ?? 0;
+  final int indexOffset;
+
+  gpu.DeviceBuffer? get buffer => _range?.buffer;
 
   /// What to copy, each with where it goes in [buffer], in order.
-  final List<(ByteData, int)> _parts = [];
+  final List<(ByteData, int)> _parts;
   int _part = 0, _sent = 0;
 
   static const _piece = 256 * 1024;
-
-  static int _align(int bytes) => (bytes + 255) & ~255;
 
   bool get ready => _part >= _parts.length;
 
@@ -162,9 +266,9 @@ class TileGpu implements RendererTileData {
 
   @override
   void dispose() {
-    final buffer = this.buffer;
-    if (buffer != null) _pool.give(buffer);
-    this.buffer = null;
+    final range = _range;
+    if (range != null) _heap.give(range);
+    _range = null;
   }
 }
 
