@@ -40,6 +40,7 @@ dependencies:
   flutter_displaymode: ^0.7.0
   latlong2: ^0.10.1
   path_provider: ^2.1.6
+  payv: ^0.1.2
   vector_map_tiles: 9.0.0-beta.13
 
 dev_dependencies:
@@ -63,6 +64,9 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+  assets:
+    - assets/bench_labels.json
+
   fonts:
     - family: GoogleSansFlex
       fonts:
