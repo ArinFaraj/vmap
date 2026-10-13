@@ -23,6 +23,9 @@ const _oldText = bool.fromEnvironment('OLD_TEXT');
 const _gpu = bool.fromEnvironment('GPU');
 const _circles = bool.fromEnvironment('CIRCLES');
 const _zoomTest = bool.fromEnvironment('ZOOMTEST');
+
+/// The zoom test as fast pinches in and out over places not yet loaded.
+const _fastZoom = bool.fromEnvironment('FASTZOOM');
 const _labels = bool.fromEnvironment('LABELS', defaultValue: true);
 const _buildings = bool.fromEnvironment('BUILDINGS', defaultValue: true);
 const _variant = String.fromEnvironment('VARIANT', defaultValue: 'full');
@@ -182,15 +185,40 @@ class _DemoState extends State<_Demo> {
       bearing: -20,
     );
     controller.camera = base;
-    for (var i = 0; i < 2; i++) {
+    if (_fastZoom) {
+      // Out of one city to the country, over to the next, and quickly in.
+      var at = _places['Tilted Erbil']!;
+      controller.camera = at;
+      await Future<void>.delayed(const Duration(seconds: 2));
+      for (final name in ['Sulaymaniyah', 'Duhok', 'Tilted Erbil']) {
+        final next = _places[name]!;
+        await controller.easeTo(
+          at.copyWith(zoom: 8.5, pitch: 20),
+          duration: const Duration(milliseconds: 900),
+        );
+        await controller.easeTo(
+          next.copyWith(zoom: 8.5, pitch: 20),
+          duration: const Duration(milliseconds: 500),
+        );
+        await controller.easeTo(
+          next.copyWith(zoom: 16.5, pitch: 55),
+          duration: const Duration(milliseconds: 1100),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        at = next;
+      }
+    }
+    for (var i = 0; i < (_fastZoom ? 0 : 2); i++) {
       await controller.easeTo(
         base.copyWith(zoom: 17, bearing: 10),
         duration: const Duration(seconds: 3),
       );
       await controller.easeTo(base, duration: const Duration(seconds: 3));
     }
-    await controller.flyTo(_places['Sulaymaniyah']!);
-    await controller.flyTo(base.copyWith(zoom: 15.5, pitch: 55));
+    if (!_fastZoom) {
+      await controller.flyTo(_places['Sulaymaniyah']!);
+      await controller.flyTo(base.copyWith(zoom: 15.5, pitch: 55));
+    }
     SchedulerBinding.instance.removeTimingsCallback(listen);
     int p(List<int> v, double q) {
       if (v.isEmpty) return 0;
