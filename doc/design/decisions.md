@@ -84,13 +84,16 @@ styles. Colour glyphs (`COLR` v0 and v1, `sbix`, `CBDT`) are drawn as
 coloured images in the same atlas. A fallback chain per label covers any
 character the first font lacks.
 
-On the canvas tier the fields are not thresholded at draw time (a colour
-matrix on `drawRawAtlas` doubled raster time on a phone); they are baked
-off the UI thread into sharp glyph and halo pages, one per eighth of an
-octave of size, drawn with `drawRawAtlas` tinted by vertex colour. On the
-Flutter GPU tier a fragment shader reads the fields directly. Measured in
-[progress.md](progress.md); the baked pages' phone raster time is still to
-confirm.
+On the canvas tier glyphs are not drawn from distance fields at all: a
+colour matrix on `drawRawAtlas` doubled raster time on a phone, and baking
+fields into images on the CPU only approximates what Flutter's own
+rasterizer does exactly. Each glyph's outline, read by the shaper, is
+drawn by Flutter into a page per eighth of an octave of size, with its
+halo stroked beside it, and every label of a frame draws from those pages
+with `drawRawAtlas` tinted by vertex colour. On the Flutter GPU tier a
+fragment shader reads distance fields directly. Text no font covers
+(today Cyrillic, Greek and emoji with the default font) falls back to
+`Paragraph` images, so nothing is ever left blank.
 
 ## D10. Two tiers, as specified (2026-10-13)
 

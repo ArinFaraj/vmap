@@ -72,3 +72,20 @@ Phone (Vivo V2514, Impeller Vulkan), the run where the phone was idle:
 - Two traps: `decodeImageFromPixels` wants premultiplied pixels (white
   pixels at zero alpha drew a white box around every glyph), and a 1.5 px
   halo on small text needs a field reaching 8 texels, not 4.
+
+### Glyph text in the engine
+
+`lib/src/glyphs/`: `GlyphFonts` and `layoutText` (bidi, script runs, first
+font with every glyph, wrapping into even lines, alignment, weight through
+the variable font), and `GlyphPages` (outlines rasterized by Flutter per
+size, halo stroked beside each glyph, one `drawRawAtlas` per page image per
+frame). `GlyphSprite` is the label kind that uses them; `VMap` turns them
+on, `VmapLayer` keeps the images. Road names place each glyph on its own
+point of the road, turned along the projected road, so they bend without
+slices and show on a tilted map (viewport aligned; map aligned glyphs that
+lie on the road are not done).
+
+On the emulator, flat and tilted Erbil look as sharp as the image path,
+and road names appear where the image path had none drawn. Layout is about
+125 us a label in a JIT run; it runs inside the existing per frame label
+budget, not yet in the tile worker.
