@@ -49,8 +49,11 @@ class GpuMap implements MapRenderer {
 
   /// A tile's square in tile units, two triangles.
   gpu.DeviceBuffer? _quad;
-  gpu.HostBuffer? _host;
+  _Uniforms? _host;
   List<gpu.Texture> _ring = const [];
+  List<ui.Image> _images = const [];
+  ui.Image? _lastImage;
+  int _inFlight = 0;
   gpu.Texture? _depth, _samples;
   int _next = 0, _width = 0, _height = 0, _frame = 0;
   bool _transient = true;
@@ -193,7 +196,7 @@ class GpuMap implements MapRenderer {
         ),
       );
     }
-    _host = gpu.gpuContext.createHostBuffer();
+    _host = _Uniforms();
     return true;
   }
 
@@ -210,6 +213,11 @@ class GpuMap implements MapRenderer {
           format: _color,
         ),
     ];
+    for (final image in _images) {
+      image.dispose();
+    }
+    _images = [for (final t in _ring) t.asImage()];
+    _lastImage = null;
     final samples = _msaa ? 4 : 1;
     _depth = _scratch(
       width,
@@ -268,7 +276,21 @@ class GpuMap implements MapRenderer {
     final height = (view.height * devicePixelRatio).round();
     if (width <= 0 || height <= 0) return false;
     _size(width, height);
+    // A GPU that falls behind blocks the thread that queues more work for
+    // it, so while two frames are still in flight the last image is shown
+    // again and the frame comes back once one finishes.
+    final shown = _lastImage;
+    if (_inFlight >= 2 && shown != null) {
+      canvas.drawImageRect(
+        shown,
+        ui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
+        ui.Rect.fromLTWH(0, 0, view.width, view.height),
+        _paint,
+      );
+      return true;
+    }
     final target = _ring[_next];
+    final image = _images[_next];
     _next = (_next + 1) % _ring.length;
     final commands = gpu.gpuContext.createCommandBuffer();
     final samples = _samples;
@@ -416,9 +438,14 @@ class GpuMap implements MapRenderer {
     if (sheet.extrusions.isNotEmpty) Timeline.finishSync();
     final more = _more;
 
-    Timeline.timeSync('vmap.gpu.submit', commands.submit);
+    _inFlight++;
+    Timeline.timeSync(
+      'vmap.gpu.submit',
+      () => commands.submit(completionCallback: (_) => _inFlight--),
+    );
+    _lastImage = image;
     canvas.drawImageRect(
-      target.asImage(),
+      image,
       ui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
       ui.Rect.fromLTWH(0, 0, view.width, view.height),
       _paint,
@@ -718,6 +745,11 @@ class GpuMap implements MapRenderer {
     _pool.clear();
     _built.clear();
     _ring = const [];
+    for (final image in _images) {
+      image.dispose();
+    }
+    _images = const [];
+    _lastImage = null;
     _depth = null;
     _samples = null;
   }
@@ -843,6 +875,51 @@ class _Paint {
 
 /// One tile's stream in one host visible buffer, vertices then indices,
 /// filled over as many frames as the upload budget needs.
+/// Uniform data for the frames the GPU may still be reading, in host
+/// visible blocks reused frame after frame. Flutter's HostBuffer checks a
+/// block's room without the write's length and never reuses a block it
+/// added (flutter/flutter#186526, #192392).
+class _Uniforms {
+  static const _frames = 4;
+  static const _blockBytes = 1 << 20;
+  final List<List<gpu.DeviceBuffer>> _blocks = [
+    for (var i = 0; i < _frames; i++) [],
+  ];
+  late final int _align = math.max(
+    16,
+    gpu.gpuContext.minimumUniformByteAlignment,
+  );
+  int _frame = 0, _block = 0, _offset = 0;
+
+  void reset() {
+    _frame = (_frame + 1) % _frames;
+    _block = 0;
+    _offset = 0;
+  }
+
+  gpu.BufferView emplace(ByteData bytes) {
+    final length = bytes.lengthInBytes;
+    var at = (_offset + _align - 1) ~/ _align * _align;
+    final blocks = _blocks[_frame];
+    if (blocks.isEmpty || at + length > _blockBytes) {
+      if (blocks.isNotEmpty) _block++;
+      at = 0;
+    }
+    while (blocks.length <= _block) {
+      blocks.add(
+        gpu.gpuContext.createDeviceBuffer(
+          gpu.StorageMode.hostVisible,
+          math.max(_blockBytes, length),
+        ),
+      );
+    }
+    final buffer = blocks[_block];
+    buffer.overwrite(bytes, destinationOffsetInBytes: at);
+    _offset = at + length;
+    return gpu.BufferView(buffer, offsetInBytes: at, lengthInBytes: length);
+  }
+}
+
 class _TileBuffers {
   _TileBuffers(this.stream, _BufferPool pool)
     : indexOffset = _align(stream.vertices.lengthInBytes),
