@@ -98,9 +98,13 @@ final _stations = VmapOverlay(
   ],
 );
 
+/// Where tiles, the style and its sprites are kept between runs.
+late final String _cacheDirectory;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (Platform.isAndroid) await FlutterDisplayMode.setHighRefreshRate();
+  _cacheDirectory = '${(await getApplicationCacheDirectory()).path}/vmap';
   runApp(const MaterialApp(home: _Demo()));
 }
 
@@ -136,6 +140,7 @@ class _DemoState extends State<_Demo> {
         ? const VmapStyle.builtIn()
         : VmapStyle.url('https://tiles.openfreemap.org/styles/$_styleName'),
     maxCachedTiles: 400,
+    source: TileSourceConfig(cacheDirectory: _cacheDirectory),
     overlay: _circles ? _stations : null,
     glyphText: !_oldText,
     showLabels: _labels,
