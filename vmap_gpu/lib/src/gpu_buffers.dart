@@ -55,8 +55,9 @@ class UniformArena {
 /// Host visible memory in slabs, handed out in ranges, so a tile on its
 /// way to the GPU rarely makes the driver allocate: an allocation stalls
 /// the frame that asks, about a millisecond for every 2 MB on a phone. A
-/// range given back waits out the frames still in flight before it is
-/// handed out again.
+/// range given back waits until every frame submitted before it has
+/// finished on the GPU, which may still read it, before it is handed out
+/// again.
 class GpuHeap {
   static const _slabBytes = 4 << 20;
   static const align = 256;
@@ -71,11 +72,15 @@ class GpuHeap {
   final List<_Slab> _slabs = [];
   final List<(GpuRange, int)> _given = [];
   int used = 0;
+  int _oversize = 0;
 
-  /// The renderer's frame count, which a given back range is stamped with.
+  /// The renderer's paint count, which a tile's last draw is stamped with.
   int frame = 0;
 
-  int get _total => _slabs.length * _slabBytes;
+  /// Frames handed to the GPU, and frames it has finished.
+  int submitted = 0, completed = 0;
+
+  int get _total => _slabs.length * _slabBytes + _oversize;
 
   /// Adds a slab while free room is short, one a frame, so uploads find
   /// room without allocating.
@@ -90,7 +95,10 @@ class GpuHeap {
     _release();
     final size = (bytes + align - 1) ~/ align * align;
     used += size;
-    if (size > _slabBytes) return GpuRange(_create(size), 0, size, null);
+    if (size > _slabBytes) {
+      _oversize += size;
+      return GpuRange(_create(size), 0, size, null);
+    }
     for (final slab in _slabs) {
       final at = slab.take(size);
       if (at >= 0) return GpuRange(slab.buffer, at, size, slab);
@@ -102,13 +110,18 @@ class GpuHeap {
 
   void give(GpuRange range) {
     used -= range.size;
-    _given.add((range, frame));
+    _given.add((range, submitted));
   }
 
   void _release() {
-    while (_given.isNotEmpty && frame - _given.first.$2 > framesInFlight) {
+    while (_given.isNotEmpty && _given.first.$2 <= completed) {
       final range = _given.removeAt(0).$1;
-      range.slab?.give(range.offset, range.size);
+      final slab = range.slab;
+      if (slab == null) {
+        _oversize -= range.size;
+      } else {
+        slab.give(range.offset, range.size);
+      }
     }
   }
 
@@ -121,6 +134,7 @@ class GpuHeap {
     _slabs.clear();
     _given.clear();
     used = 0;
+    _oversize = 0;
   }
 }
 

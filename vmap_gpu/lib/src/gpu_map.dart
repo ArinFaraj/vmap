@@ -110,15 +110,31 @@ class GpuMap implements MapRenderer {
     for (final layer in sheet.layers) {
       if (layer is HeatmapLayer) return false;
     }
-    return _library != null;
+    return _library != null && !_failed;
   }
+
+  /// Set when the shaders or pipelines could not be made on this device,
+  /// so the canvas draws the map.
+  bool _failed = false;
 
   /// Made on the first frame drawn, never before: on OpenGL ES a pipeline
   /// made before the app has a surface can deadlock (flutter/flutter#193890).
   bool _ready() {
-    if (_flat != null) return true;
+    if (_host != null) return true;
+    if (_failed) return false;
     final library = _library;
     if (library == null) return false;
+    try {
+      return _makePipelines(library);
+    } catch (e) {
+      debugPrint('vmap_gpu: no pipelines on this device, the canvas draws: $e');
+      _flat = _buildings = _stencil = null;
+      _failed = true;
+      return false;
+    }
+  }
+
+  bool _makePipelines(gpu.ShaderLibrary library) {
     final mapVertex = library['MapVertex'],
         mapFragment = library['MapFragment'];
     final buildingVertex = library['BuildingVertex'];
@@ -127,7 +143,7 @@ class GpuMap implements MapRenderer {
         mapFragment == null ||
         buildingVertex == null ||
         buildingFragment == null) {
-      return false;
+      throw StateError('the shader bundle lacks the map shaders');
     }
     _flat = gpu.gpuContext.createRenderPipeline(
       mapVertex,
@@ -369,9 +385,10 @@ class GpuMap implements MapRenderer {
       Timeline.timeSync('vmap.gpu.buildings', pass.drawBuildings);
     }
     _inFlight++;
+    _heap.submitted++;
     Timeline.timeSync(
       'vmap.gpu.submit',
-      () => commands.submit(completionCallback: (_) => _inFlight--),
+      () => commands.submit(completionCallback: (_) => _finished()),
     );
     _lastImage = image;
     _present(canvas, image, view);
@@ -445,7 +462,14 @@ class GpuMap implements MapRenderer {
         ..setStencilConfig(config)
         ..draw(3);
     }
-    commands.submit();
+    _inFlight++;
+    _heap.submitted++;
+    commands.submit(completionCallback: (_) => _finished());
+  }
+
+  void _finished() {
+    _inFlight--;
+    _heap.completed++;
   }
 
   gpu.RenderPass _beginPass(gpu.CommandBuffer commands, gpu.Texture target) {
@@ -668,6 +692,11 @@ class GpuMap implements MapRenderer {
 
   @override
   void dispose() {
+    for (final data in _held) {
+      if (identical(data.tile.rendererData, data))
+        data.tile.rendererData = null;
+    }
+    _held.clear();
     _heap.clear();
     _ring = const [];
     for (final image in _images) {

@@ -30,7 +30,7 @@ class LayerPaint {
 
   static final clear = LayerPaint(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
-  /// This paint with its colour, premultiplied, times [k].
+  /// This paint with its colour, premultiplied, and a circle's ring, times [k].
   LayerPaint scaled(double k) => k >= 1
       ? this
       : LayerPaint(
@@ -43,7 +43,7 @@ class LayerPaint {
           translateX,
           translateY,
           dashOn,
-          dashPeriod,
+          circle ? dashPeriod * k : dashPeriod,
           pattern,
           circle,
         );

@@ -755,6 +755,17 @@ class VmapEngine extends ChangeNotifier {
     _budget.start(zooming: (camera.zoom - _lastZoom).abs() > 0.002);
     final gpu = renderer;
     final onGpu = camera.view != null && gpu != null && gpu.supports(sheet);
+    if (!onGpu && _onGpu) {
+      // Tiles made ready for the renderer have no canvas meshes, and the
+      // data to make them is gone; they are built again.
+      for (final s in _sources) {
+        for (final t in s.tiles.values.followedBy(s.previous.values)) {
+          t.dispose();
+        }
+        s.tiles.clear();
+        s.previous.clear();
+      }
+    }
     if (onGpu && !_onGpu) {
       for (final s in _sources) {
         for (final t in s.tiles.values.followedBy(s.previous.values)) {
