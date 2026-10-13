@@ -404,31 +404,46 @@ class GpuMap implements MapRenderer {
       );
   }
 
-  /// A layer's paint, with footprints kept past their range and faded as
-  /// their buildings rise.
+  /// A layer's paint for tile [d], with footprints kept past their range
+  /// and faded as the tile's own buildings rise out of them, so they stay
+  /// until those buildings are there.
   LayerPaint _paintOf(
     StyleSheet sheet,
     int layerIndex,
     EvalContext context,
     double styleZoom,
     Map<String, Object?>? props,
+    TileDraw d,
+    TileGpu data,
   ) {
     final layer = sheet.layers[layerIndex];
     final building = sheet.footprints[layerIndex];
     if (building == null) {
       return LayerPaint.of(layer, context, styleZoom, props);
     }
-    final risen = _reveal.risen(building);
+    final risen = _risenIn(d, data, building);
     if (risen >= 1) return LayerPaint.clear;
     final zoom = math.min(styleZoom, layer.maxZoom - 1e-3);
     return LayerPaint.of(layer, context, zoom, props).scaled(1 - risen);
+  }
+
+  /// How far [layer]'s buildings in tile [d] stand, as a fraction of their
+  /// height: 0 where the tile has none.
+  double _risenIn(TileDraw d, TileGpu data, ExtrusionLayer layer) {
+    if (!_reveal.shows(layer)) return 0;
+    for (final b in data.buildings) {
+      if (b.extrusion.bucket != layer.bucket) continue;
+      return _reveal.motion(d.tile.id, layer, b).$2;
+    }
+    return 0;
   }
 
   /// Writes the slots [from] to [to] of [stream] into the slot table, in
   /// tile units for a tile [scale] screen pixels to the unit.
   void _fillSlots(
     StyleSheet sheet,
-    GpuStream stream,
+    TileDraw d,
+    TileGpu data,
     int from,
     int to,
     double scale,
@@ -436,17 +451,20 @@ class GpuMap implements MapRenderer {
     double styleZoom,
   ) {
     final out = _slots;
+    final stream = data.stream!;
     for (var i = from; i < to; i++) {
       final (layerIndex, props) = stream.slots[i];
-      final paint = props == null
+      final paint = props == null && !sheet.footprints.containsKey(layerIndex)
           ? (_layerPaint[layerIndex] ??= _paintOf(
               sheet,
               layerIndex,
               context,
               styleZoom,
               null,
+              d,
+              data,
             ))
-          : _paintOf(sheet, layerIndex, context, styleZoom, props);
+          : _paintOf(sheet, layerIndex, context, styleZoom, props, d, data);
       final o = (i - from) * 8;
       if (paint.circle) {
         out[o] = paint.r;
@@ -684,7 +702,8 @@ class _MapPass {
           : stream.slots.length;
       map._fillSlots(
         _sheet,
-        stream,
+        d,
+        data,
         slotBase,
         slotEnd,
         scale,
