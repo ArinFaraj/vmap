@@ -301,6 +301,12 @@ class GpuMap implements MapRenderer {
     // for a missing one draws where no number is. Tilted, a square is no
     // rectangle on the screen, so scissors cannot do it. Sources tile the
     // map apart, so the numbers are rewritten when the source changes.
+    for (final tiles in [...ideal, ...fallback]) {
+      for (final d in tiles) {
+        _upload(d);
+      }
+    }
+
     var marked = -1;
     void mark(int source) {
       if (source == marked || _stencil == null) return;
@@ -322,6 +328,7 @@ class GpuMap implements MapRenderer {
         );
       void cover(List<TileDraw> tiles, bool clear) {
         for (final (i, d) in tiles.indexed) {
+          if (!_shown(d)) continue;
           _times(clip, d.size / tileExtent, 1, d.left, d.top, 1);
           pass
             ..setStencilReference(clear ? 0 : i + 1)
@@ -417,7 +424,11 @@ class GpuMap implements MapRenderer {
       _paint,
     );
     if (_frame % 120 == 0) {
-      _tiles.removeWhere((_, b) => _frame - b.usedFrame > 600);
+      _tiles.removeWhere((_, b) {
+        if (_frame - b.usedFrame <= 600) return false;
+        _pool.give(b.buffer);
+        return true;
+      });
       _built.removeWhere((_, b) => _frame - b.usedFrame > 600);
     }
     return more;
@@ -434,6 +445,38 @@ class GpuMap implements MapRenderer {
 
   int _budget = 0;
   bool _more = false;
+  final _pool = _BufferPool();
+
+  /// Whether [d]'s geometry is all on the GPU, so it draws and claims its
+  /// square; a tile still arriving leaves its square to stand-ins.
+  bool _shown(TileDraw d) {
+    final stream = d.tile.gpu;
+    return stream != null && (_tiles[stream]?.ready ?? false);
+  }
+
+  /// Sends what this frame's budget allows of [d]'s geometry.
+  void _upload(TileDraw d) {
+    final stream = d.tile.gpu;
+    if (stream == null) return;
+    final known = _tiles[stream];
+    if (known != null && known.ready) return;
+    if (_budget <= 0) {
+      _more = true;
+      return;
+    }
+    final buffers =
+        known ??
+        (_tiles[stream] = Timeline.timeSync(
+          'vmap.gpu.upload.alloc',
+          () => _TileBuffers(stream, _pool),
+        ));
+    buffers.usedFrame = _frame;
+    _budget -= Timeline.timeSync(
+      'vmap.gpu.upload.copy',
+      () => buffers.send(_budget),
+    );
+    if (!buffers.ready) _more = true;
+  }
 
   /// The style's sprite sheet as a texture, for patterned fills.
   void _bindSprites(gpu.RenderPass pass) {
@@ -480,20 +523,8 @@ class GpuMap implements MapRenderer {
     final from = stream.layerFirst[run.first];
     final to = stream.layerFirst[run.end];
     if (from == to) return;
-    var buffers = _tiles[stream];
-    if (buffers == null) {
-      final bytes =
-          stream.vertices.lengthInBytes + stream.indices.lengthInBytes;
-      if (_budget < _bytesPerFrame && bytes > _budget) {
-        _more = true;
-        return;
-      }
-      _budget -= bytes;
-      buffers = _tiles[stream] = Timeline.timeSync(
-        'vmap.gpu.upload.tile',
-        () => _TileBuffers(stream),
-      );
-    }
+    final buffers = _tiles[stream];
+    if (buffers == null || !buffers.ready) return;
     buffers.usedFrame = _frame;
     final host = _host!;
     final scale = d.size / tileExtent;
@@ -501,7 +532,7 @@ class GpuMap implements MapRenderer {
     pass
       ..bindVertexBuffer(
         gpu.BufferView(
-          buffers.vertices,
+          buffers.buffer,
           offsetInBytes: 0,
           lengthInBytes: stream.vertices.lengthInBytes,
         ),
@@ -521,8 +552,8 @@ class GpuMap implements MapRenderer {
         ..bindUniform(_flatSlots!, host.emplace(_slotBytes))
         ..bindIndexBuffer(
           gpu.BufferView(
-            buffers.indices,
-            offsetInBytes: first * 4,
+            buffers.buffer,
+            offsetInBytes: buffers.indexOffset + first * 4,
             lengthInBytes: count * 4,
           ),
           gpu.IndexType.int32,
@@ -684,6 +715,7 @@ class GpuMap implements MapRenderer {
   @override
   void dispose() {
     _tiles.clear();
+    _pool.clear();
     _built.clear();
     _ring = const [];
     _depth = null;
@@ -809,18 +841,86 @@ class _Paint {
   }
 }
 
+/// One tile's stream in one host visible buffer, vertices then indices,
+/// filled over as many frames as the upload budget needs.
 class _TileBuffers {
-  _TileBuffers(GpuStream stream)
-    : vertices = gpu.gpuContext.createDeviceBufferWithCopy(
-        ByteData.sublistView(stream.vertices),
-      ),
-      indices = gpu.gpuContext.createDeviceBufferWithCopy(
-        ByteData.sublistView(stream.indices),
+  _TileBuffers(this.stream, _BufferPool pool)
+    : indexOffset = _align(stream.vertices.lengthInBytes),
+      buffer = pool.take(
+        _align(stream.vertices.lengthInBytes) + stream.indices.lengthInBytes,
       );
 
-  final gpu.DeviceBuffer vertices;
-  final gpu.DeviceBuffer indices;
+  final GpuStream stream;
+  final gpu.DeviceBuffer buffer;
+  final int indexOffset;
   int usedFrame = 0;
+  int _sent = 0;
+
+  static int _align(int bytes) => (bytes + 255) & ~255;
+
+  int get _vertexBytes => stream.vertices.lengthInBytes;
+  int get _total => _vertexBytes + stream.indices.lengthInBytes;
+  bool get ready => _sent >= _total;
+
+  /// Copies up to [most] more bytes and returns how many it copied.
+  int send(int most) {
+    var left = most;
+    while (left > 0 && !ready) {
+      final inVertices = _sent < _vertexBytes;
+      final source = inVertices
+          ? ByteData.sublistView(stream.vertices)
+          : ByteData.sublistView(stream.indices);
+      final from = inVertices ? _sent : _sent - _vertexBytes;
+      final n = math.min(left, source.lengthInBytes - from);
+      final at = inVertices ? from : indexOffset + from;
+      buffer.overwrite(
+        ByteData.sublistView(source, from, from + n),
+        destinationOffsetInBytes: at,
+      );
+      buffer.flush(offsetInBytes: at, lengthInBytes: n);
+      _sent += n;
+      left -= n;
+    }
+    return most - left;
+  }
+}
+
+/// Host visible buffers kept for reuse in power of two sizes, so a new
+/// tile rarely asks the driver for memory.
+class _BufferPool {
+  final Map<int, List<gpu.DeviceBuffer>> _free = {};
+  int _freeBytes = 0;
+  static const _keepBytes = 32 << 20;
+
+  static int _size(int bytes) {
+    var size = 64 << 10;
+    while (size < bytes) {
+      size <<= 1;
+    }
+    return size;
+  }
+
+  gpu.DeviceBuffer take(int bytes) {
+    final size = _size(bytes);
+    final list = _free[size];
+    if (list != null && list.isNotEmpty) {
+      _freeBytes -= size;
+      return list.removeLast();
+    }
+    return gpu.gpuContext.createDeviceBuffer(gpu.StorageMode.hostVisible, size);
+  }
+
+  void give(gpu.DeviceBuffer buffer) {
+    final size = buffer.sizeInBytes;
+    if (_freeBytes + size > _keepBytes) return;
+    (_free[size] ??= []).add(buffer);
+    _freeBytes += size;
+  }
+
+  void clear() {
+    _free.clear();
+    _freeBytes = 0;
+  }
 }
 
 /// One tile's buildings on the GPU, sent in pieces so no frame copies
