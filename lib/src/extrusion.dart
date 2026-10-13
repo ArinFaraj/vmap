@@ -176,10 +176,28 @@ class ExtrusionBuilder {
         );
 }
 
+/// Draws a style's buildings standing up on a tilted map. vmap's own draws
+/// them with the canvas; another may draw them on the GPU with a depth
+/// buffer.
+abstract class BuildingRenderer {
+  void paint(
+    ui.Canvas canvas,
+    MapView view,
+    ui.Offset origin,
+    StyleSheet sheet,
+    Iterable<TileDraw> tiles,
+    EvalContext context,
+    double styleZoom,
+    double devicePixelRatio,
+  );
+
+  void dispose() {}
+}
+
 /// Draws buildings standing up on a tilted map with the canvas: walls and
 /// roofs projected through the view, farthest building first, walls facing
 /// away from the camera left out and each wall shaded by where it faces.
-class ExtrusionPainter {
+class ExtrusionPainter implements BuildingRenderer {
   Float32List _positions = Float32List(1 << 14);
   Int32List _colors = Int32List(1 << 13);
   int _vertices = 0;
@@ -190,6 +208,10 @@ class ExtrusionPainter {
   /// The direction light comes from on the ground: the north west.
   static const _lightX = -0.6, _lightY = -0.8;
 
+  @override
+  void dispose() {}
+
+  @override
   void paint(
     ui.Canvas canvas,
     MapView view,
@@ -198,6 +220,7 @@ class ExtrusionPainter {
     Iterable<TileDraw> tiles,
     EvalContext context,
     double styleZoom,
+    double devicePixelRatio,
   ) {
     for (final layer in sheet.extrusions) {
       if (styleZoom < layer.minZoom || styleZoom >= layer.maxZoom) continue;

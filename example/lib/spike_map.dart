@@ -7,10 +7,13 @@ import 'package:flutter/scheduler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:vmap/vmap.dart';
 
+import 'gpu/gpu_buildings.dart';
+
 const _out = String.fromEnvironment('OUT', defaultValue: '/tmp/vmap_fly');
 const _styleName = String.fromEnvironment('STYLE');
 const _script = bool.fromEnvironment('SCRIPT');
 const _oldText = bool.fromEnvironment('OLD_TEXT');
+const _gpu = bool.fromEnvironment('GPU');
 
 const _erbil = MapCameraPosition(
   latitude: 36.1912,
@@ -64,6 +67,10 @@ class _DemoState extends State<_Demo> {
   @override
   void initState() {
     super.initState();
+    if (_gpu) {
+      final buildings = GpuBuildings.create();
+      if (buildings != null) engine.buildingRenderer = buildings;
+    }
     if (_script) _run();
   }
 

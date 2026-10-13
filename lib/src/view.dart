@@ -140,6 +140,29 @@ class MapView {
     ]);
   }
 
+  /// A column-major matrix from world pixels less [originX], [originY], with
+  /// z the height above the ground in world pixels, to clip space: x and y
+  /// as the screen shows them, y up, and depth from 0 at [near] to 1 at
+  /// [far], both as multiples of the camera's distance to the centre.
+  Float64List clipMatrix({
+    double originX = 0,
+    double originY = 0,
+    double near = 0.05,
+    double far = 20,
+  }) {
+    final u0 = -(_cosB * _cx + _sinB * _cy) + _cosB * originX + _sinB * originY;
+    final v0 = _sinB * _cx - _cosB * _cy - _sinB * originX + _cosB * originY;
+    final w = width, h = height, d = cameraToCenterDistance;
+    final a = far / (far - near), b = near * far / (near - far);
+    final wx = _k * _sinB, wy = -_k * _cosB, wz = -_cosP / d, wc = 1 - _k * v0;
+    return Float64List.fromList([
+      2 * _cosB / w, 2 * _cosP * _sinB / h, a * wx, wx, //
+      2 * _sinB / w, -2 * _cosP * _cosB / h, a * wy, wy,
+      0, 2 * _sinP / h, a * wz, wz,
+      2 * u0 / w, -2 * _cosP * v0 / h, a * wc + b, wc,
+    ]);
+  }
+
   /// The ground the screen shows, as the four corners in world pixels,
   /// clockwise from the top left.
   List<WorldPoint> ground() => [

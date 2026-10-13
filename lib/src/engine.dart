@@ -96,7 +96,15 @@ class VmapEngine extends ChangeNotifier {
   final List<RasterDrawing<RasterLayer>> _rasters = [];
   final VmapStats stats = VmapStats();
   final EvalContext _context = EvalContext();
-  final ExtrusionPainter _extrusions = ExtrusionPainter();
+  BuildingRenderer _buildings = ExtrusionPainter();
+
+  /// What draws buildings standing on a tilted map: the canvas unless set.
+  set buildingRenderer(BuildingRenderer value) {
+    _buildings.dispose();
+    _buildings = value;
+    notifyListeners();
+  }
+
   VmapStyle _style;
   int _frame = 0;
   int _lastPaintMicros = 0;
@@ -763,7 +771,7 @@ class VmapEngine extends ChangeNotifier {
     if (view != null) {
       canvas.restore();
       if (sheet.extrusions.isNotEmpty) {
-        _extrusions.paint(
+        _buildings.paint(
           canvas,
           view,
           camera.origin,
@@ -771,6 +779,7 @@ class VmapEngine extends ChangeNotifier {
           [for (final s in _sources) ...s.ideal],
           _context,
           styleZoom,
+          camera.devicePixelRatio,
         );
       }
     }
@@ -902,6 +911,7 @@ class VmapEngine extends ChangeNotifier {
     _labels
       ..clear()
       ..disposeGlyphs();
+    _buildings.dispose();
     _sprites?.dispose();
     _meshes.dispose();
     for (final r in _rasters) {

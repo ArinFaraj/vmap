@@ -1,0 +1,10 @@
+{
+  "BuildingVertex": {
+    "type": "vertex",
+    "file": "shaders/building.vert"
+  },
+  "BuildingFragment": {
+    "type": "fragment",
+    "file": "shaders/building.frag"
+  }
+}
