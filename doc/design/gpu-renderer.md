@@ -64,3 +64,35 @@ then be faded with one depth read per label anchor.
 | --- | --- |
 | Flutter GPU, M-series Mac, 100 to 1000 draws a frame | 2.5 to 1.6 us |
 | Phone | to measure |
+
+## Learned from other Flutter GPU projects
+
+Read 2026-10-13: hyshu/maplibre_flutter_gpu (MapLibre core replayed through
+Flutter GPU), bdero/flutter_scene, definev/gputext, and the Flutter GPU
+package source on our pinned SDK.
+
+- Uniforms: Flutter's `HostBuffer` checks a block's room without the
+  write's length and adds a new block every frame once one fills
+  (flutter/flutter#186526 and #192392, both open). flutter_scene keeps its
+  own arena; so do we (`_Uniforms`), reusing blocks across four frames.
+- Frame pacing: Vulkan and Metal encode on the thread that submits, so a
+  GPU that falls behind blocks the UI thread. flutter_scene submits with a
+  completion callback and shows the last image while frames are in flight;
+  we allow two.
+- Presenting: make each ring texture's `ui.Image` once (hyshu), not every
+  frame. Flutter now has `GpuImageSurface` (flutter/flutter#187358, merged
+  2026-06-13), which manages that ring safely; not on our pinned SDK yet.
+- Keep depth, MSAA and resolve textures created together: Vulkan's
+  framebuffer cache keys on the colour attachment alone
+  (flutter/flutter#192538, open), so a resolve texture met with another
+  depth texture can crash on Mali.
+- Big buffers: hyshu packs small uploads into 1 MB host visible pages with
+  `overwrite` and `flush`; we pool power of two buffers per tile and fill
+  them within a per-frame budget, which none of the projects does.
+- Text: gputext and the PDF renderer draw glyphs from curve data in the
+  shader (Slug style), no halos. Nobody draws haloed map labels on Flutter
+  GPU; ours are CPU rasterized in an isolate with distance field halos.
+- GLES: hyshu and gputext compile shaders for GLSL ES 3.00, which allows
+  integer attributes and bit operations; we target 1.00 with exact float
+  packing. Whether moving to 3.00 drops any device we care about is not
+  checked.
