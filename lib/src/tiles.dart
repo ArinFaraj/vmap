@@ -10,6 +10,7 @@ import 'tile_builder.dart';
 import 'worker.dart';
 import 'mercator.dart';
 import 'tile_id.dart';
+import 'view.dart';
 
 class MeshStroke {
   MeshStroke(this.pass, this.halfWidth, this.offset, this.vertices);
@@ -272,6 +273,16 @@ class TileSource {
     retrying = false;
     final size = camera.size;
     maxDataZoom = pool.maxZoom;
+    final view = camera.view;
+    if (view != null) {
+      return _coverView(
+        view,
+        camera,
+        frame: frame,
+        nowMs: nowMs,
+        prepare: prepare,
+      );
+    }
     final tz = dataZoom.floor().clamp(0, maxDataZoom);
     final tileSize = 256.0 * math.pow(2, camera.zoom - tz);
     final TileRange(:n, :x0, :x1, :y0, :y1) = _inView(camera, tz, tileSize);
@@ -314,6 +325,73 @@ class TileSource {
     }
     if (covered && !waiting) dropPrevious();
     _updateWanted(tz, camera, size, frame, nowMs);
+    return waiting;
+  }
+
+  /// [cover] for a tilted view: tiles nearer the camera at the view's zoom,
+  /// farther ones a level or more coarser.
+  bool _coverView(
+    MapView view,
+    VmapCamera camera, {
+    required int frame,
+    required int nowMs,
+    required void Function(LoadedTile tile, double scale) prepare,
+  }) {
+    ideal.clear();
+    fallback.clear();
+    fallbackByKey.clear();
+    missing.clear();
+    var waiting = false;
+    var covered = true;
+    final origin = camera.origin;
+    final picked = view.cover(maxZoom: maxDataZoom);
+    for (final (rank, t) in picked.indexed) {
+      final n = 1 << t.z;
+      if (t.y < 0 || t.y >= n) continue;
+      final id = TileId(t.z, t.x % n, t.y);
+      final span = view.worldSize / n;
+      final left = t.x * span - origin.dx;
+      final top = t.y * span - origin.dy;
+      final tile = tiles[id];
+      if (tile != null) {
+        tile.usedFrame = frame;
+        if (!tile.prepared) prepare(tile, span / tileExtent);
+        if (tile.prepared) {
+          ideal.add(TileDraw(tile, left, top, span));
+          continue;
+        }
+        waiting = true;
+      } else {
+        covered = false;
+        missing.add((id, rank.toDouble()));
+      }
+      final before = previous[id];
+      if (before != null && before.prepared) {
+        ideal.add(TileDraw(before, left, top, span));
+        continue;
+      }
+      _addFallback(frame, id, t.x, t.y, left, top, span, origin);
+    }
+    if (covered && !waiting) dropPrevious();
+    wanted.clear();
+    missing.sort((a, b) => a.$2.compareTo(b.$2));
+    for (final (id, _) in missing) {
+      final failed = failedAt[id];
+      if (failed != null && nowMs - failed < 3000) {
+        retrying = true;
+        continue;
+      }
+      wanted.add(id);
+    }
+    for (final t in picked) {
+      if (t.z == 0) continue;
+      final parent = tiles[TileId(t.z - 1, (t.x % (1 << t.z)) >> 1, t.y >> 1)];
+      parent?.usedFrame = frame;
+    }
+    if (wanted.isNotEmpty || hadWanted) {
+      pool.want(List.of(wanted));
+    }
+    hadWanted = wanted.isNotEmpty;
     return waiting;
   }
 

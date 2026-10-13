@@ -700,6 +700,14 @@ class VmapEngine extends ChangeNotifier {
     if (!waiting) _prepareBackdrop(camera.zoom);
 
     var draws = 0;
+    final view = camera.view;
+    if (view != null) {
+      canvas
+        ..save()
+        ..transform(
+          view.matrix(originX: camera.origin.dx, originY: camera.origin.dy),
+        );
+    }
     for (final run in sheet.runs) {
       if (run.raster >= 0) {
         _rasters[run.raster].paint(
@@ -722,9 +730,11 @@ class VmapEngine extends ChangeNotifier {
       );
     }
 
+    if (view != null) canvas.restore();
+
     var animating = false;
     final labelsStarted = _clock.elapsedMicroseconds;
-    if (showLabels) {
+    if (showLabels && view == null) {
       final shown = [
         for (final s in _sources) ...[...s.ideal, ...s.fallback],
       ];
