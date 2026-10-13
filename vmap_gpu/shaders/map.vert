@@ -39,6 +39,10 @@ void main() {
   vec4 p = slot_info.slot[s * 2 + 1];
   vec2 pos = position;
   v_edge = vec3(0.0);
+  if (kind < 0.5) {
+    // A fill: p.xy is how far it is moved, in tile units.
+    pos += p.xy;
+  }
   if (kind > 0.5 && kind < 1.5) {
     // A line is drawn half a device pixel wider and its outermost pixel
     // faded, as MapLibre does, so its edges are smooth without

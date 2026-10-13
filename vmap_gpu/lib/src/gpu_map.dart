@@ -109,6 +109,12 @@ class GpuMap implements MapRenderer {
     }
     for (final layer in sheet.layers) {
       if (layer is HeatmapLayer) return false;
+      // Not drawn on the GPU yet: the canvas draws the map rather than
+      // leave these lines out.
+      if (layer is LineLayer &&
+          (layer.pattern != null || layer.gradient != null)) {
+        return false;
+      }
     }
     return _library != null && !_failed;
   }
@@ -644,9 +650,21 @@ class GpuMap implements MapRenderer {
       out[o + 1] = paint.g;
       out[o + 2] = paint.b;
       out[o + 3] = paint.a;
+      if (sheet.layers[layerIndex] is! LineLayer) {
+        // A fill: how far it is moved, in tile units.
+        out[o + 4] = paint.translateX / scale;
+        out[o + 5] = paint.translateY / scale;
+        out[o + 6] = 0;
+        out[o + 7] = 0;
+        continue;
+      }
       out[o + 4] = paint.halfWidth / scale;
       out[o + 5] = paint.offset / scale;
-      out[o + 6] = paint.dashOn / scale;
+      // A dash period of zero means no dashes, and then a line drawn as two
+      // gives its gap's share of the half width as a negative dash length.
+      out[o + 6] = paint.dashPeriod > 0
+          ? paint.dashOn / scale
+          : -paint.gapShare;
       out[o + 7] = paint.dashPeriod / scale;
     }
   }

@@ -46,7 +46,13 @@ void main() {
   // A line's outermost device pixel fades to its edge; v_edge.z is its
   // half width in device pixels, zero for anything not a line.
   if (v_edge.z > 0.0) {
-    color *= clamp(v_edge.z * (1.0 - length(v_edge.xy)), 0.0, 1.0);
+    float across = length(v_edge.xy);
+    color *= clamp(v_edge.z * (1.0 - across), 0.0, 1.0);
+    // A line drawn as two: -v_dash.y is the gap's share of the half width,
+    // its inner edge faded the same way.
+    if (v_dash.y < 0.0) {
+      color *= clamp(v_edge.z * (across + v_dash.y) + 0.5, 0.0, 1.0);
+    }
   }
   frag_color = vec4(mix(color.rgb, v_fog.rgb * color.a, v_fog.a), color.a);
 }

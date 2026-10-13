@@ -15,6 +15,7 @@ class LayerPaint {
     this.dashPeriod, [
     this.pattern,
     this.circle = false,
+    this.gapShare = 0,
   ]);
 
   /// A circle: [halfWidth] is its radius, [offset] its ring's width,
@@ -24,6 +25,10 @@ class LayerPaint {
 
   /// The sprite a patterned fill repeats.
   final String? pattern;
+
+  /// A line drawn as two: the share of its half width the gap down its
+  /// middle takes.
+  final double gapShare;
 
   final double r, g, b, a;
   final double halfWidth, offset, translateX, translateY, dashOn, dashPeriod;
@@ -46,6 +51,7 @@ class LayerPaint {
           circle ? dashPeriod * k : dashPeriod,
           pattern,
           circle,
+          gapShare,
         );
 
   static LayerPaint of(
@@ -66,8 +72,11 @@ class LayerPaint {
         1.0,
       );
       var width = 0.0, offset = 0.0, dashOn = 0.0, dashPeriod = 0.0;
+      var gapShare = 0.0;
       if (layer is LineLayer) {
         width = (asNumber(layer.width(context)) ?? 0).toDouble();
+        final gap = (asNumber(layer.gap?.call(context)) ?? 0).toDouble();
+        if (gap > 0 && width > 0) gapShare = (gap / width).clamp(0.0, 1.0);
         offset = (asNumber(layer.offset?.call(context)) ?? 0).toDouble();
         final dash = layer.dash;
         if (dash != null && dash.length >= 2 && width > 0) {
@@ -129,6 +138,8 @@ class LayerPaint {
         dashOn,
         dashPeriod,
         pattern is String && pattern.isNotEmpty ? pattern : null,
+        false,
+        gapShare,
       );
     } finally {
       if (props != null) context.props = const {};

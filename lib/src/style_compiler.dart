@@ -507,8 +507,8 @@ class StyleCompiler {
     final own = compileExpr(paint['line-width'] ?? 1);
     final gap = paint['line-gap-width'];
     Expr width = own;
-    if (gap != null) {
-      final between = compileExpr(gap);
+    final between = gap == null ? null : compileExpr(gap);
+    if (between != null) {
       width = (c) => (asNumber(own(c)) ?? 1) * 2 + (asNumber(between(c)) ?? 0);
     }
     final picture = paint['line-pattern'];
@@ -545,6 +545,7 @@ class StyleCompiler {
               : '#ffffff',
         ),
         gradient: _maybe(ramp),
+        gap: between,
         opacity: compileExpr(paint['line-opacity'] ?? 1),
         width: width,
         offset: _maybe(beside),

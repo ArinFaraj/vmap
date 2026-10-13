@@ -208,6 +208,7 @@ final class LineLayer extends MeshLayer
     this.dashCap = DashCap.butt,
     this.pattern,
     this.gradient,
+    this.gap,
   });
 
   @override
@@ -233,6 +234,10 @@ final class LineLayer extends MeshLayer
   /// `line-gradient`: the colour at each share of the way along a line,
   /// read with `line-progress`.
   final Expr? gradient;
+
+  /// `line-gap-width`: the width of the gap down the middle of a line drawn
+  /// as two, in logical pixels. [width] spans both sides and the gap.
+  final Expr? gap;
 }
 
 final class CircleLayer extends MeshLayer implements StrokedLayer {
