@@ -304,6 +304,7 @@ class GpuMap implements MapRenderer {
     final height = (view.height * devicePixelRatio).round();
     if (width <= 0 || height <= 0) return false;
     _size(width, height);
+    if (!_warm) _warmUp();
     // A GPU that falls behind blocks the thread that queues more work for
     // it, so while two frames are still in flight the last image is shown
     // again and the frame comes back once one finishes.
@@ -342,7 +343,77 @@ class GpuMap implements MapRenderer {
     );
     _lastImage = image;
     _present(canvas, image, view);
-    return _reveal.animating;
+    return _reveal.animating || _spritesLoading;
+  }
+
+  bool _warm = false;
+
+  /// Draws nothing in every state a frame uses, once: a GPU makes a
+  /// pipeline variant the first time a state is drawn in, which stalls that
+  /// frame for several milliseconds.
+  void _warmUp() {
+    _warm = true;
+    final commands = gpu.gpuContext.createCommandBuffer();
+    final pass = _beginPass(commands, _ring.last);
+    final host = _host!;
+    final zeros = gpu.gpuContext.createDeviceBufferWithCopy(ByteData(96));
+    final vertices = gpu.BufferView(zeros, offsetInBytes: 0, lengthInBytes: 96);
+    final frame = host.emplace(ByteData(_frameBytes.lengthInBytes));
+    final equal = gpu.StencilConfig(compareFunction: gpu.CompareFunction.equal);
+    final stencil = _stencil;
+    if (stencil != null) {
+      pass
+        ..bindPipeline(stencil)
+        ..setCullMode(gpu.CullMode.none)
+        ..setDepthWriteEnable(false)
+        ..setDepthCompareOperation(gpu.CompareFunction.always)
+        ..setColorBlendEnable(true)
+        ..setColorBlendEquation(_over)
+        ..setStencilConfig(
+          gpu.StencilConfig(
+            depthStencilPassOperation: gpu.StencilOperation.setToReferenceValue,
+          ),
+        )
+        ..bindVertexBuffer(vertices)
+        ..bindUniform(_stencilFrame!, frame)
+        ..draw(3)
+        ..clearBindings();
+    }
+    pass
+      ..bindPipeline(_flat!)
+      ..setDepthWriteEnable(false)
+      ..setDepthCompareOperation(gpu.CompareFunction.always)
+      ..setCullMode(gpu.CullMode.none)
+      ..setColorBlendEnable(true)
+      ..setColorBlendEquation(_over);
+    _bindSprites(pass);
+    pass
+      ..bindVertexBuffer(vertices)
+      ..bindUniform(_flatFrame!, frame)
+      ..bindUniform(
+        _flatSlots!,
+        host.emplace(ByteData(_slotBytes.lengthInBytes)),
+      );
+    for (final config in [gpu.StencilConfig(), equal]) {
+      pass
+        ..setStencilConfig(config)
+        ..draw(3);
+    }
+    pass
+      ..clearBindings()
+      ..bindPipeline(_buildings!)
+      ..setCullMode(gpu.CullMode.none)
+      ..setColorBlendEnable(true)
+      ..setDepthWriteEnable(true)
+      ..setDepthCompareOperation(gpu.CompareFunction.lessEqual)
+      ..bindVertexBuffer(vertices)
+      ..bindUniform(_buildingFrame!, frame);
+    for (final config in [gpu.StencilConfig(), equal]) {
+      pass
+        ..setStencilConfig(config)
+        ..draw(3);
+    }
+    commands.submit();
   }
 
   gpu.RenderPass _beginPass(gpu.CommandBuffer commands, gpu.Texture target) {
@@ -374,19 +445,36 @@ class GpuMap implements MapRenderer {
     );
   }
 
+  /// Copies the sprite sheet's pixels into a texture. Read back on the
+  /// raster thread off the frame, since making a texture from an image
+  /// directly stalls the frame that asks.
+  Future<void> _loadSprites(ui.Image image) async {
+    _spritesLoading = true;
+    try {
+      final pixels = await image.toByteData();
+      if (pixels == null || !identical(image, _sheetImage)) return;
+      _sheetTexture = gpu.gpuContext.createTexture(
+        gpu.StorageMode.hostVisible,
+        image.width,
+        image.height,
+        format: gpu.PixelFormat.r8g8b8a8UNormInt,
+      )..overwrite(pixels);
+    } catch (e) {
+      debugPrint('vmap_gpu: the sprite sheet is not on the GPU: $e');
+    } finally {
+      _spritesLoading = false;
+    }
+  }
+
+  bool _spritesLoading = false;
+
   /// The style's sprite sheet as a texture, for patterned fills.
   void _bindSprites(gpu.RenderPass pass) {
     final image = _sheet?.image;
     if (!identical(image, _sheetImage)) {
       _sheetImage = image;
       _sheetTexture = null;
-      if (image != null) {
-        try {
-          _sheetTexture = gpu.Texture.fromImage(gpu.gpuContext, image);
-        } catch (e) {
-          debugPrint('vmap_gpu: the sprite sheet is not on the GPU: $e');
-        }
-      }
+      if (image != null) _loadSprites(image);
     }
     final texture = _sheetTexture ?? _blank;
     _fragInfo
@@ -766,19 +854,17 @@ class _MapPass {
           if (b.extrusion.bucket != layer.bucket) continue;
           final (fade, grow) = map._reveal.motion(d.tile.id, layer, b);
           final scale = d.size / tileExtent;
-          for (var c = 0; c < b.buffers.length; c++) {
-            map._times(_clip, scale, perMetre, d.left, d.top, fade, grow);
-            _pass
-              ..bindVertexBuffer(
-                gpu.BufferView(
-                  b.buffers[c],
-                  offsetInBytes: 0,
-                  lengthInBytes: b.chunkBytes(c),
-                ),
-              )
-              ..bindUniform(map._buildingFrame!, host.emplace(map._frameBytes))
-              ..draw(b.chunkBytes(c) ~/ BuildingGpu.stride);
-          }
+          map._times(_clip, scale, perMetre, d.left, d.top, fade, grow);
+          _pass
+            ..bindVertexBuffer(
+              gpu.BufferView(
+                data.buffer!,
+                offsetInBytes: b.offset,
+                lengthInBytes: b.vertexCount * BuildingGpu.stride,
+              ),
+            )
+            ..bindUniform(map._buildingFrame!, host.emplace(map._frameBytes))
+            ..draw(b.vertexCount);
         }
       }
     }

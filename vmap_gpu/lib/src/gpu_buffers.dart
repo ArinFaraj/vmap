@@ -1,3 +1,4 @@
+import 'dart:developer' show Timeline;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -95,71 +96,68 @@ class BufferPool {
   }
 }
 
-/// A tile on the GPU: its flat layers' stream in one pooled buffer,
-/// vertices then indices, and its buildings in pieces. Filled over as
-/// many frames as the engine's budget needs; drawn once [ready].
+/// A tile on the GPU, all in one pooled buffer: its flat layers' vertices
+/// and indices, then each building layer's vertices. Filled over as many
+/// frames as the engine's budget needs; drawn once [ready].
 class TileGpu implements RendererTileData {
-  TileGpu(LoadedTile tile, this._pool)
-    : stream = tile.gpu,
-      buildings = [for (final e in tile.extrusions) BuildingGpu(e)] {
+  TileGpu(LoadedTile tile, this._pool) : stream = tile.gpu {
+    var at = 0;
+    void part(TypedData data) {
+      _parts.add((ByteData.sublistView(data), at));
+      at = _align(at + data.lengthInBytes);
+    }
+
     final stream = this.stream;
     if (stream != null) {
-      indexOffset = _align(stream.vertices.lengthInBytes);
-      buffer = _pool.take(indexOffset + stream.indices.lengthInBytes);
+      part(stream.vertices);
+      indexOffset = at;
+      part(stream.indices);
+    }
+    for (final e in tile.extrusions) {
+      buildings.add(BuildingGpu(e, at));
+      part(e.vertices);
+    }
+    if (at > 0) {
+      buffer = Timeline.timeSync('vmap.gpu.alloc', () => _pool.take(at));
     }
   }
 
   final BufferPool _pool;
   final GpuStream? stream;
-  final List<BuildingGpu> buildings;
+  final List<BuildingGpu> buildings = [];
   gpu.DeviceBuffer? buffer;
   int indexOffset = 0;
-  int _sent = 0;
+
+  /// What to copy, each with where it goes in [buffer], in order.
+  final List<(ByteData, int)> _parts = [];
+  int _part = 0, _sent = 0;
 
   static const _piece = 256 * 1024;
 
   static int _align(int bytes) => (bytes + 255) & ~255;
 
-  bool get _streamSent {
-    final stream = this.stream;
-    return stream == null ||
-        _sent >= stream.vertices.lengthInBytes + stream.indices.lengthInBytes;
-  }
+  bool get ready => _part >= _parts.length;
 
-  bool get ready => _streamSent && buildings.every((b) => b.ready);
-
-  /// Sends pieces until [clock] passes [deadline], at least one, and returns
-  /// [ready].
+  /// Copies pieces until [clock] passes [deadline], at least one, and
+  /// returns [ready].
   bool send(Stopwatch clock, int deadline) {
-    do {
-      if (!_streamSent) {
-        _sendPiece();
-      } else {
-        final next = buildings.where((b) => !b.ready).firstOrNull;
-        if (next == null) break;
-        next.sendChunk();
+    while (!ready) {
+      final (source, at) = _parts[_part];
+      final n = math.min(_piece, source.lengthInBytes - _sent);
+      buffer!
+        ..overwrite(
+          ByteData.sublistView(source, _sent, _sent + n),
+          destinationOffsetInBytes: at + _sent,
+        )
+        ..flush(offsetInBytes: at + _sent, lengthInBytes: n);
+      _sent += n;
+      if (_sent >= source.lengthInBytes) {
+        _part++;
+        _sent = 0;
       }
-    } while (clock.elapsedMicroseconds < deadline);
+      if (clock.elapsedMicroseconds >= deadline) break;
+    }
     return ready;
-  }
-
-  void _sendPiece() {
-    final stream = this.stream!;
-    final vertexBytes = stream.vertices.lengthInBytes;
-    final inVertices = _sent < vertexBytes;
-    final source = inVertices
-        ? ByteData.sublistView(stream.vertices)
-        : ByteData.sublistView(stream.indices);
-    final from = inVertices ? _sent : _sent - vertexBytes;
-    final n = math.min(_piece, source.lengthInBytes - from);
-    final at = inVertices ? from : indexOffset + from;
-    buffer!
-      ..overwrite(
-        ByteData.sublistView(source, from, from + n),
-        destinationOffsetInBytes: at,
-      )
-      ..flush(offsetInBytes: at, lengthInBytes: n);
-    _sent += n;
   }
 
   @override
@@ -170,45 +168,18 @@ class TileGpu implements RendererTileData {
   }
 }
 
-/// One tile's buildings of one layer, sent in pieces so no frame copies
-/// megabytes.
+/// One building layer's vertices in a [TileGpu]'s buffer, from [offset].
 class BuildingGpu {
-  BuildingGpu(this.extrusion)
-    : chunks =
-          (extrusion.vertices.length ~/ BuiltExtrusion.floatsPerVertex +
-              BuiltExtrusion.chunk -
-              1) ~/
-          BuiltExtrusion.chunk;
+  BuildingGpu(this.extrusion, this.offset);
 
   final BuiltExtrusion extrusion;
-  final int chunks;
-  final List<gpu.DeviceBuffer> buffers = [];
+  final int offset;
 
   /// When the buildings were first drawn, on the renderer's clock.
   int shownAt = -1;
 
-  bool get ready => buffers.length >= chunks;
-
   static const stride = BuiltExtrusion.floatsPerVertex * 4;
 
-  int chunkBytes(int c) {
-    final vertices =
-        extrusion.vertices.length ~/ BuiltExtrusion.floatsPerVertex;
-    final from = c * BuiltExtrusion.chunk;
-    return math.min(BuiltExtrusion.chunk, vertices - from) * stride;
-  }
-
-  void sendChunk() {
-    final c = buffers.length;
-    final from = c * BuiltExtrusion.chunk * BuiltExtrusion.floatsPerVertex;
-    buffers.add(
-      gpu.gpuContext.createDeviceBufferWithCopy(
-        ByteData.sublistView(
-          extrusion.vertices,
-          from,
-          from + chunkBytes(c) ~/ 4,
-        ),
-      ),
-    );
-  }
+  int get vertexCount =>
+      extrusion.vertices.length ~/ BuiltExtrusion.floatsPerVertex;
 }
