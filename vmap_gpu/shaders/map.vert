@@ -19,6 +19,8 @@ in vec4 packed_data;
 out vec4 v_color;
 out vec3 v_dash;
 out vec4 v_fog;
+out vec4 v_pattern;
+out vec3 v_uv;
 
 // Two 12 bit numbers packed in one float as the stream writes them.
 vec2 unpack_pair(float v) {
@@ -34,11 +36,16 @@ void main() {
   vec4 color = slot_info.slot[s * 2];
   vec4 p = slot_info.slot[s * 2 + 1];
   vec2 pos = position;
-  if (kind > 0.5) {
+  if (kind > 0.5 && kind < 1.5) {
     pos += unpack_pair(packed_data.x) * p.x + unpack_pair(packed_data.y) * p.y;
   }
+  // A patterned fill: p is the pattern's place in the sprite sheet in its
+  // pixels, colour.r its pixel ratio, and fade.y the tile's screen pixels
+  // per tile unit; v_uv.z tells the fragment shader to sample.
+  v_pattern = p;
+  v_uv = vec3(pos * color.r * frame_info.fade.y, kind > 1.5 ? 1.0 : 0.0);
   v_color = color;
-  v_dash = vec3(packed_data.w, p.z, p.w);
+  v_dash = vec3(packed_data.w, p.z, kind > 1.5 ? 0.0 : p.w);
   gl_Position = frame_info.mvp * vec4(pos, 0.0, 1.0);
   float far = smoothstep(frame_info.fog_range.x, frame_info.fog_range.y, gl_Position.w);
   v_fog = vec4(frame_info.fog_color.rgb, far * frame_info.fog_color.a);

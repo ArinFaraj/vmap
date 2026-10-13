@@ -816,6 +816,7 @@ class VmapEngine extends ChangeNotifier {
           _context,
           styleZoom,
           camera.devicePixelRatio,
+          _sprites,
         );
         _buildingMicros = _clock.elapsedMicroseconds - gpuStarted;
         if (more) waiting = true;

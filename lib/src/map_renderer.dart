@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'expr.dart';
+import 'sprites.dart';
 import 'style_model.dart';
 import 'tiles.dart' show TileDraw;
 import 'view.dart';
@@ -26,6 +27,7 @@ abstract class MapRenderer {
     EvalContext context,
     double styleZoom,
     double devicePixelRatio,
+    SpriteSheet? sprites,
   );
 
   void dispose();

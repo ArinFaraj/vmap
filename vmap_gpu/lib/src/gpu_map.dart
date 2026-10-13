@@ -32,6 +32,18 @@ class GpuMap implements MapRenderer {
   gpu.ShaderLibrary? _library;
   gpu.RenderPipeline? _flat, _buildings;
   gpu.UniformSlot? _flatFrame, _flatSlots, _buildingFrame, _stencilFrame;
+  gpu.UniformSlot? _flatFrag, _flatSprites;
+  SpriteSheet? _sheet;
+  ui.Image? _sheetImage;
+  gpu.Texture? _sheetTexture;
+  late final gpu.Texture _blank = gpu.gpuContext.createTexture(
+    gpu.StorageMode.hostVisible,
+    1,
+    1,
+    format: gpu.PixelFormat.r8g8b8a8UNormInt,
+  )..overwrite(ByteData(4));
+  final Float32List _fragInfo = Float32List(4);
+  late final ByteData _fragBytes = ByteData.sublistView(_fragInfo);
   gpu.RenderPipeline? _stencil;
 
   /// A tile's square in tile units, two triangles.
@@ -127,6 +139,8 @@ class GpuMap implements MapRenderer {
     );
     _flatFrame = mapVertex.getUniformSlot('FrameInfo');
     _flatSlots = mapVertex.getUniformSlot('SlotInfo');
+    _flatFrag = mapFragment.getUniformSlot('FragInfo');
+    _flatSprites = mapFragment.getUniformSlot('sprite_sheet');
     _buildings = gpu.gpuContext.createRenderPipeline(
       buildingVertex,
       buildingFragment,
@@ -244,8 +258,10 @@ class GpuMap implements MapRenderer {
     EvalContext context,
     double styleZoom,
     double devicePixelRatio,
+    SpriteSheet? sprites,
   ) {
     if (!_ready()) return true;
+    _sheet = sprites;
     _frame++;
     final width = (view.width * devicePixelRatio).round();
     final height = (view.height * devicePixelRatio).round();
@@ -278,17 +294,19 @@ class GpuMap implements MapRenderer {
     _more = false;
     _layerPaint.clear();
 
-    // Each tile drawn in full marks its square, and a tile standing in for
-    // a missing one draws only where none is marked: tilted, a tile's
-    // square is no rectangle on the screen, so scissors cannot do it.
-    final stand = fallback.isNotEmpty && _stencil != null;
-    if (stand) {
+    // Each tile writes its number over its square, and draws only where
+    // its number is: a tile's data runs a little past its square, and a
+    // translucent fill drawn twice there shows a seam. A tile standing in
+    // for a missing one draws where no number is. Tilted, a square is no
+    // rectangle on the screen, so scissors cannot do it.
+    final clipped = _stencil != null && ideal.length < 255;
+    final stand = fallback.isNotEmpty && clipped;
+    if (clipped) {
       pass
         ..bindPipeline(_stencil!)
         ..setCullMode(gpu.CullMode.none)
         ..setDepthWriteEnable(false)
         ..setDepthCompareOperation(gpu.CompareFunction.always)
-        ..setStencilReference(1)
         ..setStencilConfig(
           gpu.StencilConfig(
             depthStencilPassOperation: gpu.StencilOperation.setToReferenceValue,
@@ -297,9 +315,10 @@ class GpuMap implements MapRenderer {
         ..bindVertexBuffer(
           gpu.BufferView(_quad!, offsetInBytes: 0, lengthInBytes: 48),
         );
-      for (final d in ideal) {
+      for (final (i, d) in ideal.indexed) {
         _times(clip, d.size / tileExtent, 1, d.left, d.top, 1);
         pass
+          ..setStencilReference(i + 1)
           ..bindUniform(_stencilFrame!, host.emplace(_frameBytes))
           ..draw(6);
       }
@@ -320,6 +339,7 @@ class GpuMap implements MapRenderer {
           destinationAlphaBlendFactor: gpu.BlendFactor.oneMinusSourceAlpha,
         ),
       );
+    _bindSprites(pass);
     if (stand) {
       pass
         ..setStencilReference(0)
@@ -329,11 +349,17 @@ class GpuMap implements MapRenderer {
       for (final d in fallback) {
         _drawFlat(pass, d, sheet, clip, context, styleZoom);
       }
-      pass.setStencilConfig(gpu.StencilConfig());
     }
-    for (final d in ideal) {
+    if (clipped) {
+      pass.setStencilConfig(
+        gpu.StencilConfig(compareFunction: gpu.CompareFunction.equal),
+      );
+    }
+    for (final (i, d) in ideal.indexed) {
+      if (clipped) pass.setStencilReference(i + 1);
       _drawFlat(pass, d, sheet, clip, context, styleZoom);
     }
+    if (clipped) pass.setStencilConfig(gpu.StencilConfig());
 
     if (sheet.extrusions.isNotEmpty) {
       pass
@@ -369,6 +395,36 @@ class GpuMap implements MapRenderer {
 
   int _budget = 0;
   bool _more = false;
+
+  /// The style's sprite sheet as a texture, for patterned fills.
+  void _bindSprites(gpu.RenderPass pass) {
+    final image = _sheet?.image;
+    if (!identical(image, _sheetImage)) {
+      _sheetImage = image;
+      _sheetTexture = null;
+      if (image != null) {
+        try {
+          _sheetTexture = gpu.Texture.fromImage(gpu.gpuContext, image);
+        } catch (e) {
+          debugPrint('vmap_gpu: the sprite sheet is not on the GPU: $e');
+        }
+      }
+    }
+    final texture = _sheetTexture ?? _blank;
+    _fragInfo
+      ..[0] = texture.width.toDouble()
+      ..[1] = texture.height.toDouble();
+    pass
+      ..bindUniform(_flatFrag!, _host!.emplace(_fragBytes))
+      ..bindTexture(
+        _flatSprites!,
+        texture,
+        sampler: gpu.SamplerOptions(
+          minFilter: gpu.MinMagFilter.linear,
+          magFilter: gpu.MinMagFilter.linear,
+        ),
+      );
+  }
 
   void _drawFlat(
     gpu.RenderPass pass,
@@ -445,6 +501,19 @@ class GpuMap implements MapRenderer {
           ? (_layerPaint[layerIndex] ??= _Paint.of(layer, context, styleZoom))
           : _Paint.of(layer, context, styleZoom, props);
       final o = (i - from) * 8;
+      final pattern = paint.pattern;
+      if (pattern != null) {
+        final entry = _sheet?.entries[pattern];
+        out[o] = entry?.pixelRatio ?? 1;
+        out[o + 1] = 0;
+        out[o + 2] = 0;
+        out[o + 3] = entry == null ? 0 : paint.a;
+        out[o + 4] = entry?.source.left ?? 0;
+        out[o + 5] = entry?.source.top ?? 0;
+        out[o + 6] = entry?.source.width ?? 1;
+        out[o + 7] = entry?.source.height ?? 1;
+        continue;
+      }
       out[o] = paint.r;
       out[o + 1] = paint.g;
       out[o + 2] = paint.b;
@@ -546,6 +615,7 @@ class GpuMap implements MapRenderer {
       out[12 + r] = clip[r] * left + clip[4 + r] * top + clip[12 + r];
     }
     out[16] = fade;
+    out[17] = scale;
   }
 
   @override
@@ -570,8 +640,12 @@ class _Paint {
     this.translateX,
     this.translateY,
     this.dashOn,
-    this.dashPeriod,
-  );
+    this.dashPeriod, [
+    this.pattern,
+  ]);
+
+  /// The sprite a patterned fill repeats.
+  final String? pattern;
 
   final double r, g, b, a;
   final double halfWidth, offset, translateX, translateY, dashOn, dashPeriod;
@@ -613,6 +687,7 @@ class _Paint {
           ty = (asNumber(moved[1]) ?? 0).toDouble();
         }
       }
+      final pattern = layer is FillLayer ? layer.pattern?.call(context) : null;
       return _Paint(
         color.r * a,
         color.g * a,
@@ -624,6 +699,7 @@ class _Paint {
         ty,
         dashOn,
         dashPeriod,
+        pattern is String && pattern.isNotEmpty ? pattern : null,
       );
     } finally {
       if (props != null) context.props = const {};

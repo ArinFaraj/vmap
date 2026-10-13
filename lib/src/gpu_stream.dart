@@ -16,7 +16,8 @@ import 'tile_builder.dart' show BuiltMesh;
 /// - a line vertex's extrusion from its centre line, x and y in 1/128ths
 ///   plus 2048, the second times 4096, zero for a fill;
 /// - an offset line's sideways vector, packed as the extrusion is;
-/// - the slot within its segment, plus 16384 for a line;
+/// - the slot within its segment, plus 16384 for a line or 32768 for a
+///   fill drawn with a pattern;
 /// - the distance along the line in tile units.
 class GpuStream {
   GpuStream(this.vertices, this.indices, this.slots, this.segments);
@@ -42,7 +43,7 @@ class GpuStream {
     return (q(x) + q(y) * 4096).toDouble();
   }
 
-  static const fill = 0, line = 1;
+  static const fill = 0, line = 1, patterned = 2;
 
   List<Object?> toMessage() => [
     pack(vertices),
@@ -85,6 +86,7 @@ class GpuStream {
       final layer = sheet.layers[p];
       final kind = switch (layer) {
         FillLayer(pattern: null, extruded: false) => fill,
+        FillLayer(extruded: false) => patterned,
         LineLayer(pattern: null, gradient: null) => line,
         _ => -1,
       };
