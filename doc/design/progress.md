@@ -182,3 +182,26 @@ stencil is rewritten when the source changes. The stencil squares draw
 with blending on, since a transparent square drawn with blending off
 erases what is already there. Checked with a GeoJSON circle overlay on
 Liberty on macOS (Metal) and the emulator (OpenGL ES).
+
+## 2026-10-13, evening: phone smoothness
+
+Measured on the phone (121 Hz) with timeline recordings, scripted and by
+hand, until Arin called it smooth.
+
+- Label glyphs are rasterized on the CPU in an isolate (coverage plus a
+  distance transform for halos), not by Flutter on the raster thread: 195
+  raster snapshots of up to 260 ms in a 30 s zoom test went to 1.
+- Tile and glyph isolates share the UI isolate's heap, so their garbage
+  pauses the UI thread. Builders grow typed buffers instead of
+  List<double>: missed vsyncs 1.8% to 0.3%, longest scavenge 20 to 6 ms.
+- GPU memory comes from 4 MB slabs grown one a frame ahead of need, under
+  a 96 MB cap; tiles unseen for ten seconds give theirs back. Uniforms use
+  our own arena (Flutter's HostBuffer has two open bugs). Pipelines are
+  warmed and the sprite sheet is copied in off the frame.
+- A tile shows only once its geometry and buildings are on the GPU; until
+  then its parent or children stand in. Buildings rise out of their
+  footprints, which fade per tile as that tile's buildings rise.
+- A camera move fetches and prepares the tiles where it ends; twelve
+  tiles are fetched at once. In a recording a fetch took 160 ms and a
+  build 18 ms, so the network sets how fast a new city fills.
+- Every tile is marked in the timeline as asked, fetched, built and ready.
