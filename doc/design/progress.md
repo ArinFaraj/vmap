@@ -41,3 +41,34 @@ footprint, area type and neighbours), marked as estimates, with OSM and
 Overture heights used where they exist. Kurdish names cover a third of
 places; the plain `name` tag, often already in Kurdish or Arabic script,
 fills the rest.
+
+### Text bake-off (D9)
+
+`example/lib/text_bench`: 500 OpenStreetMap place names around Erbil (381
+in Arabic script), shaped by `payv`, drawn over a map tilted 55 degrees
+that orbits and zooms for 12 s, about 52 labels in view per frame. The
+atlas of 242 glyph distance fields builds in 110 to 270 ms off the UI
+thread; 16 baked sizes take another 90 to 130 ms.
+
+Phone (Vivo V2514, Impeller Vulkan), the run where the phone was idle:
+
+| Variant | Label paint p50 / p99 | Raster p50 / p99 | Janky frames | Label images redrawn |
+| --- | --- | --- | --- | --- |
+| Distance fields, colour matrix per draw | 0.46 / 1.5 ms | 8.5 / 13.0 ms | 47% | 0 |
+| Same atlas, no colour matrix (soft edges) | 0.55 / 1.3 ms | 4.4 / 6.2 ms | 1% | 0 |
+| Paragraph image per label (vmap today) | 0.61 / 5.0 ms | 4.1 / 6.2 ms | 26% | 336, 678 ms |
+
+- A colour matrix on `drawRawAtlas` doubles raster time on the phone, so
+  thresholding a distance field at draw time is out for the canvas tier.
+- Per-label images cost about 2 ms each to redraw on the phone, on the UI
+  thread, and a tilted, moving map redraws about 28 a second.
+- Baked pages (sharp glyph and halo images per eighth of an octave of size,
+  made from the distance fields off the UI thread, tinted by vertex colour)
+  look the same as Paragraph images at rest (emulator screenshots). Their
+  phone raster time is not measured yet: the one phone run with them was
+  taken while the phone was busy, and every variant's raster time doubled.
+- Emulator raster times are not usable: the same variant measured 3 ms and
+  16 ms in two runs. Only its UI thread times and screenshots are.
+- Two traps: `decodeImageFromPixels` wants premultiplied pixels (white
+  pixels at zero alpha drew a white box around every glyph), and a 1.5 px
+  halo on small text needs a field reaching 8 texels, not 4.

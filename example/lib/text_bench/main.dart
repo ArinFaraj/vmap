@@ -23,6 +23,8 @@ const _ink = Color(0xFF26323F);
 const _haloInk = Color(0xFFFFFFFF);
 const _phaseSeconds = 12;
 
+var _pages = <int, BakedPage>{};
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (Platform.isAndroid) await FlutterDisplayMode.setHighRefreshRate();
@@ -39,6 +41,17 @@ Future<void> main() async {
     '${atlas.glyphCount} glyphs, shaped and rendered in '
     '${atlas.buildMicros ~/ 1000} ms off the UI thread',
   );
+  final dpr = ui.PlatformDispatcher.instance.views.first.devicePixelRatio;
+  final keys = [for (var k = -20; k <= -5; k++) k];
+  final bakeWatch = Stopwatch()..start();
+  final pages = await atlas.bake([
+    for (final k in keys) math.pow(2, k / 8).toDouble() * dpr,
+  ], _halo * dpr);
+  debugPrint(
+    'bench: baked ${pages.length} sizes in ${bakeWatch.elapsedMilliseconds} ms '
+    'off the UI thread',
+  );
+  _pages = {for (final (i, k) in keys.indexed) k: pages[i]};
   final labels = [
     for (final (i, r) in rows.indexed)
       _Label(
@@ -61,7 +74,7 @@ class _Label {
   double spriteSize = 0;
 }
 
-enum _Arm { atlas, paragraph }
+enum _Arm { atlas, atlasPlain, baked, paragraph }
 
 class _Counters {
   int frames = 0;
@@ -184,7 +197,7 @@ class _BenchState extends State<_Bench> with SingleTickerProviderStateMixin {
   Future<void> _run() async {
     await Future<void>.delayed(const Duration(seconds: 6));
     final results = <String>[];
-    for (var round = 0; round < 2; round++) {
+    for (var round = 0; round < 1; round++) {
       for (final which in _Arm.values) {
         final line = await _phase(which);
         debugPrint('bench round $round $line');
@@ -222,11 +235,17 @@ class _BenchState extends State<_Bench> with SingleTickerProviderStateMixin {
           IgnorePointer(
             child: CustomPaint(
               painter: switch (arm) {
-                _Arm.atlas => _AtlasPainter(
+                _Arm.baked => _BakedPainter(
+                  widget.labels,
+                  controller,
+                  counters,
+                ),
+                _Arm.atlas || _Arm.atlasPlain => _AtlasPainter(
                   widget.atlas,
                   widget.labels,
                   controller,
                   counters,
+                  plain: arm == _Arm.atlasPlain,
                 ),
                 _Arm.paragraph => _ParagraphPainter(
                   widget.labels,
@@ -273,8 +292,18 @@ Iterable<(_Label, double, double, double)> _visible(
 }
 
 class _AtlasPainter extends CustomPainter {
-  _AtlasPainter(this.atlas, this.labels, this.controller, this.counters)
-    : super(repaint: controller);
+  _AtlasPainter(
+    this.atlas,
+    this.labels,
+    this.controller,
+    this.counters, {
+    this.plain = false,
+  }) : super(repaint: controller);
+
+  /// Tints the atlas by vertex colour instead of a colour matrix, to time
+  /// the matrix: edges come out soft.
+  final bool plain;
+  static final _plainColors = <int, Int32List>{};
 
   final GlyphAtlas atlas;
   final List<_Label> labels;
@@ -325,6 +354,23 @@ class _AtlasPainter extends CustomPainter {
       );
       final transforms = Float32List.sublistView(b.transforms, 0, b.length * 4);
       final rects = Float32List.sublistView(b.rects, 0, b.length * 4);
+      if (plain) {
+        final colors = _plainColors.putIfAbsent(
+          b.length,
+          () => Int32List(b.length),
+        );
+        colors.fillRange(0, b.length, _ink.toARGB32());
+        canvas.drawRawAtlas(
+          atlas.image,
+          transforms,
+          rects,
+          colors,
+          BlendMode.modulate,
+          null,
+          Paint()..filterQuality = FilterQuality.low,
+        );
+        continue;
+      }
       canvas
         ..drawRawAtlas(atlas.image, transforms, rects, null, null, null, halo)
         ..drawRawAtlas(atlas.image, transforms, rects, null, null, null, ink);
@@ -359,6 +405,82 @@ class _Buffers {
     rects[o + 3] = source.bottom;
     length++;
   }
+}
+
+class _BakedPainter extends CustomPainter {
+  _BakedPainter(this.labels, this.controller, this.counters)
+    : super(repaint: controller);
+
+  final List<_Label> labels;
+  final VMapController controller;
+  final _Counters counters;
+
+  static final _buckets = <int, _Buffers>{};
+  static final _colors = <(int, int), Int32List>{};
+  static final _paint = Paint()..filterQuality = FilterQuality.low;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final watch = Stopwatch()..start();
+    final view = controller.camera.view(size.width, size.height);
+    for (final b in _buckets.values) {
+      b.length = 0;
+    }
+    var drawn = 0;
+    for (final (l, x, y, font) in _visible(labels, view)) {
+      final s = font / emTexels;
+      final key = (math.log(s) / math.ln2 * 8).round();
+      final page = _pages[key];
+      if (page == null) continue;
+      drawn++;
+      final c = s / page.scale;
+      final b = _buckets.putIfAbsent(key, _Buffers.new);
+      for (final g in l.shaped.glyphs) {
+        final rect = page.rects[g.glyphId];
+        if (rect == null) continue;
+        b.add(c, x + g.dx * s, y + g.dy * s, rect);
+      }
+    }
+    for (final MapEntry(:key, value: b) in _buckets.entries) {
+      if (b.length == 0) continue;
+      final page = _pages[key]!;
+      final transforms = Float32List.sublistView(b.transforms, 0, b.length * 4);
+      final rects = Float32List.sublistView(b.rects, 0, b.length * 4);
+      Int32List colors(Color color) {
+        final list = _colors.putIfAbsent((
+          color.toARGB32(),
+          b.length,
+        ), () => Int32List(b.length)..fillRange(0, b.length, color.toARGB32()));
+        return list;
+      }
+
+      canvas
+        ..drawRawAtlas(
+          page.halo,
+          transforms,
+          rects,
+          colors(_haloInk),
+          BlendMode.modulate,
+          null,
+          _paint,
+        )
+        ..drawRawAtlas(
+          page.ink,
+          transforms,
+          rects,
+          colors(_ink),
+          BlendMode.modulate,
+          null,
+          _paint,
+        );
+    }
+    counters.frames += 1;
+    counters.drawn += drawn;
+    counters.paints.add(watch.elapsedMicroseconds);
+  }
+
+  @override
+  bool shouldRepaint(_BakedPainter old) => true;
 }
 
 class _ParagraphPainter extends CustomPainter {

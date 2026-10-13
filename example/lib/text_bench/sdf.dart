@@ -8,7 +8,7 @@ import 'package:payv/src/font/glyph_path.dart';
 /// Texels per em in the atlas, and how many texels the distance reaches
 /// past a glyph's edge on either side.
 const emTexels = 32.0;
-const spread = 4;
+const spread = 8;
 
 /// One glyph's signed distance field: alpha 0.5 on the outline, rising
 /// inside and falling outside by 0.5 over [spread] texels.

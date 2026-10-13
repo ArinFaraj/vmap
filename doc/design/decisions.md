@@ -84,9 +84,13 @@ styles. Colour glyphs (`COLR` v0 and v1, `sbix`, `CBDT`) are drawn as
 coloured images in the same atlas. A fallback chain per label covers any
 character the first font lacks.
 
-The first spike still measures it against Flutter `Paragraph` images
-(500 labels, tilted, during a fly) and proves a way to draw the atlas on the
-canvas tier.
+On the canvas tier the fields are not thresholded at draw time (a colour
+matrix on `drawRawAtlas` doubled raster time on a phone); they are baked
+off the UI thread into sharp glyph and halo pages, one per eighth of an
+octave of size, drawn with `drawRawAtlas` tinted by vertex colour. On the
+Flutter GPU tier a fragment shader reads the fields directly. Measured in
+[progress.md](progress.md); the baked pages' phone raster time is still to
+confirm.
 
 ## D10. Two tiers, as specified (2026-10-13)
 
