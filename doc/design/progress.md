@@ -163,12 +163,22 @@ Impeller's OpenGL ES shaders are GLSL ES 1.00, without integers. Checked on
 macOS (Metal) and the emulator (OpenGL ES) with OpenFreeMap's Liberty: on
 macOS the raster thread went from about 0.8 ms to 0.3 ms a frame.
 
-Not yet: fill patterns and line gradients (left out), fill translate,
-`line-gap-width`, stencil clipping of fallback tiles (they draw first and
-are overdrawn), and phone measurements.
+Not yet: line gradients and line patterns (left out), fill translate,
+`line-gap-width`, and phone measurements.
 
 Also today, from phone traces: two script labels (name, newline, local
 name) no longer fall back to Paragraph images; labels cache their glyph
 cells; projections and tile glyph transfers stopped allocating per point
 and per label (young collections down a third in the zoom test); the map
 is out of the semantics tree.
+
+Later the same day: fill patterns (from the sprite sheet texture), circle
+layers (a square per point, cut round in the shader), and stencil clipping
+of every tile to its square, which also clips fallback tiles to where no
+ideal tile is. Styles with more than one source draw in the style's run
+order: each tile's stream records where each style layer starts, the
+renderer draws each run's slice from the tiles of its source, and the
+stencil is rewritten when the source changes. The stencil squares draw
+with blending on, since a transparent square drawn with blending off
+erases what is already there. Checked with a GeoJSON circle overlay on
+Liberty on macOS (Metal) and the emulator (OpenGL ES).
