@@ -4,11 +4,13 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:vmap/vmap.dart';
 
 const _out = String.fromEnvironment('OUT', defaultValue: '/tmp/vmap_fly');
 const _styleName = String.fromEnvironment('STYLE');
 const _script = bool.fromEnvironment('SCRIPT');
+const _oldText = bool.fromEnvironment('OLD_TEXT');
 
 const _erbil = MapCameraPosition(
   latitude: 36.1912,
@@ -56,6 +58,7 @@ class _DemoState extends State<_Demo> {
         ? const VmapStyle.builtIn()
         : VmapStyle.url('https://tiles.openfreemap.org/styles/$_styleName'),
     maxCachedTiles: 400,
+    glyphText: !_oldText,
   );
 
   @override
@@ -64,16 +67,21 @@ class _DemoState extends State<_Demo> {
     if (_script) _run();
   }
 
+  Future<String> _dir() async =>
+      Platform.isAndroid ? (await getExternalStorageDirectory())!.path : _out;
+
   Future<void> _shot(String name) async {
+    final dir = await _dir();
+    if (!mounted) return;
     final render =
         boundary.currentContext!.findRenderObject()! as RenderRepaintBoundary;
     final image = await render.toImage(pixelRatio: 2);
     final png = await image.toByteData(format: ui.ImageByteFormat.png);
-    File('$_out/$name.png').writeAsBytesSync(png!.buffer.asUint8List());
+    File('$dir/$name.png').writeAsBytesSync(png!.buffer.asUint8List());
   }
 
   Future<void> _run() async {
-    Directory(_out).createSync(recursive: true);
+    Directory(await _dir()).createSync(recursive: true);
     await Future<void>.delayed(const Duration(seconds: 6));
     await _shot('0_erbil');
     for (final (i, name) in [

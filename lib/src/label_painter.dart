@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'expr.dart';
+import 'glyphs/glyph_pages.dart';
+import 'label_path.dart';
 import 'label_sprites.dart';
 import 'label_state.dart';
 import 'label_view.dart';
@@ -18,6 +20,9 @@ class LabelPainter {
 
   final LabelView _view;
   final RoadLabels _roads;
+
+  /// Where glyph text is drawn from, once vmap's fonts are loaded.
+  GlyphPages? glyphs;
   final ui.Paint _imagePaint = ui.Paint()
     ..filterQuality = ui.FilterQuality.medium;
   final Map<VmapPin, ui.Image> _pinImages = {};
@@ -132,6 +137,10 @@ class LabelPainter {
   ) {
     _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
     switch (sprite) {
+      case GlyphSprite() when st.curve != null:
+        _glyphsBent(st, sprite, devicePixelRatio, rotation);
+      case GlyphSprite():
+        _glyphs(st, sprite, devicePixelRatio);
       case ImageSprite() when st.curve != null:
         _drawBent(canvas, st, sprite, rotation);
       case PictureSprite():
@@ -186,6 +195,111 @@ class LabelPainter {
       null,
       _imagePaint,
     );
+  }
+
+  static int _faded(int argb, double opacity) =>
+      (((argb >>> 24) * opacity).round() << 24) | (argb & 0xFFFFFF);
+
+  /// The page [sprite] draws from at [fontPx] logical pixels to the em.
+  GlyphPage _page(GlyphSprite sprite, double fontPx, double devicePixelRatio) {
+    final look = sprite.look;
+    final halo = look.halo == null ? 0.0 : look.haloWidth;
+    return glyphs!.page((
+      size: GlyphPages.sizeOf(fontPx * devicePixelRatio),
+      weight: look.weight,
+      italic: look.italic,
+      halo: (halo * devicePixelRatio * 4).round(),
+      blur: halo == 0 ? 0 : (look.haloBlur * devicePixelRatio * 4).round(),
+    ));
+  }
+
+  void _glyphs(LabelState st, GlyphSprite sprite, double devicePixelRatio) {
+    final pages = glyphs!;
+    final (sx, sy, _, _) = _textBox(st, sprite);
+    final em = sprite.fontSize * st.scale;
+    final page = _page(sprite, em, devicePixelRatio);
+    final k = em / page.em;
+    final turn = st.screenAngle;
+    final c = math.cos(turn), s = math.sin(turn);
+    final shaped = sprite.shaped;
+    final left = -shaped.width * em / 2, top = -shaped.height * em / 2;
+    var ox = sx, oy = sy;
+    if (turn == 0) {
+      ox = _snap(sx + left, devicePixelRatio) - left;
+      oy = _snap(sy + top, devicePixelRatio) - top;
+    }
+    final ink = _faded(sprite.look.color, st.opacity);
+    final halo = sprite.look.halo == null
+        ? null
+        : _faded(sprite.look.halo!, st.opacity);
+    final g = shaped.glyphs;
+    for (var i = 0; i < g.length; i += 5) {
+      final cell = page.cell(g[i].toInt(), g[i + 1].toInt());
+      if (cell == null) continue;
+      final lx = left + g[i + 2] * em, ly = top + g[i + 3] * em;
+      pages.add(
+        cell,
+        ox + c * lx - s * ly,
+        oy + s * lx + c * ly,
+        turn,
+        k,
+        ink,
+        halo,
+      );
+    }
+  }
+
+  final Float64List _along = Float64List(3);
+
+  void _glyphsBent(
+    LabelState st,
+    GlyphSprite sprite,
+    double devicePixelRatio,
+    double rotation,
+  ) {
+    final pages = glyphs!;
+    final em = sprite.fontSize * st.scale;
+    final page = _page(sprite, em, devicePixelRatio);
+    final k = em / page.em;
+    final shaped = sprite.shaped;
+    final path = st.curve!;
+    final world = _view.world;
+    final flip = math.cos(st.angle + rotation) < 0;
+    final half = shaped.width * em / 2;
+    final top = -shaped.height * em / 2;
+    final ink = _faded(sprite.look.color, st.opacity);
+    final halo = sprite.look.halo == null
+        ? null
+        : _faded(sprite.look.halo!, st.opacity);
+    final g = shaped.glyphs;
+    for (var i = 0; i < g.length; i += 5) {
+      final cell = page.cell(g[i].toInt(), g[i + 1].toInt());
+      if (cell == null) continue;
+      final advance = g[i + 4] * em;
+      var mid = g[i + 2] * em + advance / 2 - half;
+      if (flip) mid = -mid;
+      final reach = math.max(advance / 2, 1.0) / world;
+      pointAlong(path, st.curveMid + mid / world - reach, _along);
+      _view.project(_along[0], _along[1]);
+      final ax = _view.x, ay = _view.y;
+      pointAlong(path, st.curveMid + mid / world + reach, _along);
+      _view.project(_along[0], _along[1]);
+      final bx = _view.x, by = _view.y;
+      var angle = math.atan2(by - ay, bx - ax);
+      if (flip) angle += math.pi;
+      final c = math.cos(angle), s = math.sin(angle);
+      final cx = (ax + bx) / 2 + st.dx, cy = (ay + by) / 2 + st.dy;
+      final lx = -advance / 2, ly = top + g[i + 3] * em;
+      pages.add(
+        cell,
+        cx + c * lx - s * ly,
+        cy + s * lx + c * ly,
+        angle,
+        k,
+        ink,
+        halo,
+      );
+    }
   }
 
   /// Where the middle of [st]'s text is on the screen, and its size there.

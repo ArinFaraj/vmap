@@ -9,6 +9,8 @@ import 'label_painter.dart';
 import 'text_style.dart';
 import 'label_sprites.dart';
 import 'label_state.dart';
+import 'glyphs/glyph_layout.dart';
+import 'glyphs/glyph_pages.dart';
 import 'label_view.dart';
 import 'view.dart';
 import 'pins.dart';
@@ -191,6 +193,24 @@ class LabelEngine {
       if (st.opacity > 0) st.candidate.key,
   };
 
+  GlyphPages? _glyphPages;
+
+  /// Shapes and draws text with [fonts] from now on, where they cover it.
+  void useGlyphs(GlyphFonts fonts) {
+    _glyphPages?.dispose();
+    final pages = _glyphPages = GlyphPages(fonts);
+    _sprites.glyphFonts = fonts;
+    _painter.glyphs = pages;
+    clear();
+  }
+
+  bool get _glyphText => _glyphPages != null;
+
+  void disposeGlyphs() {
+    _glyphPages?.dispose();
+    _glyphPages = null;
+  }
+
   void clear() {
     _sprites.clear();
     _painter.dropPins();
@@ -354,6 +374,12 @@ class LabelEngine {
       _painter.paintText(canvas, st, sprite, devicePixelRatio, rotation);
     }
     _live.length = kept;
+    final pages = _glyphPages;
+    if (pages != null) {
+      pages.flush(canvas);
+      if (pages.rasterizePending()) animating = true;
+      pages.endFrame();
+    }
     if (rotation != 0) canvas.restore();
     return animating;
   }
@@ -383,7 +409,10 @@ class LabelEngine {
         final sx = _view.x;
         final sy = _view.y;
         if (_view.ratio < _perspectiveCutoff) continue;
-        if (_view.tilted != null && c is TileLabel && c.tile.line != null) {
+        if (!_glyphText &&
+            _view.tilted != null &&
+            c is TileLabel &&
+            c.tile.line != null) {
           continue;
         }
         if (sx < -margin ||
@@ -436,7 +465,9 @@ class LabelEngine {
       if (st.sprite?.dropped ?? false) st.sprite = null;
       final sprite = st.sprite ??= _sprites[c.spriteKey];
       st.scale = sprite == null ? 1 : fontSize / sprite.fontSize;
-      st.resize = _zooming
+      st.resize = sprite is GlyphSprite
+          ? false
+          : _zooming
           ? st.scale < 0.7 || st.scale > 1.4
           : st.scale < 0.87 || st.scale > 1.15;
       final textW = sprite == null

@@ -294,7 +294,8 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
   );
 
   VmapEngine get _engine =>
-      widget.engine ?? (_owned ??= VmapEngine(style: widget.style));
+      widget.engine ??
+      (_owned ??= VmapEngine(style: widget.style, glyphText: true));
 
   Offset _lastFocal = Offset.zero;
   double _lastScale = 1;

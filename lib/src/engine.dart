@@ -4,11 +4,13 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_map/flutter_map.dart' show Marker;
 import 'package:latlong2/latlong.dart' show LatLng;
 
 import 'camera.dart';
 import 'expr.dart';
+import 'glyphs/glyph_layout.dart';
 import 'label_state.dart';
 import 'labels.dart';
 import 'text_style.dart';
@@ -53,11 +55,32 @@ class VmapEngine extends ChangeNotifier {
     this._overlay,
     this._edits = const [],
     bool curvedLabels = true,
+    bool glyphText = false,
+    List<Uint8List>? glyphFonts,
   }) : _labels = LabelEngine(text)
          ..pins = pins
          ..curvedRoads = curvedLabels {
     _labels.stateOf = (source, id) => _states[_sources[source].def.name]?[id];
     _loadStyle();
+    if (glyphText) _loadGlyphFonts(glyphFonts);
+  }
+
+  /// The font labels are shaped with when the app gives none: Vazirmatn,
+  /// one variable font with every weight, for Arabic script and Latin.
+  static const defaultGlyphFont =
+      'packages/vmap/assets/fonts/Vazirmatn-Variable.ttf';
+
+  Future<void> _loadGlyphFonts(List<Uint8List>? given) async {
+    try {
+      final faces =
+          given ??
+          [(await rootBundle.load(defaultGlyphFont)).buffer.asUint8List()];
+      if (_disposed) return;
+      _labels.useGlyphs(GlyphFonts(faces));
+      notifyListeners();
+    } catch (e) {
+      onError?.call(e);
+    }
   }
 
   final TileSourceConfig source;
@@ -856,7 +879,9 @@ class VmapEngine extends ChangeNotifier {
       s.dispose();
     }
     _sources.clear();
-    _labels.clear();
+    _labels
+      ..clear()
+      ..disposeGlyphs();
     _sprites?.dispose();
     _meshes.dispose();
     for (final r in _rasters) {

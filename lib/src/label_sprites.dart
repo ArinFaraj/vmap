@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'glyphs/glyph_layout.dart';
 import 'platform.dart';
 import 'stats.dart';
 
@@ -93,6 +94,29 @@ final class PictureSprite extends LabelSprite {
   }
 }
 
+/// Text shaped by vmap itself and drawn glyph by glyph from shared pages,
+/// at any size, turned, or along a bent road.
+final class GlyphSprite extends LabelSprite {
+  GlyphSprite(
+    this.shaped,
+    this.look,
+    super.width,
+    super.height,
+    super.textWidth,
+    super.textHeight,
+    super.fontSize,
+  );
+
+  final ShapedText shaped;
+  final TextLook look;
+
+  @override
+  double get pixelW => width;
+
+  @override
+  double get pixelH => height;
+}
+
 /// How one label's text is drawn.
 class TextLook {
   const TextLook({
@@ -147,6 +171,10 @@ class LabelSprites {
 
   final VmapLabelWork work;
   final Map<String, LabelSprite> _byKey = {};
+
+  /// Set once vmap's own fonts are loaded: text they cover is shaped by
+  /// vmap and drawn from glyph pages, the rest is drawn as before.
+  GlyphFonts? glyphFonts;
   final Stopwatch _clock = Stopwatch()..start();
 
   /// Kept when more are drawn than this, only those used in the last pass.
@@ -203,6 +231,43 @@ class LabelSprites {
     required double dpr,
     required int pass,
   }) {
+    final fonts = glyphFonts;
+    if (fonts != null) {
+      final started = _clock.elapsedMicroseconds;
+      final shaped = layoutText(
+        fonts,
+        look.text,
+        weight: look.weight,
+        letterSpacing: look.letterSpacing,
+        lineHeight: look.lineHeight,
+        maxWidth: look.layoutWidth / look.fontSize,
+        align: switch (look.align) {
+          ui.TextAlign.left => look.rightToLeft ? 1 : -1,
+          ui.TextAlign.right => look.rightToLeft ? -1 : 1,
+          ui.TextAlign.start => look.rightToLeft ? 1 : -1,
+          ui.TextAlign.end => look.rightToLeft ? -1 : 1,
+          _ => 0,
+        },
+        singleLine: look.road,
+      );
+      work.layoutMicros += _clock.elapsedMicroseconds - started;
+      if (shaped != null) {
+        final textW = math.max(1.0, shaped.width * look.fontSize);
+        final textH = shaped.height * look.fontSize;
+        return _keep(
+          key,
+          GlyphSprite(
+            shaped,
+            look,
+            textW + haloPad * 2,
+            textH + haloPad * 2,
+            textW,
+            textH,
+            look.fontSize,
+          )..usedPass = pass,
+        );
+      }
+    }
     final fontSize = look.fontSize;
     final halo = look.halo;
     final haloWidth = look.haloWidth;

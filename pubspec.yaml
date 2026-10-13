@@ -28,6 +28,7 @@ dependencies:
     sdk: flutter
   flutter_map: ^8.3.0
   latlong2: ">=0.9.0 <0.11.0"
+  payv: 0.1.2
   web: ^1.1.0
 
 dev_dependencies:
@@ -37,6 +38,7 @@ dev_dependencies:
 
 flutter:
   assets:
+    - assets/fonts/Vazirmatn-Variable.ttf
     - path: assets/vmap_worker.js
       platforms:
         - web
