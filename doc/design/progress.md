@@ -89,3 +89,23 @@ On the emulator, flat and tilted Erbil look as sharp as the image path,
 and road names appear where the image path had none drawn. Layout is about
 125 us a label in a JIT run; it runs inside the existing per frame label
 budget, not yet in the tile worker.
+
+### 3D buildings on the canvas tier
+
+`lib/src/extrusion.dart`: a `fill-extrusion` layer gets a bucket of
+buildings built in the tile worker (walls, roof triangles, height, base,
+colour per building). With a tilted view the engine leaves out the flat
+stand-in and draws the buildings in view in one `drawVertices`: projected
+on the CPU through `MapView.project3`, farthest first, walls facing away
+from the camera dropped, walls shaded by where they face (light from the
+north west) and darker at the foot.
+
+On the emulator with OpenFreeMap's Liberty style, Sulaymaniyah and Erbil
+stand up. Dense Erbil at pitch 60 costs a build p50 of 3.8 ms and p99 of
+14 ms on the emulator's CPU, after culling buildings off screen and those
+reaching behind the camera (which flipped and covered the screen before).
+
+Known limit, the reason for the Flutter GPU tier: painter's order sorts by
+each building's centre, so a low building inside a tall one's footprint
+and nearer the camera (houses inside Erbil's citadel) draws over the tall
+one's roof. A depth buffer fixes it; the canvas tier keeps it.
