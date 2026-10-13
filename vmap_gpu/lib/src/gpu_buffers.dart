@@ -100,12 +100,14 @@ class GpuHeap {
     return GpuRange(slab.buffer, slab.take(size), size, slab);
   }
 
-  void give(GpuRange range) => _given.add((range, frame));
+  void give(GpuRange range) {
+    used -= range.size;
+    _given.add((range, frame));
+  }
 
   void _release() {
     while (_given.isNotEmpty && frame - _given.first.$2 > framesInFlight) {
       final range = _given.removeAt(0).$1;
-      used -= range.size;
       range.slab?.give(range.offset, range.size);
     }
   }
@@ -217,14 +219,15 @@ class TileGpu implements RendererTileData {
     this.indexOffset,
     this.buildings,
     this._parts,
-  );
+  ) : drawnFrame = _heap.frame;
 
   final LoadedTile tile;
   final GpuHeap _heap;
   final GpuStream? stream;
 
-  /// The renderer's frame this tile was last drawn in.
-  int drawnFrame = 0;
+  /// The renderer's frame this tile was last drawn in, or sent in when it
+  /// has not been drawn yet.
+  int drawnFrame;
   GpuRange? _range;
   final List<BuildingGpu> buildings;
 
