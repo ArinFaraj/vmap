@@ -14,6 +14,7 @@ const _styleName = String.fromEnvironment('STYLE');
 const _script = bool.fromEnvironment('SCRIPT');
 const _oldText = bool.fromEnvironment('OLD_TEXT');
 const _gpu = bool.fromEnvironment('GPU');
+const _zoomTest = bool.fromEnvironment('ZOOMTEST');
 
 const _erbil = MapCameraPosition(
   latitude: 36.1912,
@@ -72,6 +73,7 @@ class _DemoState extends State<_Demo> {
       if (buildings != null) engine.buildingRenderer = buildings;
     }
     if (_script) _run();
+    if (_zoomTest) _zoomRun();
   }
 
   Future<String> _dir() async =>
@@ -85,6 +87,49 @@ class _DemoState extends State<_Demo> {
     final image = await render.toImage(pixelRatio: 2);
     final png = await image.toByteData(format: ui.ImageByteFormat.png);
     File('$dir/$name.png').writeAsBytesSync(png!.buffer.asUint8List());
+  }
+
+  Future<void> _zoomRun() async {
+    await Future<void>.delayed(const Duration(seconds: 8));
+    final frames = <FrameTiming>[];
+    void listen(List<FrameTiming> t) => frames.addAll(t);
+    SchedulerBinding.instance.addTimingsCallback(listen);
+    engine.stats.timings.slowPaints.clear();
+    const base = MapCameraPosition(
+      latitude: 36.1912,
+      longitude: 44.0092,
+      zoom: 13.5,
+      pitch: 45,
+      bearing: -20,
+    );
+    controller.camera = base;
+    for (var i = 0; i < 3; i++) {
+      await controller.easeTo(
+        base.copyWith(zoom: 17, bearing: 10),
+        duration: const Duration(seconds: 3),
+      );
+      await controller.easeTo(base, duration: const Duration(seconds: 3));
+    }
+    SchedulerBinding.instance.removeTimingsCallback(listen);
+    int p(List<int> v, double q) {
+      if (v.isEmpty) return 0;
+      final s = [...v]..sort();
+      return s[((s.length - 1) * q).round()];
+    }
+
+    final build = [for (final f in frames) f.buildDuration.inMicroseconds];
+    final raster = [for (final f in frames) f.rasterDuration.inMicroseconds];
+    final over = build.where((b) => b > 8000).length;
+    debugPrint(
+      'zoomtest: ${frames.length} frames, build p50 ${p(build, .5)} '
+      'p95 ${p(build, .95)} p99 ${p(build, .99)} max ${p(build, 1)} us, '
+      'raster p50 ${p(raster, .5)} p99 ${p(raster, .99)} us, '
+      'build over 8 ms: $over',
+    );
+    for (final line in engine.stats.timings.slowPaints.take(40)) {
+      debugPrint('zoomtest slow: $line');
+    }
+    debugPrint('zoomtest: done');
   }
 
   Future<void> _run() async {

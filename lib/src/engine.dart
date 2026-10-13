@@ -97,6 +97,7 @@ class VmapEngine extends ChangeNotifier {
   final VmapStats stats = VmapStats();
   final EvalContext _context = EvalContext();
   BuildingRenderer _buildings = ExtrusionPainter();
+  int _buildingMicros = 0;
 
   /// What draws buildings standing on a tilted map: the canvas unless set.
   set buildingRenderer(BuildingRenderer value) {
@@ -771,7 +772,8 @@ class VmapEngine extends ChangeNotifier {
     if (view != null) {
       canvas.restore();
       if (sheet.extrusions.isNotEmpty) {
-        if (_buildings.paint(
+        final buildingsStarted = _clock.elapsedMicroseconds;
+        final more = _buildings.paint(
           canvas,
           view,
           camera.origin,
@@ -780,9 +782,9 @@ class VmapEngine extends ChangeNotifier {
           _context,
           styleZoom,
           camera.devicePixelRatio,
-        )) {
-          waiting = true;
-        }
+        );
+        _buildingMicros = _clock.elapsedMicroseconds - buildingsStarted;
+        if (more) waiting = true;
       }
     }
 
@@ -838,6 +840,9 @@ class VmapEngine extends ChangeNotifier {
             'place=${_labels.lastPlaceMicros} '
             'lraster=${_labels.lastRasterMicros} '
             'labels=${finished - labelsStarted} '
+            'glyphs=${_labels.glyphsRasterized}/${_labels.glyphRasterMicros} '
+            'pages=${_labels.glyphPageCount} '
+            'buildings=$_buildingMicros '
             'z=${camera.zoom.toStringAsFixed(2)} '
             'tiles=$ideal+$fallback cached=$cached',
       );

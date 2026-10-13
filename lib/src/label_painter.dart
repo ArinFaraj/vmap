@@ -200,25 +200,25 @@ class LabelPainter {
   static int _faded(int argb, double opacity) =>
       (((argb >>> 24) * opacity).round() << 24) | (argb & 0xFFFFFF);
 
-  /// The page [sprite] draws from at [fontPx] logical pixels to the em.
-  GlyphPage _page(GlyphSprite sprite, double fontPx, double devicePixelRatio) {
+  /// The look of the page [sprite] draws from at [fontPx] logical pixels
+  /// to the em.
+  PageKey _page(GlyphSprite sprite, double fontPx, double devicePixelRatio) {
     final look = sprite.look;
     final halo = look.halo == null ? 0.0 : look.haloWidth;
-    return glyphs!.page((
+    return (
       size: GlyphPages.sizeOf(fontPx * devicePixelRatio),
       weight: look.weight,
       italic: look.italic,
       halo: (halo * devicePixelRatio * 4).round(),
       blur: halo == 0 ? 0 : (look.haloBlur * devicePixelRatio * 4).round(),
-    ));
+    );
   }
 
   void _glyphs(LabelState st, GlyphSprite sprite, double devicePixelRatio) {
     final pages = glyphs!;
     final (sx, sy, _, _) = _textBox(st, sprite);
     final em = sprite.fontSize * st.scale;
-    final page = _page(sprite, em, devicePixelRatio);
-    final k = em / page.em;
+    final key = _page(sprite, em, devicePixelRatio);
     final turn = st.screenAngle;
     final c = math.cos(turn), s = math.sin(turn);
     final shaped = sprite.shaped;
@@ -234,8 +234,10 @@ class LabelPainter {
         : _faded(sprite.look.halo!, st.opacity);
     final g = shaped.glyphs;
     for (var i = 0; i < g.length; i += 5) {
-      final cell = page.cell(g[i].toInt(), g[i + 1].toInt());
-      if (cell == null) continue;
+      final found = pages.cell(key, g[i].toInt(), g[i + 1].toInt());
+      if (found == null) continue;
+      final (cell, page) = found;
+      final k = em / page.em;
       final lx = left + g[i + 2] * em, ly = top + g[i + 3] * em;
       pages.add(
         cell,
@@ -259,8 +261,7 @@ class LabelPainter {
   ) {
     final pages = glyphs!;
     final em = sprite.fontSize * st.scale;
-    final page = _page(sprite, em, devicePixelRatio);
-    final k = em / page.em;
+    final key = _page(sprite, em, devicePixelRatio);
     final shaped = sprite.shaped;
     final path = st.curve!;
     final world = _view.world;
@@ -273,8 +274,10 @@ class LabelPainter {
         : _faded(sprite.look.halo!, st.opacity);
     final g = shaped.glyphs;
     for (var i = 0; i < g.length; i += 5) {
-      final cell = page.cell(g[i].toInt(), g[i + 1].toInt());
-      if (cell == null) continue;
+      final found = pages.cell(key, g[i].toInt(), g[i + 1].toInt());
+      if (found == null) continue;
+      final (cell, page) = found;
+      final k = em / page.em;
       final advance = g[i + 4] * em;
       var mid = g[i + 2] * em + advance / 2 - half;
       if (flip) mid = -mid;

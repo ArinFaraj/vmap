@@ -47,10 +47,15 @@ class GpuBuildings implements BuildingRenderer {
   final Map<BuiltExtrusion, _Mesh> _meshes = Map.identity();
   final List<(TileDraw, BuiltExtrusion)> _found = [];
   int _frame = 0;
+  final Stopwatch _clock = Stopwatch()..start();
+
+  /// How long a tile's buildings take to fade in once on the GPU.
+  static const _fadeMicros = 250000;
   final ui.Paint _paint = ui.Paint()..filterQuality = ui.FilterQuality.low;
 
-  /// New tiles sent to the GPU in one frame; the rest wait a frame.
-  static const _uploadsPerFrame = 4;
+  /// Bytes of new tiles sent to the GPU in one frame; the rest wait a
+  /// frame. The first tile of a frame always goes.
+  static const _bytesPerFrame = 384 * 1024;
 
   Future<void> _load() async {
     try {
@@ -173,18 +178,29 @@ class GpuBuildings implements BuildingRenderer {
     final perMetre =
         view.worldSize /
         (40075016.686 * math.cos(latitudeAt(view.centerY) * math.pi / 180));
-    var uploads = 0;
+    var uploads = 0, uploaded = 0;
+    var fading = false, held = false;
     for (final (d, e) in _found) {
       var mesh = _meshes[e];
       if (mesh == null) {
-        if (uploads >= _uploadsPerFrame) continue;
+        if (uploads > 0 &&
+            uploaded + e.vertices.lengthInBytes > _bytesPerFrame) {
+          held = true;
+          continue;
+        }
         uploads++;
-        mesh = _meshes[e] = _Mesh.of(e);
+        uploaded += e.vertices.lengthInBytes;
+        mesh = _meshes[e] = _Mesh.of(e)..shownAt = _clock.elapsedMicroseconds;
       }
       mesh.usedFrame = _frame;
       if (mesh.count == 0) continue;
       final scale = d.size / tileExtent;
-      final mvp = _times(clip, scale, perMetre, d.left, d.top);
+      final fade = math.min(
+        1.0,
+        (_clock.elapsedMicroseconds - mesh.shownAt) / _fadeMicros,
+      );
+      if (fade < 1) fading = true;
+      final mvp = _times(clip, scale, perMetre, d.left, d.top, fade);
       pass
         ..bindVertexBuffer(
           gpu.BufferView(
@@ -210,7 +226,7 @@ class GpuBuildings implements BuildingRenderer {
     if (_frame % 120 == 0) {
       _meshes.removeWhere((_, m) => _frame - m.usedFrame > 600);
     }
-    return uploads >= _uploadsPerFrame;
+    return fading || held;
   }
 
   /// [clip] times a tile's model matrix: tile units scaled by [scale] and
@@ -221,8 +237,10 @@ class GpuBuildings implements BuildingRenderer {
     double perMetre,
     double left,
     double top,
+    double fade,
   ) {
-    final out = Float32List(16);
+    final out = Float32List(20);
+    out[16] = fade;
     for (var r = 0; r < 4; r++) {
       out[r] = clip[r] * scale;
       out[4 + r] = clip[4 + r] * scale;
@@ -250,6 +268,7 @@ class _Mesh {
   final int bytes;
   final int count;
   int usedFrame = 0;
+  int shownAt = 0;
 
   static _Mesh of(BuiltExtrusion e) {
     final data = e.vertices;

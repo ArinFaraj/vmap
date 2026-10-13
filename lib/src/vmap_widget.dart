@@ -355,6 +355,12 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
   final _focalX = _Rate(), _focalY = _Rate(), _zoomRate = _Rate();
   final _turnRate = _Rate(), _tiltRate = _Rate();
   double _zoomTotal = 0, _turnTotal = 0, _tiltTotal = 0;
+
+  /// The speeds of a pinch or tilt whose first finger has lifted, kept for
+  /// a moment: two fingers never lift together, and the second lifting
+  /// soon after should still let the zoom, turn or tilt coast.
+  ({Duration at, Offset focal, double zoom, double turn, double tilt})?
+  _released;
   Offset _panTotal = Offset.zero;
 
   /// The last short tap, which a second touch close by in time and place
@@ -464,6 +470,7 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
 
   void _onDown(PointerDownEvent e) {
     _c.stop();
+    _released = null;
     _fingers[e.pointer] = e.localPosition;
     _downAt[e.pointer] = e.timeStamp;
     _most = math.max(_most, _fingers.length);
@@ -630,7 +637,30 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
         !_moved;
     _fingers.remove(e.pointer);
     if (_fingers.isNotEmpty) {
+      if (gesture == _Gesture.pinch || gesture == _Gesture.tilt) {
+        _released = (
+          at: end,
+          focal: focal,
+          zoom: gesture == _Gesture.pinch ? _zoomRate.perSecond(end) : 0.0,
+          turn: gesture == _Gesture.pinch ? _turnRate.perSecond(end) : 0.0,
+          tilt: gesture == _Gesture.tilt ? _tiltRate.perSecond(end) : 0.0,
+        );
+      }
       _restart(end);
+      return;
+    }
+    final released = _released;
+    _released = null;
+    if (released != null &&
+        end - released.at < const Duration(milliseconds: 160)) {
+      _tapUpAt = null;
+      _c._coast(
+        focal: released.focal,
+        zoom: released.zoom,
+        turn: released.turn,
+        tilt: released.tilt,
+      );
+      _gesture = _Gesture.undecided;
       return;
     }
     _most = 0;

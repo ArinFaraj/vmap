@@ -23,8 +23,9 @@ class GlyphCell {
 
 /// The look a page is drawn in: glyphs this many device pixels to the em,
 /// this weight and slant, with a halo this many device pixels wide and
-/// soft. Sizes come in eighths of an octave, so a glyph is never drawn more
-/// than about 5% away from the size it was rasterized at.
+/// soft. Sizes come in quarters of an octave and a glyph is rasterized at
+/// the step at or above the size it is drawn at, so it is only ever shrunk,
+/// by at most 16%, which keeps it sharp.
 typedef PageKey = ({int size, int weight, bool italic, int halo, int blur});
 
 /// One look's glyphs, rasterized by Flutter from the fonts' own outlines.
@@ -32,7 +33,7 @@ typedef PageKey = ({int size, int weight, bool italic, int halo, int blur});
 /// runs, and chunks merge once there are many.
 class GlyphPage {
   GlyphPage(this.key, this._fonts, this._paths)
-    : em = math.pow(2, key.size / 8).toDouble();
+    : em = math.pow(2, key.size / 4).toDouble();
 
   final PageKey key;
   final GlyphFonts _fonts;
@@ -61,11 +62,16 @@ class GlyphPage {
 
   bool get hasPending => _pending.isNotEmpty;
 
-  /// Draws every glyph asked for since the last flush into a new image.
-  void flush() {
-    if (_pending.isEmpty) return;
-    final ids = List.of(_pending);
-    _pending.clear();
+  /// The cell of [glyph] if it is drawn already, without asking for it.
+  GlyphCell? peek(int face, int glyph) => _cells[_id(face, glyph)];
+
+  /// Draws up to [most] of the glyphs asked for since the last flush into a
+  /// new image, and returns how many it drew.
+  int flush([int most = 1 << 30]) {
+    if (_pending.isEmpty) return 0;
+    final take = math.min(most, _pending.length);
+    final ids = _pending.sublist(0, take);
+    _pending.removeRange(0, take);
     if (_chunks.length >= 6) {
       for (final c in _chunks) {
         c.dispose();
@@ -74,6 +80,7 @@ class GlyphPage {
       ids.addAll(_cells.keys.where((id) => !ids.contains(id)));
     }
     _draw(ids);
+    return take;
   }
 
   void _draw(List<int> ids) {
@@ -226,13 +233,44 @@ class GlyphPages {
   int _frame = 0;
 
   static int sizeOf(double devicePixelsPerEm) =>
-      (math.log(math.max(devicePixelsPerEm, 1)) / math.ln2 * 8).round();
+      (math.log(math.max(devicePixelsPerEm, 1)) / math.ln2 * 4).ceil();
 
   GlyphPage page(PageKey key) {
     final page = _pages[key] ??= GlyphPage(key, fonts, _paths);
     page.usedFrame = _frame;
     return page;
   }
+
+  /// The cell of a glyph in [key]'s page, or while that page waits, in the
+  /// nearest size of the same look that has it, so a label never blinks
+  /// out while its size steps. The page the cell came from is returned with
+  /// it, for its scale.
+  (GlyphCell, GlyphPage)? cell(PageKey key, int face, int glyph) {
+    final page = this.page(key);
+    final exact = page.cell(face, glyph);
+    if (exact != null) return (exact, page);
+    for (var step = 1; step <= 4; step++) {
+      for (final size in [key.size + step, key.size - step]) {
+        final near =
+            _pages[(
+              size: size,
+              weight: key.weight,
+              italic: key.italic,
+              halo: key.halo,
+              blur: key.blur,
+            )];
+        final found = near?.peek(face, glyph);
+        if (found != null) {
+          near!.usedFrame = _frame;
+          return (found, near);
+        }
+      }
+    }
+    return null;
+  }
+
+  /// Glyphs rasterized in one frame at most; the rest wait a frame.
+  static const glyphsPerFrame = 160;
 
   /// Queues one glyph: its origin on the baseline at [x], [y] logical
   /// pixels, turned by [angle], [scale] logical pixels per page pixel, in
@@ -281,13 +319,24 @@ class GlyphPages {
   /// follow to draw them.
   bool rasterizePending() {
     var any = false;
+    final watch = Stopwatch()..start();
+    var glyphs = 0;
     for (final page in _pages.values) {
       if (!page.hasPending) continue;
-      page.flush();
+      final left = glyphsPerFrame - glyphs;
+      if (left <= 0) return true;
+      glyphs += page.flush(left);
       any = true;
     }
+    lastRasterized = glyphs;
+    lastRasterMicros = watch.elapsedMicroseconds;
     return any;
   }
+
+  /// Glyphs rasterized in the last frame, and the UI thread time it took.
+  int lastRasterized = 0;
+  int lastRasterMicros = 0;
+  int get pageCount => _pages.length;
 
   /// Ends a frame, dropping pages no frame used for a while.
   void endFrame() {

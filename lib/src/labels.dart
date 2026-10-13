@@ -206,6 +206,11 @@ class LabelEngine {
 
   bool get _glyphText => _glyphPages != null;
 
+  /// Glyphs drawn into pages in the last frame, and what that cost.
+  int get glyphsRasterized => _glyphPages?.lastRasterized ?? 0;
+  int get glyphRasterMicros => _glyphPages?.lastRasterMicros ?? 0;
+  int get glyphPageCount => _glyphPages?.pageCount ?? 0;
+
   void disposeGlyphs() {
     _glyphPages?.dispose();
     _glyphPages = null;
