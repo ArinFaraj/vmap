@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:dart_earcut/dart_earcut.dart';
 
+import 'building_index.dart';
 import 'expr.dart';
 import 'mercator.dart';
 import 'platform.dart';
@@ -23,7 +24,11 @@ class BuiltExtrusion {
     this.roofIndices,
     this.info,
     this.vertices,
+    this.index,
   );
+
+  /// The buildings by where they stand, for what hides labels.
+  final BuildingIndex index;
 
   /// Every wall and roof as triangles ready for the GPU, five floats a
   /// vertex: x and y in tile units, height in metres, the colour lit from
@@ -64,6 +69,10 @@ class BuiltExtrusion {
     pack(roofIndices),
     pack(info),
     pack(vertices),
+    pack(index.bounds),
+    pack(index.cellStart),
+    pack(index.cellItems),
+    pack(index.cellTallest),
   ];
 
   static BuiltExtrusion fromMessage(List<Object?> m) => BuiltExtrusion(
@@ -73,6 +82,12 @@ class BuiltExtrusion {
     unpackFloats(m[3]!),
     unpackFloats(m[4]!),
     unpackFloats(m[5]!),
+    BuildingIndex(
+      unpackFloats(m[6]!),
+      unpackFloats(m[7]!),
+      unpackFloats(m[8]!),
+      unpackFloats(m[9]!),
+    ),
   );
 }
 
@@ -216,13 +231,15 @@ class ExtrusionBuilder {
         vertex(_roof[v * 2], _roof[v * 2 + 1], top, 1);
       }
     }
+    final walls = _walls.toFloat32List(), info = _info.toFloat32List();
     return BuiltExtrusion(
       bucket,
-      _walls.toFloat32List(),
+      walls,
       _roof.toFloat32List(),
       _indices.toFloat32List(),
-      _info.toFloat32List(),
+      info,
       out,
+      BuildingIndex.of(walls, info),
     );
   }
 }

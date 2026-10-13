@@ -104,6 +104,9 @@ final class MarkerName extends LabelCandidate {
 class LabelState {
   LabelState(this.candidate);
 
+  /// Hidden by a building, as last found.
+  bool occluded = false;
+
   LabelCandidate candidate;
   LabelSprite? sprite;
   double opacity = 0;

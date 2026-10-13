@@ -409,6 +409,7 @@ class LabelEngine {
   ) {
     _pass++;
     _placeAgain = false;
+    occlusion.startPass();
     final styleZoom = zoom - 1 + zoomOffset;
     final states = _frameStates..clear();
     const margin = 60.0;
@@ -419,7 +420,6 @@ class LabelEngine {
         final sx = _view.x;
         final sy = _view.y;
         if (_view.ratio < _perspectiveCutoff) continue;
-        if (occlusion.hides(c.worldX, c.worldY)) continue;
         if (!_glyphText &&
             _view.tilted != null &&
             c is TileLabel &&
@@ -455,6 +455,11 @@ class LabelEngine {
         continue;
       }
       final c = st.candidate;
+      st.occluded = occlusion.hides(c.worldX, c.worldY) ?? st.occluded;
+      if (st.occluded) {
+        st.placed = false;
+        continue;
+      }
       final road = c is TileLabel && c.tile.line != null ? c : null;
       _bind(c);
       final layer = _symbolOf(c);
