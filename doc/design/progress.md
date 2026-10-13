@@ -146,3 +146,29 @@ Scripted zoom and fly test, `--dart-define=ZOOMTEST=true`, with variants:
   `Texture.asImage` avoids the wait; its phone numbers are still to take.
 - Labels are the other cost: shaping new labels (up to 6 ms in one frame)
   and placing them, on the UI thread.
+
+### The GPU map renderer (vmap_gpu)
+
+`vmap_gpu/` draws a tilted map's fill and line layers and its buildings
+with Flutter GPU, one call per tile (or per 120 style slots): tile workers
+write a vertex stream per tile in style order (`lib/src/gpu_stream.dart`),
+each vertex naming its style slot, and a frame only writes the slots'
+colour, width, offset and dash into a uniform table. Lines are widened and
+dashes cut in the shader, so a zoom rebuilds nothing on the CPU. Raster
+layers, labels and icons stay on the canvas; styles with circles, heatmaps
+or rasters above the map fall back to the canvas entirely.
+
+Vertices are exact floats (pairs of 12 bit numbers in one float) because
+Impeller's OpenGL ES shaders are GLSL ES 1.00, without integers. Checked on
+macOS (Metal) and the emulator (OpenGL ES) with OpenFreeMap's Liberty: on
+macOS the raster thread went from about 0.8 ms to 0.3 ms a frame.
+
+Not yet: fill patterns and line gradients (left out), fill translate,
+`line-gap-width`, stencil clipping of fallback tiles (they draw first and
+are overdrawn), and phone measurements.
+
+Also today, from phone traces: two script labels (name, newline, local
+name) no longer fall back to Paragraph images; labels cache their glyph
+cells; projections and tile glyph transfers stopped allocating per point
+and per label (young collections down a third in the zoom test); the map
+is out of the semantics tree.
