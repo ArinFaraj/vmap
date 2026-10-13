@@ -771,7 +771,7 @@ class VmapEngine extends ChangeNotifier {
     if (view != null) {
       canvas.restore();
       if (sheet.extrusions.isNotEmpty) {
-        _buildings.paint(
+        if (_buildings.paint(
           canvas,
           view,
           camera.origin,
@@ -780,7 +780,9 @@ class VmapEngine extends ChangeNotifier {
           _context,
           styleZoom,
           camera.devicePixelRatio,
-        );
+        )) {
+          waiting = true;
+        }
       }
     }
 

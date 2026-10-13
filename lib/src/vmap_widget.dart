@@ -1,13 +1,13 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
 import 'camera.dart';
 import 'engine.dart';
 import 'map_camera.dart';
+import 'view.dart';
 import 'style.dart';
 
 /// How fast the camera moves, per second: the centre in fractions of the
@@ -130,46 +130,56 @@ class VMapController extends ChangeNotifier {
     );
   }
 
-  /// Lets the camera coast on [speed], slowing like a body on a surface,
-  /// with zoom held about screen point [focal].
-  void _glide(CameraVelocity speed, Offset focal) {
+  /// Lets a released gesture coast and slow like a body on a surface: the
+  /// map slides at [pan] screen pixels a second, and zooms, turns and tilts
+  /// at their rates per second, all about screen point [focal].
+  void _coast({
+    required Offset focal,
+    Offset pan = Offset.zero,
+    double zoom = 0,
+    double turn = 0,
+    double tilt = 0,
+  }) {
     double cap(double v, double most) => v.clamp(-most, most);
-    final v = (
-      x: speed.x,
-      y: speed.y,
-      zoom: cap(speed.zoom, 4),
-      bearing: cap(speed.bearing, 240),
-      pitch: cap(speed.pitch, 120),
-    );
-    final world = 512 * math.pow(2, _camera.zoom).toDouble();
-    final screenSpeed = math.sqrt(v.x * v.x + v.y * v.y) * world;
-    if (screenSpeed < 60 &&
-        v.zoom.abs() < 0.3 &&
-        v.bearing.abs() < 8 &&
-        v.pitch.abs() < 8) {
+    final speed = pan.distance > 6000 ? pan * (6000 / pan.distance) : pan;
+    zoom = cap(zoom, 4);
+    turn = cap(turn, 300);
+    tilt = cap(tilt, 120);
+    if (speed.distance < 80 &&
+        zoom.abs() < 0.25 &&
+        turn.abs() < 10 &&
+        tilt.abs() < 10) {
       return;
     }
     const tau = glideSeconds;
     const seconds = tau * 4.5;
     final start = _camera;
+    final startView = start.view(_size.width, _size.height);
     unawaited(
       _run(
         _Motion(Duration(microseconds: (seconds * 1e6).round()), (t) {
           final k = tau * (1 - math.exp(-t * seconds / tau));
-          final moved = MapCameraPosition.world(
-            x: start.worldX + v.x * k,
-            y: start.worldY + v.y * k,
-            zoom: start.zoom,
-            bearing: start.bearing + v.bearing * k,
-            pitch: start.pitch + v.pitch * k,
-          );
-          if (v.zoom == 0) return moved;
-          return moved.around(
-            moved.view(_size.width, _size.height),
-            focal.dx,
-            focal.dy,
-            newZoom: start.zoom + v.zoom * k,
-          );
+          var at = start;
+          if (zoom != 0 || turn != 0) {
+            at = at.around(
+              startView,
+              focal.dx,
+              focal.dy,
+              newZoom: start.zoom + zoom * k,
+              turn: turn * k,
+            );
+          }
+          if (tilt != 0) at = at.copyWith(pitch: start.pitch + tilt * k);
+          if (speed != Offset.zero) {
+            at = at.panned(
+              at.view(_size.width, _size.height),
+              focal.dx,
+              focal.dy,
+              focal.dx + speed.dx * k,
+              focal.dy + speed.dy * k,
+            );
+          }
+          return at;
         }),
         carry: false,
       ),
@@ -287,6 +297,34 @@ class VMap extends StatefulWidget {
 
 enum _Gesture { undecided, pan, pinch, tilt, quickZoom }
 
+/// Values of one gesture channel over the last tenth of a second, with the
+/// touch events' own times, so a frame that arrives late does not make the
+/// release look faster than the finger was.
+class _Rate {
+  final List<(int, double)> _samples = [];
+
+  void reset() => _samples.clear();
+
+  void add(Duration at, double value) {
+    final t = at.inMicroseconds;
+    _samples.add((t, value));
+    while (_samples.length > 2 && t - _samples.first.$1 > 100000) {
+      _samples.removeAt(0);
+    }
+  }
+
+  /// Change per second, or 0 when the gesture paused before it ended.
+  double perSecond(Duration end) {
+    if (_samples.length < 2) return 0;
+    final (t0, v0) = _samples.first;
+    final (t1, v1) = _samples.last;
+    if (end.inMicroseconds - t1 > 60000) return 0;
+    final dt = (t1 - t0) / 1e6;
+    if (dt < 0.012) return 0;
+    return (v1 - v0) / dt;
+  }
+}
+
 class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
   VmapEngine? _owned;
   late final Ticker _ticker = createTicker(
@@ -297,27 +335,45 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
       widget.engine ??
       (_owned ??= VmapEngine(style: widget.style, glyphText: true));
 
-  Offset _lastFocal = Offset.zero;
-  double _lastScale = 1;
-  double _lastRotation = 0;
-  Offset _travel = Offset.zero;
+  VMapController get _c => widget.controller;
+  MapView get _view => _c.camera.view(_c._size.width, _c._size.height);
+
+  /// Where each finger on the map is, by pointer.
+  final Map<int, Offset> _fingers = {};
+  final Map<int, Offset> _fingersAtStart = {};
+  final Map<int, Duration> _downAt = {};
+
   var _gesture = _Gesture.undecided;
-  int _pointers = 0;
+  Offset _lastFocal = Offset.zero;
+  double _lastSpan = 0;
+  double _lastAngle = 0;
+  double _spanAtStart = 0;
+  double _angleAtStart = 0;
+  bool _turning = false;
+  bool _moved = false;
+
+  final _focalX = _Rate(), _focalY = _Rate(), _zoomRate = _Rate();
+  final _turnRate = _Rate(), _tiltRate = _Rate();
+  double _zoomTotal = 0, _turnTotal = 0, _tiltTotal = 0;
+  Offset _panTotal = Offset.zero;
 
   /// The last short tap, which a second touch close by in time and place
-  /// turns into a double tap.
+  /// turns into a double tap, or into a one finger zoom when it is held.
   Duration? _tapUpAt;
   Offset _tapUpPosition = Offset.zero;
-  Duration _downAt = Duration.zero;
-  Offset _downPosition = Offset.zero;
   bool _secondTap = false;
-  bool _quickZoomed = false;
   Offset _quickAnchor = Offset.zero;
   double _quickStartZoom = 0;
-  int _down = 0;
+  int _most = 0;
 
   static const _doubleTapGap = Duration(milliseconds: 300);
+  static const _tapTime = Duration(milliseconds: 250);
+  static const _tapSlop = 8.0;
   static const _doubleTapReach = 48.0;
+
+  /// A twist this large, in radians, before two fingers turn the map, so a
+  /// pinch does not turn it by accident.
+  static const _turnThreshold = 0.26;
 
   @override
   void initState() {
@@ -357,103 +413,103 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
     super.dispose();
   }
 
-  VMapController get _c => widget.controller;
+  Offset get _focal {
+    var sum = Offset.zero;
+    for (final p in _fingers.values) {
+      sum += p;
+    }
+    return sum / _fingers.length.toDouble();
+  }
 
-  void _onPointerDown(PointerDownEvent e) {
-    _down++;
+  (double, double) _spanAndAngle() {
+    final points = _fingers.values.take(2).toList();
+    final d = points[1] - points[0];
+    return (d.distance, d.direction);
+  }
+
+  void _resetChannels(Duration at) {
+    for (final r in [_focalX, _focalY, _zoomRate, _turnRate, _tiltRate]) {
+      r.reset();
+    }
+    _zoomTotal = _turnTotal = _tiltTotal = 0;
+    _panTotal = Offset.zero;
+    _record(at);
+  }
+
+  void _record(Duration at) {
+    _focalX.add(at, _panTotal.dx);
+    _focalY.add(at, _panTotal.dy);
+    _zoomRate.add(at, _zoomTotal);
+    _turnRate.add(at, _turnTotal);
+    _tiltRate.add(at, _tiltTotal);
+  }
+
+  /// Starts reading the fingers afresh: a finger came or went.
+  void _restart(Duration at) {
+    _lastFocal = _focal;
+    _fingersAtStart
+      ..clear()
+      ..addAll(_fingers);
+    if (_fingers.length >= 2) {
+      final (span, angle) = _spanAndAngle();
+      _lastSpan = _spanAtStart = span;
+      _lastAngle = _angleAtStart = angle;
+      _turning = false;
+      if (_gesture != _Gesture.tilt) _gesture = _Gesture.undecided;
+    } else if (_gesture != _Gesture.quickZoom) {
+      _gesture = _Gesture.pan;
+    }
+    _resetChannels(at);
+  }
+
+  void _onDown(PointerDownEvent e) {
     _c.stop();
-    if (_down != 1) {
-      _secondTap = false;
-      return;
-    }
-    final last = _tapUpAt;
-    _secondTap =
-        last != null &&
-        e.timeStamp - last < _doubleTapGap &&
-        (e.localPosition - _tapUpPosition).distance < _doubleTapReach;
-    _quickZoomed = false;
-    _downAt = e.timeStamp;
-    _downPosition = e.localPosition;
-  }
-
-  void _onPointerUp(PointerEvent e) {
-    _down = math.max(0, _down - 1);
-    if (_down != 0) return;
-    final short =
-        e.timeStamp - _downAt < const Duration(milliseconds: 250) &&
-        (e.localPosition - _downPosition).distance < 18;
-    if (_secondTap && !_quickZoomed && short) {
-      _tapUpAt = null;
-      _secondTap = false;
-      _zoomInAt(e.localPosition);
-      return;
-    }
-    _secondTap = false;
-    if (short) {
-      _tapUpAt = e.timeStamp;
-      _tapUpPosition = e.localPosition;
+    _fingers[e.pointer] = e.localPosition;
+    _downAt[e.pointer] = e.timeStamp;
+    _most = math.max(_most, _fingers.length);
+    if (_fingers.length == 1) {
+      _moved = false;
+      final last = _tapUpAt;
+      _secondTap =
+          last != null &&
+          e.timeStamp - last < _doubleTapGap &&
+          (e.localPosition - _tapUpPosition).distance < _doubleTapReach;
+      if (_secondTap) {
+        _gesture = _Gesture.quickZoom;
+        _quickAnchor = e.localPosition;
+        _quickStartZoom = _c.camera.zoom;
+      }
     } else {
-      _tapUpAt = null;
+      _secondTap = false;
+      if (_gesture == _Gesture.quickZoom) _gesture = _Gesture.undecided;
     }
+    _restart(e.timeStamp);
   }
 
-  void _onStart(ScaleStartDetails d) {
-    _lastFocal = d.localFocalPoint;
-    _lastScale = 1;
-    _lastRotation = 0;
-    _travel = Offset.zero;
-    _pointers = d.pointerCount;
-    if (_secondTap && d.pointerCount == 1) {
-      _gesture = _Gesture.quickZoom;
-      _quickZoomed = true;
-      _quickAnchor = _downPosition;
-      _quickStartZoom = _c.camera.zoom;
-      _travel = d.localFocalPoint - _downPosition;
-      return;
+  void _onMove(PointerMoveEvent e) {
+    if (!_fingers.containsKey(e.pointer)) return;
+    _fingers[e.pointer] = e.localPosition;
+    final start = _fingersAtStart[e.pointer];
+    if (start != null && (e.localPosition - start).distance > _tapSlop) {
+      _moved = true;
     }
-    _gesture = d.pointerCount > 1 ? _Gesture.undecided : _Gesture.pan;
-  }
-
-  void _onUpdate(ScaleUpdateDetails d) {
-    if (d.pointerCount != _pointers) {
-      _pointers = d.pointerCount;
-      _lastFocal = d.localFocalPoint;
-      _lastScale = d.scale;
-      _lastRotation = d.rotation;
-      if (_gesture != _Gesture.quickZoom) {
-        _gesture = _pointers > 1 ? _Gesture.undecided : _Gesture.pan;
-      }
-      return;
-    }
-    final view = _c.camera.view(_c._size.width, _c._size.height);
-    final focal = d.localFocalPoint;
-    if (_gesture == _Gesture.undecided) {
-      _travel += focal - _lastFocal;
-      final pinching = (d.scale - 1).abs() > 0.04 || d.rotation.abs() > 0.08;
-      if (pinching) {
-        _gesture = _Gesture.pinch;
-      } else if (widget.tilt &&
-          _travel.dy.abs() > 12 &&
-          _travel.dy.abs() > _travel.dx.abs() * 2) {
-        _gesture = _Gesture.tilt;
-      } else if (_travel.distance > 24) {
-        _gesture = _Gesture.pinch;
-      }
-    }
+    if (!_moved && _gesture != _Gesture.quickZoom) return;
+    final view = _view;
+    final focal = _focal;
     switch (_gesture) {
-      case _Gesture.undecided:
-        break;
       case _Gesture.quickZoom:
-        final dy = focal.dy - _quickAnchor.dy;
+        final zoom = _quickStartZoom + (focal.dy - _quickAnchor.dy) / 160;
+        _zoomTotal = zoom - _quickStartZoom;
         _c._set(
           _c.camera.around(
             view,
             _quickAnchor.dx,
             _quickAnchor.dy,
-            newZoom: _quickStartZoom + dy / 160,
+            newZoom: zoom,
           ),
         );
       case _Gesture.pan:
+        _panTotal += focal - _lastFocal;
         _c._set(
           _c.camera.panned(
             view,
@@ -463,61 +519,168 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
             focal.dy,
           ),
         );
+      case _Gesture.undecided:
+        _decide();
+        if (_gesture == _Gesture.undecided) return;
+        _onMove(e);
+        return;
       case _Gesture.tilt:
-        _c._set(
-          _c.camera.copyWith(
-            pitch: _c.camera.pitch - (focal.dy - _lastFocal.dy) * 0.5,
-          ),
-        );
+        final dy = focal.dy - _lastFocal.dy;
+        _tiltTotal -= dy * 0.45;
+        _c._set(_c.camera.copyWith(pitch: _c.camera.pitch - dy * 0.45));
       case _Gesture.pinch:
-        final moved = _c.camera.panned(
-          view,
-          _lastFocal.dx,
-          _lastFocal.dy,
-          focal.dx,
-          focal.dy,
-        );
-        final zoomBy = math.log(d.scale / _lastScale) / math.ln2;
-        final turn = widget.rotate
-            ? -(d.rotation - _lastRotation) * 180 / math.pi
-            : 0.0;
-        _c._set(
-          moved.around(
-            moved.view(view.width, view.height),
-            focal.dx,
-            focal.dy,
-            newZoom: moved.zoom + zoomBy,
-            turn: turn,
-          ),
-        );
+        _pinch(view, focal);
     }
     _lastFocal = focal;
-    _lastScale = d.scale;
-    _lastRotation = d.rotation;
+    _record(e.timeStamp);
   }
 
-  void _onEnd(ScaleEndDetails d) {
-    final anchor = _gesture == _Gesture.quickZoom ? _quickAnchor : _lastFocal;
-    _gesture = _Gesture.undecided;
-    _c._glide(_c.velocity, anchor);
+  /// Tells a tilt from a pinch the way Google Maps does: two fingers side
+  /// by side moving up or down together tilt; anything else zooms, pans,
+  /// and turns once twisted far enough.
+  void _decide() {
+    if (_fingers.length < 2) {
+      _gesture = _Gesture.pan;
+      return;
+    }
+    final ids = _fingers.keys.take(2).toList();
+    final a0 = _fingersAtStart[ids[0]], b0 = _fingersAtStart[ids[1]];
+    if (a0 == null || b0 == null) return;
+    final da = _fingers[ids[0]]! - a0, db = _fingers[ids[1]]! - b0;
+    final (span, angle) = _spanAndAngle();
+    final apart = b0 - a0;
+    final sideBySide = apart.dy.abs() < apart.dx.abs() * 0.8;
+    final together = da.dy * db.dy > 0;
+    final vertical =
+        da.dy.abs() > da.dx.abs() * 1.5 && db.dy.abs() > db.dx.abs() * 1.5;
+    final steadySpan = (span / _spanAtStart - 1).abs() < 0.08;
+    var twist = (angle - _angleAtStart).abs();
+    if (twist > math.pi) twist = 2 * math.pi - twist;
+    if (widget.tilt && sideBySide && together && vertical && steadySpan) {
+      if (math.min(da.dy.abs(), db.dy.abs()) > 10) _gesture = _Gesture.tilt;
+      return;
+    }
+    if ((span / _spanAtStart - 1).abs() > 0.04 ||
+        twist > 0.06 ||
+        (da + db).distance / 2 > 14) {
+      _gesture = _Gesture.pinch;
+      _lastSpan = span;
+      _lastAngle = angle;
+    }
   }
 
-  void _zoomInAt(Offset at) {
-    final view = _c.camera.view(_c._size.width, _c._size.height);
-    final to = _c.camera.around(
+  void _pinch(MapView view, Offset focal) {
+    final (span, angle) = _spanAndAngle();
+    final moved = _c.camera.panned(
       view,
+      _lastFocal.dx,
+      _lastFocal.dy,
+      focal.dx,
+      focal.dy,
+    );
+    _panTotal += focal - _lastFocal;
+    final zoomBy = _lastSpan > 0 ? math.log(span / _lastSpan) / math.ln2 : 0.0;
+    _zoomTotal += zoomBy;
+    var turn = 0.0;
+    if (widget.rotate) {
+      var since = angle - _angleAtStart;
+      while (since > math.pi) {
+        since -= 2 * math.pi;
+      }
+      while (since < -math.pi) {
+        since += 2 * math.pi;
+      }
+      if (!_turning && since.abs() > _turnThreshold) {
+        _turning = true;
+        _lastAngle = angle;
+      }
+      if (_turning) {
+        var d = angle - _lastAngle;
+        if (d > math.pi) d -= 2 * math.pi;
+        if (d < -math.pi) d += 2 * math.pi;
+        turn = -d * 180 / math.pi;
+        _turnTotal += turn;
+      }
+    }
+    _c._set(
+      moved.around(
+        moved.view(view.width, view.height),
+        focal.dx,
+        focal.dy,
+        newZoom: moved.zoom + zoomBy,
+        turn: turn,
+      ),
+    );
+    _lastSpan = span;
+    _lastAngle = angle;
+  }
+
+  void _onUp(PointerEvent e) {
+    final downAt = _downAt.remove(e.pointer);
+    final start = _fingersAtStart[e.pointer];
+    final wasMost = _most;
+    final gesture = _gesture;
+    final focal = gesture == _Gesture.quickZoom ? _quickAnchor : _lastFocal;
+    final end = e.timeStamp;
+    final short =
+        downAt != null &&
+        end - downAt < _tapTime &&
+        start != null &&
+        (e.localPosition - start).distance < _tapSlop &&
+        !_moved;
+    _fingers.remove(e.pointer);
+    if (_fingers.isNotEmpty) {
+      _restart(end);
+      return;
+    }
+    _most = 0;
+    if (wasMost == 2 && short && gesture != _Gesture.tilt) {
+      _tapUpAt = null;
+      _zoomBy(-1, focal);
+      return;
+    }
+    if (gesture == _Gesture.quickZoom) {
+      _tapUpAt = null;
+      if (!_moved) {
+        _zoomBy(1, e.localPosition);
+        return;
+      }
+      _c._coast(focal: focal, zoom: _zoomRate.perSecond(end));
+      _gesture = _Gesture.undecided;
+      return;
+    }
+    if (wasMost == 1 && short) {
+      _tapUpAt = end;
+      _tapUpPosition = e.localPosition;
+      _tap(e.localPosition);
+      return;
+    }
+    _tapUpAt = null;
+    _c._coast(
+      focal: focal,
+      pan: Offset(_focalX.perSecond(end), _focalY.perSecond(end)),
+      zoom: gesture == _Gesture.pinch ? _zoomRate.perSecond(end) : 0,
+      turn: gesture == _Gesture.pinch ? _turnRate.perSecond(end) : 0,
+      tilt: gesture == _Gesture.tilt ? _tiltRate.perSecond(end) : 0,
+    );
+    _gesture = _Gesture.undecided;
+  }
+
+  void _zoomBy(double levels, Offset at) {
+    final to = _c.camera.around(
+      _view,
       at.dx,
       at.dy,
-      newZoom: _c.camera.zoom + 1,
+      newZoom: _c.camera.zoom + levels,
     );
-    unawaited(_c.easeTo(to, duration: const Duration(milliseconds: 320)));
+    unawaited(_c.easeTo(to, duration: const Duration(milliseconds: 300)));
   }
 
-  void _onTapUp(TapUpDetails d) {
+  void _tap(Offset at) {
     final onTap = widget.onTap;
     if (onTap == null) return;
-    final view = _c.camera.view(_c._size.width, _c._size.height);
-    final g = view.unproject(d.localPosition.dx, d.localPosition.dy);
+    final view = _view;
+    final g = view.unproject(at.dx, at.dy);
     if (g == null) return;
     final p = MapCameraPosition.world(
       x: g.x / view.worldSize,
@@ -534,31 +697,15 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
       builder: (context, constraints) {
         _c._size = constraints.biggest;
         return Listener(
-          onPointerDown: _onPointerDown,
-          onPointerUp: _onPointerUp,
-          onPointerCancel: _onPointerUp,
-          child: RawGestureDetector(
-            behavior: HitTestBehavior.opaque,
-            gestures: {
-              ScaleGestureRecognizer:
-                  GestureRecognizerFactoryWithHandlers<ScaleGestureRecognizer>(
-                    ScaleGestureRecognizer.new,
-                    (r) => r
-                      ..onStart = _onStart
-                      ..onUpdate = _onUpdate
-                      ..onEnd = _onEnd,
-                  ),
-              TapGestureRecognizer:
-                  GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
-                    TapGestureRecognizer.new,
-                    (r) => r..onTapUp = _onTapUp,
-                  ),
-            },
-            child: RepaintBoundary(
-              child: CustomPaint(
-                size: constraints.biggest,
-                painter: _VMapPainter(_engine, _c, dpr),
-              ),
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: _onDown,
+          onPointerMove: _onMove,
+          onPointerUp: _onUp,
+          onPointerCancel: _onUp,
+          child: RepaintBoundary(
+            child: CustomPaint(
+              size: constraints.biggest,
+              painter: _VMapPainter(_engine, _c, dpr),
             ),
           ),
         );

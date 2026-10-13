@@ -49,6 +49,9 @@ class GpuBuildings implements BuildingRenderer {
   int _frame = 0;
   final ui.Paint _paint = ui.Paint()..filterQuality = ui.FilterQuality.low;
 
+  /// New tiles sent to the GPU in one frame; the rest wait a frame.
+  static const _uploadsPerFrame = 4;
+
   Future<void> _load() async {
     try {
       _library = await gpu.ShaderLibrary.fromAsset(_bundle);
@@ -102,7 +105,7 @@ class GpuBuildings implements BuildingRenderer {
   }
 
   @override
-  void paint(
+  bool paint(
     ui.Canvas canvas,
     MapView view,
     ui.Offset origin,
@@ -113,7 +116,7 @@ class GpuBuildings implements BuildingRenderer {
     double devicePixelRatio,
   ) {
     if (!_ready()) {
-      _canvas.paint(
+      return _canvas.paint(
         canvas,
         view,
         origin,
@@ -123,7 +126,6 @@ class GpuBuildings implements BuildingRenderer {
         styleZoom,
         devicePixelRatio,
       );
-      return;
     }
     _frame++;
     _found.clear();
@@ -135,10 +137,10 @@ class GpuBuildings implements BuildingRenderer {
         }
       }
     }
-    if (_found.isEmpty) return;
+    if (_found.isEmpty) return false;
     final width = (view.width * devicePixelRatio).round();
     final height = (view.height * devicePixelRatio).round();
-    if (width <= 0 || height <= 0) return;
+    if (width <= 0 || height <= 0) return false;
     _size(width, height);
     final frame = _surface!.acquireNextFrame();
     final commands = gpu.gpuContext.createCommandBuffer();
@@ -171,8 +173,14 @@ class GpuBuildings implements BuildingRenderer {
     final perMetre =
         view.worldSize /
         (40075016.686 * math.cos(latitudeAt(view.centerY) * math.pi / 180));
+    var uploads = 0;
     for (final (d, e) in _found) {
-      final mesh = _meshes[e] ??= _Mesh.of(e);
+      var mesh = _meshes[e];
+      if (mesh == null) {
+        if (uploads >= _uploadsPerFrame) continue;
+        uploads++;
+        mesh = _meshes[e] = _Mesh.of(e);
+      }
       mesh.usedFrame = _frame;
       if (mesh.count == 0) continue;
       final scale = d.size / tileExtent;
@@ -202,6 +210,7 @@ class GpuBuildings implements BuildingRenderer {
     if (_frame % 120 == 0) {
       _meshes.removeWhere((_, m) => _frame - m.usedFrame > 600);
     }
+    return uploads >= _uploadsPerFrame;
   }
 
   /// [clip] times a tile's model matrix: tile units scaled by [scale] and
@@ -242,55 +251,11 @@ class _Mesh {
   final int count;
   int usedFrame = 0;
 
-  static const _lightX = -0.6, _lightY = -0.8;
-
   static _Mesh of(BuiltExtrusion e) {
-    final out = <double>[];
-    final info = e.info, w = e.walls, rp = e.roof, ri = e.roofIndices;
-    for (var b = 0; b < e.count; b++) {
-      final i = b * BuiltExtrusion.stride;
-      final top = info[i], bottom = info[i + 1];
-      final r = info[i + 8],
-          g = info[i + 9],
-          bl = info[i + 10],
-          a = info[i + 11];
-      void vertex(double x, double y, double z, double light) => out.addAll([
-        x,
-        y,
-        z,
-        math.min(1, r * light),
-        math.min(1, g * light),
-        math.min(1, bl * light),
-        a,
-      ]);
-      final firstWall = info[i + 4].toInt(), walls = info[i + 5].toInt();
-      for (var j = firstWall; j < firstWall + walls; j++) {
-        final x0 = w[j * 4],
-            y0 = w[j * 4 + 1],
-            x1 = w[j * 4 + 2],
-            y1 = w[j * 4 + 3];
-        final nx = y1 - y0, ny = x0 - x1;
-        final len = math.sqrt(nx * nx + ny * ny);
-        if (len == 0) continue;
-        final light = 0.72 + 0.2 * (nx * _lightX + ny * _lightY) / len;
-        final low = light * 0.82;
-        vertex(x0, y0, bottom, low);
-        vertex(x1, y1, bottom, low);
-        vertex(x1, y1, top, light);
-        vertex(x0, y0, bottom, low);
-        vertex(x1, y1, top, light);
-        vertex(x0, y0, top, light);
-      }
-      final firstRoof = info[i + 6].toInt(), roofs = info[i + 7].toInt();
-      for (var j = firstRoof; j < firstRoof + roofs; j++) {
-        final v = ri[j].toInt();
-        vertex(rp[v * 2], rp[v * 2 + 1], top, 1);
-      }
-    }
-    final data = Float32List.fromList(out);
+    final data = e.vertices;
     final buffer = gpu.gpuContext.createDeviceBufferWithCopy(
       ByteData.sublistView(data),
     );
-    return _Mesh(buffer, data.lengthInBytes, out.length ~/ 7);
+    return _Mesh(buffer, data.lengthInBytes, data.length ~/ 7);
   }
 }

@@ -21,7 +21,13 @@ class BuiltExtrusion {
     this.roof,
     this.roofIndices,
     this.info,
+    this.vertices,
   );
+
+  /// Every wall and roof as triangles ready for the GPU: x and y in tile
+  /// units, z in metres, then red, green, blue and alpha, lit from the
+  /// north west and darker at the foot. Seven floats a vertex.
+  final Float32List vertices;
 
   final int bucket;
 
@@ -49,6 +55,7 @@ class BuiltExtrusion {
     pack(roof),
     pack(roofIndices),
     pack(info),
+    pack(vertices),
   ];
 
   static BuiltExtrusion fromMessage(List<Object?> m) => BuiltExtrusion(
@@ -57,6 +64,7 @@ class BuiltExtrusion {
     unpackFloats(m[2]!),
     unpackFloats(m[3]!),
     unpackFloats(m[4]!),
+    unpackFloats(m[5]!),
   );
 }
 
@@ -165,22 +173,71 @@ class ExtrusionBuilder {
     ]);
   }
 
-  BuiltExtrusion? finish() => _info.isEmpty
-      ? null
-      : BuiltExtrusion(
-          bucket,
-          Float32List.fromList(_walls),
-          Float32List.fromList(_roof),
-          Float32List.fromList(_indices),
-          Float32List.fromList(_info),
-        );
+  BuiltExtrusion? finish() {
+    if (_info.isEmpty) return null;
+    var count = 0;
+    for (var i = 0; i < _info.length; i += BuiltExtrusion.stride) {
+      count += _info[i + 5].toInt() * 6 + _info[i + 7].toInt();
+    }
+    final out = Float32List(count * 7);
+    var o = 0;
+    for (var i = 0; i < _info.length; i += BuiltExtrusion.stride) {
+      final top = _info[i], bottom = _info[i + 1];
+      final r = _info[i + 8], g = _info[i + 9], b = _info[i + 10];
+      final a = _info[i + 11];
+      void vertex(double x, double y, double z, double light) {
+        out[o++] = x;
+        out[o++] = y;
+        out[o++] = z;
+        out[o++] = math.min(1, r * light);
+        out[o++] = math.min(1, g * light);
+        out[o++] = math.min(1, b * light);
+        out[o++] = a;
+      }
+
+      final firstWall = _info[i + 4].toInt(), walls = _info[i + 5].toInt();
+      for (var j = firstWall; j < firstWall + walls; j++) {
+        final x0 = _walls[j * 4], y0 = _walls[j * 4 + 1];
+        final x1 = _walls[j * 4 + 2], y1 = _walls[j * 4 + 3];
+        final nx = y1 - y0, ny = x0 - x1;
+        final len = math.sqrt(nx * nx + ny * ny);
+        final facing = len == 0
+            ? 0.0
+            : (nx * ExtrusionPainter.lightX + ny * ExtrusionPainter.lightY) /
+                  len;
+        final light = 0.72 + 0.2 * facing;
+        final low = light * 0.82;
+        vertex(x0, y0, bottom, low);
+        vertex(x1, y1, bottom, low);
+        vertex(x1, y1, top, light);
+        vertex(x0, y0, bottom, low);
+        vertex(x1, y1, top, light);
+        vertex(x0, y0, top, light);
+      }
+      final firstRoof = _info[i + 6].toInt(), roofs = _info[i + 7].toInt();
+      for (var j = firstRoof; j < firstRoof + roofs; j++) {
+        final v = _indices[j].toInt();
+        vertex(_roof[v * 2], _roof[v * 2 + 1], top, 1);
+      }
+    }
+    return BuiltExtrusion(
+      bucket,
+      Float32List.fromList(_walls),
+      Float32List.fromList(_roof),
+      Float32List.fromList(_indices),
+      Float32List.fromList(_info),
+      out,
+    );
+  }
 }
 
 /// Draws a style's buildings standing up on a tilted map. vmap's own draws
 /// them with the canvas; another may draw them on the GPU with a depth
 /// buffer.
 abstract class BuildingRenderer {
-  void paint(
+  /// Draws what it can and returns true when it held some back for the
+  /// next frame.
+  bool paint(
     ui.Canvas canvas,
     MapView view,
     ui.Offset origin,
@@ -206,13 +263,13 @@ class ExtrusionPainter implements BuildingRenderer {
   final List<(TileDraw, BuiltExtrusion)> _found = [];
 
   /// The direction light comes from on the ground: the north west.
-  static const _lightX = -0.6, _lightY = -0.8;
+  static const lightX = -0.6, lightY = -0.8;
 
   @override
   void dispose() {}
 
   @override
-  void paint(
+  bool paint(
     ui.Canvas canvas,
     MapView view,
     ui.Offset origin,
@@ -238,6 +295,7 @@ class ExtrusionPainter implements BuildingRenderer {
       if (n == 0) continue;
       _draw(canvas, view, origin, n, opacity);
     }
+    return false;
   }
 
   void _draw(
@@ -351,7 +409,7 @@ class ExtrusionPainter implements BuildingRenderer {
       if (nx * mx + ny * my >= 0) continue;
       final len = math.sqrt(nx * nx + ny * ny);
       if (len == 0) continue;
-      final facing = (nx * _lightX + ny * _lightY) / len;
+      final facing = (nx * lightX + ny * lightY) / len;
       final light = 0.72 + 0.2 * facing;
       final high = _shade(r, g, bl, a, light);
       final low = _shade(r, g, bl, a, light * 0.82);
