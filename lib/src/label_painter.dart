@@ -562,7 +562,9 @@ class LabelPainter {
     double edge = 0.75,
     double fade = 0,
   }) {
-    final crisp = (6 * scale).clamp(2.0, 24.0);
+    // smoothstep's slope at the edge in MapLibre's symbol_sdf shader,
+    // 0.75 over a gamma of 0.105 per screen pixel of field.
+    final crisp = (0.75 / 0.105 * scale).clamp(2.0, 24.0);
     final gain = fade > 0 ? math.min(crisp, 1 / fade) : crisp;
     return ui.ColorFilter.matrix([
       0, 0, 0, 0, tint.r * 255, //
