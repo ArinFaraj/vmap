@@ -391,6 +391,7 @@ Future<void> _settle(VmapEngine engine, void Function() paint) async {
     await Future<void>.delayed(const Duration(milliseconds: 16));
     if (!dirty &&
         engine.stats.tilesLoading == 0 &&
+        engine.stats.resourcesLoading == 0 &&
         clock.elapsedMilliseconds > 800 &&
         clock.elapsedMilliseconds - lastPaint > 400) {
       break;

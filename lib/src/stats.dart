@@ -7,6 +7,9 @@ class VmapStats {
   int fallbackTiles = 0;
   int tilesCached = 0;
   int tilesLoading = 0;
+
+  /// Sprite sheets and glyph ranges asked for and not yet answered.
+  int resourcesLoading = 0;
   int drawCalls = 0;
   int labelStates = 0;
   int labelSprites = 0;

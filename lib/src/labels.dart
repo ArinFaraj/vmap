@@ -242,6 +242,8 @@ class LabelEngine {
     clear();
   }
 
+  int get rangesPending => _sprites.pbf?.pending ?? 0;
+
   void pbfArrived(int face, List<PbfGlyph> glyphs) =>
       _glyphPages?.addPbf(face, glyphs);
 

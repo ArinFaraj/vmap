@@ -452,12 +452,15 @@ class VmapEngine extends ChangeNotifier {
 
   String? _rasterKey;
 
+  int _spritesLoading = 0;
+
   Future<void> _loadSprites(String? url) async {
     _spriteUrl = url;
     _sprites?.dispose();
     _sprites = _meshes.sprites = _labels.sheet = null;
     if (url == null) return;
     SpriteSheet? loaded;
+    _spritesLoading++;
     try {
       loaded = await SpriteSheet.load(
         url,
@@ -467,6 +470,8 @@ class VmapEngine extends ChangeNotifier {
       );
     } catch (e) {
       onError?.call(e);
+    } finally {
+      _spritesLoading--;
     }
     if (loaded == null) return;
     if (_disposed || url != _spriteUrl) {
@@ -957,6 +962,7 @@ class VmapEngine extends ChangeNotifier {
       ..labelStates = _labels.stateCount
       ..labelSprites = _labels.spriteCount
       ..tilesLoading = loading
+      ..resourcesLoading = _spritesLoading + _labels.rangesPending
       ..drawCalls = draws;
     for (final s in _sources) {
       s.evict(maxCachedTiles, _frame);

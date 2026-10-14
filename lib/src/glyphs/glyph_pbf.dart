@@ -180,6 +180,9 @@ class PbfStore {
   Net? _net;
   bool _closed = false;
 
+  /// Ranges asked for and not yet answered.
+  int get pending => _asked.length - _arrived.length;
+
   /// The face of the font stack [fonts].
   int face(List<String> fonts) {
     final name = fonts.join(',');
