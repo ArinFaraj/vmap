@@ -112,7 +112,8 @@ class ExtrusionBuilder {
     double base,
     Rgba color,
   ) {
-    if (height <= base) return;
+    // As MapLibre, a building no taller than its base still has its roof.
+    if (height < base) return;
     var polygonStart = -1;
     final ring = _ring..clear();
     final holes = <int>[];

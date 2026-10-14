@@ -101,6 +101,7 @@ class VmapEngine extends ChangeNotifier {
   );
 
   final _zoomOutHold = ZoomOutHold();
+  final ui.Paint _layerPaint = ui.Paint();
 
   final TileSourceConfig source;
   final int maxCachedTiles;
@@ -779,6 +780,14 @@ class VmapEngine extends ChangeNotifier {
         continue;
       }
       if (onGpu) continue;
+      final whole = sheet.runOpacity(run, _context);
+      if (whole == 0) continue;
+      if (whole != null && whole < 1) {
+        canvas.saveLayer(
+          null,
+          _layerPaint..color = ui.Color.fromRGBO(0, 0, 0, whole),
+        );
+      }
       final s = _sources[run.source];
       draws += _meshes.drawRun(
         canvas,
@@ -788,6 +797,7 @@ class VmapEngine extends ChangeNotifier {
         _states[s.def.name],
         size,
       );
+      if (whole != null && whole < 1) canvas.restore();
     }
 
     if (view != null) {

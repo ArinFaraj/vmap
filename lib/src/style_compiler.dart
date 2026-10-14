@@ -115,7 +115,15 @@ class StyleCompiler {
         _ => null,
       };
       if (add != null) {
+        final before = _layers.length;
         if (_vector(layer) case final vector?) add(vector);
+        final whole = layer.paint['${layer.type}-layer-opacity'];
+        if (whole != null) {
+          final opacity = compileExpr(whole);
+          for (var i = before; i < _layers.length; i++) {
+            _layerOpacity[i] = opacity;
+          }
+        }
       } else if (layer.type == 'background') {
         _addBackground(layer);
       } else if (layer.type == 'raster' || layer.type == 'hillshade') {
@@ -125,6 +133,7 @@ class StyleCompiler {
     final sprite = json['sprite'];
     final footprints = _footprints();
     return StyleSheet(
+      layerOpacity: _layerOpacity,
       background: _background,
       buckets: _buckets,
       layers: _layers,
@@ -734,6 +743,11 @@ class StyleCompiler {
 
   /// Paint layers in runs of one source, broken by every raster layer and
   /// around layers that spill past their tiles or glow.
+  final Map<int, Expr> _layerOpacity = {};
+
+  static bool _standsAlone(PaintLayer layer) =>
+      layer is FillLayer && layer.extruded;
+
   List<StyleRun> _runs() {
     final layers = _layers;
     final runs = <StyleRun>[];
@@ -757,7 +771,11 @@ class StyleCompiler {
               (sourceAt(i) != sourceAt(runStart) ||
                   layers[i].spills != layers[runStart].spills ||
                   layers[i] is HeatmapLayer ||
-                  layers[runStart] is HeatmapLayer))) {
+                  layers[runStart] is HeatmapLayer ||
+                  _layerOpacity.containsKey(i) ||
+                  _layerOpacity.containsKey(runStart) ||
+                  _standsAlone(layers[i]) ||
+                  _standsAlone(layers[runStart])))) {
         closeRun(i);
       }
     }

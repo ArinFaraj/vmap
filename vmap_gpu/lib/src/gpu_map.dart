@@ -367,7 +367,9 @@ class GpuMap implements MapRenderer {
     }
     final frame = _ring[_next];
     _next = (_next + 1) % _ring.length;
-    final commands = gpu.gpuContext.createCommandBuffer();
+    // A render pass encodes into a command buffer of its own: Metal allows
+    // one open encoder per buffer. They run in the order submitted.
+    final buffers = <gpu.CommandBuffer>[];
     _host!.reset();
     _setFog(sheet, context, view);
     _frameInfo[26] = devicePixelRatio;
@@ -378,7 +380,10 @@ class GpuMap implements MapRenderer {
     final clip = view.clipMatrix(originX: origin.dx, originY: origin.dy);
     _MapPass passOn(gpu.Texture target) => _MapPass(
       this,
-      _beginPass(commands, target),
+      _beginPass(
+        (buffers..add(gpu.gpuContext.createCommandBuffer())).last,
+        target,
+      ),
       view,
       clip,
       sheet,
@@ -387,32 +392,62 @@ class GpuMap implements MapRenderer {
       fallback,
       ideal,
     );
-    final pass = passOn(frame.map);
-    Timeline.timeSync('vmap.gpu.flat', pass.drawRuns);
-    final overlays = <(ui.Image, double)>[];
-    Timeline.timeSync('vmap.gpu.buildings', () {
-      for (final layer in sheet.extrusions) {
-        if (!_reveal.shows(layer)) continue;
-        final opacity = (asNumber(layer.opacity(context)) ?? 1).clamp(0.0, 1.0);
-        if (opacity <= 0) continue;
-        if (opacity >= 1) {
-          // Opaque buildings look the same drawn straight into the map,
-          // without a texture of their own to fill.
-          pass.drawBuildings(layer);
+    // Layers are drawn in the style's order into the frame's texture. A
+    // layer drawn whole at an opacity, and a see-through building layer,
+    // go into a texture of their own and what is above them into another,
+    // so the canvas lays them over each other in order.
+    final shown = <(ui.Image, double)>[(frame.image, 1)];
+    var overlays = 0;
+    (gpu.Texture, ui.Image) next() => frame.overlay(overlays++, _target);
+    var pass = passOn(frame.map);
+    var below = <StyleRun>[];
+    void apart(double opacity, void Function(_MapPass into) draw) {
+      pass.drawRuns(below);
+      below = [];
+      if (opacity <= 0) return;
+      if (opacity >= 1) {
+        draw(pass);
+        return;
+      }
+      final (alone, aloneImage) = next();
+      draw(passOn(alone));
+      final (above, aboveImage) = next();
+      pass = passOn(above);
+      shown
+        ..add((aloneImage, opacity))
+        ..add((aboveImage, 1));
+    }
+
+    Timeline.timeSync('vmap.gpu.draw', () {
+      for (final run in sheet.runs) {
+        final building = sheet.extrusionAt(run);
+        if (building != null) {
+          if (!_reveal.shows(building)) continue;
+          final opacity = (asNumber(building.opacity(context)) ?? 1).clamp(
+            0.0,
+            1.0,
+          );
+          apart(opacity, (into) => into.drawBuildings(building));
           continue;
         }
-        final (texture, image) = frame.overlay(overlays.length, _target);
-        passOn(texture).drawBuildings(layer);
-        overlays.add((image, opacity));
+        final whole = sheet.runOpacity(run, context);
+        if (whole == null) {
+          below.add(run);
+        } else {
+          apart(whole, (into) => into.drawRuns([run]));
+        }
       }
+      pass.drawRuns(below);
     });
     _inFlight++;
     _heap.submitted++;
-    Timeline.timeSync(
-      'vmap.gpu.submit',
-      () => commands.submit(completionCallback: (_) => _finished()),
-    );
-    _present(canvas, _last = (frame.image, overlays), view);
+    Timeline.timeSync('vmap.gpu.submit', () {
+      for (final b in buffers.take(buffers.length - 1)) {
+        b.submit();
+      }
+      buffers.last.submit(completionCallback: (_) => _finished());
+    });
+    _present(canvas, _last = shown, view);
     return _reveal.animating || _presence.animating || _spritesLoading;
   }
 
@@ -516,10 +551,11 @@ class GpuMap implements MapRenderer {
   void _present(ui.Canvas canvas, _Shown shown, MapView view) {
     final from = ui.Rect.fromLTWH(0, 0, _width.toDouble(), _height.toDouble());
     final to = ui.Rect.fromLTWH(0, 0, view.width, view.height);
-    canvas.drawImageRect(shown.$1, from, to, _paint);
-    for (final (image, opacity) in shown.$2) {
-      _overlayPaint.color = ui.Color.fromRGBO(255, 255, 255, opacity);
-      canvas.drawImageRect(image, from, to, _overlayPaint);
+    for (final (image, opacity) in shown) {
+      final paint = opacity >= 1
+          ? _paint
+          : (_overlayPaint..color = ui.Color.fromRGBO(255, 255, 255, opacity));
+      canvas.drawImageRect(image, from, to, paint);
     }
   }
 
@@ -786,9 +822,10 @@ class _MapPass {
       gpu.StencilConfig(compareFunction: gpu.CompareFunction.equal),
     );
 
-  void drawRuns() {
+  /// Draws the paint layers of [runs] into this pass.
+  void drawRuns(Iterable<StyleRun> runs) {
     var bound = false;
-    for (final run in _sheet.runs) {
+    for (final run in runs) {
       if (run.source < 0 || run.source >= _ideal.length) continue;
       final source = run.source;
       final clipped = _clips(source);
@@ -932,9 +969,10 @@ class _MapPass {
   }
 }
 
-/// A frame as the canvas shows it: the map, then each see-through
-/// building layer over it at that layer's opacity.
-typedef _Shown = (ui.Image, List<(ui.Image, double)>);
+/// A frame as the canvas shows it: images laid over each other in order,
+/// each at its opacity. The first is the map; a layer drawn whole at an
+/// opacity and see-through buildings add more.
+typedef _Shown = List<(ui.Image, double)>;
 
 /// What one frame of the ring draws into: the map's texture and, for each
 /// see-through building layer, one more. Building layers are drawn opaque

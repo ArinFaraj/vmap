@@ -763,6 +763,7 @@ class StyleSheet {
     required this.shape,
     required this.sprite,
     this.glyphs,
+    this.layerOpacity = const {},
     required this.rasters,
     required this.backgroundPattern,
     required this.backgroundOpacity,
@@ -778,6 +779,30 @@ class StyleSheet {
   /// the same data as a building layer and end at the zoom it starts. Their
   /// tiles keep them a zoom longer, for them to fade as the buildings rise.
   final Map<int, ExtrusionLayer> footprints;
+
+  /// The paint layers drawn as a whole at an opacity, `line-layer-opacity`
+  /// and the like, by index: each is a run of its own, drawn apart and
+  /// laid over what is under it, so its own overlaps do not darken.
+  final Map<int, Expr> layerOpacity;
+
+  /// The building layer [run] stands for: a run of its own at the place of
+  /// the building layer's fill in the style, so buildings are drawn in the
+  /// style's order. Null for any other run.
+  ExtrusionLayer? extrusionAt(StyleRun run) =>
+      run.raster < 0 ? _extrusionByFill[run.first] : null;
+
+  late final Map<int, ExtrusionLayer> _extrusionByFill = {
+    for (final e in extrusions) e.fill: e,
+  };
+
+  /// [run]'s opacity as a whole at [context], or null when it is drawn
+  /// straight onto the map.
+  double? runOpacity(StyleRun run, EvalContext context) {
+    if (run.raster >= 0) return null;
+    final opacity = layerOpacity[run.first];
+    if (opacity == null) return null;
+    return (asNumber(opacity(context)) ?? 1).clamp(0.0, 1.0);
+  }
 
   /// Compiles a MapLibre style document. [nameKeys] are the properties a
   /// label's name is read from, in turn, in place of the style's own.
