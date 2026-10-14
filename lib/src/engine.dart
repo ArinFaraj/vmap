@@ -997,7 +997,9 @@ class VmapEngine extends ChangeNotifier {
       ..tilesCached = cached
       ..labelStates = _labels.stateCount
       ..labelSprites = _labels.spriteCount
-      ..tilesLoading = loading
+      ..tilesLoading =
+          loading +
+          _rasters.whereType<TileDrawing>().fold(0, (n, r) => n + r.waiting)
       ..resourcesLoading = _resources.loading
       ..drawCalls = draws;
     for (final s in _sources) {

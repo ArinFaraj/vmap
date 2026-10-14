@@ -261,6 +261,11 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
   int _loading = 0;
   int _frame = 0;
 
+  /// The tiles the last frame drew without a picture yet: fetching,
+  /// decoding or shading, not those that failed a moment ago. A map is not
+  /// settled while any is.
+  int waiting = 0;
+
   /// How far each tile is drawn past its right and bottom edge, so no gap
   /// shows between neighbours.
   double get _lap;
@@ -334,6 +339,7 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
     );
     _setUpPaint(context);
     final lap = _lap, ring = _ring;
+    waiting = 0;
     for (var y = y0; y <= y1; y++) {
       for (var x = x0; x <= x1; x++) {
         final key = tileKey(z, x % n, y);
@@ -342,6 +348,11 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
         final image = tile.image;
         if (image == null) {
           _load(tile, z, x % n, y);
+          final failed =
+              tile.failedAtMs >= 0 &&
+              _clock.elapsedMilliseconds - tile.failedAtMs < 5000;
+          final covered = _store?.cover.has(z, x % n, y) ?? false;
+          if (covered && !failed) waiting++;
           continue;
         }
         canvas.drawImageRect(
