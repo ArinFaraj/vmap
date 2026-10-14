@@ -257,3 +257,19 @@ Fixed from the first runs: `interpolate-hcl`, `interpolate-lab` and
 zoom and a property; an unset background is black; zero width lines draw
 nothing on the GPU; point labels of one name in one key cell were merged
 into one, now told apart by distance (two shops of one name both show).
+
+After glyph ranges (with MapLibre's line breaking, line height and one
+sample per glyph at its quarter pixel), global state and the label fixes:
+**466 of 1,730 (26.9%)** on the GPU renderer. The text, icon and symbol
+groups alone went from 14 to 58 of 449 before line breaking. Two cautions
+from that run: icon tests could be scored before their sprite sheet
+arrived (the harness now waits for sprites and glyph ranges), and
+`regressions/mapbox-gl-js#6919` now fails because a `line-center` label
+too long for its line is drawn where MapLibre drops it.
+
+Found on the phone the same day and fixed: bent road names crammed far
+from a tilted camera (letters are now spaced along the road as it falls
+on the screen), layers vanishing instead of fading when zooming out past
+a tile zoom (the finer tiles are kept for 300 ms), and straight road
+names jittering while a tilted map turns (their angle is now found every
+frame).
