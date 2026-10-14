@@ -53,6 +53,28 @@ class LabelView {
     this.origin = origin;
   }
 
+  /// Whether raised ground stands between the camera and the point [wx],
+  /// [wy] of the world, in fractions of it, standing on the ground: the
+  /// line of sight is walked over the heights, as MapLibre reads its
+  /// terrain depth. Its last tenth is left out, or a label on a slope would
+  /// hide behind the slope it stands on.
+  bool behindHill(double wx, double wy) {
+    final view = tilted, height = ground;
+    if (view == null || height == null) return false;
+    final w = view.worldSize;
+    final (x: ex, y: ey, height: eh) = view.eye;
+    final px = wx * w, py = wy * w, ph = height(wx, wy);
+    final dx = px - ex, dy = py - ey, dh = ph - eh;
+    final margin = 0.002 * math.sqrt(dx * dx + dy * dy + dh * dh);
+    const steps = 32;
+    for (var i = 2; i < steps - 2; i++) {
+      final t = i / steps;
+      final x = ex + dx * t, y = ey + dy * t;
+      if (height(x / w, y / w) > eh + dh * t + margin) return true;
+    }
+    return false;
+  }
+
   /// Sets [x] and [y] to where the point [wx], [wy] of the world, in
   /// fractions of it, is on the upright screen.
   void project(double wx, double wy) {

@@ -469,13 +469,25 @@ class VmapEngine extends ChangeNotifier {
         TileId(t.z, t.x % (1 << t.z), t.y),
     ]);
     final exaggeration = terrain.layer.exaggeration;
-    final under =
+    final zoom = math.min(view.zoom.floor(), terrain.maxZoom);
+    final perMetre =
+        view.worldSize /
+        (40075016.686 * math.cos(latitudeAt(view.centerY) * math.pi / 180));
+    final eye = view.eye;
+    final belowEye =
         terrain.heights.heightAt(
-          view.centerX,
-          view.centerY,
-          math.min(view.zoom.floor(), terrain.maxZoom),
+          eye.x / view.worldSize,
+          eye.y / view.worldSize,
+          zoom,
         ) *
         exaggeration;
+    // The ground under the map's middle, raised further when a hill would
+    // otherwise reach the camera: everything sinks instead, as MapLibre
+    // lifts its camera over terrain.
+    final under = math.max(
+      terrain.heights.heightAt(view.centerX, view.centerY, zoom) * exaggeration,
+      belowEye + 50 - eye.height / perMetre,
+    );
     // Eased, so an arriving tile of heights does not make the map jump.
     final centre = _groundCentre += (under - _groundCentre) * 0.15;
     if ((under - centre).abs() > 0.5) _requestFrame();

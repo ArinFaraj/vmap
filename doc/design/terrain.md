@@ -59,7 +59,10 @@ atlas drawn in one pass, stand-in tiles included so a tile still loading
 leaves no hole; one shared grid with skirts, raised and lit in the vertex
 shader from r32Float height textures; buildings standing on the ground at
 each corner, read from the same textures, their feet sunk 2 m into slopes;
-labels projected standing on the ground. Everything is drawn relative to
+labels projected standing on the ground, and hidden when a hill stands in
+their line of sight, walked over the heights as MapLibre reads its terrain
+depth. The camera stays at least 50 m above the ground under it: when a
+hill would reach it, everything sinks instead. Everything is drawn relative to
 the ground under the map's middle, eased as the camera moves, so depth
 precision does not depend on how high the land is.
 
@@ -74,5 +77,4 @@ and the AWS Terrain Tiles at 1.5 times: 568 frames in 4.8 s, build p99
 that made a mesh per tile on the UI thread fell to 14 frames in 3 s.
 
 Still to come: raster and hillshade layers draped instead of left flat
-under the ground, labels hidden behind hills, the camera kept above the
-ground, and the `setTerrain` test operation.
+under the ground, and the `setTerrain` test operation.

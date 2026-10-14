@@ -537,10 +537,10 @@ class LabelEngine {
         continue;
       }
       // Buildings hiding labels are worked out at sea level, which raised
-      // ground would make flip from frame to frame.
-      st.occluded =
-          _view.ground == null &&
-          (occlusion.hides(c.worldX, c.worldY) ?? st.occluded);
+      // ground would make flip from frame to frame; there hills hide them.
+      st.occluded = _view.ground == null
+          ? (occlusion.hides(c.worldX, c.worldY) ?? st.occluded)
+          : _view.behindHill(c.worldX, c.worldY);
       if (st.occluded) {
         st.placed = false;
         continue;
