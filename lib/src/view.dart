@@ -203,19 +203,24 @@ class MapView {
     unproject(0, height)!,
   ];
 
-  /// The tiles that cover the ground in view, each at the zoom its distance
-  /// asks for: the zoom of the view at the centre, less one for every
-  /// doubling of distance from the camera. Tiles off the ground are left
-  /// out. Columns past the world's edge are not wrapped.
+  /// The tiles that cover the ground in view. As MapLibre covers a map,
+  /// every tile is at the view's zoom unless [variableZoom], which MapLibre
+  /// allows with terrain or past 60 degrees of pitch: then each tile is at
+  /// the zoom its distance from the camera asks for, by MapLibre's
+  /// `calculateTileZoom`. Tiles off the ground are left out. Columns past
+  /// the world's edge are not wrapped.
   List<CoverTile> cover({
     required int maxZoom,
     int minZoom = 0,
     double hold = 0,
+    bool? variableZoom,
   }) {
     final quad = ground();
     final (x: camX, y: camY, height: camH) = eye;
     final top = math.min((zoom + hold).floor(), maxZoom);
+    final variable = variableZoom ?? pitch > maxPitch;
     final out = <CoverTile>[];
+    final tileZoom = variable ? _TileZoom(this) : null;
 
     void visit(int z, int x, int y) {
       final span = worldSize / (1 << z);
@@ -224,9 +229,12 @@ class MapView {
       final nx = (camX - left).clamp(0, span) + left;
       final ny = (camY - upper).clamp(0, span) + upper;
       final ddx = nx - camX, ddy = ny - camY;
-      final distance = math.sqrt(ddx * ddx + ddy * ddy + camH * camH);
-      final wanted = zoom + hold + _log2(cameraToCenterDistance / distance);
-      if (z >= top || (z >= minZoom && z >= wanted.floor())) {
+      final flat = math.sqrt(ddx * ddx + ddy * ddy);
+      final distance = math.sqrt(flat * flat + camH * camH);
+      final wanted = tileZoom == null
+          ? top
+          : tileZoom.at(zoom + hold, flat, camH).floor();
+      if (z >= top || (z >= minZoom && z >= wanted)) {
         out.add((z: z, x: x, y: y, distance: distance));
         return;
       }
@@ -241,8 +249,6 @@ class MapView {
     out.sort((a, b) => a.distance.compareTo(b.distance));
     return out;
   }
-
-  static double _log2(double v) => math.log(v) / math.ln2;
 
   /// Whether a convex quadrilateral and an axis-aligned box overlap, by
   /// looking for an axis that separates them.
@@ -282,5 +288,57 @@ class MapView {
       }
     }
     return true;
+  }
+}
+
+/// MapLibre's `createCalculateTileZoomFunction` with its defaults, 9.314
+/// zoom levels on screen at most and a tile count ratio of 3, for one
+/// view: the zoom a tile asks for at a distance from the camera.
+class _TileZoom {
+  _TileZoom(MapView view)
+    : _fov = view.fov,
+      _centre = view.cameraToCenterDistance,
+      _behaviour = _behaviourFor(view.fov) {
+    final half = _fov / 2;
+    final pitch0 = 2 * _integral(_behaviour - 1, 0, half);
+    final centrePitch = view.pitch * math.pi / 180;
+    final highest = math.min(_horizon, centrePitch + half);
+    final lowest = math.min(highest, centrePitch - half);
+    final count = _integral(_behaviour - 1, lowest, highest);
+    _crowding = _log2(math.max(1, count / pitch0 / 3)) / 2;
+  }
+
+  static const _horizon = 89.25 * math.pi / 180;
+
+  final double _fov, _centre, _behaviour;
+  late final double _crowding;
+
+  static double _behaviourFor(double fov) =>
+      2 *
+      ((9.314 - 1) / _log2(math.cos(_horizon - fov) / math.cos(_horizon)) - 1);
+
+  static double _log2(double v) => math.log(v) / math.ln2;
+
+  /// The integral of cos(x) to the [p] from [x1] to [x2], by midpoints.
+  static double _integral(double p, double x1, double x2) {
+    const n = 10;
+    final dx = (x2 - x1) / n;
+    var sum = 0.0;
+    for (var i = 0; i < n; i++) {
+      sum += dx * math.pow(math.cos(x1 + (i + 0.5) * dx), p);
+    }
+    return sum;
+  }
+
+  /// The zoom a tile [flat] world pixels across the ground from the point
+  /// under a camera [height] above it asks for, the view's centre being at
+  /// [zoom].
+  double at(double zoom, double flat, double height) {
+    final distance = math.sqrt(flat * flat + height * height);
+    final tilePitch = math.atan(flat / height);
+    return zoom +
+        _log2(_centre / distance / math.max(0.5, math.cos(_fov / 2))) +
+        _behaviour * _log2(math.cos(tilePitch)) / 2 -
+        _crowding;
   }
 }

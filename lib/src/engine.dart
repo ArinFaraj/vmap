@@ -465,7 +465,7 @@ class VmapEngine extends ChangeNotifier {
       return;
     }
     terrain.want([
-      for (final t in view.cover(maxZoom: terrain.maxZoom))
+      for (final t in view.cover(maxZoom: terrain.maxZoom, variableZoom: true))
         TileId(t.z, t.x % (1 << t.z), t.y),
     ]);
     final exaggeration = terrain.layer.exaggeration;
@@ -837,6 +837,7 @@ class VmapEngine extends ChangeNotifier {
         nowMs: _clock.elapsedMilliseconds,
         prepare: _prepare,
         hold: hold,
+        variableZoom: _terrain != null && onGpu,
       );
       if (preparing) waiting = true;
       if (s.retrying) _requestFrameLater();

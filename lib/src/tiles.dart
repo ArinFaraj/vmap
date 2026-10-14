@@ -333,6 +333,7 @@ class TileSource {
     required int nowMs,
     required void Function(LoadedTile tile, double scale) prepare,
     double hold = 0,
+    bool variableZoom = false,
   }) {
     retrying = false;
     final size = camera.size;
@@ -346,6 +347,7 @@ class TileSource {
         nowMs: nowMs,
         prepare: prepare,
         hold: hold,
+        variableZoom: variableZoom,
       );
     }
     final tz = dataZoom.floor().clamp(0, maxDataZoom);
@@ -403,6 +405,7 @@ class TileSource {
     required int nowMs,
     required void Function(LoadedTile tile, double scale) prepare,
     double hold = 0,
+    bool variableZoom = false,
   }) {
     ideal.clear();
     fallback.clear();
@@ -412,7 +415,11 @@ class TileSource {
     var waiting = false;
     var covered = true;
     final origin = camera.origin;
-    final picked = view.cover(maxZoom: maxDataZoom, hold: hold);
+    final picked = view.cover(
+      maxZoom: maxDataZoom,
+      hold: hold,
+      variableZoom: variableZoom,
+    );
     for (final (rank, t) in picked.indexed) {
       final n = 1 << t.z;
       if (t.y < 0 || t.y >= n) continue;
@@ -451,7 +458,7 @@ class TileSource {
       }
       wanted.add(id);
     }
-    _wantAhead(camera.ahead, frame, nowMs, prepare);
+    _wantAhead(camera.ahead, frame, nowMs, prepare, variableZoom);
     for (final t in picked) {
       if (t.z == 0) continue;
       final parent = tiles[TileId(t.z - 1, (t.x % (1 << t.z)) >> 1, t.y >> 1)];
@@ -471,9 +478,13 @@ class TileSource {
     int frame,
     int nowMs,
     void Function(LoadedTile tile, double scale) prepare,
+    bool variableZoom,
   ) {
     if (ahead == null) return;
-    for (final t in ahead.cover(maxZoom: maxDataZoom)) {
+    for (final t in ahead.cover(
+      maxZoom: maxDataZoom,
+      variableZoom: variableZoom,
+    )) {
       final n = 1 << t.z;
       if (t.y < 0 || t.y >= n) continue;
       final id = TileId(t.z, t.x % n, t.y);

@@ -91,7 +91,7 @@ class _Drape {
     List<List<TileDraw>> fallback,
     List<List<TileDraw>> ideal,
   ) {
-    final all = view.cover(maxZoom: 14);
+    final all = view.cover(maxZoom: 14, variableZoom: true);
     _tiles = all.length > _capacity ? all.sublist(0, _capacity) : all;
     if (_tiles.isEmpty) return;
     _fit(_tiles.length);
