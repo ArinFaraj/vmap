@@ -24,6 +24,17 @@ bool hasJoiningLetters(String text) {
   return false;
 }
 
+/// Whether [text] has a letter that joins but that Unicode gives no
+/// presentation forms, which only shaping with a font can join.
+bool needsFontShaping(String text) {
+  for (final c in text.runes) {
+    if (c < 0x0600 || c > 0x08FF || _presentation.containsKey(c)) continue;
+    final type = _typeOf(c);
+    if (type == _dual || type == _right || type == _left) return true;
+  }
+  return false;
+}
+
 /// [codes], in logical order, with each Arabic-script letter in the form
 /// its neighbours call for, and lam and alef as one. A letter Unicode
 /// gives no form for, such as the Kurdish ڵ, ڕ, ێ and ە, keeps its own

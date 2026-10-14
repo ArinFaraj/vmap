@@ -267,7 +267,12 @@ class LabelSprites {
   }) {
     final fonts = glyphFonts;
     final store = ranges;
-    if (fonts != null && store != null && shaped == null) {
+    // Glyph ranges cannot join a letter Unicode gives no forms, such as the
+    // Kurdish ڵ, ڕ, ێ and ە; the fonts shape it properly.
+    if (fonts != null &&
+        store != null &&
+        shaped == null &&
+        !needsFontShaping(look.text)) {
       final face = store.face(look.fontStack);
       final text = hasJoiningLetters(look.text)
           ? String.fromCharCodes(joinArabic(look.text.runes.toList()))

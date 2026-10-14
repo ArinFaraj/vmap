@@ -32,4 +32,10 @@ void main() {
     expect(hasJoiningLetters('Erbil'), isFalse);
     expect(hasJoiningLetters('هەولێر'), isTrue);
   });
+
+  test('only letters without forms need a font to join', () {
+    expect(needsFontShaping('هەولێر'), isTrue);
+    expect(needsFontShaping('سلام'), isFalse);
+    expect(needsFontShaping('Erbil'), isFalse);
+  });
 }
