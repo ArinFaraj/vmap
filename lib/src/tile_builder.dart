@@ -3,6 +3,9 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'expr.dart';
+import 'glyphs/glyph_ranges.dart';
+import 'glyphs/glyph_pbf.dart';
+import 'glyphs/arabic_forms.dart';
 import 'glyphs/glyph_layout.dart';
 import 'gpu_stream.dart';
 import 'extrusion.dart';
@@ -255,7 +258,13 @@ class _Group {
 /// Turns one vector tile into the meshes and labels a style asks for.
 class TileBuilder {
   /// Builds the tiles of the style's source number [source].
-  TileBuilder(this.sheet, {this.source = 0, this.fonts, this.gpu = false}) {
+  TileBuilder(
+    this.sheet, {
+    this.source = 0,
+    this.fonts,
+    this.gpu = false,
+    this.ranges,
+  }) {
     for (var i = 0; i < sheet.buckets.length; i++) {
       if (sheet.buckets[i].source != source) continue;
       (_buckets[sheet.buckets[i].sourceLayer] ??= []).add(i);
@@ -271,6 +280,14 @@ class TileBuilder {
 
   /// Shapes label text while the tile is built, so the page never has to.
   final GlyphFonts? fonts;
+
+  /// The style's glyph ranges, which a name along a line is measured with
+  /// as MapLibre measures it, when the labels are drawn from them.
+  final GlyphRanges? ranges;
+
+  /// The last build measured a name with a range still on its way: built
+  /// again once it arrives, its names are where MapLibre puts them.
+  bool missedGlyphs = false;
 
   /// Builds each tile's GPU stream as well.
   final bool gpu;
@@ -321,9 +338,6 @@ class TileBuilder {
   /// feature is its own combination.
   static const int _maxFeatures = 4096;
 
-  /// Symbols placed along one line at most.
-  static const int _maxRepeats = 24;
-
   /// [maxZoom] is the deepest zoom the source has tiles for; a tile at that
   /// zoom is drawn at every zoom beyond it.
   BuiltTile build(
@@ -358,6 +372,7 @@ class TileBuilder {
     final lineTolerance = deepest ? 0.75 : 2.0;
     final ringTolerance = deepest ? 0.0 : 2.0;
     final styleZoom = z + sheet.zoomOffset;
+    missedGlyphs = false;
     bool drawnAt(double minZoom, double maxZoom) =>
         maxZoom > styleZoom && (deepest || minZoom < styleZoom + 1);
     final context = _context..zoom = styleZoom;
@@ -585,8 +600,22 @@ class TileBuilder {
           final spacing = placement == 'line-center'
               ? double.infinity
               : symbol.build.spacing * 8 / (1 << deeper);
+          final zoom = context.zoom;
+          context.zoom = styleZoom + 1;
+          final size = (asNumber(symbol.size(context)) ?? 16).toDouble();
+          context.zoom = zoom;
+          final em = size * tileExtent / 512;
           if (along && text.isNotEmpty && !symbol.build.textUpright) {
-            for (final label in _lineLabels(s, base, text, spacing)) {
+            for (final label in _lineLabels(
+              s,
+              base + (symbol.build.sortKey == null ? 50 : order),
+              text,
+              spacing,
+              _textEms(symbol, text) * em,
+              em,
+              symbol.maxBend ?? math.pi / 4,
+              center: placement == 'line-center',
+            )) {
               labels.add(label..props = carried);
             }
             continue;
@@ -617,14 +646,9 @@ class TileBuilder {
             continue;
           }
           final turns = text.isEmpty && !symbol.build.iconUpright;
-          final zoom = context.zoom;
-          context.zoom = styleZoom + 1;
-          final size = (asNumber(symbol.size(context)) ?? 16).toDouble();
-          context.zoom = zoom;
-          final em = size * tileExtent / 512;
           _anchorsAlong(
             spacing,
-            text.isEmpty ? 0 : text.runes.length * 0.55 * em,
+            text.isEmpty ? 0 : _textEms(symbol, text) * em,
             em,
             symbol.maxBend ?? math.pi / 4,
             placement == 'line-center',
@@ -886,51 +910,88 @@ class TileBuilder {
     return BuiltLabel(layer, priority, text, x, y, null, icon: icon);
   }
 
-  /// A name for every line of the feature long enough to carry one, one
-  /// per [spacing] tile units of it, anchored at the middle of each stretch,
-  /// as MapLibre repeats a road's name along it.
+  /// How long [text] is in ems at [symbol]'s letter spacing, as MapLibre
+  /// measures a label: from the style's glyph ranges, its letters joined,
+  /// when the labels are drawn from them; else as the fonts set it, or
+  /// about half an em a letter.
+  double _textEms(SymbolLayer symbol, String text) {
+    final label = symbol.uppercase ? text.toUpperCase() : text;
+    final ranges = this.ranges;
+    if (ranges != null) {
+      final face = ranges.face(symbol.fontStack);
+      final forms = [
+        for (final c in joinedForms(label.runes.toList()))
+          if (c >= 0) c,
+      ];
+      if (ranges.ready(face, String.fromCharCodes(forms))) {
+        var width = 0.0;
+        for (final c in forms) {
+          final g = ranges.glyph(face, c);
+          if (g != null) {
+            width += g.advance / GlyphPbf.em + symbol.letterSpacing;
+          }
+        }
+        return width;
+      }
+      missedGlyphs = true;
+    }
+    return _fontEms[text] ??= () {
+      final fonts = this.fonts;
+      if (fonts == null) return text.runes.length * 0.55;
+      return layoutText(
+            fonts,
+            label,
+            weight: symbol.weight,
+            letterSpacing: symbol.letterSpacing,
+            singleLine: true,
+            stack: symbol.fontStack,
+          )?.width ??
+          text.runes.length * 0.55;
+    }();
+  }
+
+  final Map<String, double> _fontEms = {};
+
+  /// A name along each line of the feature, as MapLibre's `getAnchors`
+  /// places them: the line cut to the tile, anchors [spacing] tile units
+  /// apart from an offset of half the [labelLength] and two [em]s, where the
+  /// whole name fits on the line and the line turns no more than [maxBend]
+  /// under it; at the middle when none does. With [center], once at the
+  /// middle.
   List<BuiltLabel> _lineLabels(
     int layer,
-    int base,
+    int priority,
     String text,
     double spacing,
-  ) {
-    final c = _sink.coords;
+    double labelLength,
+    double em,
+    double maxBend, {
+    bool center = false,
+  }) {
     final out = <BuiltLabel>[];
+    final window = 3 / 5 * em;
+    final extra = 2 * em;
     for (var r = 0; r < _sink.ringCount; r++) {
       final start = _sink.ringStart(r);
-      final count = _sink.ringEnd(r) - start;
-      var length = 0.0;
-      for (var i = 1; i < count; i++) {
-        final dx = c[(start + i) * 2] - c[(start + i - 1) * 2];
-        final dy = c[(start + i) * 2 + 1] - c[(start + i - 1) * 2 + 1];
-        length += math.sqrt(dx * dx + dy * dy);
-      }
-      if (length < 160) continue;
-      final line = Float32List(count * 2);
-      for (var i = 0; i < count * 2; i++) {
-        line[i] = c[start * 2 + i];
-      }
-      final repeats = spacing.isFinite
-          ? (length / spacing).round().clamp(1, _maxRepeats)
-          : 1;
-      final step = length / repeats;
-      final priority = base + 9 - (length / 80).clamp(0, 9).toInt();
-      var walked = 0.0;
-      var next = step / 2;
-      for (var i = 1; i < count && next < length; i++) {
-        final x0 = line[i * 2 - 2], y0 = line[i * 2 - 1];
-        final dx = line[i * 2] - x0, dy = line[i * 2 + 1] - y0;
-        final seg = math.sqrt(dx * dx + dy * dy);
-        while (seg > 0 && next <= walked + seg) {
-          final t = (next - walked) / seg;
-          final x = x0 + dx * t, y = y0 + dy * t;
-          if (x >= 0 && y >= 0 && x < tileExtent && y < tileExtent) {
-            out.add(BuiltLabel(layer, priority, text, x, y, line));
-          }
-          next += step;
+      final ring = Float32List.sublistView(
+        Float32List.fromList(
+          _sink.coords.sublist(start * 2, _sink.ringEnd(r) * 2),
+        ),
+      );
+      for (final line in clipLineToTile(ring)) {
+        for (final (x, y, _)
+            in center
+                ? centerAnchor(line, labelLength, window, maxBend)
+                : lineAnchors(
+                    line,
+                    spacing,
+                    labelLength,
+                    extra,
+                    window,
+                    maxBend,
+                  )) {
+          out.add(BuiltLabel(layer, priority, text, x, y, line));
         }
-        walked += seg;
       }
     }
     return out;

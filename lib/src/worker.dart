@@ -11,6 +11,7 @@ import 'pmtiles.dart';
 import 'protocol.dart';
 import 'source_config.dart';
 import 'tile_id.dart';
+import 'glyphs/glyph_ranges.dart';
 import 'glyphs/glyph_layout.dart';
 import 'style_model.dart';
 import 'tile_builder.dart';
@@ -443,11 +444,23 @@ Future<void> tileWorkerMain(
   final source = setup.source;
   final def = sheet.sources[source];
   final fonts = setup.fonts;
+  final glyphs = sheet.glyphs;
+  // Without fonts the labels are drawn from the style's glyph ranges, and
+  // names along lines are measured with them, as MapLibre measures them.
+  final ranges = fonts == null && glyphs != null
+      ? GlyphRanges(
+          glyphs,
+          onLoaded: (_, _) {},
+          userAgent: setup.config.userAgent,
+          headers: setup.config.headers,
+        )
+      : null;
   final builder = TileBuilder(
     sheet,
     source: source,
     fonts: fonts == null ? null : GlyphFonts(fonts, families: setup.families),
     gpu: setup.gpu,
+    ranges: ranges,
   );
   void answer(WorkerReply reply) => send(reply.toWire());
 
@@ -516,20 +529,28 @@ Future<void> tileWorkerMain(
             },
           );
           final building = Timeline.now;
-          final built = layers.isEmpty
-              ? BuiltTile(const [], const [])
-              : (builder.buildLayers(
-                  layers,
-                  tile.z,
-                  x: tile.x,
-                  y: tile.y,
-                  maxZoom: maxZoom,
-                )..keyLabels(
-                  tile.z,
-                  tile.x,
-                  tile.y,
-                  grid: geoJson == null ? 1024 : 1 << 24,
-                ));
+          BuiltTile build() =>
+              builder.buildLayers(
+                layers,
+                tile.z,
+                x: tile.x,
+                y: tile.y,
+                maxZoom: maxZoom,
+              )..keyLabels(
+                tile.z,
+                tile.x,
+                tile.y,
+                grid: geoJson == null ? 1024 : 1 << 24,
+              );
+          var built = layers.isEmpty ? BuiltTile(const [], const []) : build();
+          if (layers.isNotEmpty && builder.missedGlyphs && ranges != null) {
+            // The ranges a name was measured without are on their way: once
+            // they land, built again with the names where MapLibre puts them.
+            for (var i = 0; i < 300 && ranges.pending > 0; i++) {
+              await Future<void>.delayed(const Duration(milliseconds: 10));
+            }
+            built = build();
+          }
           Timeline.instantSync(
             'vmap.tile.built',
             arguments: {
