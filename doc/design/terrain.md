@@ -50,3 +50,22 @@ Arin's smoothness on the phone, not the 38 terrain render tests.
 
 - Mapterhorn's attribution terms and its real resolution over the Zagros
   (open question 7) before it becomes the default source.
+
+## Where it stands (2026-10-14)
+
+Built: elevation tiles with filled borders and a height lookup; the
+style's `terrain` source loaded through the raster tile store; the drape
+atlas drawn in one pass; one shared grid raised and lit in the vertex
+shader from r32Float height textures; buildings lifted to the ground at
+their tile's middle; labels projected standing on the ground.
+
+On the phone (Vivo V2514, Vulkan), flying to Korek mountain with Liberty
+and the AWS Terrain Tiles at 1.5 times: 568 frames in 4.8 s, build p99
+5.5 ms, raster p99 3.8 ms, the same as without terrain. A first version
+that made a mesh per tile on the UI thread fell to 14 frames in 3 s.
+
+Still to come: skirts between tiles of different zoom, raster and
+hillshade layers draped instead of left flat under the ground, labels
+hidden behind hills, buildings standing on the ground at each building
+rather than at its tile's middle, the camera kept above the ground, and
+the `setTerrain` test operation.
