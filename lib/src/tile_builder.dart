@@ -617,8 +617,17 @@ class TileBuilder {
             continue;
           }
           final turns = text.isEmpty && !symbol.build.iconUpright;
-          _repeat(
+          final zoom = context.zoom;
+          context.zoom = styleZoom + 1;
+          final size = (asNumber(symbol.size(context)) ?? 16).toDouble();
+          context.zoom = zoom;
+          final em = size * tileExtent / 512;
+          _anchorsAlong(
             spacing,
+            text.isEmpty ? 0 : text.runes.length * 0.55 * em,
+            em,
+            symbol.maxBend ?? math.pi / 4,
+            placement == 'line-center',
             (x, y, angle) => labels.add(
               BuiltLabel(
                 s,
@@ -665,47 +674,35 @@ class TileBuilder {
     ], gpu ? GpuStream.build(sheet, meshes) : null);
   }
 
-  /// Calls [place] for points [spacing] tile units apart along every line in
-  /// the sink, or for the middle of a line too short for two.
-  void _repeat(
+  /// Calls [place] at the anchors MapLibre's `getAnchors` gives a symbol
+  /// [labelLength] tile units long, an [em] tall, on each line of the sink
+  /// cut to the tile, [spacing] apart; with [center], at each line's middle.
+  void _anchorsAlong(
     double spacing,
+    double labelLength,
+    double em,
+    double maxBend,
+    bool center,
     void Function(double x, double y, double angle) place,
   ) {
-    final c = _sink.coords;
     for (var r = 0; r < _sink.ringCount; r++) {
-      final start = _sink.ringStart(r);
-      final end = _sink.ringEnd(r);
-      var length = 0.0;
-      for (var i = start + 1; i < end; i++) {
-        final dx = c[i * 2] - c[i * 2 - 2];
-        final dy = c[i * 2 + 1] - c[i * 2 - 1];
-        length += math.sqrt(dx * dx + dy * dy);
-      }
-      if (length < 48) continue;
-      final count = spacing.isFinite
-          ? (length / spacing).round().clamp(1, _maxRepeats)
-          : 1;
-      final step = length / count;
-      var next = step / 2;
-      var walked = 0.0;
-      var placed = 0;
-      for (var i = start + 1; i < end && placed < count; i++) {
-        final x0 = c[i * 2 - 2];
-        final y0 = c[i * 2 - 1];
-        final dx = c[i * 2] - x0;
-        final dy = c[i * 2 + 1] - y0;
-        final seg = math.sqrt(dx * dx + dy * dy);
-        while (seg > 0 && next <= walked + seg && placed < count) {
-          final t = (next - walked) / seg;
-          final x = x0 + dx * t;
-          final y = y0 + dy * t;
-          if (x >= 0 && y >= 0 && x < tileExtent && y < tileExtent) {
-            place(x, y, math.atan2(dy, dx));
-          }
-          placed++;
-          next += step;
+      final ring = Float32List.fromList(
+        _sink.coords.sublist(_sink.ringStart(r) * 2, _sink.ringEnd(r) * 2),
+      );
+      for (final line in clipLineToTile(ring)) {
+        final anchors = center
+            ? centerAnchor(line, labelLength, 3 / 5 * em, maxBend)
+            : lineAnchors(
+                line,
+                spacing,
+                labelLength,
+                2 * em,
+                3 / 5 * em,
+                maxBend,
+              );
+        for (final (x, y, angle) in anchors) {
+          place(x, y, angle);
         }
-        walked += seg;
       }
     }
   }
@@ -938,6 +935,227 @@ class TileBuilder {
     }
     return out;
   }
+}
+
+/// [line], x and y in turn, cut where it leaves the tile into the pieces
+/// inside it, as MapLibre's `clipLine` cuts a line before placing names.
+List<Float32List> clipLineToTile(Float32List line) {
+  const lo = 0.0, hi = tileExtent + 0.0;
+  final out = <Float32List>[];
+  var piece = <double>[];
+  void flush() {
+    if (piece.length >= 4) out.add(Float32List.fromList(piece));
+    piece = <double>[];
+  }
+
+  for (var i = 2; i < line.length; i += 2) {
+    var x0 = line[i - 2].toDouble(), y0 = line[i - 1].toDouble();
+    var x1 = line[i].toDouble(), y1 = line[i + 1].toDouble();
+    var t0 = 0.0, t1 = 1.0;
+    final dx = x1 - x0, dy = y1 - y0;
+    var inside = true;
+    for (final (p, q) in [
+      (-dx, x0 - lo),
+      (dx, hi - x0),
+      (-dy, y0 - lo),
+      (dy, hi - y0),
+    ]) {
+      if (p == 0) {
+        if (q < 0) inside = false;
+        continue;
+      }
+      final r = q / p;
+      if (p < 0) {
+        if (r > t1) inside = false;
+        if (r > t0) t0 = r;
+      } else {
+        if (r < t0) inside = false;
+        if (r < t1) t1 = r;
+      }
+    }
+    if (!inside) {
+      flush();
+      continue;
+    }
+    final ax = x0 + dx * t0, ay = y0 + dy * t0;
+    final bx = x0 + dx * t1, by = y0 + dy * t1;
+    if (piece.isEmpty || piece[piece.length - 2] != ax || piece.last != ay) {
+      flush();
+      piece.addAll([ax, ay]);
+    }
+    piece.addAll([bx, by]);
+    if (t1 < 1) flush();
+  }
+  flush();
+  return out;
+}
+
+double _lineLength(Float32List line) {
+  var length = 0.0;
+  for (var i = 2; i < line.length; i += 2) {
+    final dx = line[i] - line[i - 2], dy = line[i + 1] - line[i - 1];
+    length += math.sqrt(dx * dx + dy * dy);
+  }
+  return length;
+}
+
+/// The anchors MapLibre's `getAnchors` gives a name [labelLength] long on
+/// [line], cut to the tile.
+List<(double, double, double)> lineAnchors(
+  Float32List line,
+  double spacing,
+  double labelLength,
+  double extra,
+  double window,
+  double maxBend,
+) {
+  final continued =
+      line[0] == 0 ||
+      line[0] == tileExtent ||
+      line[1] == 0 ||
+      line[1] == tileExtent;
+  if (spacing - labelLength < spacing / 4) {
+    spacing = labelLength + spacing / 4;
+  }
+  final offset = continued
+      ? (spacing / 2) % spacing
+      : (labelLength / 2 + extra) % spacing;
+  final anchors = _resample(
+    line,
+    offset,
+    spacing,
+    labelLength,
+    window,
+    maxBend,
+  );
+  if (anchors.isEmpty && !continued) {
+    return _resample(
+      line,
+      _lineLength(line) / 2,
+      spacing,
+      labelLength,
+      window,
+      maxBend,
+    );
+  }
+  return anchors;
+}
+
+/// The middle of [line], when a name [labelLength] long fits there.
+List<(double, double, double)> centerAnchor(
+  Float32List line,
+  double labelLength,
+  double window,
+  double maxBend,
+) {
+  final middle = _lineLength(line) / 2;
+  return _resample(
+    line,
+    middle,
+    double.infinity,
+    0,
+    window,
+    maxBend,
+  ).where((_) => labelLength <= middle * 2).toList();
+}
+
+List<(double, double, double)> _resample(
+  Float32List line,
+  double offset,
+  double spacing,
+  double labelLength,
+  double window,
+  double maxBend,
+) {
+  final half = labelLength / 2;
+  final length = _lineLength(line);
+  final out = <(double, double, double)>[];
+  var distance = 0.0;
+  var marked = spacing.isFinite ? offset - spacing : offset;
+  final step = spacing.isFinite ? spacing : 0.0;
+  var done = false;
+  for (var i = 2; i < line.length && !done; i += 2) {
+    final ax = line[i - 2].toDouble(), ay = line[i - 1].toDouble();
+    final bx = line[i].toDouble(), by = line[i + 1].toDouble();
+    final segment = math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay));
+    while (marked + step < distance + segment) {
+      marked += step;
+      final t = (marked - distance) / segment;
+      final x = (ax + (bx - ax) * t).roundToDouble();
+      final y = (ay + (by - ay) * t).roundToDouble();
+      if (x >= 0 &&
+          x < tileExtent &&
+          y >= 0 &&
+          y < tileExtent &&
+          marked - half >= 0 &&
+          marked + half <= length &&
+          _bendsLittle(line, i ~/ 2 - 1, x, y, labelLength, window, maxBend)) {
+        out.add((x, y, math.atan2(by - ay, bx - ax)));
+      }
+      if (!spacing.isFinite) {
+        done = true;
+        break;
+      }
+    }
+    distance += segment;
+  }
+  return out;
+}
+
+/// MapLibre's `checkMaxAngle`: whether [line] turns no more than
+/// [maxBend] within any [window] under a name [labelLength] long whose
+/// anchor [x], [y] lies on segment [segment].
+bool _bendsLittle(
+  Float32List line,
+  int segment,
+  double x,
+  double y,
+  double labelLength,
+  double window,
+  double maxBend,
+) {
+  if (labelLength == 0) return true;
+  double px(int i) => line[i * 2].toDouble();
+  double py(int i) => line[i * 2 + 1].toDouble();
+  double dist(double ax, double ay, double bx, double by) =>
+      math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay));
+  var index = segment + 1;
+  var anchorDistance = 0.0;
+  var cx = x, cy = y;
+  while (anchorDistance > -labelLength / 2) {
+    index--;
+    if (index < 0) return false;
+    anchorDistance -= dist(px(index), py(index), cx, cy);
+    cx = px(index);
+    cy = py(index);
+  }
+  anchorDistance += dist(px(index), py(index), px(index + 1), py(index + 1));
+  index++;
+  final corners = <(double, double)>[];
+  var recent = 0.0;
+  final count = line.length ~/ 2;
+  while (anchorDistance < labelLength / 2) {
+    if (index + 1 >= count) return false;
+    final before = math.atan2(
+      py(index) - py(index - 1),
+      px(index) - px(index - 1),
+    );
+    final after = math.atan2(
+      py(index + 1) - py(index),
+      px(index + 1) - px(index),
+    );
+    var delta = before - after;
+    delta = (((delta + 3 * math.pi) % (math.pi * 2)) - math.pi).abs();
+    corners.add((anchorDistance, delta));
+    recent += delta;
+    while (anchorDistance - corners.first.$1 > window) {
+      recent -= corners.removeAt(0).$2;
+    }
+    if (recent > maxBend) return false;
+    anchorDistance += dist(px(index), py(index), px(index + 1), py(index + 1));
+    index++;
+  }
+  return true;
 }
 
 Float32List? _floats(Object? packed) =>
