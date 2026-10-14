@@ -467,6 +467,7 @@ class SymbolLayer {
     required this.haloBlur,
     this.lineHeight,
     this.justify = ui.TextAlign.center,
+    this.justifyAuto = false,
     this.textPadding,
     this.iconPadding,
     this.textIgnored = false,
@@ -533,6 +534,10 @@ class SymbolLayer {
 
   /// The side the lines of a text of several lines are flush on.
   final ui.TextAlign justify;
+
+  /// `text-justify: auto`: lines are flush on the side of the anchor the
+  /// text takes, in place of [justify].
+  final bool justifyAuto;
 
   /// Clear space kept around the text and the icon where labels are
   /// weighed against each other, in logical pixels. Null for the package's

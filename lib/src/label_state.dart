@@ -136,6 +136,9 @@ class LabelState {
 
   LabelCandidate candidate;
   LabelSprite? sprite;
+
+  /// The key [sprite] was drawn under.
+  String? spriteKey;
   double opacity = 0;
   bool placed = false;
   int seenPass = -1;

@@ -249,6 +249,27 @@ class LabelEngine {
     return reach;
   }
 
+  /// The key [st]'s text sprite is kept under: its candidate's, and with
+  /// `text-justify: auto` the side its lines are flush on.
+  String _spriteKey(LabelState st) {
+    final c = st.candidate;
+    final symbol = _symbolOf(c);
+    if (symbol == null || !symbol.justifyAuto) return c.spriteKey;
+    return '${c.spriteKey}|${_autoJustify(st, symbol).index}';
+  }
+
+  /// The side of the anchor [st] takes, which `text-justify: auto` makes
+  /// its lines flush on.
+  static ui.TextAlign _autoJustify(LabelState st, SymbolLayer symbol) {
+    final anchors = symbol.anchors;
+    final anchor = anchors.isEmpty
+        ? symbol.anchor
+        : anchors[st.side.clamp(0, anchors.length - 1)];
+    if (anchor.endsWith('left')) return ui.TextAlign.left;
+    if (anchor.endsWith('right')) return ui.TextAlign.right;
+    return ui.TextAlign.center;
+  }
+
   /// Whether [a] and [b] are two features of one tile, which are never the
   /// same label however close: MapLibre only joins copies across tiles.
   static bool _sameTileApart(LabelCandidate a, LabelCandidate b) =>
@@ -403,12 +424,13 @@ class LabelEngine {
     final rasterStart = _clock.elapsedMicroseconds;
     for (final st in _frameStates) {
       if (st.sprite?.dropped ?? false) {
-        st.sprite = _sprites[st.candidate.spriteKey];
+        st.sprite = _sprites[_spriteKey(st)];
       }
       if (!st.placed || st.seenPass != _pass) continue;
       if (!st.candidate.hasText || !st.showText) continue;
-      if (st.sprite != null && !st.resize) continue;
-      var cached = _sprites[st.candidate.spriteKey];
+      final key = _spriteKey(st);
+      if (st.sprite != null && !st.resize && st.spriteKey == key) continue;
+      var cached = _sprites[_spriteKey(st)];
       if (identical(cached, st.sprite)) cached = null;
       if (cached == null &&
           (lastPlaceMicros > _heavyPlaceMicros ||
@@ -426,6 +448,7 @@ class LabelEngine {
       if (cached == null && st.sprite != null) work.resized++;
       st
         ..sprite = sprite
+        ..spriteKey = key
         ..resize = false
         ..roadFitKey = -1;
       _placeAgain = true;
@@ -451,7 +474,7 @@ class LabelEngine {
       final st = _live[i];
       final seen = st.seenPass == _pass;
       if (st.sprite?.dropped ?? false) {
-        st.sprite = _sprites[st.candidate.spriteKey];
+        st.sprite = _sprites[_spriteKey(st)];
       }
       final sprite = st.sprite;
       final inRange = _inRange(st.candidate, styleZoom);
@@ -600,7 +623,13 @@ class LabelEngine {
         }
       }
       if (st.sprite?.dropped ?? false) st.sprite = null;
-      final sprite = st.sprite ??= _sprites[c.spriteKey];
+      final key = _spriteKey(st);
+      if (st.spriteKey != key || st.sprite == null) {
+        st
+          ..sprite = _sprites[key]
+          ..spriteKey = key;
+      }
+      final sprite = st.sprite;
       st.scale = sprite == null ? 1 : fontSize / sprite.fontSize;
       st.resize = sprite is GlyphSprite
           ? false
@@ -771,7 +800,7 @@ class LabelEngine {
     }
     final rightToLeft = isRightToLeft(label);
     return _sprites.draw(
-      c.spriteKey,
+      _spriteKey(st),
       TextLook(
         text: label,
         fontSize: fontSize,
@@ -788,7 +817,11 @@ class LabelEngine {
         // A marker's name hugs its marker: lines are flush on the side the
         // text starts from, which is the side the marker is on.
         align: !beside
-            ? (symbol?.justify ?? ui.TextAlign.center)
+            ? (symbol == null
+                  ? ui.TextAlign.center
+                  : symbol.justifyAuto
+                  ? _autoJustify(st, symbol)
+                  : symbol.justify)
             : (rightToLeft ? ui.TextAlign.right : ui.TextAlign.left),
         rightToLeft: rightToLeft,
         road: isRoad,

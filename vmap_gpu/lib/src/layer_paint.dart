@@ -84,8 +84,14 @@ class LayerPaint {
         if (gap > 0 && width > 0) gapShare = (gap / width).clamp(0.0, 1.0);
         offset = (asNumber(layer.offset?.call(context)) ?? 0).toDouble();
         if (layer.dash case final dash?) {
+          // As MapLibre's line-floorwidth: dashes are as long as the line
+          // is wide at the zoom level's floor.
+          final zoom = context.zoom;
+          context.zoom = styleZoom.floorToDouble();
+          final floorWidth = (asNumber(layer.width(context)) ?? 0).toDouble();
+          context.zoom = zoom;
           dashOn = layer.dashCap.index.toDouble();
-          dashPeriod = dash.fold(0.0, (a, b) => a + b) * width;
+          dashPeriod = dash.fold(0.0, (a, b) => a + b) * floorWidth;
         }
       }
       if (layer is CircleLayer) {

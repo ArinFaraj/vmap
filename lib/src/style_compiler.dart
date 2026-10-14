@@ -396,6 +396,7 @@ class StyleCompiler {
           'right' => ui.TextAlign.right,
           _ => ui.TextAlign.center,
         },
+        justifyAuto: layout['text-justify'] == 'auto',
         textPadding: asNumber(layout['text-padding']),
         iconPadding: asNumber(layout['icon-padding']),
         textIgnored: layout['text-ignore-placement'] == true,
