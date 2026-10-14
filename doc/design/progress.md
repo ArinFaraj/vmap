@@ -294,6 +294,13 @@ to edge instead of being stretched half a pixel; and a line's edge fade
 reads only the side, so a segment after a mitred corner no longer thins
 to a wedge (seen on real roads, not only in tests).
 
+Then **619 of 1,730**: dashes drawn from a distance ramp with real caps,
+point labels placed in MapLibre's order and spots, and Arabic-script text
+from glyph ranges joined and ordered right to left. The Kurdish letters
+ڵ, ڕ, ێ and ە have no presentation forms, so glyph ranges cannot join
+them and MapLibre draws Sorani broken; vmap shapes those labels with its
+fonts instead.
+
 Terrain is built: see `terrain.md`.
 
 Known gaps carried forward: road label anchors are spread evenly over a
