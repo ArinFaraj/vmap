@@ -263,7 +263,7 @@ class LabelPainter {
     final em = sprite.fontSize * st.scale;
     _resolve(sprite, em, devicePixelRatio);
     final cells = sprite.cells, ems = sprite.cellEms;
-    final turn = st.screenAngle;
+    final turn = _turnOf(st);
     final c = math.cos(turn), s = math.sin(turn);
     final shaped = sprite.shaped;
     final left = -shaped.width * em / 2, top = -shaped.height * em / 2;
@@ -356,6 +356,26 @@ class LabelPainter {
     }
   }
 
+  /// The angle [st]'s text is drawn at. A straight road name on a tilted
+  /// map is turned to its road every frame: its angle on the screen moves
+  /// with the camera, and the one placement found goes stale between
+  /// placements, so the name would lag and jump while the map turns.
+  double _turnOf(LabelState st) {
+    final c = st.candidate;
+    if (_view.tilted == null ||
+        st.curve != null ||
+        c is! TileLabel ||
+        c.tile.line == null) {
+      return st.screenAngle;
+    }
+    var turn =
+        _view.screenAngle(st.worldX, st.worldY, st.angle) % (2 * math.pi);
+    if (turn > math.pi) turn -= 2 * math.pi;
+    if (turn > math.pi / 2) turn -= math.pi;
+    if (turn < -math.pi / 2) turn += math.pi;
+    return turn;
+  }
+
   final Float64List _along = Float64List(3);
   Float64List _screen = Float64List(64);
 
@@ -442,7 +462,7 @@ class LabelPainter {
     double devicePixelRatio,
   ) {
     final (sx, sy, w, h) = _textBox(st, sprite);
-    final turn = st.screenAngle;
+    final turn = _turnOf(st);
     canvas.save();
     if (turn == 0) {
       canvas.translate(
@@ -475,7 +495,7 @@ class LabelPainter {
     double devicePixelRatio,
   ) {
     final (sx, sy, w, h) = _textBox(st, sprite);
-    final turn = st.screenAngle;
+    final turn = _turnOf(st);
     final source = ui.Rect.fromLTWH(0, 0, sprite.pixelW, sprite.pixelH);
     if (turn == 0) {
       canvas.drawImageRect(
