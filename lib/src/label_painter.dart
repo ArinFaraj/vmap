@@ -147,6 +147,8 @@ class LabelPainter {
   ) {
     _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
     switch (sprite) {
+      case GlyphSprite() when st.onGround && _view.tilted != null:
+        _glyphsGround(st, sprite, devicePixelRatio);
       case RangeSprite() when st.curve == null && _turnOf(st) == 0:
         _rangeGlyphs(st, sprite, devicePixelRatio);
       case GlyphSprite() when st.curve != null:
@@ -436,6 +438,74 @@ class LabelPainter {
         ink,
         halo,
       );
+    }
+  }
+
+  /// Draws [st]'s glyphs lying on the ground of the tilted map, as MapLibre
+  /// draws text pitched with the map: laid out along its road on the
+  /// ground, its size there its size on the screen times half its anchor's
+  /// distance ratio and a half, and each glyph projected corner by corner.
+  void _glyphsGround(
+    LabelState st,
+    GlyphSprite sprite,
+    double devicePixelRatio,
+  ) {
+    final pages = glyphs!;
+    final em = sprite.fontSize * st.scale;
+    _resolve(sprite, em, devicePixelRatio);
+    final cells = sprite.cells, ems = sprite.cellEms;
+    final shaped = sprite.shaped;
+    _view.project(st.worldX, st.worldY);
+    final depth = _view.depth;
+    final flip =
+        st.keepUpright &&
+        math.cos(_view.screenAngle(st.worldX, st.worldY, st.angle)) < 0;
+    final unit =
+        em / math.max(st.perspective, 1e-6) * (0.5 + 0.5 * depth) / _view.world;
+    final half = shaped.width * unit / 2;
+    final Float64List path;
+    final double middle;
+    if (st.curve case final curve?) {
+      path = curve;
+      middle = st.curveMid;
+    } else {
+      final dx = math.cos(st.angle) * half * 2,
+          dy = math.sin(st.angle) * half * 2;
+      path = Float64List.fromList([
+        st.worldX - dx,
+        st.worldY - dy,
+        st.worldX + dx,
+        st.worldY + dy,
+      ]);
+      middle = half * 2;
+    }
+    final ink = _faded(sprite.look.color, st.opacity);
+    final halo = sprite.look.halo == null
+        ? null
+        : _faded(sprite.look.halo!, st.opacity);
+    final g = shaped.glyphs;
+    for (var i = 0; i < g.length; i += 5) {
+      final cell = cells[i ~/ 5];
+      if (cell == null) continue;
+      final advance = g[i + 4] * unit;
+      var along = g[i + 2] * unit + advance / 2 - half;
+      if (flip) along = -along;
+      pointAlong(path, middle + along, _along);
+      var angle = _along[2];
+      if (flip) angle += math.pi;
+      final tx = math.cos(angle), ty = math.sin(angle);
+      final nx = -ty, ny = tx;
+      final down = (g[i + 3] - shaped.height / 2) * unit;
+      final px = _along[0] - tx * advance / 2 + nx * down;
+      final py = _along[1] - ty * advance / 2 + ny * down;
+      _view.project(px, py);
+      final ox = _view.x, oy = _view.y;
+      final cellUnit = unit / ems[i ~/ 5];
+      _view.project(px + tx * cellUnit, py + ty * cellUnit);
+      final ax = _view.x - ox, ay = _view.y - oy;
+      _view.project(px + nx * cellUnit, py + ny * cellUnit);
+      final bx = _view.x - ox, by = _view.y - oy;
+      pages.addQuad(cell, ox + st.dx, oy + st.dy, ax, ay, bx, by, ink, halo);
     }
   }
 

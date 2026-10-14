@@ -36,6 +36,9 @@ class LabelView {
   double y = 0;
   double ratio = 1;
 
+  /// How much farther than the middle of the screen the last point lies.
+  double depth = 1;
+
   void frame({
     required double rotation,
     required ui.Size size,
@@ -88,9 +91,11 @@ class LabelView {
       x = view.outX;
       y = view.outY;
       ratio = 0.5 + 0.5 / view.outDepth;
+      depth = view.outDepth;
       return;
     }
     ratio = 1;
+    depth = 1;
     final px = wx * world - origin.dx;
     final py = wy * world - origin.dy;
     if (rotation == 0) {
@@ -111,7 +116,7 @@ class LabelView {
   double screenAngle(double wx, double wy, double angle) {
     final view = tilted;
     if (view == null) return angle + rotation;
-    final keepX = x, keepY = y, keepRatio = ratio;
+    final keepX = x, keepY = y, keepRatio = ratio, keepDepth = depth;
     final step = 8 / view.worldSize;
     final dx = math.cos(angle) * step, dy = math.sin(angle) * step;
     project(wx - dx, wy - dy);
@@ -121,6 +126,7 @@ class LabelView {
     x = keepX;
     y = keepY;
     ratio = keepRatio;
+    depth = keepDepth;
     return turn;
   }
 

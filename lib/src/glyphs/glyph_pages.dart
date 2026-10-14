@@ -160,6 +160,8 @@ class GlyphPages {
   final Map<PageKey, GlyphPage> _pages = {};
   final Map<ui.Image, _Batch> _halos = {};
   final Map<ui.Image, _Batch> _inks = {};
+  final Map<ui.Image, _Quads> _haloQuads = {};
+  final Map<ui.Image, _Quads> _inkQuads = {};
   int _frame = 0;
 
   /// Moves on whenever a cell handed out may have gone stale: a page was
@@ -233,11 +235,52 @@ class GlyphPages {
     (_inks[cell.image] ??= _Batch()).add(c, s, tx, ty, cell.ink, ink);
   }
 
+  /// Queues [cell] drawn by an affine map, for text laid on the ground of
+  /// a tilted map: the cell's pixel at u, v lands on the screen at [ox],
+  /// [oy] plus u times [ax], [ay] plus v times [bx], [by].
+  void addQuad(
+    GlyphCell cell,
+    double ox,
+    double oy,
+    double ax,
+    double ay,
+    double bx,
+    double by,
+    int ink,
+    int? halo,
+  ) {
+    final x = ox + ax * cell.left + bx * cell.top;
+    final y = oy + ay * cell.left + by * cell.top;
+    final haloRect = cell.halo;
+    if (halo != null && haloRect != null) {
+      (_haloQuads[cell.image] ??= _Quads()).add(
+        x,
+        y,
+        ax,
+        ay,
+        bx,
+        by,
+        haloRect,
+        halo, //
+      );
+    }
+    (_inkQuads[cell.image] ??= _Quads()).add(
+      x,
+      y,
+      ax,
+      ay,
+      bx,
+      by,
+      cell.ink,
+      ink, //
+    );
+  }
+
   static final _paint = ui.Paint()..filterQuality = ui.FilterQuality.low;
 
   /// Draws what was queued this frame and rasterizes glyphs asked for.
   void flush(ui.Canvas canvas) {
-    for (final batches in [_halos, _inks]) {
+    for (final (batches, quads) in [(_halos, _haloQuads), (_inks, _inkQuads)]) {
       for (final MapEntry(key: image, value: b) in batches.entries) {
         if (b.length == 0) continue;
         canvas.drawRawAtlas(
@@ -251,8 +294,37 @@ class GlyphPages {
         );
       }
       batches.clear();
+      for (final MapEntry(key: image, value: q) in quads.entries) {
+        if (q.length == 0) continue;
+        final vertices = ui.Vertices.raw(
+          ui.VertexMode.triangles,
+          Float32List.sublistView(q.positions, 0, q.length * 12),
+          textureCoordinates: Float32List.sublistView(q.uvs, 0, q.length * 12),
+          colors: Int32List.sublistView(q.colors, 0, q.length * 6),
+        );
+        canvas.drawVertices(
+          vertices,
+          ui.BlendMode.modulate,
+          ui.Paint()
+            ..filterQuality = ui.FilterQuality.low
+            ..shader = ui.ImageShader(
+              image,
+              ui.TileMode.clamp,
+              ui.TileMode.clamp,
+              _identity,
+            ),
+        );
+        vertices.dispose();
+      }
+      quads.clear();
     }
   }
+
+  static final Float64List _identity = Float64List(16)
+    ..[0] = 1
+    ..[5] = 1
+    ..[10] = 1
+    ..[15] = 1;
 
   /// Sends waiting glyphs to be drawn; true while any are being drawn, so
   /// frames go on until they land.
@@ -319,6 +391,46 @@ class _Batch {
     rects[o + 2] = r.right;
     rects[o + 3] = r.bottom;
     colors[length] = color;
+    length++;
+  }
+}
+
+/// Glyph quads of one image, two triangles each.
+class _Quads {
+  Float32List positions = Float32List(384);
+  Float32List uvs = Float32List(384);
+  Int32List colors = Int32List(192);
+  int length = 0;
+
+  void add(
+    double x,
+    double y,
+    double ax,
+    double ay,
+    double bx,
+    double by,
+    ui.Rect r,
+    int color,
+  ) {
+    final o = length * 12;
+    if (o + 12 > positions.length) {
+      positions = Float32List(positions.length * 2)..setAll(0, positions);
+      uvs = Float32List(uvs.length * 2)..setAll(0, uvs);
+      colors = Int32List(colors.length * 2)..setAll(0, colors);
+    }
+    final w = r.width, h = r.height;
+    final corners = [
+      (0.0, 0.0), (w, 0.0), (w, h), //
+      (0.0, 0.0), (w, h), (0.0, h),
+    ];
+    for (var k = 0; k < 6; k++) {
+      final (u, v) = corners[k];
+      positions[o + k * 2] = x + ax * u + bx * v;
+      positions[o + k * 2 + 1] = y + ay * u + by * v;
+      uvs[o + k * 2] = r.left + u;
+      uvs[o + k * 2 + 1] = r.top + v;
+      colors[length * 6 + k] = color;
+    }
     length++;
   }
 }

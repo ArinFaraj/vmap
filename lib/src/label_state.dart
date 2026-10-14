@@ -155,6 +155,9 @@ class LabelState {
   /// Its layer's `text-keep-upright`, for a name along a road.
   bool keepUpright = true;
 
+  /// Drawn lying on the ground of a tilted map.
+  bool onGround = false;
+
   /// For a name that follows a bend: the stretch of road it sits on, as x,y
   /// pairs in fractions of the world, and how far along it the middle of the
   /// text is. Null for a name written straight. The text is laid on it

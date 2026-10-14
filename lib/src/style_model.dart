@@ -472,6 +472,7 @@ class SymbolLayer {
     this.iconPadding,
     this.textIgnored = false,
     this.keepUpright = true,
+    this.textOnGround = false,
     this.iconIgnored = false,
     required this.maxWidth,
     required this.iconSize,
@@ -551,6 +552,12 @@ class SymbolLayer {
   /// `text-keep-upright`: a name along a line is turned half round when it
   /// would read upside down.
   final bool keepUpright;
+
+  /// The text lies on the ground of a tilted map, as MapLibre lays it for
+  /// `text-pitch-alignment: map`, or `auto` with text turning with the map,
+  /// a name along a line by default: foreshortened, and on the screen as
+  /// large as text facing the viewer.
+  final bool textOnGround;
   final bool iconIgnored;
 
   /// How far the edge of the halo fades out, in logical pixels.
