@@ -10,7 +10,25 @@ class CollisionBoxes {
   Float32List _boxes = Float32List(1024);
   int _count = 0;
 
-  void clear() => _count = 0;
+  /// The boxes in each [_cell] pixel square of the screen, so a test looks
+  /// only at the boxes near it, as MapLibre's grid index does: a dense
+  /// tilted view weighs hundreds of labels against hundreds of boxes.
+  final Map<int, List<int>> _grid = {};
+  static const double _cell = 64;
+
+  /// For each box, the last query that tested it, so one in several cells
+  /// is tested once.
+  Int32List _seen = Int32List(256);
+  int _query = 0;
+
+  void clear() {
+    _count = 0;
+    _grid.clear();
+  }
+
+  static int _key(int cx, int cy) => (cx + 32768) << 16 | (cy + 32768);
+
+  static int _at(double v) => (v / _cell).floor().clamp(-32000, 32000);
 
   /// Takes the box from [l], [t] to [r], [b] as it is, and returns its
   /// number.
@@ -23,21 +41,41 @@ class CollisionBoxes {
     _boxes[_count++] = t;
     _boxes[_count++] = r;
     _boxes[_count++] = b;
+    if (number >= _seen.length) {
+      _seen = Int32List(_seen.length * 2)..setRange(0, _seen.length, _seen);
+    }
+    _seen[number] = 0;
+    final x1 = _at(r), y1 = _at(b);
+    for (var cy = _at(t); cy <= y1; cy++) {
+      for (var cx = _at(l); cx <= x1; cx++) {
+        (_grid[_key(cx, cy)] ??= []).add(number);
+      }
+    }
     return number;
   }
 
   /// Whether the box from [l], [t] to [r], [b] overlaps one taken, other
   /// than box number [except].
   bool hits(double l, double t, double r, double b, {int? except}) {
+    if (_count == 0) return false;
     final boxes = _boxes;
-    final skip = except == null ? -1 : except * 4;
-    for (var i = 0; i < _count; i += 4) {
-      if (i == skip) continue;
-      if (l < boxes[i + 2] &&
-          r > boxes[i] &&
-          t < boxes[i + 3] &&
-          b > boxes[i + 1]) {
-        return true;
+    final query = ++_query;
+    final x1 = _at(r), y1 = _at(b);
+    for (var cy = _at(t); cy <= y1; cy++) {
+      for (var cx = _at(l); cx <= x1; cx++) {
+        final cell = _grid[_key(cx, cy)];
+        if (cell == null) continue;
+        for (final number in cell) {
+          if (number == except || _seen[number] == query) continue;
+          _seen[number] = query;
+          final i = number * 4;
+          if (l < boxes[i + 2] &&
+              r > boxes[i] &&
+              t < boxes[i + 3] &&
+              b > boxes[i + 1]) {
+            return true;
+          }
+        }
       }
     }
     return false;

@@ -82,7 +82,7 @@ class LabelEngine {
   /// UI-thread time a frame may spend drawing new labels into images.
   /// Candidates weighed per placement, best priority first. The rest are the
   /// least important street names and wait for a closer zoom.
-  static const int _maxConsidered = 240;
+  static const int _maxConsidered = 1500;
 
   /// Extra clear space kept around street names, so a grid of short streets
   /// names a few of them instead of all of them.

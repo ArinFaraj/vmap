@@ -1,0 +1,37 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:vmap/src/collision_boxes.dart';
+
+void main() {
+  test('a box overlapping one taken hits it, one beside it does not', () {
+    final boxes = CollisionBoxes()..add(10, 10, 50, 30);
+    expect(boxes.hits(40, 20, 80, 60), isTrue);
+    expect(boxes.hits(50, 10, 90, 30), isFalse, reason: 'edges touching');
+    expect(boxes.hits(200, 200, 220, 220), isFalse);
+  });
+
+  test('a box spanning many cells is found from any of them', () {
+    final boxes = CollisionBoxes()..add(-300, -20, 900, 20);
+    expect(boxes.hits(-290, 0, -280, 10), isTrue);
+    expect(boxes.hits(850, 0, 860, 10), isTrue);
+    expect(boxes.hits(400, 100, 410, 110), isFalse);
+  });
+
+  test('a box can be left out of the test, and clear forgets all', () {
+    final boxes = CollisionBoxes();
+    final own = boxes.add(0, 0, 10, 10);
+    expect(boxes.hits(5, 5, 15, 15, except: own), isFalse);
+    boxes.add(8, 8, 20, 20);
+    expect(boxes.hits(5, 5, 15, 15, except: own), isTrue);
+    boxes.clear();
+    expect(boxes.hits(5, 5, 15, 15), isFalse);
+  });
+
+  test('many boxes are each tested once and found', () {
+    final boxes = CollisionBoxes();
+    for (var i = 0; i < 2000; i++) {
+      boxes.add(i * 30.0, 0, i * 30.0 + 20, 20);
+    }
+    expect(boxes.hits(59975, 5, 59980, 10), isTrue);
+    expect(boxes.hits(59992, 5, 59998, 10), isFalse);
+  });
+}
