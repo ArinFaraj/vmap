@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'expr.dart';
 import 'glyphs/glyph_layout.dart';
 import 'glyphs/glyph_pages.dart';
+import 'glyphs/glyph_raster.dart' show PageKey;
 import 'icon_stretch.dart';
 import 'label_path.dart';
 import 'label_rules.dart';
@@ -92,8 +93,8 @@ class LabelPainter {
         : _tint(st, icon, symbol, tint, devicePixelRatio);
     final fit = symbol?.textFit ?? false;
     _view.project(st.worldX, st.worldY);
-    final ix = _view.x + (fit ? st.dx * st.iconScale + st.iconDx : st.iconDx);
-    final iy = _view.y + (fit ? st.dy * st.iconScale + st.iconDy : st.iconDy);
+    final ix = _view.x + st.iconDx;
+    final iy = _view.y + st.iconDy;
     final turn = switch (st.candidate) {
       TileLabel(tile: BuiltLabel(:final angle, :final turns)) =>
         turns ? _view.screenAngle(st.worldX, st.worldY, angle) : angle,
@@ -329,6 +330,18 @@ class LabelPainter {
         ? 0
         : (look.haloBlur * devicePixelRatio * 4).round();
     final k = 1 / devicePixelRatio;
+    final keys = List<PageKey>.generate(
+      16,
+      (phase) => (
+        size: 0,
+        weight: 400,
+        italic: false,
+        halo: haloQuarters,
+        blur: blur,
+        sixteenths: sixteenths,
+        phase: phase,
+      ),
+    );
     final g = sprite.shaped.glyphs;
     for (var i = 0; i < g.length; i += 5) {
       final dx = (x + g[i + 2] * em) * devicePixelRatio;
@@ -339,16 +352,11 @@ class LabelPainter {
       final oy = dy.floorToDouble() + (qy == 4 ? 1 : 0);
       qx %= 4;
       qy %= 4;
-      final key = (
-        size: 0,
-        weight: 400,
-        italic: false,
-        halo: haloQuarters,
-        blur: blur,
-        sixteenths: sixteenths,
-        phase: qx | qy << 2,
+      final cell = pages.cell(
+        keys[qx | qy << 2],
+        g[i].toInt(),
+        g[i + 1].toInt(),
       );
-      final cell = pages.cell(key, g[i].toInt(), g[i + 1].toInt());
       if (cell == null) continue;
       pages.add(
         cell,

@@ -35,6 +35,28 @@ typedef PageKey = ({
 /// Device pixels to the em of a font page of [size].
 double emOf(int size) => math.pow(2, size / 4).toDouble();
 
+/// The key [step] sizes from [key], in its own kind of size: quarter
+/// octaves for a font page, sixteenths of a pixel for a range page.
+PageKey nearbyKey(PageKey key, int step) => key.sixteenths > 0
+    ? (
+        size: key.size,
+        weight: key.weight,
+        italic: key.italic,
+        halo: key.halo,
+        blur: key.blur,
+        sixteenths: key.sixteenths + step,
+        phase: key.phase,
+      )
+    : (
+        size: key.size + step,
+        weight: key.weight,
+        italic: key.italic,
+        halo: key.halo,
+        blur: key.blur,
+        sixteenths: 0,
+        phase: 0,
+      );
+
 /// Device pixels to the em of the page [key].
 double pageEm(PageKey key) =>
     key.sixteenths > 0 ? key.sixteenths / 16 : emOf(key.size);
@@ -148,7 +170,7 @@ class GlyphRasterizer {
   /// facing the screen, so it comes out as MapLibre draws it. The cell is
   /// drawn for the page's phase and placed so its corner lands on a whole
   /// device pixel, so it is sampled once, as MapLibre samples it.
-  _Bitmap? _pbfGlyph(PageKey key, int face, int codePoint) {
+  _Bitmap? _rangeGlyph(PageKey key, int face, int codePoint) {
     final px = (key.phase & 3) / 4, py = (key.phase >> 2) / 4;
     final g = ranges[face]?[codePoint];
     if (g == null || g.width == 0) return null;
@@ -214,7 +236,7 @@ class GlyphRasterizer {
 
   _Bitmap? _glyph(PageKey key, int id) {
     final face = id >> 20, glyph = id & 0xFFFFF;
-    if (face >= GlyphPbf.firstFace) return _pbfGlyph(key, face, glyph);
+    if (face >= GlyphPbf.firstFace) return _rangeGlyph(key, face, glyph);
     final outline = _outline(face, key.weight, glyph);
     if (outline == null) return null;
     final s = emOf(key.size) / fonts.unitsPerEm(face);

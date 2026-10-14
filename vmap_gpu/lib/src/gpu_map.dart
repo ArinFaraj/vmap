@@ -56,9 +56,12 @@ class GpuMap implements MapRenderer {
   gpu.DeviceBuffer? _quad;
   UniformArena? _host;
   final _heap = GpuHeap();
-  List<gpu.Texture> _ring = const [];
-  List<ui.Image> _images = const [];
-  ui.Image? _lastImage;
+  List<_FrameTarget> _ring = const [];
+
+  /// The last frame drawn, shown again while the GPU catches up.
+  _Shown? _last;
+  final ui.Paint _overlayPaint = ui.Paint()
+    ..filterQuality = ui.FilterQuality.low;
   int _inFlight = 0;
   gpu.Texture? _depth, _samples;
   int _next = 0, _width = 0, _height = 0, _frame = 0;
@@ -233,20 +236,11 @@ class GpuMap implements MapRenderer {
     if (width == _width && height == _height && _ring.isNotEmpty) return;
     _width = width;
     _height = height;
-    _ring = [
-      for (var i = 0; i < 3; i++)
-        gpu.gpuContext.createTexture(
-          gpu.StorageMode.devicePrivate,
-          width,
-          height,
-          format: _color,
-        ),
-    ];
-    for (final image in _images) {
-      image.dispose();
+    for (final frame in _ring) {
+      frame.dispose();
     }
-    _images = [for (final t in _ring) t.asImage()];
-    _lastImage = null;
+    _ring = [for (var i = 0; i < 3; i++) _FrameTarget(_target())];
+    _last = null;
     final samples = _msaa ? 4 : 1;
     _depth = _scratch(
       width,
@@ -256,6 +250,14 @@ class GpuMap implements MapRenderer {
     );
     _samples = _msaa ? _scratch(width, height, _color, samples) : null;
   }
+
+  /// A texture a frame draws into, the size of the screen.
+  gpu.Texture _target() => gpu.gpuContext.createTexture(
+    gpu.StorageMode.devicePrivate,
+    _width,
+    _height,
+    format: _color,
+  );
 
   /// A texture only the GPU touches within a pass: kept in tile memory where
   /// the GPU has it, which desktop GPUs do not.
@@ -358,13 +360,12 @@ class GpuMap implements MapRenderer {
     // A GPU that falls behind blocks the thread that queues more work for
     // it, so while two frames are still in flight the last image is shown
     // again and the frame comes back once one finishes.
-    final last = _lastImage;
+    final last = _last;
     if (_inFlight >= 2 && last != null) {
       _present(canvas, last, view);
       return true;
     }
-    final target = _ring[_next];
-    final image = _images[_next];
+    final frame = _ring[_next];
     _next = (_next + 1) % _ring.length;
     final commands = gpu.gpuContext.createCommandBuffer();
     _host!.reset();
@@ -374,29 +375,44 @@ class GpuMap implements MapRenderer {
     _presence.begin(sheet, styleZoom, ideal);
     _layerPaint.clear();
     _ramps.update(sheet, context);
-    final pass = _MapPass(
+    final clip = view.clipMatrix(originX: origin.dx, originY: origin.dy);
+    _MapPass passOn(gpu.Texture target) => _MapPass(
       this,
       _beginPass(commands, target),
       view,
-      view.clipMatrix(originX: origin.dx, originY: origin.dy),
+      clip,
       sheet,
       context,
       styleZoom,
       fallback,
       ideal,
     );
+    final pass = passOn(frame.map);
     Timeline.timeSync('vmap.gpu.flat', pass.drawRuns);
-    if (sheet.extrusions.isNotEmpty) {
-      Timeline.timeSync('vmap.gpu.buildings', pass.drawBuildings);
-    }
+    final overlays = <(ui.Image, double)>[];
+    Timeline.timeSync('vmap.gpu.buildings', () {
+      for (final layer in sheet.extrusions) {
+        if (!_reveal.shows(layer)) continue;
+        final opacity = (asNumber(layer.opacity(context)) ?? 1).clamp(0.0, 1.0);
+        if (opacity <= 0) continue;
+        if (opacity >= 1) {
+          // Opaque buildings look the same drawn straight into the map,
+          // without a texture of their own to fill.
+          pass.drawBuildings(layer);
+          continue;
+        }
+        final (texture, image) = frame.overlay(overlays.length, _target);
+        passOn(texture).drawBuildings(layer);
+        overlays.add((image, opacity));
+      }
+    });
     _inFlight++;
     _heap.submitted++;
     Timeline.timeSync(
       'vmap.gpu.submit',
       () => commands.submit(completionCallback: (_) => _finished()),
     );
-    _lastImage = image;
-    _present(canvas, image, view);
+    _present(canvas, _last = (frame.image, overlays), view);
     return _reveal.animating || _presence.animating || _spritesLoading;
   }
 
@@ -408,7 +424,7 @@ class GpuMap implements MapRenderer {
   void _warmUp() {
     _warm = true;
     final commands = gpu.gpuContext.createCommandBuffer();
-    final pass = _beginPass(commands, _ring.last);
+    final pass = _beginPass(commands, _ring.last.map);
     final host = _host!;
     final zeros = gpu.gpuContext.createDeviceBufferWithCopy(ByteData(96));
     final vertices = gpu.BufferView(zeros, offsetInBytes: 0, lengthInBytes: 96);
@@ -497,13 +513,14 @@ class GpuMap implements MapRenderer {
     );
   }
 
-  void _present(ui.Canvas canvas, ui.Image image, MapView view) {
-    canvas.drawImageRect(
-      image,
-      ui.Rect.fromLTWH(0, 0, _width.toDouble(), _height.toDouble()),
-      ui.Rect.fromLTWH(0, 0, view.width, view.height),
-      _paint,
-    );
+  void _present(ui.Canvas canvas, _Shown shown, MapView view) {
+    final from = ui.Rect.fromLTWH(0, 0, _width.toDouble(), _height.toDouble());
+    final to = ui.Rect.fromLTWH(0, 0, view.width, view.height);
+    canvas.drawImageRect(shown.$1, from, to, _paint);
+    for (final (image, opacity) in shown.$2) {
+      _overlayPaint.color = ui.Color.fromRGBO(255, 255, 255, opacity);
+      canvas.drawImageRect(image, from, to, _overlayPaint);
+    }
   }
 
   /// Copies the sprite sheet's pixels into a texture. Read back on the
@@ -679,12 +696,11 @@ class GpuMap implements MapRenderer {
     }
     _held.clear();
     _heap.clear();
-    _ring = const [];
-    for (final image in _images) {
-      image.dispose();
+    for (final frame in _ring) {
+      frame.dispose();
     }
-    _images = const [];
-    _lastImage = null;
+    _ring = const [];
+    _last = null;
     _depth = null;
     _samples = null;
   }
@@ -862,7 +878,8 @@ class _MapPass {
   /// Buildings after the flat layers, with depth. The flat layers leave an
   /// index buffer bound, cleared first, or these draws would read their
   /// vertices through it.
-  void drawBuildings() {
+  /// Draws building layer [layer], standing, depth tested.
+  void drawBuildings(ExtrusionLayer layer) {
     bool built(List<TileDraw> tiles) =>
         tiles.any((d) => d.tile.extrusions.isNotEmpty);
     for (var source = 0; source < _ideal.length; source++) {
@@ -877,43 +894,73 @@ class _MapPass {
         ..setStencilConfig(gpu.StencilConfig())
         ..setDepthWriteEnable(true)
         ..setDepthCompareOperation(gpu.CompareFunction.lessEqual);
-      _drawBuildingsOf(_ideal[source]);
+      _drawBuildingsOf(layer, _ideal[source]);
       if (standIn) {
         _stencilEquals(0);
-        _drawBuildingsOf(_fallback[source]);
+        _drawBuildingsOf(layer, _fallback[source]);
       }
     }
   }
 
-  void _drawBuildingsOf(List<TileDraw> tiles) {
+  void _drawBuildingsOf(ExtrusionLayer layer, List<TileDraw> tiles) {
     final map = _map;
     final view = _view;
     final perMetre =
         view.worldSize /
         (40075016.686 * math.cos(latitudeAt(view.centerY) * math.pi / 180));
     final host = map._host!;
-    for (final layer in _sheet.extrusions) {
-      if (!map._reveal.shows(layer)) continue;
-      for (final d in tiles) {
-        final data = _map._gpuOf(d);
-        if (data == null) continue;
-        for (final b in data.buildings) {
-          if (b.extrusion.bucket != layer.bucket) continue;
-          final (fade, grow) = map._reveal.motion(d.tile, layer, b);
-          final scale = d.size / tileExtent;
-          map._times(_clip, scale, perMetre, d.left, d.top, fade, grow);
-          _pass
-            ..bindVertexBuffer(
-              gpu.BufferView(
-                data.buffer!,
-                offsetInBytes: b.offset,
-                lengthInBytes: b.vertexCount * BuildingGpu.stride,
-              ),
-            )
-            ..bindUniform(map._buildingFrame!, host.emplace(map._frameBytes))
-            ..draw(b.vertexCount);
-        }
+    for (final d in tiles) {
+      final data = _map._gpuOf(d);
+      if (data == null) continue;
+      for (final b in data.buildings) {
+        if (b.extrusion.bucket != layer.bucket) continue;
+        final (fade, grow) = map._reveal.motion(d.tile, layer, b);
+        final scale = d.size / tileExtent;
+        map._times(_clip, scale, perMetre, d.left, d.top, fade, grow);
+        _pass
+          ..bindVertexBuffer(
+            gpu.BufferView(
+              data.buffer!,
+              offsetInBytes: b.offset,
+              lengthInBytes: b.vertexCount * BuildingGpu.stride,
+            ),
+          )
+          ..bindUniform(map._buildingFrame!, host.emplace(map._frameBytes))
+          ..draw(b.vertexCount);
       }
+    }
+  }
+}
+
+/// A frame as the canvas shows it: the map, then each see-through
+/// building layer over it at that layer's opacity.
+typedef _Shown = (ui.Image, List<(ui.Image, double)>);
+
+/// What one frame of the ring draws into: the map's texture and, for each
+/// see-through building layer, one more. Building layers are drawn opaque
+/// into their own and laid over the map at their opacity, as MapLibre
+/// draws them, so a see-through building shows the ground behind it and
+/// its walls do not darken where they overlap.
+class _FrameTarget {
+  _FrameTarget(this.map) : image = map.asImage();
+
+  final gpu.Texture map;
+  final ui.Image image;
+  final List<(gpu.Texture, ui.Image)> _overlays = [];
+
+  /// The [i]th overlay's texture and image, made with [make] the first time.
+  (gpu.Texture, ui.Image) overlay(int i, gpu.Texture Function() make) {
+    while (_overlays.length <= i) {
+      final texture = make();
+      _overlays.add((texture, texture.asImage()));
+    }
+    return _overlays[i];
+  }
+
+  void dispose() {
+    image.dispose();
+    for (final (_, overlay) in _overlays) {
+      overlay.dispose();
     }
   }
 }

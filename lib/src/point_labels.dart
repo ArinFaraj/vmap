@@ -117,6 +117,13 @@ class PointLabels {
         ? _fitInPlace(st, symbol, spot, text)
         : _fitAside(st, spot, text, hasIcon);
     final fitted = pin == null && (symbol?.textFit ?? false);
+    if (fitted && icon != null) {
+      // Now the text's place is settled, the box fitted about it is kept
+      // from the anchor like any icon's.
+      st
+        ..iconDx += st.dx * st.iconScale
+        ..iconDy += st.dy * st.iconScale;
+    }
     final iconFits =
         hasIcon &&
         ((symbol?.iconOverlaps ?? false) ||
@@ -226,8 +233,9 @@ class PointLabels {
     );
     if (symbol.textFit) {
       // As MapLibre's fitIconToText: around the text box, padded, moved by
-      // icon-offset, the whole scaled by icon-size about the anchor. Here
-      // iconDx and iconDy are the box's middle from the text's middle.
+      // icon-offset, the whole scaled by icon-size about the anchor. Until
+      // [place] settles the text, iconDx and iconDy are the box's middle
+      // from the text's middle.
       final [top, right, bottom, left] = symbol.iconTextFitPadding;
       final fit = symbol.iconTextFit;
       final wide = fit == 'width' || fit == 'both';

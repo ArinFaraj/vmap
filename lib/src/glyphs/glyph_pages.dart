@@ -190,26 +190,7 @@ class GlyphPages {
     }
     for (var step = 1; step <= 4; step++) {
       for (var sign = 1; sign >= -1; sign -= 2) {
-        final near =
-            _pages[key.sixteenths > 0
-                ? (
-                    size: key.size,
-                    weight: key.weight,
-                    italic: key.italic,
-                    halo: key.halo,
-                    blur: key.blur,
-                    sixteenths: key.sixteenths + step * sign,
-                    phase: key.phase,
-                  )
-                : (
-                    size: key.size + step * sign,
-                    weight: key.weight,
-                    italic: key.italic,
-                    halo: key.halo,
-                    blur: key.blur,
-                    sixteenths: 0,
-                    phase: 0,
-                  )];
+        final near = _pages[nearbyKey(key, step * sign)];
         final cell = near?.peek(face, glyph);
         if (cell != null) {
           near!.usedFrame = _frame;

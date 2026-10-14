@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart' show rootBundle;
 
 import 'glyphs/glyph_layout.dart';
-import 'glyphs/glyph_ranges.dart';
 import 'glyphs/vmap_font.dart';
 import 'labels.dart';
 import 'source_config.dart';
@@ -37,7 +36,6 @@ class StyleResources {
   SpriteSheet? _sprites;
   String? _spriteUrl;
   int _spritesLoading = 0;
-  String? _glyphsUrl;
   bool _closed = false;
 
   /// The fonts' bytes and families, sent to the tile workers so they
@@ -78,22 +76,9 @@ class StyleResources {
 
   /// Draws labels from the glyph ranges at [url], or from font files when
   /// it is null.
-  void useGlyphRanges(String? url) {
-    if (url == _glyphsUrl) return;
-    _glyphsUrl = url;
-    _labels.ranges = url == null
-        ? null
-        : GlyphRanges(
-            url,
-            userAgent: _config.userAgent,
-            headers: _config.headers,
-            onLoaded: (face, loaded) {
-              if (_closed) return;
-              _labels.rangeArrived(face, loaded);
-              onChange();
-            },
-          );
-  }
+  void useGlyphRanges(String? url) => _labels.useRanges(url, _config, () {
+    if (!_closed) onChange();
+  });
 
   /// Loads the sprite sheet at [url] when it is not the one in use.
   void useSprites(String? url) {
@@ -133,7 +118,7 @@ class StyleResources {
 
   void dispose() {
     _closed = true;
-    _labels.ranges = null;
+    _labels.useRanges(null, _config, () {});
     _sprites?.dispose();
   }
 }

@@ -12,7 +12,6 @@ import 'label_state.dart';
 import 'occlusion.dart';
 import 'glyphs/glyph_layout.dart';
 import 'glyphs/glyph_pages.dart';
-import 'glyphs/glyph_pbf.dart';
 import 'glyphs/glyph_ranges.dart';
 import 'label_rules.dart';
 import 'label_view.dart';
@@ -20,6 +19,7 @@ import 'view.dart';
 import 'pins.dart';
 import 'point_labels.dart';
 import 'road_labels.dart';
+import 'source_config.dart';
 import 'sprites.dart';
 import 'stats.dart';
 import 'style_model.dart';
@@ -241,12 +241,31 @@ class LabelEngine {
 
   bool get _glyphText => _glyphPages != null;
 
-  /// Glyph ranges from the style's `glyphs` URL that labels are drawn with
-  /// instead of the font files, or null.
-  set ranges(GlyphRanges? value) {
+  String? _rangesUrl;
+
+  /// Draws labels from the glyph ranges at [url], a style's `glyphs`,
+  /// fetched with [config], as MapLibre draws them; from the font files
+  /// when it is null. [onArrived] runs as each range lands.
+  void useRanges(
+    String? url,
+    TileSourceConfig config,
+    void Function() onArrived,
+  ) {
+    if (url == _rangesUrl) return;
+    _rangesUrl = url;
     _sprites.ranges?.close();
-    _sprites.ranges = value;
-    _painter.rules = _rules = value == null
+    _sprites.ranges = url == null
+        ? null
+        : GlyphRanges(
+            url,
+            userAgent: config.userAgent,
+            headers: config.headers,
+            onLoaded: (face, glyphs) {
+              _glyphPages?.addPbf(face, glyphs);
+              onArrived();
+            },
+          );
+    _painter.rules = _rules = url == null
         ? LabelRules.vmap
         : LabelRules.mapLibre;
     clear();
@@ -255,9 +274,6 @@ class LabelEngine {
   LabelRules _rules = LabelRules.vmap;
 
   int get rangesPending => _sprites.ranges?.pending ?? 0;
-
-  void rangeArrived(int face, List<PbfGlyph> glyphs) =>
-      _glyphPages?.addPbf(face, glyphs);
 
   /// Glyphs drawn into pages in the last frame, and what that cost.
   int get glyphsRasterized => _glyphPages?.lastRasterized ?? 0;
