@@ -27,7 +27,8 @@ void main() {
     float outer = radius + ring;
     float d = length(v_circle.xy) * outer;
     float pixel = v_circle.w;
-    float shape = clamp((outer - d) / pixel + 0.5, 0.0, 1.0);
+    // As MapLibre: the edge fades over the device pixel inside it.
+    float shape = smoothstep(0.0, pixel, outer - d);
     if (shape <= 0.0) {
       discard;
     }
@@ -36,7 +37,7 @@ void main() {
     float g = floor((rgb - b * 65536.0) / 256.0);
     float r = rgb - b * 65536.0 - g * 256.0;
     vec4 rim = vec4(vec3(r, g, b) / 255.0 * v_pattern.w, v_pattern.w);
-    float inside = ring > 0.0 ? clamp((radius - d) / pixel + 0.5, 0.0, 1.0) : 1.0;
+    float inside = ring > 0.0 ? smoothstep(0.0, pixel, radius - d) : 1.0;
     color = mix(rim, v_color, inside) * shape;
   } else if (v_uv.z > 2.5) {
     float ramp = frag_info.sheet_size.z;
