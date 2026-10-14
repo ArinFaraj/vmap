@@ -26,6 +26,10 @@ class LabelPainter {
 
   /// Where glyph text is drawn from, once vmap's fonts are loaded.
   GlyphPages? glyphs;
+
+  /// Icons are drawn where MapLibre puts them instead of on whole device
+  /// pixels, for drawing a style as MapLibre does.
+  bool exact = false;
   final ui.Paint _imagePaint = ui.Paint()
     ..filterQuality = ui.FilterQuality.medium;
   final Map<VmapPin, ui.Image> _pinImages = {};
@@ -105,7 +109,7 @@ class LabelPainter {
     );
     for (final filter in [?rim, fill]) {
       _imagePaint.colorFilter = filter;
-      if (turn == 0) {
+      if (turn == 0 && !exact) {
         canvas.drawImageRect(
           sheet.image,
           icon.source,

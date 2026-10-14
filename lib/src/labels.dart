@@ -239,6 +239,7 @@ class LabelEngine {
   set pbf(PbfStore? value) {
     _sprites.pbf?.close();
     _sprites.pbf = value;
+    _painter.exact = value != null;
     clear();
   }
 
