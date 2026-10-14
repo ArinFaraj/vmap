@@ -111,6 +111,8 @@ class DemTiles {
 
   void remove(TileId id) => _tiles.remove(id);
 
+  bool has(TileId id) => _tiles.containsKey(id);
+
   /// The height in metres at [wx], [wy] in fractions of the world, from the
   /// deepest loaded tile at or above [maxZoom]; 0 where none is loaded.
   double heightAt(double wx, double wy, int maxZoom) {

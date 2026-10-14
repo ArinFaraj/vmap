@@ -85,6 +85,9 @@ class GpuMap implements MapRenderer {
   final Map<int, LayerPaint> _layerPaint = {};
   final _ramps = GradientRamps();
 
+  @override
+  Terrain? terrain;
+
   /// Premultiplied source over, which also leaves the colour untouched
   /// where the stencil pass writes its transparent squares.
   static final _over = gpu.ColorBlendEquation(

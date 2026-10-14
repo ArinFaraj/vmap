@@ -133,6 +133,7 @@ class StyleCompiler {
     final sprite = json['sprite'];
     final footprints = _footprints();
     return StyleSheet(
+      terrain: _terrain(),
       layerOpacity: _layerOpacity,
       background: _background,
       buckets: _buckets,
@@ -745,6 +746,24 @@ class StyleCompiler {
   /// Paint layers in runs of one source, broken by every raster layer and
   /// around layers that spill past their tiles or glow.
   final Map<int, Expr> _layerOpacity = {};
+
+  /// The root `terrain`: its `raster-dem` source and exaggeration.
+  TerrainLayer? _terrain() {
+    final terrain = json['terrain'];
+    if (terrain is! Map) return null;
+    final from = _sources[terrain['source']];
+    if (from is! Map || from['type'] != 'raster-dem') return null;
+    return TerrainLayer(
+      opacity: compileExpr(1),
+      tileJsonUrl: from['url'] as String?,
+      tiles: tileTemplate(from['tiles']),
+      tileSize: asNumber(from['tileSize']) ?? 512,
+      sourceMaxZoom: asNumber(from['maxzoom'])?.toInt(),
+      cover: TileCover.of(from),
+      terrarium: from['encoding'] == 'terrarium',
+      exaggeration: (asNumber(terrain['exaggeration']) ?? 1).toDouble(),
+    );
+  }
 
   static bool _standsAlone(PaintLayer layer) =>
       layer is FillLayer && layer.extruded;

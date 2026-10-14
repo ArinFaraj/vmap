@@ -8,6 +8,7 @@ import 'expr.dart';
 import 'pmtiles.dart';
 import 'raster_style.dart';
 import 'style_model.dart';
+import 'terrain/dem_tile.dart';
 import 'source_config.dart';
 import 'tile_store.dart';
 import 'net.dart';
@@ -64,6 +65,12 @@ sealed class RasterDrawing<L extends RasterLayer> {
       onError: onError,
     ),
     HillshadeLayer() => ShadedTiles(
+      layer,
+      config: config,
+      onLoaded: onLoaded,
+      onError: onError,
+    ),
+    TerrainLayer() => TerrainTiles(
       layer,
       config: config,
       onLoaded: onLoaded,
@@ -731,4 +738,85 @@ Uint8List shadeHeights(
     }
   }
   return out;
+}
+
+/// The heights of a `terrain` source: the tiles a view asks for, decoded
+/// off the UI isolate into [heights], never drawn on the canvas.
+final class TerrainTiles extends TileDrawing<TerrainLayer> {
+  TerrainTiles(
+    super.layer, {
+    required super.config,
+    required super.onLoaded,
+    required super.onError,
+  });
+
+  final DemTiles heights = DemTiles();
+
+  /// The deepest zoom the source has.
+  int get maxZoom => _maxZoom;
+
+  @override
+  double get _lap => 0;
+
+  @override
+  double get _ring => 0;
+
+  @override
+  void _setUpPaint(EvalContext context) {}
+
+  @override
+  void _draw(
+    ui.Canvas canvas,
+    EvalContext context,
+    double zoom,
+    ui.Offset origin,
+    ui.Size size,
+  ) {}
+
+  /// Fetches the tiles [ids] that are not here yet, each taken to the
+  /// source's deepest zoom where it is deeper, and lets go of those not
+  /// asked for in a while.
+  void want(Iterable<TileId> ids) {
+    if (_template == null) return;
+    _frame++;
+    for (final id in ids) {
+      final up = math.max(0, id.z - _maxZoom);
+      final z = id.z - up, x = id.x >> up, y = id.y >> up;
+      final tile = _tiles[tileKey(z, x, y)] ??= _RasterTile();
+      tile.usedFrame = _frame;
+      if (!heights.has(TileId(z, x, y))) _load(tile, z, x, y);
+    }
+    if (_tiles.length > TileDrawing._maxTiles) {
+      final stale = [
+        for (final e in _tiles.entries)
+          if (e.value.usedFrame != _frame && !e.value.loading) e.key,
+      ];
+      for (final key in stale) {
+        _tiles.remove(key);
+        heights.remove(tileIdOf(key));
+      }
+    }
+  }
+
+  @override
+  Future<void> _decoded(
+    _RasterTile tile,
+    ui.Image image,
+    int z,
+    int x,
+    int y,
+  ) async {
+    final data = await image.toByteData();
+    final dim = image.width;
+    image.dispose();
+    if (data == null || _closed) return;
+    final bytes = data.buffer.asUint8List();
+    final terrarium = layer.terrarium;
+    final dem = await runAside(
+      () => DemTile.decode(bytes, dim, terrarium: terrarium),
+    );
+    if (_closed) return;
+    heights.add(TileId(z, x, y), dem);
+    onLoaded();
+  }
 }

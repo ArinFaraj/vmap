@@ -22,3 +22,9 @@ class TileId {
 /// One number for a tile down to zoom 22. It stays under the 53 bits a
 /// number has in JavaScript.
 int tileKey(int z, int x, int y) => (z * 0x400000 + x) * 0x400000 + y;
+
+/// The tile [key] names, as [tileKey] made it.
+TileId tileIdOf(int key) {
+  final rest = key ~/ 0x400000;
+  return TileId(rest ~/ 0x400000, rest % 0x400000, key % 0x400000);
+}

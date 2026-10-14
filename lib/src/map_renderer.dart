@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'expr.dart';
 import 'sprites.dart';
 import 'style_model.dart';
+import 'terrain/terrain.dart';
 import 'tiles.dart' show LoadedTile, TileDraw;
 import 'view.dart';
 
@@ -35,6 +36,10 @@ abstract class MapRenderer {
   /// passes [deadline], at least a piece of them, and returns true once all
   /// of them are there. What it keeps goes in [LoadedTile.rendererData].
   bool upload(LoadedTile tile, Stopwatch clock, int deadline);
+
+  /// The ground's heights when the style raises it, null for flat ground.
+  /// Set before each [paint].
+  Terrain? terrain;
 
   void dispose();
 }

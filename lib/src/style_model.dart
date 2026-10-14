@@ -769,6 +769,7 @@ class StyleSheet {
     required this.sprite,
     this.glyphs,
     this.layerOpacity = const {},
+    this.terrain,
     required this.rasters,
     required this.backgroundPattern,
     required this.backgroundOpacity,
@@ -784,6 +785,9 @@ class StyleSheet {
   /// the same data as a building layer and end at the zoom it starts. Their
   /// tiles keep them a zoom longer, for them to fade as the buildings rise.
   final Map<int, ExtrusionLayer> footprints;
+
+  /// The heights the root `terrain` raises the ground by, when it has one.
+  final TerrainLayer? terrain;
 
   /// The paint layers drawn as a whole at an opacity, `line-layer-opacity`
   /// and the like, by index: each is a run of its own, drawn apart and

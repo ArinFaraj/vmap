@@ -247,3 +247,27 @@ final class HillshadeLayer extends TiledRasterLayer {
   @override
   String get signature => 'hillshade|$_source';
 }
+
+/// The heights the ground is raised by: the `raster-dem` source the
+/// style's root `terrain` names, never drawn itself.
+final class TerrainLayer extends TiledRasterLayer {
+  TerrainLayer({
+    required super.opacity,
+    required super.tileJsonUrl,
+    required super.tiles,
+    required super.tileSize,
+    required super.sourceMaxZoom,
+    required this.terrarium,
+    required this.exaggeration,
+    super.cover,
+  }) : super(minZoom: 0, maxZoom: 24);
+
+  /// Terrarium encoding; Mapbox Terrain-RGB otherwise.
+  final bool terrarium;
+
+  /// How many times taller than they are the hills are drawn.
+  final double exaggeration;
+
+  @override
+  String get signature => 'terrain|$_source';
+}

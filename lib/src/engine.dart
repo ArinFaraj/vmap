@@ -21,6 +21,8 @@ import 'layer.dart' show NamedMarker;
 import 'raster.dart';
 import 'raster_style.dart';
 import 'style_resources.dart';
+import 'terrain/terrain.dart';
+import 'view.dart' show MapView;
 import 'mesh_painter.dart';
 import 'offline.dart';
 import 'source_config.dart';
@@ -361,6 +363,7 @@ class VmapEngine extends ChangeNotifier {
         _rasters[i].restyle(sheet.rasters[i]);
       }
     }
+    _useTerrain(sheet.terrain);
     _resources.useSprites(sheet.sprite);
     _meshes.resize(sheet.layers.length);
     _labels
@@ -420,6 +423,45 @@ class VmapEngine extends ChangeNotifier {
   }
 
   String? _rasterKey;
+
+  /// The heights the style's root `terrain` raises the ground by, drawn by
+  /// a renderer that draws terrain.
+  TerrainTiles? _terrain;
+
+  void _useTerrain(TerrainLayer? layer) {
+    if (layer?.signature == _terrain?.layer.signature) {
+      if (layer != null) _terrain!.restyle(layer);
+      return;
+    }
+    _terrain?.close();
+    _terrain = layer == null
+        ? null
+        : RasterDrawing.of(
+            layer,
+            config: source,
+            onLoaded: _requestFrame,
+            onError: (e) => onError?.call(e),
+          ) as TerrainTiles;
+  }
+
+  /// Asks for the heights under [view] and hands them to the renderer.
+  void _raiseGround(MapView view) {
+    final terrain = _terrain, gpu = renderer;
+    if (gpu == null) return;
+    if (terrain == null) {
+      gpu.terrain = null;
+      return;
+    }
+    terrain.want([
+      for (final t in view.cover(maxZoom: terrain.maxZoom))
+        TileId(t.z, t.x % (1 << t.z), t.y),
+    ]);
+    gpu.terrain = Terrain(
+      terrain.heights,
+      terrain.layer.exaggeration,
+      terrain.maxZoom,
+    );
+  }
 
   /// Markers the app draws above the map with a `MarkerLayer`. Map labels
   /// keep clear of each one, and a [NamedMarker]'s name is placed beside it
@@ -747,6 +789,7 @@ class VmapEngine extends ChangeNotifier {
     var waiting = false;
     _lastZoom = camera.zoom;
     final hold = _zoomOutHold.at(camera.view?.zoom, _clock.elapsedMilliseconds);
+    if (camera.view case final view? when onGpu) _raiseGround(view);
     if (hold > 0) _requestFrame();
     for (final s in _sources) {
       final preparing = s.cover(
@@ -981,6 +1024,7 @@ class VmapEngine extends ChangeNotifier {
     for (final r in _rasters) {
       r.close();
     }
+    _terrain?.close();
     super.dispose();
   }
 }
