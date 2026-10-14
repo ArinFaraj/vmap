@@ -573,7 +573,9 @@ class LabelEngine {
         if (st == null) continue;
         st
           ..seenPass = _pass
-          ..perspective = _view.ratio
+          ..perspective = (_symbolOf(c)?.textOnGround ?? false)
+              ? 1 / _view.depth
+              : _view.ratio
           ..candidate = c
           // Ties keep the order the tiles list them in, as MapLibre
           // places features.
