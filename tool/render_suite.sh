@@ -29,7 +29,7 @@ trap 'kill $server 2>/dev/null || true' EXIT
 
 mkdir -p "$out"
 cd "$(dirname "$0")/../example"
-flutter run -d macos --profile -t lib/render_suite.dart \
+VMAP_BACKGROUND=1 flutter run -d macos --profile -t lib/render_suite.dart \
   --dart-define=SUITE="$suite" \
   --dart-define=OUT="$out" \
   --dart-define=FILTER="$filter" \

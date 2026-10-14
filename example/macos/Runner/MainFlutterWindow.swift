@@ -11,5 +11,8 @@ class MainFlutterWindow: NSWindow {
     RegisterGeneratedPlugins(registry: flutterViewController)
 
     super.awakeFromNib()
+    if AppDelegate.inBackground {
+      self.orderOut(nil)
+    }
   }
 }
