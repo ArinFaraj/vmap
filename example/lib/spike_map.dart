@@ -22,6 +22,7 @@ const _script = bool.fromEnvironment('SCRIPT');
 const _oldText = bool.fromEnvironment('OLD_TEXT');
 const _gpu = bool.fromEnvironment('GPU');
 const _circles = bool.fromEnvironment('CIRCLES');
+const _lines = bool.fromEnvironment('LINES');
 const _zoomTest = bool.fromEnvironment('ZOOMTEST');
 
 /// The zoom test as fast pinches in and out over places not yet loaded.
@@ -98,6 +99,76 @@ final _stations = VmapOverlay(
   ],
 );
 
+/// A route drawn with a colour gradient from start to end, and a ring
+/// drawn with a sprite pattern, to check gradient and patterned lines.
+final _patternedLines = VmapOverlay(
+  sources: {
+    'route': {
+      'type': 'geojson',
+      'lineMetrics': true,
+      'data': {
+        'type': 'Feature',
+        'properties': <String, Object?>{},
+        'geometry': {
+          'type': 'LineString',
+          'coordinates': [
+            for (var i = 0; i <= 40; i++)
+              [
+                43.990 + 0.04 * i / 40,
+                36.180 + 0.012 * math.sin(i / 40 * math.pi * 2),
+              ],
+          ],
+        },
+      },
+    },
+    'ring': {
+      'type': 'geojson',
+      'data': {
+        'type': 'Feature',
+        'properties': <String, Object?>{},
+        'geometry': {
+          'type': 'LineString',
+          'coordinates': [
+            for (var i = 0; i <= 48; i++)
+              [
+                44.0092 + 0.008 * math.cos(i / 48 * math.pi * 2),
+                36.1980 + 0.006 * math.sin(i / 48 * math.pi * 2),
+              ],
+          ],
+        },
+      },
+    },
+  },
+  layers: [
+    {
+      'id': 'route',
+      'type': 'line',
+      'source': 'route',
+      'layout': {'line-cap': 'round', 'line-join': 'round'},
+      'paint': {
+        'line-width': 12,
+        'line-gradient': [
+          'interpolate',
+          ['linear'],
+          ['line-progress'],
+          0,
+          '#1E88E5',
+          0.5,
+          '#43A047',
+          1,
+          '#E53935',
+        ],
+      },
+    },
+    {
+      'id': 'ring',
+      'type': 'line',
+      'source': 'ring',
+      'paint': {'line-width': 16, 'line-pattern': 'wetland'},
+    },
+  ],
+);
+
 /// Where tiles, the style and its sprites are kept between runs.
 late final String _cacheDirectory;
 
@@ -141,7 +212,11 @@ class _DemoState extends State<_Demo> {
         : VmapStyle.url('https://tiles.openfreemap.org/styles/$_styleName'),
     maxCachedTiles: 400,
     source: TileSourceConfig(cacheDirectory: _cacheDirectory),
-    overlay: _circles ? _stations : null,
+    overlay: _circles
+        ? _stations
+        : _lines
+        ? _patternedLines
+        : null,
     glyphText: !_oldText,
     showLabels: _labels,
     renderer: _gpu && _buildings ? GpuMap.create() : null,
