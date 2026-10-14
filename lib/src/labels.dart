@@ -691,7 +691,7 @@ class LabelEngine {
         weight: weight,
         italic: symbol?.italic ?? false,
         letterSpacing: symbol?.letterSpacing ?? 0,
-        lineHeight: symbol?.lineHeight ?? 1.15,
+        lineHeight: symbol?.lineHeight ?? (_sprites.pbf == null ? 1.15 : 1.2),
         // A marker's name hugs its marker: lines are flush on the side the
         // text starts from, which is the side the marker is on.
         align: !beside

@@ -20,7 +20,17 @@ import 'glyph_pbf.dart';
 typedef PageKey = ({int size, int weight, bool italic, int halo, int blur});
 
 /// Device pixels to the em of a page of [size].
-double emOf(int size) => math.pow(2, size / 4).toDouble();
+double emOf(int size) => size >= exactSizes
+    ? (size - exactSizes) / 16
+    : math.pow(2, size / 4).toDouble();
+
+/// Sizes from here up are exact: sixteenths of a device pixel per em above
+/// it, for glyph ranges drawn where MapLibre draws them.
+const exactSizes = 1 << 20;
+
+/// The exact size of [devicePixelsPerEm].
+int exactSize(double devicePixelsPerEm) =>
+    exactSizes + (devicePixelsPerEm * 16).round();
 
 /// One drawn batch: a premultiplied white RGBA image [width] wide, and per
 /// glyph [stride] numbers: its id, the ink cell's x, y, width and height, the
@@ -129,14 +139,25 @@ class GlyphRasterizer {
   /// A glyph of a style's glyph range drawn from its distance field with
   /// the edge and halo of MapLibre's `symbol_sdf.fragment.glsl` for text
   /// facing the screen, so it comes out as MapLibre draws it.
-  _Bitmap? _pbfGlyph(PageKey key, int face, int codePoint) {
+  ///
+  /// The glyph number carries the code point and, from bit 16, which
+  /// quarter pixel along x (two bits) and along y (two more) the glyph's
+  /// origin falls on; the cell is drawn for that offset and placed so its
+  /// corner lands on a whole device pixel, so it is sampled once, as
+  /// MapLibre samples it.
+  _Bitmap? _pbfGlyph(PageKey key, int face, int glyph) {
+    final codePoint = glyph & 0xFFFF;
+    final px = (glyph >> 16 & 3) / 4, py = (glyph >> 18 & 3) / 4;
     final g = pbf[face]?[codePoint];
     if (g == null || g.width == 0) return null;
     const border = GlyphPbf.border;
     final sw = g.width + 2 * border, sh = g.height + 2 * border;
     if (g.bitmap.length < sw * sh) return null;
     final s = emOf(key.size) / GlyphPbf.em;
-    final w = (sw * s).ceil(), h = (sh * s).ceil();
+    final left = (g.left - border) * s, top = (-g.top - border) * s;
+    final cellLeft = (px + left).floorToDouble() - px;
+    final cellTop = (py + top).floorToDouble() - py;
+    final w = (sw * s).ceil() + 2, h = (sh * s).ceil() + 2;
     final gamma = 0.105 / s;
     final haloGamma = (key.blur / 4 * 1.19 / 8 + 0.105) / s;
     final haloEdge = (6 - key.halo / 4 / s) / 8;
@@ -148,13 +169,13 @@ class GlyphRasterizer {
     }
 
     double at(int x, int y) =>
-        g.bitmap[y.clamp(0, sh - 1) * sw + x.clamp(0, sw - 1)] / 255;
+        x < 0 || y < 0 || x >= sw || y >= sh ? 0 : g.bitmap[y * sw + x] / 255;
     for (var y = 0; y < h; y++) {
-      final v = (y + 0.5) / s - 0.5;
+      final v = (cellTop + y + 0.5 - top) / s - 0.5;
       final y0 = v.floor();
       final fy = v - y0;
       for (var x = 0; x < w; x++) {
-        final u = (x + 0.5) / s - 0.5;
+        final u = (cellLeft + x + 0.5 - left) / s - 0.5;
         final x0 = u.floor();
         final fx = u - x0;
         final d =
@@ -168,14 +189,7 @@ class GlyphRasterizer {
         }
       }
     }
-    return _Bitmap(
-      w,
-      h,
-      ink,
-      halo,
-      (g.left - border) * s,
-      (-g.top - border) * s,
-    );
+    return _Bitmap(w, h, ink, halo, cellLeft, cellTop);
   }
 
   GlyphPath? _outline(int face, int weight, int glyph) {

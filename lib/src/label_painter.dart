@@ -6,6 +6,7 @@ import 'expr.dart';
 import 'glyphs/glyph_layout.dart';
 import 'glyphs/glyph_pages.dart';
 import 'glyphs/glyph_pbf.dart';
+import 'glyphs/glyph_raster.dart' show emOf, exactSize;
 import 'label_path.dart';
 import 'label_sprites.dart';
 import 'label_state.dart';
@@ -278,6 +279,18 @@ class LabelPainter {
         ? null
         : _faded(sprite.look.halo!, st.opacity);
     final g = shaped.glyphs;
+    if (ranges && turn == 0) {
+      _rangeGlyphs(
+        sprite,
+        ox + left,
+        oy + top,
+        em,
+        devicePixelRatio,
+        ink,
+        halo,
+      );
+      return;
+    }
     for (var i = 0; i < g.length; i += 5) {
       final cell = cells[i ~/ 5];
       if (cell == null) continue;
@@ -289,6 +302,54 @@ class LabelPainter {
         oy + s * lx + c * ly,
         turn,
         k,
+        ink,
+        halo,
+      );
+    }
+  }
+
+  /// Glyph range text drawn upright from cells made at its exact size and
+  /// for the quarter pixel each glyph falls on, so every glyph is sampled
+  /// once at the place MapLibre puts it. [x], [y] is the text's top left.
+  void _rangeGlyphs(
+    GlyphSprite sprite,
+    double x,
+    double y,
+    double em,
+    double devicePixelRatio,
+    int ink,
+    int? halo,
+  ) {
+    final pages = glyphs!;
+    final look = sprite.look;
+    final haloWidth = look.halo == null ? 0.0 : look.haloWidth;
+    final key = (
+      size: exactSize(em * devicePixelRatio),
+      weight: 400,
+      italic: false,
+      halo: (haloWidth * devicePixelRatio * 4).round(),
+      blur: haloWidth == 0 ? 0 : (look.haloBlur * devicePixelRatio * 4).round(),
+    );
+    final k = 1 / devicePixelRatio;
+    final g = sprite.shaped.glyphs;
+    for (var i = 0; i < g.length; i += 5) {
+      final dx = (x + g[i + 2] * em) * devicePixelRatio;
+      final dy = (y + g[i + 3] * em) * devicePixelRatio;
+      var qx = ((dx - dx.floorToDouble()) * 4).round();
+      var qy = ((dy - dy.floorToDouble()) * 4).round();
+      final ox = dx.floorToDouble() + (qx == 4 ? 1 : 0);
+      final oy = dy.floorToDouble() + (qy == 4 ? 1 : 0);
+      qx %= 4;
+      qy %= 4;
+      final glyph = g[i + 1].toInt() | qx << 16 | qy << 18;
+      final cell = pages.cell(key, g[i].toInt(), glyph);
+      if (cell == null) continue;
+      pages.add(
+        cell,
+        (ox + qx / 4) * k,
+        (oy + qy / 4) * k,
+        0,
+        k * emOf(key.size) / pages.found.em,
         ink,
         halo,
       );

@@ -271,6 +271,9 @@ class LabelSprites {
         look.text,
         letterSpacing: look.letterSpacing,
         lineHeight: look.lineHeight,
+        maxWidth: look.road
+            ? double.infinity
+            : look.layoutWidth / look.fontSize,
         justify: switch (look.align) {
           ui.TextAlign.left || ui.TextAlign.start => -1,
           ui.TextAlign.right || ui.TextAlign.end => 1,
