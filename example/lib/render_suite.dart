@@ -113,6 +113,7 @@ Future<_Result> _runOne(String id, String dir) async {
       final made = VmapEngine(
         style: VmapStyle.json(_localize(document) as Map<String, Object?>),
         maxCachedTiles: 200,
+        styleGlyphs: true,
         renderer: _gpu ? GpuMap.create() : null,
       );
       made.onError = (e) => result.error ??= 'engine: $e';
@@ -159,6 +160,8 @@ Future<_Result> _runOne(String id, String dir) async {
           states.clear();
           engine = make(next);
           await _settle(engine, paint);
+        case 'setGlobalStateProperty':
+          edit(VmapStyleEdit.state(o[1] as String, o[2]));
         case 'setPaintProperty':
           edit(VmapStyleEdit.paint(o[1] as String, o[2] as String, o[3]));
         case 'setLayoutProperty':
@@ -319,7 +322,7 @@ void _readCamera(Map<String, Object?> style, _Camera camera) {
 Object? _localize(Object? value) => switch (value) {
   String s when s.startsWith('local://') => s.replaceFirst(
     'local://',
-    'http://localhost:$_port/',
+    'http://127.0.0.1:$_port/',
   ),
   Map m => {for (final e in m.entries) e.key as String: _localize(e.value)},
   List l => [for (final v in l) _localize(v)],
