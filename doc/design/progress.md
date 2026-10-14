@@ -311,10 +311,26 @@ each line's first vertex; both are fixed, and the eleven views differ
 from MapLibre by 0.7 to 6.2 percent. Hillshade follows MapLibre's
 methods.
 
-Road names are the largest difference left. MapLibre's getAnchors is
-ported to the tile workers (stash: road names), but with vmap's own fit,
-bend and collision of a road name on the UI thread it placed fewer names
-than the old even spread, so it waits for those to be ported too.
+Later: **629 of 1,730**, and the eleven Liberty views a summed 36.5
+percent from MapLibre, down from 37.3. Road names and symbols along lines
+stand at MapLibre's getAnchors, measured as MapLibre measures them, from
+the style's glyph ranges, which the tile workers now load; the half em a
+letter they guessed before made names a third too long. On a tilted map
+road names lie on the ground, foreshortened, drawn as projected glyph
+quads. Every label of a dense view is weighed, against a grid of boxes.
+Liberty's place names wrap as MapLibre wraps them even where their
+Kurdish line is shaped with the fonts. A map with raster tiles on their
+way is no longer reported settled.
+
+Tried and set aside: MapLibre's order of tiles for symbols, and dropping
+vmap's same-name spacing and extra room around road names; each made the
+Liberty views further from MapLibre's, by its own measure. Ground text
+shrinks on the screen by half its distance, as upright text does; only
+its shape changes.
+
+Left: names along tilted roads (MapLibre still places more), icon widths
+in the tile workers, and the Latin line of a Kurdish place name, drawn
+with the fonts in Vazirmatn rather than the style's own glyphs.
 
 Terrain is built: see `terrain.md`.
 
