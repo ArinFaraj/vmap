@@ -23,6 +23,9 @@ const _filter = String.fromEnvironment('FILTER');
 const _port = int.fromEnvironment('PORT', defaultValue: 2900);
 const _gpu = bool.fromEnvironment('GPU');
 
+/// Tests run at once: each has its own engine and draws off screen.
+const _parallel = int.fromEnvironment('PARALLEL', defaultValue: 6);
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const SizedBox.expand());
@@ -68,25 +71,35 @@ Future<void> _runAll() async {
         )
         ..sort();
   Directory(_out).createSync(recursive: true);
-  final results = <_Result>[];
-  for (final (i, id) in ids.indexed) {
-    final result = await _runOne(id, '${testsDir.path}/$id');
-    results.add(result);
-    debugPrint(
-      'render ${i + 1}/${ids.length} ${result.ok ? 'pass' : 'FAIL'} $id '
-      '${result.error ?? result.difference.toStringAsFixed(4)}',
-    );
+  final results = List<_Result?>.filled(ids.length, null);
+  var next = 0, done = 0;
+  Future<void> worker() async {
+    while (next < ids.length) {
+      final i = next++;
+      final result = results[i] = await _runOne(
+        ids[i],
+        '${testsDir.path}/${ids[i]}',
+      );
+      debugPrint(
+        'render ${++done}/${ids.length} ${result.ok ? 'pass' : 'FAIL'} '
+        '${ids[i]} '
+        '${result.error ?? result.difference.toStringAsFixed(4)}',
+      );
+    }
   }
+
+  await Future.wait([for (var w = 0; w < _parallel; w++) worker()]);
+  final all = results.cast<_Result>();
   File('$_out/results.json').writeAsStringSync(
     const JsonEncoder.withIndent(' ')
-        .convert([for (final r in results) r.toJson()]),
+        .convert([for (final r in all) r.toJson()]),
   );
-  File('$_out/index.html').writeAsStringSync(_report(results, testsDir.path));
-  final passed = results.where((r) => r.ok).length;
-  final errored = results.where((r) => r.error != null).length;
+  File('$_out/index.html').writeAsStringSync(_report(all, testsDir.path));
+  final passed = all.where((r) => r.ok).length;
+  final errored = all.where((r) => r.error != null).length;
   debugPrint(
-    'render suite: $passed of ${results.length} passed, '
-    '${results.length - passed - errored} failed, $errored errored',
+    'render suite: $passed of ${all.length} passed, '
+    '${all.length - passed - errored} failed, $errored errored',
   );
 }
 
@@ -412,8 +425,8 @@ ui.Image? _paint(
   return image;
 }
 
-/// Paints whenever the engine asks, until it has been quiet with nothing
-/// loading for a while.
+/// Paints whenever the engine asks, until its style has loaded and it has
+/// nothing left to load, fade or draw for a couple of frames.
 Future<void> _settle(VmapEngine engine, void Function() paint) async {
   var dirty = true;
   void listen() => dirty = true;
@@ -428,11 +441,11 @@ Future<void> _settle(VmapEngine engine, void Function() paint) async {
     }
     await Future<void>.delayed(const Duration(milliseconds: 16));
     if (!dirty &&
+        engine.styleLoaded &&
         engine.stats.tilesLoading == 0 &&
         engine.stats.resourcesLoading == 0 &&
         !engine.stats.busy &&
-        clock.elapsedMilliseconds > 800 &&
-        clock.elapsedMilliseconds - lastPaint > 400) {
+        clock.elapsedMilliseconds - lastPaint > 100) {
       break;
     }
   }

@@ -27,6 +27,7 @@ flutter run -d macos --profile -t lib/render_suite.dart \
   --dart-define=OUT="$out" \
   --dart-define=FILTER="$filter" \
   --dart-define=PORT="$port" \
-  --dart-define=GPU="$gpu" >"$out/run.log" 2>&1 || true
+  --dart-define=GPU="$gpu" \
+  --dart-define=PARALLEL="${PARALLEL:-6}" >"$out/run.log" 2>&1 || true
 grep -E '^flutter: render suite:' "$out/run.log" || tail -20 "$out/run.log"
 echo "report: $out/index.html"

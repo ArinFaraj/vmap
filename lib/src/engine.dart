@@ -222,6 +222,9 @@ class VmapEngine extends ChangeNotifier {
   /// The credit the style's sources ask for, once the style has loaded.
   List<String> get attributions => _sheet?.attributions ?? const [];
 
+  /// Whether the style has loaded and compiled.
+  bool get styleLoaded => _sheet != null;
+
   /// The style's background colour, once the style has loaded.
   ui.Color? get backgroundColor {
     final sheet = _sheet;
