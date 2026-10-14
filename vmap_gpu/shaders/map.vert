@@ -66,7 +66,10 @@ void main() {
     float pixel = w / max(frame_info.fade.y * frame_info.fog_range.z, 1e-6);
     float outer = stroke.x + pixel * 0.5;
     pos = centre + ext * outer;
-    v_edge = vec3(ext, outer / pixel);
+    // A mitre corner reaches past the edge; faded by its own length, the
+    // segment after it would thin to a wedge. MapLibre fades by the side
+    // alone.
+    v_edge = vec3(ext / max(length(ext), 1.0), outer / pixel);
   }
   // A circle: p.x its radius and p.y its ring's width in tile units, p.z
   // its ring's colour packed as red plus 256 green plus 65536 blue, p.w the
