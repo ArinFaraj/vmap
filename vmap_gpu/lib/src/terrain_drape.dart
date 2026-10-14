@@ -60,21 +60,14 @@ class _Drape {
     final all = view.cover(maxZoom: 14);
     _tiles = all.length > _capacity ? all.sublist(0, _capacity) : all;
     _fit(_tiles.length);
-    final background =
-        Rgba.of(sheet.background(context)) ?? const Rgba(1, 1, 1, 1);
     final commands = gpu.gpuContext.createCommandBuffer();
     buffers.add(commands);
     final pass = commands.createRenderPass(
       gpu.RenderTarget.singleColor(
-        gpu.ColorAttachment(
-          texture: _atlas!,
-          clearValue: Vector4(
-            background.r * background.a,
-            background.g * background.a,
-            background.b * background.a,
-            background.a,
-          ),
-        ),
+        // Clear: where no vector layer is drawn, the canvas's background
+        // and raster layers, drawn under the GPU's picture, show through.
+        // They lie flat until rasters are draped too.
+        gpu.ColorAttachment(texture: _atlas!, clearValue: Vector4.zero()),
         depthStencilAttachment: gpu.DepthStencilAttachment(
           texture: _atlasDepth!,
           depthClearValue: 1,
