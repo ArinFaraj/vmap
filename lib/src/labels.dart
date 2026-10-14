@@ -320,6 +320,7 @@ class LabelEngine {
     required int rasterBudgetMicros,
     required bool zooming,
     MapView? view,
+    double Function(double wx, double wy)? ground,
   }) {
     lastPlaceMicros = 0;
     if (view != null) rotation = 0;
@@ -331,6 +332,7 @@ class LabelEngine {
       origin: origin,
       tilted: view,
     );
+    _view.ground = ground;
     final tilt = view == null ? 0.0 : view.pitch * 1000 + view.bearing;
     if (_zooming && !zooming) _placeAgain = true;
     _zooming = zooming;

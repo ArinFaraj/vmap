@@ -92,13 +92,16 @@ class MapView {
   /// [project] without making an object: the result goes to [outX],
   /// [outY] and [outDepth]. Labels project thousands of points a frame,
   /// and a record per point kept the collector busy.
-  void projectTo(double x, double y) {
+  ///
+  /// A point [h] world pixels above the ground comes nearer the camera and
+  /// rises on the screen with it.
+  void projectTo(double x, double y, [double h = 0]) {
     final dx = x - _cx, dy = y - _cy;
     final u = _cosB * dx + _sinB * dy;
     final v = -_sinB * dx + _cosB * dy;
-    final w = 1 - _k * v;
+    final w = 1 - _k * v - h * _cosP / cameraToCenterDistance;
     outX = u / w + width / 2;
-    outY = _cosP * v / w + height / 2;
+    outY = (_cosP * v - _sinP * h) / w + height / 2;
     outDepth = w;
   }
 

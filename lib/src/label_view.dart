@@ -26,6 +26,10 @@ class LabelView {
   /// frame is already upright.
   MapView? tilted;
 
+  /// The ground's height in world pixels at a point of the world, when the
+  /// style raises it: points are projected standing on it.
+  double Function(double wx, double wy)? ground;
+
   /// Where [project] put the last point, and the label scale there: 1 on a
   /// flat map, less farther from a tilted camera.
   double x = 0;
@@ -54,7 +58,11 @@ class LabelView {
   void project(double wx, double wy) {
     final view = tilted;
     if (view != null) {
-      view.projectTo(wx * view.worldSize, wy * view.worldSize);
+      view.projectTo(
+        wx * view.worldSize,
+        wy * view.worldSize,
+        ground?.call(wx, wy) ?? 0,
+      );
       x = view.outX;
       y = view.outY;
       ratio = 0.5 + 0.5 / view.outDepth;

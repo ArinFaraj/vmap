@@ -444,6 +444,18 @@ class VmapEngine extends ChangeNotifier {
           ) as TerrainTiles;
   }
 
+  /// The ground's height in world pixels under a point of the world, for
+  /// labels to stand on, when the renderer draws raised ground.
+  double Function(double wx, double wy)? _groundOf(MapView? view) {
+    final terrain = renderer?.terrain;
+    if (view == null || terrain == null || !_onGpu) return null;
+    final perMetre =
+        view.worldSize /
+        (40075016.686 * math.cos(latitudeAt(view.centerY) * math.pi / 180));
+    final zoom = view.zoom.floor();
+    return (wx, wy) => terrain.at(wx, wy, zoom) * perMetre;
+  }
+
   /// Asks for the heights under [view] and hands them to the renderer.
   void _raiseGround(MapView view) {
     final terrain = _terrain, gpu = renderer;
@@ -909,6 +921,7 @@ class VmapEngine extends ChangeNotifier {
         rasterBudgetMicros: _budget.spent > 1000 ? 1 : _labelBudgetMicros,
         zooming: _budget.zooming,
         view: view,
+        ground: _groundOf(view),
       );
     }
     final finished = _clock.elapsedMicroseconds;

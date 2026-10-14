@@ -49,6 +49,12 @@ class DemTile {
   /// The lowest and highest height in the tile, in metres.
   final double min, max;
 
+  /// How many times a neighbour has filled the border.
+  int version = 0;
+
+  /// The heights, border included, row by row: [dim] + 2 on a side.
+  Float32List get heights => _heights;
+
   int _index(int x, int y) => (y + 1) * (dim + 2) + x + 1;
 
   void _set(int x, int y, double metres) => _heights[_index(x, y)] = metres;
@@ -60,6 +66,7 @@ class DemTile {
   /// [dx], [dy] steps away (each -1, 0 or 1, not both 0).
   void backfill(DemTile other, int dx, int dy) {
     if (other.dim != dim) return;
+    version++;
     final xs = dx < 0 ? -1 : (dx > 0 ? dim : null);
     final ys = dy < 0 ? -1 : (dy > 0 ? dim : null);
     int theirs(int v, int d) => d < 0 ? v + dim : (d > 0 ? v - dim : v);
@@ -87,26 +94,22 @@ class DemTile {
 /// The DEM tiles loaded so far, and the height of any point of the world
 /// from the deepest of them that covers it.
 class DemTiles {
-  final Map<TileId, DemTile> _tiles = {};
-
-  /// Moves on whenever a tile arrives or goes, so what was made from the
-  /// heights can tell it is stale.
-  int generation = 0;
+  final Map<int, DemTile> _tiles = {};
 
   int get length => _tiles.length;
 
   /// Keeps [tile] as [id], filling its border and its neighbours' from each
   /// other.
   void add(TileId id, DemTile tile) {
-    generation++;
-    _tiles[id] = tile;
+    _tiles[tileKey(id.z, id.x, id.y)] = tile;
+    _last = null;
     final n = 1 << id.z;
     for (var dy = -1; dy <= 1; dy++) {
       for (var dx = -1; dx <= 1; dx++) {
         if (dx == 0 && dy == 0) continue;
         final y = id.y + dy;
         if (y < 0 || y >= n) continue;
-        final other = _tiles[TileId(id.z, (id.x + dx) % n, y)];
+        final other = _tiles[tileKey(id.z, (id.x + dx) % n, y)];
         if (other == null) continue;
         tile.backfill(other, dx, dy);
         other.backfill(tile, -dx, -dy);
@@ -115,23 +118,58 @@ class DemTiles {
   }
 
   void remove(TileId id) {
-    if (_tiles.remove(id) != null) generation++;
+    _tiles.remove(tileKey(id.z, id.x, id.y));
+    _last = null;
   }
 
-  bool has(TileId id) => _tiles.containsKey(id);
+  bool has(TileId id) => _tiles.containsKey(tileKey(id.z, id.x, id.y));
+
+  // The tile the last lookup found, and which: consecutive lookups are
+  // nearly always in it, and labels look up thousands a frame.
+  DemTile? _last;
+  int _lastZ = 0, _lastX = 0, _lastY = 0, _lastMax = -1;
+
+  /// The deepest loaded tile at or above [maxZoom] covering [wx], [wy],
+  /// left in [_last] with its place, or null.
+  DemTile? _find(double wx, double wy, int maxZoom) {
+    final last = _last;
+    if (last != null && maxZoom == _lastMax) {
+      final n = 1 << _lastZ;
+      final tx = wx * n, ty = wy * n;
+      if (tx.floor() % n == _lastX && ty.floor() == _lastY) return last;
+    }
+    for (var z = maxZoom; z >= 0; z--) {
+      final n = 1 << z;
+      final x = (wx * n).floor(), y = (wy * n).floor();
+      if (y < 0 || y >= n) continue;
+      final tile = _tiles[tileKey(z, x % n, y)];
+      if (tile == null) continue;
+      _last = tile;
+      _lastZ = z;
+      _lastX = x % n;
+      _lastY = y;
+      _lastMax = maxZoom;
+      return tile;
+    }
+    return null;
+  }
 
   /// The height in metres at [wx], [wy] in fractions of the world, from the
   /// deepest loaded tile at or above [maxZoom]; 0 where none is loaded.
   double heightAt(double wx, double wy, int maxZoom) {
-    for (var z = maxZoom; z >= 0; z--) {
-      final n = 1 << z;
-      final tx = wx * n, ty = wy * n;
-      final x = tx.floor(), y = ty.floor();
-      if (y < 0 || y >= n) continue;
-      final tile = _tiles[TileId(z, x % n, y)];
-      if (tile == null) continue;
-      return tile.sample((tx - x) * tile.dim, (ty - y) * tile.dim);
-    }
-    return 0;
+    final tile = _find(wx, wy, maxZoom);
+    if (tile == null) return 0;
+    final n = 1 << _lastZ;
+    return tile.sample(
+      (wx * n - (wx * n).floor()) * tile.dim,
+      (wy * n - (wy * n).floor()) * tile.dim,
+    );
+  }
+
+  /// The deepest loaded tile at or above [maxZoom] covering [wx], [wy],
+  /// with its zoom, column and row; null where none is loaded.
+  (DemTile, int, int, int)? locate(double wx, double wy, int maxZoom) {
+    final tile = _find(wx, wy, maxZoom);
+    return tile == null ? null : (tile, _lastZ, _lastX, _lastY);
   }
 }

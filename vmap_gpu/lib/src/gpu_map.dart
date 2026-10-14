@@ -40,7 +40,7 @@ class GpuMap implements MapRenderer {
 
   gpu.ShaderLibrary? _library;
   gpu.RenderPipeline? _flat, _buildings, _stencil, _ground;
-  gpu.UniformSlot? _groundFrame, _groundDrape;
+  gpu.UniformSlot? _groundFrame, _groundDrape, _groundDem, _groundHeights;
   late final _drape = _Drape(this);
   gpu.UniformSlot? _flatFrame, _flatSlots, _buildingFrame, _stencilFrame;
   gpu.UniformSlot? _flatFrag, _flatSprites, _flatRamp;
@@ -216,11 +216,11 @@ class GpuMap implements MapRenderer {
         vertexLayout: const gpu.VertexLayout(
           buffers: [
             gpu.VertexBuffer(
-              strideInBytes: 12,
+              strideInBytes: 8,
               attributes: [
                 gpu.VertexAttribute(
                   name: 'position',
-                  format: gpu.VertexFormat.float32x3,
+                  format: gpu.VertexFormat.float32x2,
                 ),
               ],
             ),
@@ -228,6 +228,8 @@ class GpuMap implements MapRenderer {
         ),
       );
       _groundFrame = groundVertex.getUniformSlot('FrameInfo');
+      _groundDem = groundVertex.getUniformSlot('DemInfo');
+      _groundHeights = groundVertex.getUniformSlot('heights');
       _groundDrape = groundFragment.getUniformSlot('drape');
     }
     final stencilVertex = library['StencilVertex'];

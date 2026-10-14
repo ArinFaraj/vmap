@@ -10,7 +10,7 @@ class _Drape {
   final GpuMap _map;
 
   /// Device pixels on a side of one tile's slot, slots across the atlas,
-  /// and grid cells on a side of one tile's ground.
+  /// and grid cells on a side of the ground every tile shares.
   static const _slot = 512, _columns = 8, _grid = 32;
 
   gpu.Texture? _atlas, _atlasDepth;
@@ -18,9 +18,22 @@ class _Drape {
 
   /// The tiles of ground drawn this frame, nearest first, and their slots.
   List<CoverTile> _tiles = const [];
-  final Map<int, _Ground> _grounds = {};
-  gpu.DeviceBuffer? _indices;
-  int _frame = 0;
+
+  /// The grid every tile of ground is drawn with, raised in the vertex
+  /// shader from its tile of heights.
+  gpu.DeviceBuffer? _corners, _indices;
+
+  /// Each tile of heights on the GPU, sent again when a neighbour has
+  /// filled its border since.
+  final Expando<(gpu.Texture, int)> _uploaded = Expando();
+  late final gpu.Texture _flat = gpu.gpuContext.createTexture(
+    gpu.StorageMode.hostVisible,
+    1,
+    1,
+    format: gpu.PixelFormat.r32Float,
+  )..overwrite(ByteData(4));
+  final Float32List _demInfo = Float32List(8);
+  late final ByteData _demBytes = ByteData.sublistView(_demInfo);
 
   int get _capacity => _columns * 8;
 
@@ -56,7 +69,6 @@ class _Drape {
     List<List<TileDraw>> fallback,
     List<List<TileDraw>> ideal,
   ) {
-    _frame++;
     final all = view.cover(maxZoom: 14);
     _tiles = all.length > _capacity ? all.sublist(0, _capacity) : all;
     _fit(_tiles.length);
@@ -126,10 +138,15 @@ class _Drape {
     final pipeline = map._ground;
     final atlas = _atlas;
     if (pipeline == null || atlas == null || _tiles.isEmpty) return;
+    final corners = _corners ??= _gridCorners();
     final indices = _indices ??= _gridIndices();
     final perMetre =
         view.worldSize /
         (40075016.686 * math.cos(latitudeAt(view.centerY) * math.pi / 180));
+    final nearest = gpu.SamplerOptions(
+      minFilter: gpu.MinMagFilter.nearest,
+      magFilter: gpu.MinMagFilter.nearest,
+    );
     pass
       ..clearBindings()
       ..bindPipeline(pipeline)
@@ -138,12 +155,11 @@ class _Drape {
       ..setStencilConfig(gpu.StencilConfig())
       ..setDepthWriteEnable(true)
       ..setDepthCompareOperation(gpu.CompareFunction.lessEqual)
-      ..bindTexture(
-        map._groundDrape!,
-        atlas,
-        sampler: gpu.SamplerOptions(
-          minFilter: gpu.MinMagFilter.linear,
-          magFilter: gpu.MinMagFilter.linear,
+      ..bindVertexBuffer(
+        gpu.BufferView(
+          corners,
+          offsetInBytes: 0,
+          lengthInBytes: corners.sizeInBytes,
         ),
       )
       ..bindIndexBuffer(
@@ -153,11 +169,18 @@ class _Drape {
           lengthInBytes: indices.sizeInBytes,
         ),
         gpu.IndexType.int16,
+      )
+      ..bindTexture(
+        map._groundDrape!,
+        atlas,
+        sampler: gpu.SamplerOptions(
+          minFilter: gpu.MinMagFilter.linear,
+          magFilter: gpu.MinMagFilter.linear,
+        ),
       );
     final width = (_columns * _slot).toDouble();
     final height = (_rows * _slot).toDouble();
     for (final (i, t) in _tiles.indexed) {
-      final ground = _groundOf(t, terrain);
       final span = view.worldSize / (1 << t.z);
       map._times(
         clip,
@@ -173,50 +196,77 @@ class _Drape {
         ..[18] = _slot / width
         ..[19] = _slot / height;
       pass
-        ..bindVertexBuffer(
-          gpu.BufferView(
-            ground.vertices,
-            offsetInBytes: 0,
-            lengthInBytes: ground.vertices.sizeInBytes,
-          ),
+        ..bindTexture(
+          map._groundHeights!,
+          _heightsFor(t, terrain),
+          sampler: nearest,
         )
         ..bindUniform(map._groundFrame!, map._host!.emplace(map._frameBytes))
+        ..bindUniform(map._groundDem!, map._host!.emplace(_demBytes))
         ..drawIndexed(_grid * _grid * 6);
     }
-    _grounds.removeWhere((_, g) => _frame - g.usedFrame > 120);
   }
 
-  /// Tile [t]'s grid, its heights in metres from [terrain], made again when
-  /// new heights arrive.
-  _Ground _groundOf(CoverTile t, Terrain terrain) {
-    final key = tileKey(t.z, t.x, t.y);
-    final made = _grounds[key];
-    final generation = terrain.heights.generation;
-    if (made != null && made.generation == generation) {
-      return made..usedFrame = _frame;
-    }
+  /// The tile of heights ground tile [t] is raised from, on the GPU, with
+  /// where [t] lies in it written to the shader's DemInfo; a flat one where
+  /// none is loaded.
+  gpu.Texture _heightsFor(CoverTile t, Terrain terrain) {
     final n = 1 << t.z;
-    final positions = Float32List((_grid + 1) * (_grid + 1) * 3);
+    final found = terrain.heights.locate(
+      (t.x + 0.5) / n,
+      (t.y + 0.5) / n,
+      math.min(t.z, terrain.maxZoom),
+    );
+    if (found == null) {
+      _demInfo
+        ..[0] = 0.5
+        ..[1] = 0.5
+        ..[2] = 0
+        ..[3] = 1
+        ..[4] = 0
+        ..[5] = 1;
+      return _flat;
+    }
+    final (dem, z, x, y) = found;
+    // The ground tile is this share of the heights tile, deeper zooms
+    // being smaller shares.
+    final share = 1 / (1 << (t.z - z));
+    final x0 = t.x * share - x, y0 = t.y * share - y;
+    final metres =
+        40075016.686 *
+        math.cos(latitudeAt((y + 0.5) / (1 << z)) * math.pi / 180) /
+        (1 << z) /
+        dem.dim;
+    _demInfo
+      ..[0] = 1 + (x0 - x0.floorToDouble()) * dem.dim
+      ..[1] = 1 + (y0 - y0.floorToDouble()) * dem.dim
+      ..[2] = share * dem.dim
+      ..[3] = dem.dim + 2
+      ..[4] = terrain.exaggeration
+      ..[5] = metres;
+    final kept = _uploaded[dem];
+    if (kept != null && kept.$2 == dem.version) return kept.$1;
+    final texture = gpu.gpuContext.createTexture(
+      gpu.StorageMode.hostVisible,
+      dem.dim + 2,
+      dem.dim + 2,
+      format: gpu.PixelFormat.r32Float,
+    )..overwrite(ByteData.sublistView(dem.heights));
+    _uploaded[dem] = (texture, dem.version);
+    return texture;
+  }
+
+  static gpu.DeviceBuffer _gridCorners() {
+    final out = Float32List((_grid + 1) * (_grid + 1) * 2);
     var o = 0;
     for (var j = 0; j <= _grid; j++) {
       for (var i = 0; i <= _grid; i++) {
-        positions
-          ..[o++] = i * tileExtent / _grid
-          ..[o++] = j * tileExtent / _grid
-          ..[o++] = terrain.at(
-            (t.x + i / _grid) / n,
-            (t.y + j / _grid) / n,
-            t.z,
-          );
+        out
+          ..[o++] = i / _grid
+          ..[o++] = j / _grid;
       }
     }
-    final ground = _Ground(
-      gpu.gpuContext.createDeviceBufferWithCopy(
-        ByteData.sublistView(positions),
-      ),
-      generation,
-    )..usedFrame = _frame;
-    return _grounds[key] = ground;
+    return gpu.gpuContext.createDeviceBufferWithCopy(ByteData.sublistView(out));
   }
 
   static gpu.DeviceBuffer _gridIndices() {
@@ -244,12 +294,4 @@ class _Drape {
     final n = 1 << id.z;
     return terrain.at((id.x + 0.5) / n, (id.y + 0.5) / n, id.z);
   }
-}
-
-class _Ground {
-  _Ground(this.vertices, this.generation);
-
-  final gpu.DeviceBuffer vertices;
-  final int generation;
-  int usedFrame = 0;
 }
