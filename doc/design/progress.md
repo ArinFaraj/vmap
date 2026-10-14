@@ -284,9 +284,21 @@ once the engine reports nothing left to load or draw: a full run takes
 about five minutes instead of fifty, and gave the same result for every
 one of the 815 tests compared against the slow run.
 
+2026-10-14, a sweep of the near misses: **609 of 1,730 (35.2%)** on the
+GPU renderer. About 190 tests missed by under half a percent of their
+pixels; a few shared causes explained most of them. A circle's edge now
+fades over the device pixel inside its radius; labels of one tile are
+never joined as copies of each other, only across tiles; a
+`text-radial-offset` of 0 wins over `text-offset`; raster tiles meet edge
+to edge instead of being stretched half a pixel; and a line's edge fade
+reads only the side, so a segment after a mitred corner no longer thins
+to a wedge (seen on real roads, not only in tests).
+
+Terrain is built: see `terrain.md`.
+
 Known gaps carried forward: road label anchors are spread evenly over a
 line where MapLibre steps them at exactly `symbol-spacing` from an
 offset of half the label's length (the tile workers do not know label
 lengths when drawing with glyph ranges); background layers are drawn
-first wherever the style puts them; globe projection, terrain and sky
-are not built.
+first wherever the style puts them; globe projection and sky are not
+built.
