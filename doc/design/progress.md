@@ -301,6 +301,21 @@ from glyph ranges joined and ordered right to left. The Kurdish letters
 them and MapLibre draws Sorani broken; vmap shapes those labels with its
 fonts instead.
 
+Then **627 of 1,730**, and a second measure: `tool/compare_style.sh`
+renders eleven views of Liberty over Kurdistan in MapLibre GL JS 6.14
+and in vmap and diffs them, which shows what the suite cannot, what a
+user of this style sees. It found tiles away from the middle of a flat
+map drawn from the zoom below (MapLibre covers a plain map at one zoom),
+and road shields placed along their line where MapLibre stands one at
+each line's first vertex; both are fixed, and the eleven views differ
+from MapLibre by 0.7 to 6.2 percent. Hillshade follows MapLibre's
+methods.
+
+Road names are the largest difference left. MapLibre's getAnchors is
+ported to the tile workers (stash: road names), but with vmap's own fit,
+bend and collision of a road name on the UI thread it placed fewer names
+than the old even spread, so it waits for those to be ported too.
+
 Terrain is built: see `terrain.md`.
 
 Known gaps carried forward: road label anchors are spread evenly over a
