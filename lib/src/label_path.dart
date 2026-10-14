@@ -65,3 +65,25 @@ void layStrips(
     py = y;
   }
 }
+
+/// How far along [screen], the points of [world] where they fall on the
+/// screen, the point [at] along [world] lands. Past either end the last
+/// segment's scale carries on.
+double screenDistance(Float64List world, Float64List screen, double at) {
+  final segments = world.length ~/ 2 - 1;
+  var walked = 0.0, onScreen = 0.0;
+  for (var k = 0; k < segments; k++) {
+    final wx = world[k * 2 + 2] - world[k * 2];
+    final wy = world[k * 2 + 3] - world[k * 2 + 1];
+    final sx = screen[k * 2 + 2] - screen[k * 2];
+    final sy = screen[k * 2 + 3] - screen[k * 2 + 1];
+    final seg = math.sqrt(wx * wx + wy * wy);
+    final shown = math.sqrt(sx * sx + sy * sy);
+    if (k == segments - 1 || at <= walked + seg) {
+      return onScreen + (seg == 0 ? 0 : (at - walked) / seg * shown);
+    }
+    walked += seg;
+    onScreen += shown;
+  }
+  return onScreen;
+}

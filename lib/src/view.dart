@@ -204,10 +204,14 @@ class MapView {
   /// asks for: the zoom of the view at the centre, less one for every
   /// doubling of distance from the camera. Tiles off the ground are left
   /// out. Columns past the world's edge are not wrapped.
-  List<CoverTile> cover({required int maxZoom, int minZoom = 0}) {
+  List<CoverTile> cover({
+    required int maxZoom,
+    int minZoom = 0,
+    double hold = 0,
+  }) {
     final quad = ground();
     final (x: camX, y: camY, height: camH) = eye;
-    final top = math.min(zoom.floor(), maxZoom);
+    final top = math.min((zoom + hold).floor(), maxZoom);
     final out = <CoverTile>[];
 
     void visit(int z, int x, int y) {
@@ -218,7 +222,7 @@ class MapView {
       final ny = (camY - upper).clamp(0, span) + upper;
       final ddx = nx - camX, ddy = ny - camY;
       final distance = math.sqrt(ddx * ddx + ddy * ddy + camH * camH);
-      final wanted = zoom + _log2(cameraToCenterDistance / distance);
+      final wanted = zoom + hold + _log2(cameraToCenterDistance / distance);
       if (z >= top || (z >= minZoom && z >= wanted.floor())) {
         out.add((z: z, x: x, y: y, distance: distance));
         return;

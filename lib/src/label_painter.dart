@@ -357,6 +357,21 @@ class LabelPainter {
   }
 
   final Float64List _along = Float64List(3);
+  Float64List _screen = Float64List(64);
+
+  /// [path], points of the world, where they fall on the screen. Letters
+  /// facing the screen are laid along this, in screen pixels, as MapLibre
+  /// lays them: on a tilted map the road shrinks with distance faster than
+  /// the letters do, so spacing them along the flat road crams them.
+  Float64List _screenPath(Float64List path) {
+    if (_screen.length < path.length) _screen = Float64List(path.length * 2);
+    for (var i = 0; i < path.length; i += 2) {
+      _view.project(path[i], path[i + 1]);
+      _screen[i] = _view.x;
+      _screen[i + 1] = _view.y;
+    }
+    return Float64List.sublistView(_screen, 0, path.length);
+  }
 
   void _glyphsBent(LabelState st, GlyphSprite sprite, double devicePixelRatio) {
     final pages = glyphs!;
@@ -365,7 +380,8 @@ class LabelPainter {
     final cells = sprite.cells, ems = sprite.cellEms;
     final shaped = sprite.shaped;
     final path = st.curve!;
-    final world = _view.world;
+    final onScreen = _screenPath(path);
+    final middle = screenDistance(path, onScreen, st.curveMid);
     final flip =
         math.cos(_view.screenAngle(st.worldX, st.worldY, st.angle)) < 0;
     final half = shaped.width * em / 2;
@@ -382,13 +398,11 @@ class LabelPainter {
       final advance = g[i + 4] * em;
       var mid = g[i + 2] * em + advance / 2 - half;
       if (flip) mid = -mid;
-      final reach = math.max(advance / 2, 1.0) / world;
-      pointAlong(path, st.curveMid + mid / world - reach, _along);
-      _view.project(_along[0], _along[1]);
-      final ax = _view.x, ay = _view.y;
-      pointAlong(path, st.curveMid + mid / world + reach, _along);
-      _view.project(_along[0], _along[1]);
-      final bx = _view.x, by = _view.y;
+      final reach = math.max(advance / 2, 1.0);
+      pointAlong(onScreen, middle + mid - reach, _along);
+      final ax = _along[0], ay = _along[1];
+      pointAlong(onScreen, middle + mid + reach, _along);
+      final bx = _along[0], by = _along[1];
       var angle = math.atan2(by - ay, bx - ax);
       if (flip) angle += math.pi;
       final c = math.cos(angle), s = math.sin(angle);

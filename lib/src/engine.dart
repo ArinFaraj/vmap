@@ -802,6 +802,7 @@ class VmapEngine extends ChangeNotifier {
     _onGpu = onGpu;
     var waiting = false;
     _lastZoom = camera.zoom;
+    final hold = _holdTiles(camera);
     for (final s in _sources) {
       final preparing = s.cover(
         camera,
@@ -809,6 +810,7 @@ class VmapEngine extends ChangeNotifier {
         frame: _frame,
         nowMs: _clock.elapsedMilliseconds,
         prepare: _prepare,
+        hold: hold,
       );
       if (preparing) waiting = true;
       if (s.retrying) _requestFrameLater();
@@ -960,6 +962,34 @@ class VmapEngine extends ChangeNotifier {
       s.evict(maxCachedTiles, _frame);
     }
   }
+
+  /// How far above the camera's zoom tiles are picked. Zooming out past a
+  /// tile zoom keeps the finer tiles for [_holdMs], so layers they alone
+  /// carry fade out on them instead of vanishing with them; a fall of a
+  /// whole level or more lets go at once.
+  double _holdTiles(VmapCamera camera) {
+    final zoom = camera.view?.zoom;
+    if (zoom == null) return 0;
+    final level = zoom.floor();
+    final now = _clock.elapsedMilliseconds;
+    if (level >= _heldLevel || zoom <= _heldLevel - 1) {
+      _heldLevel = level;
+      _holdUntil = -1;
+      return 0;
+    }
+    if (_holdUntil < 0) _holdUntil = now + _holdMs;
+    if (now >= _holdUntil) {
+      _heldLevel = level;
+      _holdUntil = -1;
+      return 0;
+    }
+    _requestFrame();
+    return _heldLevel - zoom + 1e-6;
+  }
+
+  int _heldLevel = 0;
+  int _holdUntil = -1;
+  static const _holdMs = 300;
 
   bool _retryPending = false;
 

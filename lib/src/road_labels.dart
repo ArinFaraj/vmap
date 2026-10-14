@@ -169,6 +169,8 @@ class RoadLabels {
   }
 
   Float64List _strips = Float64List(96);
+  Float64List _screen = Float64List(64);
+  final Float64List _at = Float64List(3);
 
   /// The middle and angle of each of [count] slices of a bent name, [step]
   /// apart along its road, as x, y and angle in turn.
@@ -192,22 +194,22 @@ class RoadLabels {
     required bool add,
   }) {
     final count = stripCount(textW, textH);
-    final strips = this.strips(st, count, textW / count / _view.world);
-    for (var i = 0; i < count * 3; i += 3) {
-      _view.project(strips[i], strips[i + 1]);
+    final path = st.curve!;
+    if (_screen.length < path.length) _screen = Float64List(path.length * 2);
+    for (var i = 0; i < path.length; i += 2) {
+      _view.project(path[i], path[i + 1]);
+      _screen[i] = _view.x;
+      _screen[i + 1] = _view.y;
+    }
+    final onScreen = Float64List.sublistView(_screen, 0, path.length);
+    final middle = screenDistance(path, onScreen, st.curveMid);
+    final step = textW / count;
+    for (var j = 0; j < count; j++) {
+      pointAlong(onScreen, middle + (j + 0.5 - count / 2) * step, _at);
+      final x = _at[0], y = _at[1];
       if (add) {
-        _boxes.add(
-          _view.x - reach,
-          _view.y - reach,
-          _view.x + reach,
-          _view.y + reach,
-        );
-      } else if (_boxes.hits(
-        _view.x - reach,
-        _view.y - reach,
-        _view.x + reach,
-        _view.y + reach,
-      )) {
+        _boxes.add(x - reach, y - reach, x + reach, y + reach);
+      } else if (_boxes.hits(x - reach, y - reach, x + reach, y + reach)) {
         return true;
       }
     }
