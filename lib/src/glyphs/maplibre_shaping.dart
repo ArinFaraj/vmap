@@ -31,7 +31,15 @@ ShapedText? layoutRanges(
   final lineStep = lineHeight * em;
   final share = (justify + 1) / 2;
   final codes = text.runes.toList();
-  final breaks = _lineBreaks(glyphOf, codes, spacing, maxWidth * em);
+  final breaks = mapLibreLineBreaks(
+    codes,
+    (c) {
+      final g = glyphOf(c);
+      return g == null ? 0 : g.advance + spacing;
+    },
+    maxWidth * em,
+    spacing: spacing,
+  );
   final lines = <String>[];
   var from = 0;
   for (final to in breaks) {
@@ -108,19 +116,15 @@ class _Break {
   final double badness;
 }
 
-/// Where [codes] break into lines no wider than about [maxWidth] glyph
-/// units: each line's end, as `TaggedString.determineLineBreaks` finds them.
-List<int> _lineBreaks(
-  PbfGlyph? Function(int codePoint) glyphOf,
+/// Where [codes] break into lines no wider than about [maxWidth], in the
+/// units of [advance], each code's width with its letter [spacing]: each
+/// line's end, as `TaggedString.determineLineBreaks` finds them.
+List<int> mapLibreLineBreaks(
   List<int> codes,
-  double spacing,
-  double maxWidth,
-) {
-  double advance(int c) {
-    final g = glyphOf(c);
-    return g == null ? 0 : g.advance + spacing;
-  }
-
+  double Function(int c) advance,
+  double maxWidth, {
+  double spacing = 0,
+}) {
   var total = 0.0;
   for (final c in codes) {
     total += advance(c);

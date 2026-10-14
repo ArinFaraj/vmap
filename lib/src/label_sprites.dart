@@ -313,6 +313,7 @@ class LabelSprites {
         },
         singleLine: look.road,
         stack: look.fontStack,
+        mapLibreBreaks: store != null,
       );
       work.layoutMicros += _clock.elapsedMicroseconds - started;
       if (shaped != null) {
