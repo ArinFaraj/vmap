@@ -119,6 +119,19 @@ Future<_Result> _runOne(String id, String dir) async {
       return made;
     }
 
+    var document = style;
+    final edits = <VmapStyleEdit>[];
+    final states = <(String, Object?), Map<String, Object?>>{};
+    void restyle() => engine!.style = VmapStyle.json(
+      _localize(document) as Map<String, Object?>,
+    );
+    void edit(VmapStyleEdit e) => engine!.edits = [...edits..add(e)];
+    void restate() => engine!.featureStates = [
+      for (final MapEntry(key: (source, id), :value) in states.entries)
+        VmapFeatureState(source: source, id: id, state: value),
+    ];
+    List<Object?> layers() => [...(document['layers'] as List?) ?? const []];
+
     engine = make(style);
     void paint() => _paint(engine!, camera, width, height, ratio, null);
     await _settle(engine, paint);
@@ -141,8 +154,88 @@ Future<_Result> _runOne(String id, String dir) async {
                 ) as Map<String, Object?>
               : (o[1] as Map).cast<String, Object?>();
           engine!.dispose();
+          document = next;
+          edits.clear();
+          states.clear();
           engine = make(next);
           await _settle(engine, paint);
+        case 'setPaintProperty':
+          edit(VmapStyleEdit.paint(o[1] as String, o[2] as String, o[3]));
+        case 'setLayoutProperty':
+          edit(VmapStyleEdit.layout(o[1] as String, o[2] as String, o[3]));
+        case 'setFilter':
+          edit(
+            VmapStyleEdit.filter(o[1] as String, o.length > 2 ? o[2] : null),
+          );
+        case 'setLayerZoomRange':
+          edit(
+            VmapStyleEdit.zoomRange(
+              o[1] as String,
+              min: (o[2] as num?)?.toDouble(),
+              max: (o[3] as num?)?.toDouble(),
+            ),
+          );
+        case 'addLayer':
+          final all = layers();
+          final before = o.length > 2 ? o[2] : null;
+          final at = all.indexWhere((l) => (l as Map)['id'] == before);
+          all.insert(at < 0 ? all.length : at, o[1]);
+          document = {...document, 'layers': all};
+          restyle();
+        case 'removeLayer':
+          document = {
+            ...document,
+            'layers': layers()..removeWhere((l) => (l as Map)['id'] == o[1]),
+          };
+          restyle();
+        case 'addSource':
+          document = {
+            ...document,
+            'sources': {
+              ...?(document['sources'] as Map?)?.cast<String, Object?>(),
+              o[1] as String: o[2],
+            },
+          };
+          restyle();
+        case 'removeSource':
+          document = {
+            ...document,
+            'sources': {
+              ...?(document['sources'] as Map?)?.cast<String, Object?>(),
+            }..remove(o[1]),
+          };
+          restyle();
+        case 'setFeatureState':
+          final target = o[1] as Map;
+          final key = (target['source'] as String, target['id']);
+          states[key] = {
+            ...?states[key],
+            ...(o[2] as Map).cast<String, Object?>(),
+          };
+          restate();
+        case 'removeFeatureState':
+          final target = o[1] as Map;
+          final name = o.length > 2 ? o[2] as String? : null;
+          states.removeWhere((k, v) {
+            if (k.$1 != target['source']) return false;
+            if (target.containsKey('id') && k.$2 != target['id']) return false;
+            if (name == null) return true;
+            v.remove(name);
+            return v.isEmpty;
+          });
+          restate();
+        case 'easeTo' || 'flyTo' || 'jumpTo':
+          final to = o[1] as Map;
+          final c = to['center'] as List?;
+          if (c != null) {
+            camera
+              ..longitude = (c[0] as num).toDouble()
+              ..latitude = (c[1] as num).toDouble();
+          }
+          camera
+            ..zoom = (to['zoom'] as num? ?? camera.zoom).toDouble()
+            ..bearing = (to['bearing'] as num? ?? camera.bearing).toDouble()
+            ..pitch = (to['pitch'] as num? ?? camera.pitch).toDouble();
         case 'setZoom':
           camera.zoom = (o[1] as num).toDouble();
         case 'setCenter':
