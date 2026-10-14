@@ -16,7 +16,14 @@ if [ "${4:-}" = "--gpu" ]; then gpu=true; fi
 suite="$(cd "$checkout/test/integration" && pwd)"
 port=2900
 
-python3 -m http.server "$port" --bind 127.0.0.1 --directory "$suite/assets" >/dev/null 2>&1 &
+# The stock server listens with a queue of 5, which drops connections
+# when several tests load at once.
+python3 -c '
+import functools, http.server, sys
+http.server.ThreadingHTTPServer.request_queue_size = 256
+handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=sys.argv[2])
+http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), handler).serve_forever()
+' "$port" "$suite/assets" >/dev/null 2>&1 &
 server=$!
 trap 'kill $server 2>/dev/null || true' EXIT
 

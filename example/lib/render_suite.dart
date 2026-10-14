@@ -45,12 +45,17 @@ class _Result {
   double allowed = 0;
   String? error;
 
+  /// What the engine reported while drawing; scored on pixels anyway, as
+  /// MapLibre's runner scores, since the engine retries what failed.
+  String? note;
+
   Map<String, Object?> toJson() => {
     'id': id,
     'ok': ok,
     'difference': difference,
     'allowed': allowed,
     'error': ?error,
+    'note': ?note,
   };
 }
 
@@ -120,7 +125,7 @@ Future<_Result> _runOne(String id, String dir) async {
       width: (test['width'] as num? ?? 512).toInt(),
       height: (test['height'] as num? ?? 512).toInt(),
       ratio: (test['pixelRatio'] as num? ?? 1).toDouble(),
-      onError: (e) => result.error ??= 'engine: $e',
+      onError: (e) => result.note ??= 'engine: $e',
     );
     await session.settle();
     for (final op in (test['operations'] as List?) ?? const []) {
