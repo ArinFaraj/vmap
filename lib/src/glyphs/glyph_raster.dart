@@ -9,6 +9,7 @@ import 'package:payv/src/font/glyph_path.dart';
 
 import '../typed_buffer.dart';
 import 'glyph_layout.dart';
+import 'glyph_pbf.dart';
 
 /// The look a page is drawn in: glyphs this many device pixels to the em,
 /// this weight and slant, with a halo this many device pixels wide and
@@ -51,6 +52,10 @@ class GlyphRasterizer {
   GlyphRasterizer(this.fonts);
 
   final GlyphFonts fonts;
+
+  /// The glyphs of the style's glyph ranges by face, faces from
+  /// [GlyphPbf.firstFace] up.
+  final Map<int, Map<int, PbfGlyph>> pbf = {};
   final Map<int, GlyphPath?> _outlines = {};
   final Map<PageKey, Map<int, _Bitmap?>> _bitmaps = {};
 
@@ -121,6 +126,58 @@ class GlyphRasterizer {
     }
   }
 
+  /// A glyph of a style's glyph range drawn from its distance field with
+  /// the edge and halo of MapLibre's `symbol_sdf.fragment.glsl` for text
+  /// facing the screen, so it comes out as MapLibre draws it.
+  _Bitmap? _pbfGlyph(PageKey key, int face, int codePoint) {
+    final g = pbf[face]?[codePoint];
+    if (g == null || g.width == 0) return null;
+    const border = GlyphPbf.border;
+    final sw = g.width + 2 * border, sh = g.height + 2 * border;
+    if (g.bitmap.length < sw * sh) return null;
+    final s = emOf(key.size) / GlyphPbf.em;
+    final w = (sw * s).ceil(), h = (sh * s).ceil();
+    final gamma = 0.105 / s;
+    final haloGamma = (key.blur / 4 * 1.19 / 8 + 0.105) / s;
+    final haloEdge = (6 - key.halo / 4 / s) / 8;
+    final ink = Uint8List(w * h);
+    final halo = key.halo > 0 ? Uint8List(w * h) : null;
+    double step(double lo, double hi, double x) {
+      final t = ((x - lo) / (hi - lo)).clamp(0.0, 1.0);
+      return t * t * (3 - 2 * t);
+    }
+
+    double at(int x, int y) =>
+        g.bitmap[y.clamp(0, sh - 1) * sw + x.clamp(0, sw - 1)] / 255;
+    for (var y = 0; y < h; y++) {
+      final v = (y + 0.5) / s - 0.5;
+      final y0 = v.floor();
+      final fy = v - y0;
+      for (var x = 0; x < w; x++) {
+        final u = (x + 0.5) / s - 0.5;
+        final x0 = u.floor();
+        final fx = u - x0;
+        final d =
+            (at(x0, y0) * (1 - fx) + at(x0 + 1, y0) * fx) * (1 - fy) +
+            (at(x0, y0 + 1) * (1 - fx) + at(x0 + 1, y0 + 1) * fx) * fy;
+        ink[y * w + x] = (step(0.75 - gamma, 0.75 + gamma, d) * 255).round();
+        if (halo != null) {
+          final inner = step(0.75, 0.75 + 2 * haloGamma, d);
+          final outer = step(haloEdge - haloGamma, haloEdge + haloGamma, d);
+          halo[y * w + x] = (math.min(outer, 1 - inner) * 255).round();
+        }
+      }
+    }
+    return _Bitmap(
+      w,
+      h,
+      ink,
+      halo,
+      (g.left - border) * s,
+      (-g.top - border) * s,
+    );
+  }
+
   GlyphPath? _outline(int face, int weight, int glyph) {
     final key =
         (face * 10 + GlyphFonts.snapWeight(weight) ~/ 100) << 20 | glyph;
@@ -141,6 +198,7 @@ class GlyphRasterizer {
 
   _Bitmap? _glyph(PageKey key, int id) {
     final face = id >> 20, glyph = id & 0xFFFFF;
+    if (face >= GlyphPbf.firstFace) return _pbfGlyph(key, face, glyph);
     final outline = _outline(face, key.weight, glyph);
     if (outline == null) return null;
     final s = emOf(key.size) / fonts.unitsPerEm(face);
@@ -517,6 +575,9 @@ class GlyphRasterWorker {
 
   void forget(PageKey key) => _send(_Forget(key));
 
+  /// Hands the isolate the glyphs of a style glyph range for [face].
+  void addPbf(int face, List<PbfGlyph> glyphs) => _send(_AddPbf(face, glyphs));
+
   void _send(_Request request) {
     if (_disposed) return;
     final port = _port;
@@ -564,6 +625,11 @@ class GlyphRasterWorker {
       switch (request as _Request) {
         case _Forget(:final key):
           rasterizer.forget(key);
+        case _AddPbf(:final face, :final glyphs):
+          final known = rasterizer.pbf[face] ??= {};
+          for (final g in glyphs) {
+            known[g.id] = g;
+          }
         case _Draw(:final id, :final key, :final ids):
           GlyphRaster r;
           try {
@@ -586,6 +652,13 @@ class GlyphRasterWorker {
 }
 
 sealed class _Request {}
+
+final class _AddPbf extends _Request {
+  _AddPbf(this.face, this.glyphs);
+
+  final int face;
+  final List<PbfGlyph> glyphs;
+}
 
 final class _Draw extends _Request {
   _Draw(this.id, this.key, this.ids);

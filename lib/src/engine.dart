@@ -13,6 +13,7 @@ import 'expr.dart';
 import 'extrusion.dart';
 import 'map_renderer.dart';
 import 'glyphs/glyph_layout.dart';
+import 'glyphs/glyph_pbf.dart';
 import 'glyphs/vmap_font.dart';
 import 'label_state.dart';
 import 'labels.dart';
@@ -59,13 +60,14 @@ class VmapEngine extends ChangeNotifier {
     this._edits = const [],
     bool curvedLabels = true,
     bool glyphText = false,
+    this.styleGlyphs = false,
     List<VmapFont> fonts = const [],
     this.renderer,
   }) : _labels = LabelEngine(text)
          ..pins = pins
          ..curvedRoads = curvedLabels {
     _labels.stateOf = (source, id) => _states[_sources[source].def.name]?[id];
-    if (glyphText) {
+    if (glyphText || styleGlyphs) {
       _loadGlyphFonts(fonts).whenComplete(() {
         if (!_disposed) _loadStyle();
       });
@@ -89,6 +91,14 @@ class VmapEngine extends ChangeNotifier {
   static const defaultGlyphFont =
       'packages/vmap/assets/fonts/Vazirmatn-Variable.ttf';
 
+  /// Labels are laid out and drawn from the style's `glyphs` ranges, as
+  /// MapLibre draws them, instead of from font files. The ranges place
+  /// glyphs by their advances alone, without OpenType shaping, so Arabic
+  /// script comes out unjoined; this is for drawing a style as MapLibre
+  /// does, not for Kurdish or Arabic labels.
+  final bool styleGlyphs;
+  String? _glyphsUrl;
+
   Future<void> _loadGlyphFonts(List<VmapFont> given) async {
     try {
       final all = [
@@ -101,7 +111,7 @@ class VmapEngine extends ChangeNotifier {
       if (_disposed) return;
       final faces = [for (final f in all) f.bytes];
       final families = [for (final f in all) f.family];
-      _glyphFontBytes = faces;
+      if (!styleGlyphs) _glyphFontBytes = faces;
       _glyphFamilies = families;
       _labels.useGlyphs(GlyphFonts(faces, families: families));
       notifyListeners();
@@ -341,6 +351,22 @@ class VmapEngine extends ChangeNotifier {
       nameKeys: from.nameKeys,
       zoomOffset: from.zoomOffset,
     );
+    final glyphs = styleGlyphs ? sheet.glyphs : null;
+    if (glyphs != _glyphsUrl) {
+      _glyphsUrl = glyphs;
+      _labels.pbf = glyphs == null
+          ? null
+          : PbfStore(
+              glyphs,
+              userAgent: source.userAgent,
+              headers: source.headers,
+              onLoaded: (face, loaded) {
+                if (_disposed) return;
+                _labels.pbfArrived(face, loaded);
+                notifyListeners();
+              },
+            );
+    }
     final sameShape = _sheet != null && _sheet!.shape == sheet.shape;
     final rasterKey = [for (final r in sheet.rasters) r.signature].join('\n');
     final rasters = _sheet == null || rasterKey != _rasterKey;
@@ -984,6 +1010,7 @@ class VmapEngine extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _labels.pbf = null;
     for (final s in _sources) {
       s.dispose();
     }

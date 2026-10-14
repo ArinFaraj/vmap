@@ -156,7 +156,13 @@ class VmapStyleEdit {
       name = null,
       value = [min, max];
 
-  /// The `id` of the style layer changed.
+  /// Sets the style's global state [name], which expressions read with
+  /// `['global-state', name]`, over the default the style's `state` gives.
+  const VmapStyleEdit.state(String this.name, this.value)
+    : layer = '',
+      _part = 'state';
+
+  /// The `id` of the style layer changed, empty for a state edit.
   final String layer;
   final String? name;
   final Object? value;
@@ -168,7 +174,11 @@ class VmapStyleEdit {
     List<VmapStyleEdit> edits,
     Map<String, Object?> document,
   ) {
-    if (edits.isEmpty) return document;
+    final state = {...?(document['state'] as Map?)?.cast<String, Object?>()};
+    for (final edit in edits) {
+      if (edit._part == 'state') state[edit.name!] = {'default': edit.value};
+    }
+    if (edits.isEmpty) return _resolveState(document, state);
     final layers = [...(document['layers'] as List?) ?? const <Object?>[]];
     final at = <String, int>{
       for (var i = 0; i < layers.length; i++)
@@ -176,6 +186,7 @@ class VmapStyleEdit {
     };
     final copied = <int>{};
     for (final edit in edits) {
+      if (edit._part == 'state') continue;
       final i = at[edit.layer];
       if (i == null) continue;
       if (copied.add(i)) layers[i] = {...layers[i]! as Map<String, Object?>};
@@ -193,7 +204,37 @@ class VmapStyleEdit {
           layer[edit._part] = part;
       }
     }
-    return {...document, 'layers': layers};
+    return _resolveState({...document, 'layers': layers}, state);
+  }
+
+  /// [document] with every `['global-state', name]` in its layers replaced
+  /// by the value [state] gives that name, so the workers that compile the
+  /// layers need no state of their own.
+  static Map<String, Object?> _resolveState(
+    Map<String, Object?> document,
+    Map<String, Object?> state,
+  ) {
+    final layers = document['layers'];
+    if (layers is! List || !jsonEncode(layers).contains('"global-state"')) {
+      return document;
+    }
+    Object? walk(Object? v) => switch (v) {
+      ['global-state', final String name] => switch ((state[name]
+          as Map?)?['default']) {
+        final List<Object?> l => ['literal', l],
+        final Map<Object?, Object?> m => ['literal', m],
+        final other => other,
+      },
+      List<Object?> l => [for (final x in l) walk(x)],
+      Map<Object?, Object?> m => {
+        for (final e in m.entries) e.key: walk(e.value),
+      },
+      _ => v,
+    };
+    return {
+      ...document,
+      'layers': [for (final l in layers) walk(l)],
+    };
   }
 
   static void _set(Map<Object?, Object?> map, String key, Object? value) {

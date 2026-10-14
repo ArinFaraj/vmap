@@ -754,6 +754,7 @@ class StyleSheet {
     required this.zoomOffset,
     required this.shape,
     required this.sprite,
+    this.glyphs,
     required this.rasters,
     required this.backgroundPattern,
     required this.backgroundOpacity,
@@ -804,6 +805,9 @@ class StyleSheet {
 
   /// The address of the sprite sheet, without `.json` or `.png`.
   final String? sprite;
+
+  /// The style's glyph ranges, with `{fontstack}` and `{range}` in it.
+  final String? glyphs;
 
   /// Raster layers, each drawn where [runs] puts it.
   final List<RasterLayer> rasters;

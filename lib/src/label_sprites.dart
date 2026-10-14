@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'glyphs/glyph_layout.dart';
 import 'glyphs/glyph_pages.dart';
+import 'glyphs/glyph_pbf.dart';
 import 'platform.dart';
 import 'stats.dart';
 
@@ -188,6 +189,10 @@ class LabelSprites {
   /// Set once vmap's own fonts are loaded: text they cover is shaped by
   /// vmap and drawn from glyph pages, the rest is drawn as before.
   GlyphFonts? glyphFonts;
+
+  /// The style's glyph ranges, which labels are laid out and drawn with
+  /// instead of [glyphFonts] when set.
+  PbfStore? pbf;
   final Stopwatch _clock = Stopwatch()..start();
 
   /// Kept when more are drawn than this, only those used in the last pass.
@@ -246,6 +251,33 @@ class LabelSprites {
     ShapedText? shaped,
   }) {
     final fonts = glyphFonts;
+    final store = pbf;
+    if (fonts != null && store != null && shaped == null) {
+      final face = store.face(look.fontStack);
+      if (!store.ready(face, look.text)) {
+        return GlyphSprite(
+          ShapedText(Float32List(0), 0, 0, 0),
+          look,
+          1,
+          1,
+          0,
+          0,
+          look.fontSize,
+        )..dropped = true;
+      }
+      shaped = layoutPbf(
+        store,
+        face,
+        look.text,
+        letterSpacing: look.letterSpacing,
+        lineHeight: look.lineHeight,
+        justify: switch (look.align) {
+          ui.TextAlign.left || ui.TextAlign.start => -1,
+          ui.TextAlign.right || ui.TextAlign.end => 1,
+          _ => 0,
+        },
+      );
+    }
     if (fonts != null) {
       final started = _clock.elapsedMicroseconds;
       shaped ??= layoutText(

@@ -12,6 +12,7 @@ import 'label_state.dart';
 import 'occlusion.dart';
 import 'glyphs/glyph_layout.dart';
 import 'glyphs/glyph_pages.dart';
+import 'glyphs/glyph_pbf.dart';
 import 'label_view.dart';
 import 'view.dart';
 import 'pins.dart';
@@ -198,6 +199,28 @@ class LabelEngine {
       if (st.opacity > 0) st.candidate.key,
   };
 
+  /// The state [c] carries on from. A key names a text in a coarse cell of
+  /// the world, so a place keeps its state as it shifts a little between
+  /// zoom levels; within the cell, states are told apart by distance, as
+  /// MapLibre's cross tile index does, so two places of one name both show.
+  /// Null when another tile's copy of the same label came first this pass.
+  LabelState? _stateFor(LabelCandidate c, double world) {
+    const near = _sameLabelPx * _sameLabelPx;
+    for (var n = 0; ; n++) {
+      final key = n == 0 ? c.key : '${c.key}#$n';
+      final st = _states[key];
+      if (st == null) return _states[key] = LabelState(c);
+      final dx = (st.candidate.worldX - c.worldX) * world;
+      final dy = (st.candidate.worldY - c.worldY) * world;
+      if (dx * dx + dy * dy > near) continue;
+      return st.seenPass == _pass ? null : st;
+    }
+  }
+
+  /// How far apart in pixels two labels of one text in one cell may be and
+  /// still be the same label.
+  static const double _sameLabelPx = 3;
+
   GlyphPages? _glyphPages;
 
   /// Shapes and draws text with [fonts] from now on, where they cover it.
@@ -210,6 +233,17 @@ class LabelEngine {
   }
 
   bool get _glyphText => _glyphPages != null;
+
+  /// Glyph ranges from the style's `glyphs` URL that labels are drawn with
+  /// instead of the font files, or null.
+  set pbf(PbfStore? value) {
+    _sprites.pbf?.close();
+    _sprites.pbf = value;
+    clear();
+  }
+
+  void pbfArrived(int face, List<PbfGlyph> glyphs) =>
+      _glyphPages?.addPbf(face, glyphs);
 
   /// Glyphs drawn into pages in the last frame, and what that cost.
   int get glyphsRasterized => _glyphPages?.lastRasterized ?? 0;
@@ -431,8 +465,8 @@ class LabelEngine {
             sy > size.height + margin) {
           continue;
         }
-        final st = _states[c.key] ??= LabelState(c);
-        if (st.seenPass == _pass) continue;
+        final st = _stateFor(c, world);
+        if (st == null) continue;
         st
           ..seenPass = _pass
           ..perspective = _view.ratio

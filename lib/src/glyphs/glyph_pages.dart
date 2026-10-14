@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'glyph_layout.dart';
+import 'glyph_pbf.dart';
 import 'glyph_raster.dart';
 
 /// Where one glyph sits in a page, in the page image's pixels, and where
@@ -207,6 +208,9 @@ class GlyphPages {
     }
     return null;
   }
+
+  /// Hands the rasterizer the glyphs of a style glyph range.
+  void addPbf(int face, List<PbfGlyph> glyphs) => _worker.addPbf(face, glyphs);
 
   /// The page of the cell [cell] last returned.
   late GlyphPage found;

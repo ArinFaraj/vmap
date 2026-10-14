@@ -138,6 +138,7 @@ class StyleCompiler {
         [{'url': final String url}, ...] => url,
         _ => null,
       },
+      glyphs: json['glyphs'] as String?,
       rasters: _rasters,
       backgroundPattern: _backgroundPattern,
       backgroundOpacity: _backgroundOpacity,

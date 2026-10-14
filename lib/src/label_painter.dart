@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'expr.dart';
 import 'glyphs/glyph_layout.dart';
 import 'glyphs/glyph_pages.dart';
+import 'glyphs/glyph_pbf.dart';
 import 'label_path.dart';
 import 'label_sprites.dart';
 import 'label_state.dart';
@@ -266,7 +267,9 @@ class LabelPainter {
     final shaped = sprite.shaped;
     final left = -shaped.width * em / 2, top = -shaped.height * em / 2;
     var ox = sx, oy = sy;
-    if (turn == 0) {
+    // Glyph range text is placed where MapLibre places it, unsnapped.
+    final ranges = shaped.count > 0 && shaped.glyphs[0] >= GlyphPbf.firstFace;
+    if (turn == 0 && !ranges) {
       ox = _snap(sx + left, devicePixelRatio) - left;
       oy = _snap(sy + top, devicePixelRatio) - top;
     }
