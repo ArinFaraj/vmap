@@ -273,3 +273,20 @@ on the screen), layers vanishing instead of fading when zooming out past
 a tile zoom (the finer tiles are kept for 300 ms), and straight road
 names jittering while a tilted map turns (their angle is now found every
 frame).
+
+Later the same day: **537 of 1,730 (31.0%)** on the GPU renderer, with
+whole-layer opacity (`line-layer-opacity`, `fill-layer-opacity`),
+see-through buildings at `fill-extrusion-opacity` drawn in the style's
+order, zero-height buildings, `icon-text-fit` with stretchable sprites,
+road names repeated every `symbol-spacing`, `text-keep-upright` and
+`line-center`. The harness now runs six tests at a time and scores each
+once the engine reports nothing left to load or draw: a full run takes
+about five minutes instead of fifty, and gave the same result for every
+one of the 815 tests compared against the slow run.
+
+Known gaps carried forward: road label anchors are spread evenly over a
+line where MapLibre steps them at exactly `symbol-spacing` from an
+offset of half the label's length (the tile workers do not know label
+lengths when drawing with glyph ranges); background layers are drawn
+first wherever the style puts them; globe projection, terrain and sky
+are not built.
