@@ -413,10 +413,10 @@ final class PictureTiles extends TileDrawing<PictureTileLayer> {
     required super.onError,
   });
 
-  /// Opaque tiles lap over each other a little so no gap shows between
-  /// them.
+  /// Tiles meet edge to edge, unsmoothed, so neither a gap nor a stretched
+  /// picture shows between them, as on MapLibre's GPU.
   @override
-  double get _lap => 0.5;
+  double get _lap => 0;
 
   @override
   double get _ring => 0;
@@ -426,7 +426,7 @@ final class PictureTiles extends TileDrawing<PictureTileLayer> {
     ..filterQuality = layer.nearest
         ? ui.FilterQuality.none
         : ui.FilterQuality.low
-    ..isAntiAlias = true
+    ..isAntiAlias = false
     ..colorFilter = layer.adjust?.filter(context);
 
   @override
