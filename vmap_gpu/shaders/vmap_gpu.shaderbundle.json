@@ -22,5 +22,13 @@
   "StencilFragment": {
     "type": "fragment",
     "file": "shaders/stencil.frag"
+  },
+  "TerrainVertex": {
+    "type": "vertex",
+    "file": "shaders/terrain.vert"
+  },
+  "TerrainFragment": {
+    "type": "fragment",
+    "file": "shaders/terrain.frag"
   }
 }

@@ -89,11 +89,16 @@ class DemTile {
 class DemTiles {
   final Map<TileId, DemTile> _tiles = {};
 
+  /// Moves on whenever a tile arrives or goes, so what was made from the
+  /// heights can tell it is stale.
+  int generation = 0;
+
   int get length => _tiles.length;
 
   /// Keeps [tile] as [id], filling its border and its neighbours' from each
   /// other.
   void add(TileId id, DemTile tile) {
+    generation++;
     _tiles[id] = tile;
     final n = 1 << id.z;
     for (var dy = -1; dy <= 1; dy++) {
@@ -109,7 +114,9 @@ class DemTiles {
     }
   }
 
-  void remove(TileId id) => _tiles.remove(id);
+  void remove(TileId id) {
+    if (_tiles.remove(id) != null) generation++;
+  }
 
   bool has(TileId id) => _tiles.containsKey(id);
 

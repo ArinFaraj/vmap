@@ -14,6 +14,8 @@ import 'gradient_ramps.dart';
 import 'layer_paint.dart';
 import 'layer_presence.dart';
 
+part 'terrain_drape.dart';
+
 const _bundle = 'packages/vmap_gpu/build/shaderbundles/vmap_gpu.shaderbundle';
 
 /// Draws vmap's fill and line layers and its buildings on the GPU: every
@@ -37,7 +39,9 @@ class GpuMap implements MapRenderer {
   }
 
   gpu.ShaderLibrary? _library;
-  gpu.RenderPipeline? _flat, _buildings, _stencil;
+  gpu.RenderPipeline? _flat, _buildings, _stencil, _ground;
+  gpu.UniformSlot? _groundFrame, _groundDrape;
+  late final _drape = _Drape(this);
   gpu.UniformSlot? _flatFrame, _flatSlots, _buildingFrame, _stencilFrame;
   gpu.UniformSlot? _flatFrag, _flatSprites, _flatRamp;
   SpriteSheet? _sheet;
@@ -203,6 +207,29 @@ class GpuMap implements MapRenderer {
       ),
     );
     _buildingFrame = buildingVertex.getUniformSlot('FrameInfo');
+    final groundVertex = library['TerrainVertex'];
+    final groundFragment = library['TerrainFragment'];
+    if (groundVertex != null && groundFragment != null) {
+      _ground = gpu.gpuContext.createRenderPipeline(
+        groundVertex,
+        groundFragment,
+        vertexLayout: const gpu.VertexLayout(
+          buffers: [
+            gpu.VertexBuffer(
+              strideInBytes: 12,
+              attributes: [
+                gpu.VertexAttribute(
+                  name: 'position',
+                  format: gpu.VertexFormat.float32x3,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      _groundFrame = groundVertex.getUniformSlot('FrameInfo');
+      _groundDrape = groundFragment.getUniformSlot('drape');
+    }
     final stencilVertex = library['StencilVertex'];
     final stencilFragment = library['StencilFragment'];
     if (stencilVertex != null && stencilFragment != null) {
@@ -402,6 +429,23 @@ class GpuMap implements MapRenderer {
     final shown = <(ui.Image, double)>[(frame.image, 1)];
     var overlays = 0;
     (gpu.Texture, ui.Image) next() => frame.overlay(overlays++, _target);
+    final ground = terrain;
+    final raised = ground != null && _ground != null;
+    if (raised) {
+      Timeline.timeSync(
+        'vmap.gpu.drape',
+        () => _drape.drawAtlas(
+          buffers,
+          view,
+          origin,
+          sheet,
+          context,
+          styleZoom,
+          fallback,
+          ideal,
+        ),
+      );
+    }
     var pass = passOn(frame.map);
     var below = <StyleRun>[];
     void apart(double opacity, void Function(_MapPass into) draw) {
@@ -422,6 +466,15 @@ class GpuMap implements MapRenderer {
     }
 
     Timeline.timeSync('vmap.gpu.draw', () {
+      if (raised) {
+        // The flat layers are in the drape; the ground and buildings stand
+        // in the frame with depth.
+        _drape.drawGround(pass._pass, ground, view, origin, clip);
+        for (final building in sheet.extrusions) {
+          if (_reveal.shows(building)) pass.drawBuildings(building);
+        }
+        return;
+      }
       for (final run in sheet.runs) {
         final building = sheet.extrusionAt(run);
         if (building != null) {
@@ -715,13 +768,18 @@ class GpuMap implements MapRenderer {
     double top,
     double fade, [
     double grow = 1,
+    double lift = 0,
   ]) {
     final out = _frameInfo;
     for (var r = 0; r < 4; r++) {
       out[r] = clip[r] * scale;
       out[4 + r] = clip[4 + r] * scale;
       out[8 + r] = clip[8 + r] * perMetre * grow;
-      out[12 + r] = clip[r] * left + clip[4 + r] * top + clip[12 + r];
+      out[12 + r] =
+          clip[r] * left +
+          clip[4 + r] * top +
+          clip[8 + r] * perMetre * lift +
+          clip[12 + r];
     }
     out[16] = fade;
     out[17] = scale;
@@ -824,6 +882,26 @@ class _MapPass {
     ..setStencilConfig(
       gpu.StencilConfig(compareFunction: gpu.CompareFunction.equal),
     );
+
+  /// Draws the paint layers of [runs] of the tiles [inSlot] picks, from
+  /// above and without clipping stand-ins: the drape laid over terrain.
+  void drape(Iterable<StyleRun> runs, bool Function(TileDraw d) inSlot) {
+    _pass
+      ..bindPipeline(_map._flat!)
+      ..setDepthWriteEnable(false)
+      ..setDepthCompareOperation(gpu.CompareFunction.always)
+      ..setCullMode(gpu.CullMode.none)
+      ..setColorBlendEnable(true)
+      ..setColorBlendEquation(GpuMap._over)
+      ..setStencilConfig(gpu.StencilConfig());
+    _map._bindSprites(_pass);
+    for (final run in runs) {
+      if (run.source < 0 || run.source >= _ideal.length) continue;
+      for (final d in _ideal[run.source]) {
+        if (inSlot(d)) _drawFlat(d, run);
+      }
+    }
+  }
 
   /// Draws the paint layers of [runs] into this pass.
   void drawRuns(Iterable<StyleRun> runs) {
@@ -956,7 +1034,17 @@ class _MapPass {
         if (b.extrusion.bucket != layer.bucket) continue;
         final (fade, grow) = map._reveal.motion(d.tile, layer, b);
         final scale = d.size / tileExtent;
-        map._times(_clip, scale, perMetre, d.left, d.top, fade, grow);
+        final ground = map.terrain;
+        map._times(
+          _clip,
+          scale,
+          perMetre,
+          d.left,
+          d.top,
+          fade,
+          grow,
+          ground == null ? 0 : map._drape.liftOf(d, ground),
+        );
         _pass
           ..bindVertexBuffer(
             gpu.BufferView(

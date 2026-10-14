@@ -23,6 +23,23 @@ const _oldText = bool.fromEnvironment('OLD_TEXT');
 const _gpu = bool.fromEnvironment('GPU');
 const _circles = bool.fromEnvironment('CIRCLES');
 const _lines = bool.fromEnvironment('LINES');
+const _terrain = bool.fromEnvironment('TERRAIN');
+
+/// The ground raised by the open AWS Terrain Tiles, Terrarium encoded.
+const _raisedGround = VmapOverlay(
+  sources: {
+    'dem': {
+      'type': 'raster-dem',
+      'tiles': [
+        'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png',
+      ],
+      'encoding': 'terrarium',
+      'tileSize': 256,
+      'maxzoom': 14,
+    },
+  },
+  terrain: {'source': 'dem', 'exaggeration': 1.5},
+);
 const _zoomTest = bool.fromEnvironment('ZOOMTEST');
 
 /// The zoom test as fast pinches in and out over places not yet loaded.
@@ -51,6 +68,13 @@ const _places = {
     zoom: 15,
     pitch: 45,
     bearing: 40,
+  ),
+  'Korek': MapCameraPosition(
+    latitude: 36.58,
+    longitude: 44.47,
+    zoom: 12.5,
+    pitch: 60,
+    bearing: 20,
   ),
   'Duhok': MapCameraPosition(
     latitude: 36.8669,
@@ -216,6 +240,8 @@ class _DemoState extends State<_Demo> {
         ? _stations
         : _lines
         ? _patternedLines
+        : _terrain
+        ? _raisedGround
         : null,
     glyphText: !_oldText,
     showLabels: _labels,
@@ -356,6 +382,7 @@ class _DemoState extends State<_Demo> {
       'Tilted Erbil',
       'Sulaymaniyah',
       'Duhok',
+      if (_terrain) 'Korek',
       'Erbil',
     ].indexed) {
       final frames = <FrameTiming>[];

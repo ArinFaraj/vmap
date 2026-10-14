@@ -89,7 +89,11 @@ class VmapStyle {
 /// build a new document to change what is shown, and keep the overlay itself
 /// between builds.
 class VmapOverlay {
-  const VmapOverlay({this.sources = const {}, this.layers = const []});
+  const VmapOverlay({
+    this.sources = const {},
+    this.layers = const [],
+    this.terrain,
+  });
 
   /// By name, for example `{'route': {'type': 'geojson', 'data': {...}}}`.
   final Map<String, Object?> sources;
@@ -98,9 +102,14 @@ class VmapOverlay {
   /// naming a style layer is drawn just under that layer instead.
   final List<Map<String, Object?>> layers;
 
+  /// The style's root `terrain`, raising the ground by the heights of one
+  /// of the style's or [sources]' `raster-dem` sources, for example
+  /// `{'source': 'dem', 'exaggeration': 1.5}`.
+  final Map<String, Object?>? terrain;
+
   /// [document] with these sources and layers added.
   Map<String, Object?> applyTo(Map<String, Object?> document) {
-    if (sources.isEmpty && layers.isEmpty) return document;
+    if (sources.isEmpty && layers.isEmpty && terrain == null) return document;
     final merged = [...(document['layers'] as List?) ?? const <Object?>[]];
     for (final layer in layers) {
       final before = layer['before'];
@@ -117,6 +126,7 @@ class VmapOverlay {
       ...document,
       'sources': {...(document['sources'] as Map?) ?? const {}, ...sources},
       'layers': merged,
+      if (terrain case final terrain?) 'terrain': terrain,
     };
   }
 }

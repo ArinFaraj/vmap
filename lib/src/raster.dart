@@ -752,6 +752,10 @@ final class TerrainTiles extends TileDrawing<TerrainLayer> {
 
   final DemTiles heights = DemTiles();
 
+  /// Tiles that came back holding no heights, kept so they are not asked
+  /// for again; their parents' heights stand in.
+  final Set<int> _empty = {};
+
   /// The deepest zoom the source has.
   int get maxZoom => _maxZoom;
 
@@ -779,12 +783,22 @@ final class TerrainTiles extends TileDrawing<TerrainLayer> {
   void want(Iterable<TileId> ids) {
     if (_template == null) return;
     _frame++;
-    for (final id in ids) {
+    // Each tile's ancestor four zooms up comes too: a handful of small
+    // tiles whose heights stand in wherever a deep one is missing.
+    final asked = <TileId>{
+      for (final id in ids) ...[
+        id,
+        if (id.z > 4) TileId(id.z - 4, id.x >> 4, id.y >> 4),
+      ],
+    };
+    for (final id in asked) {
       final up = math.max(0, id.z - _maxZoom);
       final z = id.z - up, x = id.x >> up, y = id.y >> up;
       final tile = _tiles[tileKey(z, x, y)] ??= _RasterTile();
       tile.usedFrame = _frame;
-      if (!heights.has(TileId(z, x, y))) _load(tile, z, x, y);
+      if (!heights.has(TileId(z, x, y)) && !_empty.contains(tileKey(z, x, y))) {
+        _load(tile, z, x, y);
+      }
     }
     if (_tiles.length > TileDrawing._maxTiles) {
       final stale = [
@@ -816,6 +830,12 @@ final class TerrainTiles extends TileDrawing<TerrainLayer> {
       () => DemTile.decode(bytes, dim, terrarium: terrarium),
     );
     if (_closed) return;
+    // Lower than anywhere on Earth: a tile of no data, all zero bytes in
+    // Terrarium, which some servers send where they have no heights.
+    if (dem.max < -12000) {
+      _empty.add(tileKey(z, x, y));
+      return;
+    }
     heights.add(TileId(z, x, y), dem);
     onLoaded();
   }
