@@ -10,6 +10,10 @@ class VmapStats {
 
   /// Sprite sheets and glyph ranges asked for and not yet answered.
   int resourcesLoading = 0;
+
+  /// The last frame asked for another: something was still fading,
+  /// growing, loading or waiting its turn to be drawn.
+  bool busy = false;
   int drawCalls = 0;
   int labelStates = 0;
   int labelSprites = 0;

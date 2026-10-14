@@ -885,7 +885,8 @@ class VmapEngine extends ChangeNotifier {
             'tiles=$ideal+$fallback cached=$cached',
       );
     timings.labels.take(_labels.work);
-    if (animating || waiting || _budget.stale) {
+    stats.busy = animating || waiting || _budget.stale;
+    if (stats.busy) {
       _requestFrame();
     } else {
       _lastPaintMicros = 0;
