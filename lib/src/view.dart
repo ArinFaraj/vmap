@@ -207,8 +207,9 @@ class MapView {
   /// every tile is at the view's zoom unless [variableZoom], which MapLibre
   /// allows with terrain or past 60 degrees of pitch: then each tile is at
   /// the zoom its distance from the camera asks for, by MapLibre's
-  /// `calculateTileZoom`. Tiles off the ground are left out. Columns past
-  /// the world's edge are not wrapped.
+  /// `calculateTileZoom`. Tiles off the ground are left out. Each copy of
+  /// the world in view has its own columns, counted on past the world's
+  /// edge, not wrapped.
   List<CoverTile> cover({
     required int maxZoom,
     int minZoom = 0,
@@ -245,7 +246,14 @@ class MapView {
       }
     }
 
-    visit(0, 0, 0);
+    // A tilted view's ground can reach far past the horizon; one copy of
+    // the world each side of the centre's is as far as tiles are drawn.
+    final xs = [for (final p in quad) p.x / worldSize];
+    final first = math.max(xs.reduce(math.min).floor(), -1);
+    final last = math.min(xs.reduce(math.max).floor(), 1);
+    for (var copy = first; copy <= last; copy++) {
+      visit(0, copy, 0);
+    }
     out.sort((a, b) => a.distance.compareTo(b.distance));
     return out;
   }
