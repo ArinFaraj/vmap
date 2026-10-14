@@ -223,3 +223,37 @@ Known gap, found in the same check: the GPU draws 3D buildings opaque
 and ignores `fill-extrusion-opacity`. Liberty asks for 0.8, so the canvas
 shows the ground faintly through buildings while the GPU does not.
 
+
+## 2026-10-14: MapLibre's render tests
+
+`tool/render_suite.sh <maplibre-gl-js checkout>` runs MapLibre GL JS's
+render tests (1,730 tests in 195 groups, `test/integration/render/tests`)
+through the engine on macOS and scores them as MapLibre's runner does:
+pixelmatch at the test's threshold (0.1285 by default) against each
+expected image, passing when the share of differing pixels is within the
+test's `allowed` (0.025% by default). The tests' style operations go
+through the engine's own edit API. A report with expected, ours and the
+diff side by side lands in the output directory.
+
+Baseline on the GPU renderer, before global state and glyph ranges:
+**396 of 1,730 (22.9%)**. The first run, on the canvas renderer before
+the colour space and function fixes, was 338; part of it ran with the Mac
+asleep, so it is not comparable.
+
+Where the failures are, largest first:
+
+| Area | Tests | Cause |
+| --- | --- | --- |
+| Text and symbols | about 300 | Labels came from our fonts, not the style's glyph ranges. Glyph ranges now load behind `styleGlyphs`; what is left is MapLibre's layout rules (anchors, offsets, max width, variable anchors, icon-text-fit, writing mode) and a second resample that softens vertical stems by a fraction of a pixel. |
+| Globe projection | about 130 | Not built. |
+| Terrain and sky | about 64 | Not built. |
+| Live style changes | 210 errored | Fixed in the harness: paint, layout, filter, zoom range, layers, sources, feature state, camera. `addImage` and custom layers remain. |
+| Whole layer opacity | about 34 | `line-layer-opacity` and `fill-layer-opacity` are not read. |
+| Global state | 44 | Fixed: `["global-state", name]` and `setGlobalStateProperty`. |
+| Near misses | many | Line edges within about 0.1% of MapLibre's pixels. |
+
+Fixed from the first runs: `interpolate-hcl`, `interpolate-lab` and
+`colorSpace` blend through CIELAB as MapLibre does; legacy functions of
+zoom and a property; an unset background is black; zero width lines draw
+nothing on the GPU; point labels of one name in one key cell were merged
+into one, now told apart by distance (two shops of one name both show).
