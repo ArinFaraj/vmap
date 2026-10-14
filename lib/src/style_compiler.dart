@@ -403,15 +403,6 @@ class StyleCompiler {
         textPadding: asNumber(layout['text-padding']),
         iconPadding: asNumber(layout['icon-padding']),
         textIgnored: layout['text-ignore-placement'] == true,
-        textOnGround: switch (layout['text-pitch-alignment']) {
-          'map' => true,
-          'viewport' => false,
-          _ => switch (layout['text-rotation-alignment']) {
-            'map' => true,
-            'viewport' => false,
-            _ => placement is String && placement.startsWith('line'),
-          },
-        },
         keepUpright: layout['text-keep-upright'] != false,
         iconIgnored: layout['icon-ignore-placement'] == true,
         haloBlur: compileExpr(paint['text-halo-blur'] ?? 0),
