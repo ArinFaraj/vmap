@@ -591,9 +591,34 @@ class TileBuilder {
             }
             continue;
           }
-          final turns = along && text.isEmpty && !symbol.build.iconUpright;
+          if (!along) {
+            // As MapLibre: a point placed on a line stands at the line's
+            // first vertex, when that lies in this tile.
+            final c = _sink.coords;
+            for (var r = 0; r < _sink.ringCount; r++) {
+              final at = _sink.ringStart(r) * 2;
+              final x = c[at], y = c[at + 1];
+              if (x < 0 || y < 0 || x >= tileExtent || y >= tileExtent) {
+                continue;
+              }
+              labels.add(
+                BuiltLabel(
+                  s,
+                  base + (symbol.build.sortKey == null ? 50 : order),
+                  text,
+                  x,
+                  y,
+                  null,
+                  icon: icon,
+                  angle: symbol.build.iconRotate * math.pi / 180,
+                )..props = carried,
+              );
+            }
+            continue;
+          }
+          final turns = text.isEmpty && !symbol.build.iconUpright;
           _repeat(
-            along ? spacing : double.infinity,
+            spacing,
             (x, y, angle) => labels.add(
               BuiltLabel(
                 s,
