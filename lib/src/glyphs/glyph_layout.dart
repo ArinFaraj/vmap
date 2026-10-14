@@ -295,12 +295,21 @@ ShapedText? layoutText(
   bool singleLine = false,
   List<String> stack = const [],
   bool mapLibreBreaks = false,
+  double Function(int index)? breakAdvance,
 }) {
   final order = fonts.orderFor(stack);
   if (mapLibreBreaks && !singleLine && maxWidth.isFinite) {
     return _layoutLines(
       fonts,
-      _mapLibreLines(fonts, text, weight, letterSpacing, maxWidth, order),
+      _mapLibreLines(
+        fonts,
+        text,
+        weight,
+        letterSpacing,
+        maxWidth,
+        order,
+        breakAdvance,
+      ),
       weight,
       letterSpacing,
       lineHeight,
@@ -345,8 +354,9 @@ ShapedText? layoutText(
 }
 
 /// [text] broken into lines as MapLibre breaks a label drawn from glyph
-/// ranges, the whole text weighed at once, its newlines among the breaks,
-/// each letter as wide as the fonts set it alone.
+/// ranges, the whole text weighed at once, its newlines among the breaks:
+/// each code [advance] ems wide with its letter spacing, or as wide as the
+/// fonts set it alone.
 List<List<int>> _mapLibreLines(
   GlyphFonts fonts,
   String text,
@@ -354,14 +364,16 @@ List<List<int>> _mapLibreLines(
   double letterSpacing,
   double maxWidth,
   List<int> order,
+  double Function(int index)? advance,
 ) {
   final codes = [for (final c in text.runes) c == 0x09 ? 0x20 : c];
   final widths = <int, double>{};
-  double advance(int c) => widths[c] ??=
-      (_shapeLine(fonts, [c], weight, 0, order)?.$2 ?? 0.5) + letterSpacing;
+  double alone(int i) => widths[codes[i]] ??=
+      (_shapeLine(fonts, [codes[i]], weight, 0, order)?.$2 ?? 0.5) +
+      letterSpacing;
   final breaks = mapLibreLineBreaks(
     codes,
-    advance,
+    advance ?? alone,
     maxWidth,
     spacing: letterSpacing,
   );

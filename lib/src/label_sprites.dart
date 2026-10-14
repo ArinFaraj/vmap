@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'glyphs/arabic_forms.dart';
 import 'glyphs/glyph_layout.dart';
 import 'glyphs/glyph_pages.dart';
+import 'glyphs/glyph_pbf.dart';
 import 'glyphs/glyph_ranges.dart';
 import 'glyphs/maplibre_shaping.dart';
 import 'platform.dart';
@@ -295,6 +296,24 @@ class LabelSprites {
       );
       if (laid != null) return _keep(key, _glyphSprite(laid, look, pass, true));
     }
+    // A label the fonts shape for a style with glyph ranges breaks where
+    // MapLibre breaks it, as wide as the ranges' joined letters.
+    double Function(int)? breakAdvance;
+    if (fonts != null && store != null && shaped == null) {
+      final face = store.face(look.fontStack);
+      final forms = joinedForms(look.text.runes.toList());
+      final joined = String.fromCharCodes([
+        for (final c in forms)
+          if (c >= 0) c,
+      ]);
+      if (!store.ready(face, joined)) return null;
+      breakAdvance = (i) {
+        final c = forms[i];
+        if (c < 0) return 0;
+        final g = store.glyph(face, c);
+        return (g == null ? 0 : g.advance / GlyphPbf.em) + look.letterSpacing;
+      };
+    }
     if (fonts != null) {
       final started = _clock.elapsedMicroseconds;
       shaped ??= layoutText(
@@ -314,6 +333,7 @@ class LabelSprites {
         singleLine: look.road,
         stack: look.fontStack,
         mapLibreBreaks: store != null,
+        breakAdvance: breakAdvance,
       );
       work.layoutMicros += _clock.elapsedMicroseconds - started;
       if (shaped != null) {

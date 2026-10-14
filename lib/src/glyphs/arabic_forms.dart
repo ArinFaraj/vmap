@@ -39,7 +39,15 @@ bool needsFontShaping(String text) {
 /// its neighbours call for, and lam and alef as one. A letter Unicode
 /// gives no form for, such as the Kurdish ڵ, ڕ, ێ and ە, keeps its own
 /// glyph, and its neighbours still join to it.
-List<int> joinArabic(List<int> codes) {
+List<int> joinArabic(List<int> codes) => [
+  for (final c in joinedForms(codes))
+    if (c >= 0) c,
+];
+
+/// [joinArabic] kept to one code per code of [codes]: the alef of a lam
+/// and alef drawn as one is -1, so a width or a break found per code of
+/// the joined text holds for [codes].
+List<int> joinedForms(List<int> codes) {
   int? next(int i) {
     for (var k = i + 1; k < codes.length; k++) {
       if (_typeOf(codes[k]) != _transparent) return k;
@@ -63,15 +71,10 @@ List<int> joinArabic(List<int> codes) {
     if (ligature != null) {
       final form = ligature[joinedBefore ? 1 : 0];
       out.add(form == 0 ? c : form);
-      if (form == 0) {
-        for (var k = i + 1; k <= after!; k++) {
-          out.add(codes[k]);
-        }
-      } else {
-        for (var k = i + 1; k < after!; k++) {
-          out.add(codes[k]);
-        }
+      for (var k = i + 1; k < after!; k++) {
+        out.add(codes[k]);
       }
+      out.add(form == 0 ? codes[after] : -1);
       joinedBefore = false;
       i = after;
       continue;

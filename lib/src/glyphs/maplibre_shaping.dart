@@ -33,8 +33,8 @@ ShapedText? layoutRanges(
   final codes = text.runes.toList();
   final breaks = mapLibreLineBreaks(
     codes,
-    (c) {
-      final g = glyphOf(c);
+    (i) {
+      final g = glyphOf(codes[i]);
       return g == null ? 0 : g.advance + spacing;
     },
     maxWidth * em,
@@ -117,17 +117,18 @@ class _Break {
 }
 
 /// Where [codes] break into lines no wider than about [maxWidth], in the
-/// units of [advance], each code's width with its letter [spacing]: each
-/// line's end, as `TaggedString.determineLineBreaks` finds them.
+/// units of [advance], the width of the code at an index with its letter
+/// [spacing]: each line's end, as `TaggedString.determineLineBreaks` finds
+/// them.
 List<int> mapLibreLineBreaks(
   List<int> codes,
-  double Function(int c) advance,
+  double Function(int index) advance,
   double maxWidth, {
   double spacing = 0,
 }) {
   var total = 0.0;
-  for (final c in codes) {
-    total += advance(c);
+  for (var i = 0; i < codes.length; i++) {
+    total += advance(i);
   }
   final newline = codes.contains(0x0a) || codes.contains(0x0d);
   if (spacing >= 0 && total > 0 && total <= maxWidth && !newline) {
@@ -178,7 +179,7 @@ List<int> mapLibreLineBreaks(
         candidates.add(evaluate(i, x, candidates, penalty, false));
       }
     }
-    if (!_whitespace(c)) x += advance(c);
+    if (!_whitespace(c)) x += advance(i);
   }
   final out = <int>[];
   for (

@@ -38,4 +38,10 @@ void main() {
     expect(needsFontShaping('سلام'), isFalse);
     expect(needsFontShaping('Erbil'), isFalse);
   });
+
+  test('joined forms keep one code per letter, a merged alef as -1', () {
+    final codes = 'سلام'.runes.toList();
+    expect(joinedForms(codes), [0xFEB3, 0xFEFC, -1, 0xFEE1]);
+    expect(joinedForms(codes), hasLength(codes.length));
+  });
 }
