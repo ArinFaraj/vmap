@@ -590,31 +590,42 @@ final class ShadedTiles extends TileDrawing<HillshadeLayer> {
     final width = tile.width;
     final height = tile.height;
     final context = EvalContext()..zoom = z.toDouble();
-    final shadow = Rgba.of(relief.shadow(context)) ?? Rgba.black;
-    final light = Rgba.of(relief.highlight(context)) ?? Rgba.black;
-    final strength = (asNumber(relief.exaggeration(context)) ?? 0.5).toDouble();
-    final terrarium = relief.terrarium;
-    final direction = relief.direction;
-    final n = math.pow(2, z);
-    final latitude = latitudeAt((y + 0.5) / n).abs() * math.pi / 180;
-    final metres = 40075016.686 * math.cos(latitude) / (n * width);
-    final colours = [
-      shadow.r, shadow.g, shadow.b, shadow.a, //
-      light.r, light.g, light.b, light.a,
-      if (Rgba.of(relief.accent?.call(context)) case final accent?) ...[
-        accent.r, accent.g, accent.b, accent.a, //
+    List<double> premultiplied(Object? colour, Rgba fallback) {
+      final c = Rgba.of(colour) ?? fallback;
+      return [c.r * c.a, c.g * c.a, c.b * c.a, c.a];
+    }
+
+    final count = [
+      relief.directions.length,
+      relief.altitudes.length,
+      relief.shadows.length,
+      relief.highlights.length,
+    ].reduce(math.max);
+    T at<T>(List<T> values, int i) => values[math.min(i, values.length - 1)];
+    final n = 1 << z;
+    final light = ShadeLight(
+      method: ShadeLight.methods.indexOf(relief.method).clamp(0, 4),
+      intensity: (asNumber(relief.exaggeration(context)) ?? 0.5).toDouble(),
+      zoom: z,
+      north: latitudeAt(y / n),
+      south: latitudeAt((y + 1) / n),
+      accent: premultiplied(relief.accent?.call(context), Rgba.black),
+      lights: [
+        for (var i = 0; i < count; i++) ...[
+          at(relief.directions, i) * math.pi / 180,
+          at(relief.altitudes, i) * math.pi / 180,
+          ...premultiplied(at(relief.shadows, i)(context), Rgba.black),
+          ...premultiplied(at(relief.highlights, i)(context), Rgba.black),
+        ],
       ],
-    ];
+    );
     final shaded = await runAside(
       () => shadeHeights(
         pixels,
         width,
         height,
-        terrarium,
-        metres,
-        strength,
-        direction,
-        colours,
+        relief.terrarium,
+        light,
         sides: sides,
       ),
     );
@@ -630,10 +641,8 @@ final class ShadedTiles extends TileDrawing<HillshadeLayer> {
   }
 }
 
-/// Shades a grid of heights lit from [direction] degrees: premultiplied RGBA
-/// that is the shadow colour on slopes facing away from the light and the
-/// highlight colour on slopes facing it, and clear on flat ground. A third
-/// colour in [colours] tints ground under the shading by how steep it is.
+/// Shades a grid of heights as [light] says, the way MapLibre's hillshade
+/// shaders do, into premultiplied RGBA that is clear on flat ground.
 ///
 /// The picture is one cell larger on every side than the grid. [sides] are
 /// the two rows or columns of the tiles above, below, left and right that
@@ -645,10 +654,7 @@ Uint8List shadeHeights(
   int width,
   int height,
   bool terrarium,
-  double metresPerPixel,
-  double strength,
-  double direction,
-  List<double> colours, {
+  ShadeLight light, {
   List<Uint8List?> sides = const [null, null, null, null],
 }) {
   double metres(Uint8List from, int at) {
@@ -696,11 +702,23 @@ Uint8List shadeHeights(
   }
   final outWidth = width + 2;
   final out = Uint8List(outWidth * (height + 2) * 4);
-  final azimuth = (360 - direction + 90) * math.pi / 180;
-  const zenith = math.pi / 4;
-  final flat = math.cos(zenith);
-  final steep = strength * 2 / (8 * metresPerPixel);
+  // MapLibre's prepare pass: the slope from a Sobel kernel, steepened below
+  // zoom 15 so hills still show far out, kept to 8 bits as its texture
+  // keeps it.
+  final z = light.zoom;
+  final factor = z < 2 ? 0.4 : (z < 4.5 ? 0.35 : 0.3);
+  final steepen = z < 15 ? (z - 15) * factor : 0.0;
+  final scale = width / math.pow(2, steepen + 3 + 25.2562 - z);
+  double stored(double v) =>
+      ((v / 8 + 128 / 255).clamp(0.0, 1.0) * 255).round() / 255 * 8 -
+      128 / 255 * 8;
+  final colour = Float64List(4);
   for (var y = 0; y < height + 2; y++) {
+    // Slopes are shallower on the ground than on the map away from the
+    // equator, by the cosine of the latitude.
+    final share = (y - 0.5) / height;
+    final latitude = light.north + (light.south - light.north) * share;
+    final cosine = math.cos(latitude * math.pi / 180);
     for (var x = 0; x < outWidth; x++) {
       final at0 = y * w + x;
       final a = heights[at0];
@@ -711,33 +729,150 @@ Uint8List shadeHeights(
       final g = heights[at0 + 2 * w];
       final h = heights[at0 + 2 * w + 1];
       final i = heights[at0 + 2 * w + 2];
-      final dx = ((c + 2 * f + i) - (a + 2 * d + g)) * steep;
-      final dy = ((g + 2 * h + i) - (a + 2 * b + c)) * steep;
-      final slope = math.atan(math.sqrt(dx * dx + dy * dy));
-      final aspect = math.atan2(dy, -dx);
-      final lit =
-          flat * math.cos(slope) +
-          math.sin(zenith) * math.sin(slope) * math.cos(azimuth - aspect);
-      final delta = lit - flat;
-      final o = delta < 0 ? 0 : 4;
-      final alpha =
-          (delta.abs() * (delta < 0 ? 1.4 : 2.4)).clamp(0.0, 1.0) *
-          colours[o + 3];
-      final under = colours.length < 12
-          ? 0.0
-          : (1 - math.cos(slope)) *
-                colours[11] *
-                (strength * 2).clamp(0.0, 1.0) *
-                (1 - alpha);
-      final at = (y * outWidth + x) * 4;
-      for (var k = 0; k < 3; k++) {
-        final tint = under == 0 ? 0.0 : colours[8 + k] * under;
-        out[at + k] = ((colours[o + k] * alpha + tint) * 255).round();
+      final dx = stored(((c + 2 * f + i) - (a + 2 * d + g)) * scale) / cosine;
+      final dy = stored(((g + 2 * h + i) - (a + 2 * b + c)) * scale) / cosine;
+      light.shade(dx, dy, colour);
+      final o = (y * outWidth + x) * 4;
+      for (var k = 0; k < 4; k++) {
+        out[o + k] = (colour[k].clamp(0.0, 1.0) * 255).round();
       }
-      out[at + 3] = ((alpha + under) * 255).round();
     }
   }
   return out;
+}
+
+/// What a hillshade layer lights its ground with, as MapLibre's hillshade
+/// shader takes it: plain values, so a tile is shaded off the UI isolate.
+class ShadeLight {
+  ShadeLight({
+    required this.method,
+    required this.intensity,
+    required this.zoom,
+    required this.north,
+    required this.south,
+    required this.accent,
+    required this.lights,
+  });
+
+  static const methods = [
+    'standard',
+    'combined',
+    'igor',
+    'multidirectional',
+    'basic',
+  ];
+
+  /// An index into [methods].
+  final int method;
+
+  /// `hillshade-exaggeration`.
+  final double intensity;
+
+  /// The tile's zoom, and the latitudes of its top and bottom edges.
+  final int zoom;
+  final double north, south;
+
+  /// The standard method's accent colour, premultiplied.
+  final List<double> accent;
+
+  /// Per light: its direction and altitude in radians, then its shadow and
+  /// highlight colours, premultiplied.
+  final List<double> lights;
+
+  int get _count => lights.length ~/ 10;
+
+  static double _mod(double x, double y) => x - y * (x / y).floorToDouble();
+
+  static double _aspect(double dx, double dy) =>
+      dx != 0 ? math.atan2(dy, -dx) : math.pi / 2 * (dy > 0 ? 1 : -1);
+
+  void _mixInto(List<double> out, int light, int at, double by) {
+    for (var k = 0; k < 4; k++) {
+      out[k] += lights[light * 10 + at + k] * by;
+    }
+  }
+
+  /// The colour, premultiplied, of ground sloping [dx] east and [dy] south
+  /// per unit, into [out].
+  void shade(double dx, double dy, List<double> out) {
+    out.fillRange(0, 4, 0);
+    switch (method) {
+      case 1:
+        final (sx, sy) = (dx * intensity * 2, dy * intensity * 2);
+        final cang = math
+            .acos(_lit(0, sx, sy).clamp(-1.0, 1.0))
+            .clamp(0.0, math.pi / 2);
+        final steep =
+            math.atan(math.sqrt(sx * sx + sy * sy)) * 4 / math.pi / math.pi;
+        _mixInto(out, 0, 2, cang * steep);
+        _mixInto(out, 0, 6, (math.pi / 2 - cang) * steep);
+      case 2:
+        final (sx, sy) = (dx * intensity * 2, dy * intensity * 2);
+        final aspect = _aspect(sx, sy);
+        final azimuth = lights[0] + math.pi;
+        final slope = math.atan(math.sqrt(sx * sx + sy * sy)) * 2 / math.pi;
+        final facing =
+            1 - (_mod((aspect + azimuth) / math.pi + 0.5, 2) - 1).abs();
+        _mixInto(out, 0, 2, slope * facing);
+        _mixInto(out, 0, 6, slope * (1 - facing));
+      case 3:
+        final (sx, sy) = (dx * intensity * 2, dy * intensity * 2);
+        for (var l = 0; l < _count; l++) {
+          final shade = _lit(l, sx, sy, multi: true).clamp(0.0, 1.0);
+          if (shade > 0.5) {
+            _mixInto(out, l, 6, (2 * shade - 1) / _count);
+          } else {
+            _mixInto(out, l, 2, (1 - 2 * shade) / _count);
+          }
+        }
+      case 4:
+        final (sx, sy) = (dx * intensity * 2, dy * intensity * 2);
+        final shade = _lit(0, sx, sy).clamp(0.0, 1.0);
+        if (shade > 0.5) {
+          _mixInto(out, 0, 6, 2 * shade - 1);
+        } else {
+          _mixInto(out, 0, 2, 1 - 2 * shade);
+        }
+      default:
+        _standard(dx, dy, out);
+    }
+  }
+
+  /// How squarely light [l] falls on ground sloping [sx], [sy].
+  double _lit(int l, double sx, double sy, {bool multi = false}) {
+    final azimuth = lights[l * 10] + (multi ? 0 : math.pi);
+    final altitude = lights[l * 10 + 1];
+    final cosAz = multi ? -math.cos(azimuth) : math.cos(azimuth);
+    final sinAz = multi ? -math.sin(azimuth) : math.sin(azimuth);
+    final cosAlt = math.cos(altitude), sinAlt = math.sin(altitude);
+    return (sinAlt - (sy * cosAz * cosAlt - sx * sinAz * cosAlt)) /
+        math.sqrt(1 + sx * sx + sy * sy);
+  }
+
+  /// MapLibre's own method: an accent by steepness under a shadow or
+  /// highlight by which way the ground faces.
+  void _standard(double dx, double dy, List<double> out) {
+    final azimuth = lights[0] + math.pi;
+    final slope = math.atan(0.625 * math.sqrt(dx * dx + dy * dy));
+    final aspect = _aspect(dx, dy);
+    final base = 1.875 - intensity * 1.75;
+    const most = math.pi / 2;
+    final scaled = intensity != 0.5
+        ? (math.pow(base, slope) - 1) / (math.pow(base, most) - 1) * most
+        : slope;
+    final strength = (intensity * 2).clamp(0.0, 1.0);
+    final accentShare = (1 - math.cos(scaled)) * strength;
+    final facing = (_mod((aspect + azimuth) / math.pi + 0.5, 2) - 1).abs();
+    final shadeShare = math.sin(scaled) * strength;
+    final shadeAlpha =
+        (lights[5] + (lights[9] - lights[5]) * facing) * shadeShare;
+    for (var k = 0; k < 4; k++) {
+      final shade =
+          (lights[2 + k] + (lights[6 + k] - lights[2 + k]) * facing) *
+          shadeShare;
+      out[k] = accent[k] * accentShare * (1 - shadeAlpha) + shade;
+    }
+  }
 }
 
 /// The heights of a `terrain` source: the tiles a view asks for, decoded

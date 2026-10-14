@@ -5,29 +5,43 @@ import 'dart:ui' as ui;
 import 'expr.dart';
 import 'style_model.dart' show TileCover;
 
-/// How a hillshade layer turns heights into shading.
+/// How a hillshade layer turns heights into shading, as MapLibre's
+/// `hillshade-*` paint properties say. Several lights, each with its
+/// direction, altitude, shadow and highlight, are used by the
+/// `multidirectional` method; the others use the first.
 class ReliefPaint {
   ReliefPaint({
     required this.terrarium,
     required this.exaggeration,
-    required this.shadow,
-    required this.highlight,
-    required this.direction,
+    required Expr shadow,
+    required Expr highlight,
+    required double direction,
     this.accent,
-  });
+    this.method = 'standard',
+    List<double>? directions,
+    List<double>? altitudes,
+    List<Expr>? shadows,
+    List<Expr>? highlights,
+  }) : directions = directions ?? [direction],
+       altitudes = altitudes ?? const [45],
+       shadows = shadows ?? [shadow],
+       highlights = highlights ?? [highlight];
 
   /// The heights are in the Terrarium encoding instead of Mapbox's.
   final bool terrarium;
   final Expr exaggeration;
-  final Expr shadow;
-  final Expr highlight;
 
-  /// The colour steep ground is tinted whichever way it faces. Null when
-  /// the style names none.
+  /// The colour steep ground is tinted whichever way it faces, by the
+  /// standard method. Black when the style names none.
   final Expr? accent;
 
-  /// Where the light comes from, in degrees clockwise from north.
-  final double direction;
+  /// `standard`, `basic`, `combined`, `igor` or `multidirectional`.
+  final String method;
+
+  /// Where each light comes from, in degrees clockwise from north, and how
+  /// high above the horizon.
+  final List<double> directions, altitudes;
+  final List<Expr> shadows, highlights;
 }
 
 /// How a raster layer changes the colours of its pictures: `raster-hue-rotate`,

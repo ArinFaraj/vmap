@@ -303,12 +303,15 @@ class StyleCompiler {
         relief: ReliefPaint(
           terrarium: from['encoding'] == 'terrarium',
           exaggeration: compileExpr(paint['hillshade-exaggeration'] ?? 0.5),
-          shadow: compileExpr(paint['hillshade-shadow-color'] ?? '#000000'),
-          highlight: compileExpr(
-            paint['hillshade-highlight-color'] ?? '#ffffff',
-          ),
+          shadow: compileExpr('#000000'),
+          highlight: compileExpr('#ffffff'),
+          direction: 335,
+          shadows: _colours(paint['hillshade-shadow-color'], '#000000'),
+          highlights: _colours(paint['hillshade-highlight-color'], '#ffffff'),
           accent: _maybe(paint['hillshade-accent-color']),
-          direction: asNumber(paint['hillshade-illumination-direction']) ?? 335,
+          method: '${paint['hillshade-method'] ?? 'standard'}',
+          directions: _numbers(paint['hillshade-illumination-direction'], 335),
+          altitudes: _numbers(paint['hillshade-illumination-altitude'], 45),
         ),
       ),
       _ => null,
@@ -846,6 +849,28 @@ class StyleCompiler {
     }
     if (list is! List || list.length != 2) return (0, 0);
     return (asNumber(list[0]) ?? 0, asNumber(list[1]) ?? 0);
+  }
+
+  /// A colour, or the list of colours a property taking one per light
+  /// may give; [fallback] when there is none.
+  static List<Expr> _colours(Object? json, String fallback) {
+    if (json is List &&
+        json.isNotEmpty &&
+        json.every((v) => v is String && Rgba.of(v) != null)) {
+      return [for (final v in json) compileExpr(v)];
+    }
+    return [compileExpr(json ?? fallback)];
+  }
+
+  /// A number, or the list of numbers a property taking one per light may
+  /// give; [fallback] when there is none.
+  static List<double> _numbers(Object? json, double fallback) {
+    final values = json is List ? json : [json];
+    final out = [
+      for (final v in values)
+        if (asNumber(v) case final n?) n.toDouble(),
+    ];
+    return out.isEmpty ? [fallback] : out;
   }
 
   static Float64List? _dash(Object? json) {
