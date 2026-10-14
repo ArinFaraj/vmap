@@ -29,3 +29,7 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 /build/
 /coverage/
+
+# Style comparison tool
+/tool/style_compare/node_modules/
+/tool/style_compare/package-lock.json

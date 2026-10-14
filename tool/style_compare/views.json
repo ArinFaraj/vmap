@@ -1,0 +1,20 @@
+{
+  "maplibre": "6.14.0",
+  "styles": {
+    "liberty": "https://tiles.openfreemap.org/styles/liberty"
+  },
+  "size": 512,
+  "views": [
+    {"name": "erbil12", "style": "liberty", "lon": 44.0092, "lat": 36.1912, "zoom": 12},
+    {"name": "erbil14", "style": "liberty", "lon": 44.0092, "lat": 36.1912, "zoom": 14},
+    {"name": "erbil16", "style": "liberty", "lon": 44.0092, "lat": 36.1912, "zoom": 16},
+    {"name": "erbil15-tilted", "style": "liberty", "lon": 44.0092, "lat": 36.1912, "zoom": 15, "bearing": 30, "pitch": 50},
+    {"name": "duhok13", "style": "liberty", "lon": 42.948, "lat": 36.867, "zoom": 13},
+    {"name": "duhok15-tilted", "style": "liberty", "lon": 42.9925, "lat": 36.8615, "zoom": 15, "bearing": -40, "pitch": 55},
+    {"name": "sulaymaniyah14", "style": "liberty", "lon": 45.4377, "lat": 35.5613, "zoom": 14},
+    {"name": "sulaymaniyah16", "style": "liberty", "lon": 45.4329, "lat": 35.5592, "zoom": 16},
+    {"name": "korek12", "style": "liberty", "lon": 44.47, "lat": 36.58, "zoom": 12},
+    {"name": "region8", "style": "liberty", "lon": 44.2, "lat": 36.3, "zoom": 8},
+    {"name": "region6", "style": "liberty", "lon": 44.0, "lat": 36.0, "zoom": 6}
+  ]
+}
