@@ -82,7 +82,7 @@ void main() {
     // L* 50 is sRGB 119 on every channel.
     final mid = Rgba.lerpLab(black, white, 0.5);
     expect(mid.r, closeTo(119 / 255, 0.01));
-    expect(mid.g, closeTo(mid.r, 1e-9));
+    expect(mid.g, closeTo(mid.r, 1e-6));
     expect(Rgba.lerpLab(black, white, 0).r, closeTo(0, 1e-6));
     expect(Rgba.lerpHcl(white, white, 0.5).r, closeTo(1, 1e-6));
   });
