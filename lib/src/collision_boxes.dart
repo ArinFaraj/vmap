@@ -4,7 +4,8 @@ import 'dart:typed_data';
 /// The screen boxes placed labels and markers take, which the labels placed
 /// after them keep clear of.
 class CollisionBoxes {
-  static const double defaultPad = 3;
+  /// The style spec's `text-padding` and `icon-padding` default.
+  static const double defaultPad = 2;
 
   Float32List _boxes = Float32List(1024);
   int _count = 0;

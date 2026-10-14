@@ -335,6 +335,11 @@ Map<String, Object?> builtInStyle(
         'text-max-width': maxWidth,
         'text-letter-spacing': spacing / size,
         'symbol-placement': line ? 'line' : 'point',
+        'symbol-sort-key': [
+          'coalesce',
+          ['get', 'rank'],
+          50,
+        ],
         if (uppercase) 'text-transform': 'uppercase',
         if (icon != null) ...{
           'icon-image': icon,

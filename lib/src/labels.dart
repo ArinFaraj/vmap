@@ -575,7 +575,11 @@ class LabelEngine {
           ..seenPass = _pass
           ..perspective = _view.ratio
           ..candidate = c
-          ..sortKey = c.rank - (st.placed ? 45 : 0);
+          // Ties keep the order the tiles list them in, as MapLibre
+          // places features.
+          ..sortKey =
+              (c.rank - (st.placed ? 45 : 0)) * 65536 +
+              math.min(states.length, 65535);
         states.add(st);
       }
     }

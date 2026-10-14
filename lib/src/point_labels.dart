@@ -301,9 +301,15 @@ class PointLabels {
   ) {
     final radial = symbol.radialOffset;
     final away = pinReach ?? (radial == null ? null : radial * fontSize);
-    final first = st.side < sides.length ? st.side : 0;
-    for (var k = 0; k < sides.length; k++) {
-      final at = (first + k) % sides.length;
+    // As MapLibre: a text set above or below its point sits 7/24 of an em
+    // nearer it, the room glyphs leave under their baseline.
+    final baseline = pinReach == null ? 7 / 24 * fontSize : 0.0;
+    // The side taken last is tried first, so a label stays put while it
+    // fits there; then the sides in the layer's order.
+    final previous = st.opacity > 0 && st.side < sides.length ? st.side : -1;
+    for (var k = previous < 0 ? 0 : -1; k < sides.length; k++) {
+      final at = k < 0 ? previous : k;
+      if (k >= 0 && at == previous) continue;
       final (ax, ay) = anchorSides(sides[at]);
       final double fx, fy;
       if (away != null) {
@@ -318,11 +324,13 @@ class PointLabels {
             moved.$2 +
             ay * ((symbol.offsetY * fontSize).abs() + spot.textH / 2);
       }
-      if (!symbol.textOverlaps && _textHits(spot, fx, fy)) continue;
+      if (!symbol.textOverlaps && _textHits(spot, fx, fy - ay * baseline)) {
+        continue;
+      }
       st
         ..side = at
         ..dx = fx
-        ..dy = fy;
+        ..dy = fy - ay * baseline;
       return true;
     }
     return false;

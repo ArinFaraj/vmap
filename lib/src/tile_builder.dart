@@ -847,15 +847,13 @@ class TileBuilder {
     flush();
   }
 
-  /// Where a label stands among its layer's own, lowest first.
+  /// Where a label stands among its layer's own, lowest first: by
+  /// `symbol-sort-key`, and without one in the order of the features.
   static int _order(SymbolLayer symbol, EvalContext context) {
     final key = symbol.build.sortKey;
-    if (key != null) {
-      final value = key(context);
-      return value is num ? value.round().clamp(0, 4095) : 50;
-    }
-    final rank = context.props['rank'];
-    return rank is int ? rank.clamp(0, 99) : 50;
+    if (key == null) return 50;
+    final value = key(context);
+    return value is num ? value.round().clamp(0, 4095) : 50;
   }
 
   BuiltLabel? _pointLabel(int layer, int priority, String text, String icon) {
