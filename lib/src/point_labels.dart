@@ -28,7 +28,6 @@ class PointLabels {
   static const double _pinGap = 3;
 
   /// Clear space around the text an icon is stretched behind.
-  static const double _fitPad = 3;
 
   /// Areas labels keep clear of: anchor as fractions of the world, size in
   /// screen pixels, then how far the area's centre sits from the anchor.
@@ -213,6 +212,7 @@ class PointLabels {
       ..iconDy = 0;
     if (icon == null || symbol == null) return icon;
     final by = asNumber(symbol.iconSize(context)) ?? 1;
+    st.iconScale = by;
     if (!symbol.textFit) {
       final (ax, ay) = anchorSides(symbol.iconAnchor);
       st
@@ -224,11 +224,27 @@ class PointLabels {
       symbol.iconTranslateOnScreen,
       context,
     );
+    if (symbol.textFit) {
+      // As MapLibre's fitIconToText: around the text box, padded, moved by
+      // icon-offset, the whole scaled by icon-size about the anchor. Here
+      // iconDx and iconDy are the box's middle from the text's middle.
+      final [top, right, bottom, left] = symbol.iconTextFitPadding;
+      final fit = symbol.iconTextFit;
+      final wide = fit == 'width' || fit == 'both';
+      final tall = fit == 'height' || fit == 'both';
+      st
+        ..iconW = (wide ? spot.textW + left + right : icon.width) * by
+        ..iconH = (tall ? spot.textH + top + bottom : icon.height) * by
+        ..iconDx = (symbol.iconOffsetX + (wide ? (right - left) / 2 : 0)) * by
+        ..iconDy = (symbol.iconOffsetY + (tall ? (bottom - top) / 2 : 0)) * by;
+    } else {
+      st
+        ..iconW = icon.width * by
+        ..iconH = icon.height * by;
+    }
     st
       ..iconDx += ix
       ..iconDy += iy
-      ..iconW = symbol.textFit ? spot.textW + _fitPad * 2 : icon.width * by
-      ..iconH = symbol.textFit ? spot.textH + _fitPad * 2 : icon.height * by
       ..iconOpacity = (asNumber(symbol.iconOpacity(context)) ?? 1).clamp(
         0.0,
         1.0,

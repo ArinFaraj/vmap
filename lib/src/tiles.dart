@@ -602,3 +602,31 @@ class TileSource {
     tileSpan: span,
   );
 }
+
+/// How far above the camera's zoom tiles are picked. Zooming out past a
+/// tile zoom keeps the finer tiles for [holdMs], so layers they alone carry
+/// fade out on them instead of vanishing with them; a fall of a whole
+/// level or more lets go at once.
+class ZoomOutHold {
+  static const holdMs = 300;
+
+  int _level = 0;
+  int _until = -1;
+
+  /// The zoom to add when picking tiles for a view at [zoom], at [nowMs];
+  /// 0 when not holding, or when there is no view.
+  double at(double? zoom, int nowMs) {
+    if (zoom == null) return 0;
+    final level = zoom.floor();
+    if (level >= _level || zoom <= _level - 1) return _release(level);
+    if (_until < 0) _until = nowMs + holdMs;
+    if (nowMs >= _until) return _release(level);
+    return _level - zoom + 1e-6;
+  }
+
+  double _release(int level) {
+    _level = level;
+    _until = -1;
+    return 0;
+  }
+}

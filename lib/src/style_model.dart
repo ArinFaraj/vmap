@@ -484,6 +484,8 @@ class SymbolLayer {
     required this.iconOverlaps,
     required this.textOverlaps,
     required this.textFit,
+    this.iconTextFit = 'none',
+    this.iconTextFitPadding = const [0, 0, 0, 0],
     this.anchors = const [],
     this.radialOffset = 0,
     this.iconAnchor = 'center',
@@ -601,6 +603,12 @@ class SymbolLayer {
 
   /// The icon is stretched to sit behind the text.
   final bool textFit;
+
+  /// `icon-text-fit`: none, width, height or both.
+  final String iconTextFit;
+
+  /// `icon-text-fit-padding`: top, right, bottom and left, in pixels.
+  final List<double> iconTextFitPadding;
 }
 
 /// Where features come from: vector tiles, or GeoJSON cut into tiles here.

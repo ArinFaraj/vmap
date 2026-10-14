@@ -159,11 +159,11 @@ class VmapStyleEdit {
   /// Sets the style's global state [name], which expressions read with
   /// `['global-state', name]`, over the default the style's `state` gives.
   const VmapStyleEdit.state(String this.name, this.value)
-    : layer = '',
+    : layer = null,
       _part = 'state';
 
-  /// The `id` of the style layer changed, empty for a state edit.
-  final String layer;
+  /// The `id` of the style layer changed; null for a state edit.
+  final String? layer;
   final String? name;
   final Object? value;
   final String _part;
@@ -214,27 +214,43 @@ class VmapStyleEdit {
     Map<String, Object?> document,
     Map<String, Object?> state,
   ) {
-    final layers = document['layers'];
-    if (layers is! List || !jsonEncode(layers).contains('"global-state"')) {
-      return document;
+    Object? resolved(String name) =>
+        switch ((state[name] as Map?)?['default']) {
+          final List<Object?> l => ['literal', l],
+          final Map<Object?, Object?> m => ['literal', m],
+          final other => other,
+        };
+
+    // Returns [v] itself when nothing in it changes, so a style without
+    // global state comes back untouched.
+    Object? walk(Object? v) {
+      switch (v) {
+        case ['global-state', final String name]:
+          return resolved(name);
+        case List<Object?> list:
+          List<Object?>? out;
+          for (var i = 0; i < list.length; i++) {
+            final w = walk(list[i]);
+            if (!identical(w, list[i])) (out ??= [...list])[i] = w;
+          }
+          return out ?? list;
+        case Map<Object?, Object?> map:
+          Map<Object?, Object?>? out;
+          for (final e in map.entries) {
+            final w = walk(e.value);
+            if (!identical(w, e.value)) (out ??= {...map})[e.key] = w;
+          }
+          return out ?? map;
+        default:
+          return v;
+      }
     }
-    Object? walk(Object? v) => switch (v) {
-      ['global-state', final String name] => switch ((state[name]
-          as Map?)?['default']) {
-        final List<Object?> l => ['literal', l],
-        final Map<Object?, Object?> m => ['literal', m],
-        final other => other,
-      },
-      List<Object?> l => [for (final x in l) walk(x)],
-      Map<Object?, Object?> m => {
-        for (final e in m.entries) e.key: walk(e.value),
-      },
-      _ => v,
-    };
-    return {
-      ...document,
-      'layers': [for (final l in layers) walk(l)],
-    };
+
+    final layers = document['layers'];
+    final walked = walk(layers);
+    return identical(walked, layers)
+        ? document
+        : {...document, 'layers': walked};
   }
 
   static void _set(Map<Object?, Object?> map, String key, Object? value) {

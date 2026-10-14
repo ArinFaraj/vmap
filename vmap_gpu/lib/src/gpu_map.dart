@@ -10,6 +10,7 @@ import 'package:vmap/renderer.dart';
 
 import 'building_reveal.dart';
 import 'gpu_buffers.dart';
+import 'gradient_ramps.dart';
 import 'layer_paint.dart';
 import 'layer_presence.dart';
 
@@ -79,6 +80,7 @@ class GpuMap implements MapRenderer {
 
   /// One layer's paint this frame, in screen pixels, before a tile's scale.
   final Map<int, LayerPaint> _layerPaint = {};
+  final _ramps = GradientRamps();
 
   /// Premultiplied source over, which also leaves the colour untouched
   /// where the stencil pass writes its transparent squares.
@@ -371,7 +373,7 @@ class GpuMap implements MapRenderer {
     _reveal.begin(sheet, styleZoom);
     _presence.begin(sheet, styleZoom, ideal);
     _layerPaint.clear();
-    _makeRamps(sheet, context);
+    _ramps.update(sheet, context);
     final pass = _MapPass(
       this,
       _beginPass(commands, target),
@@ -536,7 +538,7 @@ class GpuMap implements MapRenderer {
       if (image != null) _loadSprites(image);
     }
     final texture = _sheetTexture ?? _blank;
-    final ramp = _rampTexture ?? _blank;
+    final ramp = _ramps.texture ?? _blank;
     _fragInfo
       ..[0] = texture.width.toDouble()
       ..[1] = texture.height.toDouble()
@@ -550,54 +552,6 @@ class GpuMap implements MapRenderer {
       ..bindUniform(_flatFrag!, _host!.emplace(_fragBytes))
       ..bindTexture(_flatSprites!, texture, sampler: sampler)
       ..bindTexture(_flatRamp!, ramp, sampler: sampler);
-  }
-
-  /// Every gradient line layer's colours from the start of a line to its
-  /// end, a row of [_rampWidth] each, made again when the style changes.
-  StyleSheet? _rampSheet;
-  gpu.Texture? _rampTexture;
-  final Map<int, double> _rampRow = {};
-  static const _rampWidth = 256;
-
-  void _makeRamps(StyleSheet sheet, EvalContext context) {
-    if (identical(sheet, _rampSheet)) return;
-    _rampSheet = sheet;
-    _rampRow.clear();
-    _rampTexture = null;
-    final ramps = [
-      for (var i = 0; i < sheet.layers.length; i++)
-        if (sheet.layers[i] case LineLayer(:final gradient?)) (i, gradient),
-    ];
-    if (ramps.isEmpty) return;
-    final bytes = Uint8List(_rampWidth * ramps.length * 4);
-    int byte(double v) => (v.clamp(0.0, 1.0) * 255).round();
-    for (var row = 0; row < ramps.length; row++) {
-      final (layerIndex, gradient) = ramps[row];
-      _rampRow[layerIndex] = (row + 0.5) / ramps.length;
-      for (var x = 0; x < _rampWidth; x++) {
-        context.progress = x / (_rampWidth - 1);
-        final c = Rgba.of(gradient(context));
-        if (c == null) continue;
-        final o = (row * _rampWidth + x) * 4;
-        bytes
-          ..[o] = byte(c.r * c.a)
-          ..[o + 1] = byte(c.g * c.a)
-          ..[o + 2] = byte(c.b * c.a)
-          ..[o + 3] = byte(c.a);
-      }
-    }
-    context.progress = 0;
-    try {
-      _rampTexture = gpu.gpuContext.createTexture(
-        gpu.StorageMode.hostVisible,
-        _rampWidth,
-        ramps.length,
-        format: gpu.PixelFormat.r8g8b8a8UNormInt,
-      )..overwrite(ByteData.sublistView(bytes));
-    } catch (e) {
-      _rampRow.clear();
-      debugPrint('vmap_gpu: the line gradients are not on the GPU: $e');
-    }
   }
 
   /// A layer's paint for tile [d]: faded in and out as the zoom enters and
@@ -666,83 +620,14 @@ class GpuMap implements MapRenderer {
               data,
             ))
           : _paintOf(sheet, layerIndex, context, styleZoom, props, d, data);
-      final o = (i - from) * 8;
-      if (paint.circle) {
-        out[o] = paint.r;
-        out[o + 1] = paint.g;
-        out[o + 2] = paint.b;
-        out[o + 3] = paint.a;
-        out[o + 4] = paint.halfWidth / scale;
-        out[o + 5] = paint.offset / scale;
-        out[o + 6] = paint.dashOn;
-        out[o + 7] = paint.dashPeriod;
-        continue;
-      }
-      final layer = sheet.layers[layerIndex];
-      if (layer is LineLayer && layer.gradient != null) {
-        final row = _rampRow[layerIndex];
-        out[o] = row ?? 0;
-        out[o + 1] = 1 / GpuStream.progressSpan;
-        out[o + 2] = 0;
-        out[o + 3] = row == null ? 0 : paint.a;
-        out[o + 4] = paint.halfWidth / scale;
-        out[o + 5] = paint.offset / scale;
-        out[o + 6] = 0;
-        out[o + 7] = 0;
-        continue;
-      }
-      if (layer is LineLayer && layer.pattern != null) {
-        // The pattern is stretched across the line's width and repeats
-        // along it, as the canvas draws it.
-        final name = paint.pattern;
-        final entry = name == null ? null : _sheet?.entries[name];
-        final source = entry?.source;
-        final length = source == null || source.height <= 0
-            ? 0.0
-            : source.width / source.height * paint.halfWidth * 2 / scale;
-        out[o] = paint.halfWidth / scale;
-        out[o + 1] = paint.offset / scale;
-        out[o + 2] = length > 0 ? length : 1;
-        out[o + 3] = length > 0 ? paint.a : 0;
-        out[o + 4] = source?.left ?? 0;
-        out[o + 5] = source?.top ?? 0;
-        out[o + 6] = source?.width ?? 1;
-        out[o + 7] = source?.height ?? 1;
-        continue;
-      }
-      final pattern = paint.pattern;
-      if (pattern != null) {
-        final entry = _sheet?.entries[pattern];
-        out[o] = entry?.pixelRatio ?? 1;
-        out[o + 1] = 0;
-        out[o + 2] = 0;
-        out[o + 3] = entry == null ? 0 : paint.a;
-        out[o + 4] = entry?.source.left ?? 0;
-        out[o + 5] = entry?.source.top ?? 0;
-        out[o + 6] = entry?.source.width ?? 1;
-        out[o + 7] = entry?.source.height ?? 1;
-        continue;
-      }
-      out[o] = paint.r;
-      out[o + 1] = paint.g;
-      out[o + 2] = paint.b;
-      out[o + 3] = paint.a;
-      if (layer is! LineLayer) {
-        // A fill: how far it is moved, in tile units.
-        out[o + 4] = paint.translateX / scale;
-        out[o + 5] = paint.translateY / scale;
-        out[o + 6] = 0;
-        out[o + 7] = 0;
-        continue;
-      }
-      out[o + 4] = paint.halfWidth / scale;
-      out[o + 5] = paint.offset / scale;
-      // A dash period of zero means no dashes, and then a line drawn as two
-      // gives its gap's share of the half width as a negative dash length.
-      out[o + 6] = paint.dashPeriod > 0
-          ? paint.dashOn / scale
-          : -paint.gapShare;
-      out[o + 7] = paint.dashPeriod / scale;
+      paint.writeSlot(
+        out,
+        (i - from) * 8,
+        GpuStream.kindOf(sheet.layers[layerIndex]),
+        scale,
+        _sheet,
+        _ramps.rowOf(layerIndex),
+      );
     }
   }
 

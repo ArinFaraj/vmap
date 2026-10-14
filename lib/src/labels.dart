@@ -13,6 +13,8 @@ import 'occlusion.dart';
 import 'glyphs/glyph_layout.dart';
 import 'glyphs/glyph_pages.dart';
 import 'glyphs/glyph_pbf.dart';
+import 'glyphs/glyph_ranges.dart';
+import 'label_rules.dart';
 import 'label_view.dart';
 import 'view.dart';
 import 'pins.dart';
@@ -39,7 +41,7 @@ class LabelEngine {
   SpriteSheet? get sheet => _points.sheet;
   set sheet(SpriteSheet? value) {
     _points.sheet = value;
-    for (final st in _states.values) {
+    for (final st in _allStates) {
       st.icon = null;
     }
     _placeAgain = true;
@@ -138,7 +140,11 @@ class LabelEngine {
 
   static const int _heavyPlaceMicros = 800;
 
-  final Map<String, LabelState> _states = {};
+  /// Label states by key; a key holds more than one when places of one
+  /// name share a cell, told apart by distance.
+  final Map<String, List<LabelState>> _states = {};
+
+  Iterable<LabelState> get _allStates => _states.values.expand((s) => s);
   final VmapLabelWork work = VmapLabelWork();
   late final LabelSprites _sprites = LabelSprites(work);
   final List<LabelState> _frameStates = [];
@@ -187,10 +193,10 @@ class LabelEngine {
   /// it is drawn again, and sharpened once the zoom rests.
   bool _zooming = false;
   int lastRasterMicros = 0;
-  int get stateCount => _states.length;
+  int get stateCount => _allStates.length;
   int get spriteCount => _sprites.length;
 
-  int get shown => _states.values.where((s) => s.opacity > 0).length;
+  int get shown => _allStates.where((s) => s.opacity > 0).length;
 
   /// The keys of the labels showing.
   @visibleForTesting
@@ -206,15 +212,16 @@ class LabelEngine {
   /// Null when another tile's copy of the same label came first this pass.
   LabelState? _stateFor(LabelCandidate c, double world) {
     const near = _sameLabelPx * _sameLabelPx;
-    for (var n = 0; ; n++) {
-      final key = n == 0 ? c.key : '${c.key}#$n';
-      final st = _states[key];
-      if (st == null) return _states[key] = LabelState(c);
+    final same = _states[c.key] ??= [];
+    for (final st in same) {
       final dx = (st.candidate.worldX - c.worldX) * world;
       final dy = (st.candidate.worldY - c.worldY) * world;
       if (dx * dx + dy * dy > near) continue;
       return st.seenPass == _pass ? null : st;
     }
+    final made = LabelState(c);
+    same.add(made);
+    return made;
   }
 
   /// How far apart in pixels two labels of one text in one cell may be and
@@ -236,16 +243,20 @@ class LabelEngine {
 
   /// Glyph ranges from the style's `glyphs` URL that labels are drawn with
   /// instead of the font files, or null.
-  set pbf(PbfStore? value) {
-    _sprites.pbf?.close();
-    _sprites.pbf = value;
-    _painter.exact = value != null;
+  set ranges(GlyphRanges? value) {
+    _sprites.ranges?.close();
+    _sprites.ranges = value;
+    _painter.rules = _rules = value == null
+        ? LabelRules.vmap
+        : LabelRules.mapLibre;
     clear();
   }
 
-  int get rangesPending => _sprites.pbf?.pending ?? 0;
+  LabelRules _rules = LabelRules.vmap;
 
-  void pbfArrived(int face, List<PbfGlyph> glyphs) =>
+  int get rangesPending => _sprites.ranges?.pending ?? 0;
+
+  void rangeArrived(int face, List<PbfGlyph> glyphs) =>
       _glyphPages?.addPbf(face, glyphs);
 
   /// Glyphs drawn into pages in the last frame, and what that cost.
@@ -344,11 +355,14 @@ class LabelEngine {
         pending = true;
         break;
       }
+      final sprite =
+          cached ??
+          _rasterize(st, zoom - 1 + zoomOffset, background, devicePixelRatio);
+      // Its glyph ranges are on their way; their arrival repaints.
+      if (sprite == null) continue;
       if (cached == null && st.sprite != null) work.resized++;
       st
-        ..sprite =
-            cached ??
-            _rasterize(st, zoom - 1 + zoomOffset, background, devicePixelRatio)
+        ..sprite = sprite
         ..resize = false
         ..roadFitKey = -1;
       _placeAgain = true;
@@ -561,7 +575,10 @@ class LabelEngine {
         }
       }
     }
-    _states.removeWhere((_, st) => st.seenPass != _pass && !st.live);
+    _states.removeWhere((_, same) {
+      same.removeWhere((st) => st.seenPass != _pass && !st.live);
+      return same.isEmpty;
+    });
     _sprites.trim(_pass);
   }
 
@@ -603,11 +620,7 @@ class LabelEngine {
     _view.project(st.worldX, st.worldY);
     final sx = _view.x + roadX;
     final sy = _view.y + roadY;
-    var turn =
-        _view.screenAngle(st.worldX, st.worldY, st.angle) % (2 * math.pi);
-    if (turn > math.pi) turn -= 2 * math.pi;
-    if (turn > math.pi / 2) turn -= math.pi;
-    if (turn < -math.pi / 2) turn += math.pi;
+    final turn = _view.uprightAngle(st.worldX, st.worldY, st.angle);
     st.screenAngle = turn;
     if (st.curve != null) {
       final reach = (textH + room) / 2 + textPad;
@@ -647,7 +660,7 @@ class LabelEngine {
 
   /// Draws the label once, in the look its layer gives it, or for a
   /// marker's name the look the app gives markers.
-  LabelSprite _rasterize(
+  LabelSprite? _rasterize(
     LabelState st,
     double styleZoom,
     int background,
@@ -694,7 +707,7 @@ class LabelEngine {
         weight: weight,
         italic: symbol?.italic ?? false,
         letterSpacing: symbol?.letterSpacing ?? 0,
-        lineHeight: symbol?.lineHeight ?? (_sprites.pbf == null ? 1.15 : 1.2),
+        lineHeight: symbol?.lineHeight ?? _rules.lineHeight,
         // A marker's name hugs its marker: lines are flush on the side the
         // text starts from, which is the side the marker is on.
         align: !beside

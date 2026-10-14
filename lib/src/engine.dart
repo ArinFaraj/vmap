@@ -4,7 +4,6 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_map/flutter_map.dart' show Marker;
 import 'package:latlong2/latlong.dart' show LatLng;
 
@@ -12,8 +11,6 @@ import 'camera.dart';
 import 'expr.dart';
 import 'extrusion.dart';
 import 'map_renderer.dart';
-import 'glyphs/glyph_layout.dart';
-import 'glyphs/glyph_pbf.dart';
 import 'glyphs/vmap_font.dart';
 import 'label_state.dart';
 import 'labels.dart';
@@ -23,7 +20,7 @@ import 'query.dart';
 import 'layer.dart' show NamedMarker;
 import 'raster.dart';
 import 'raster_style.dart';
-import 'sprites.dart';
+import 'style_resources.dart';
 import 'mesh_painter.dart';
 import 'offline.dart';
 import 'source_config.dart';
@@ -68,9 +65,11 @@ class VmapEngine extends ChangeNotifier {
          ..curvedRoads = curvedLabels {
     _labels.stateOf = (source, id) => _states[_sources[source].def.name]?[id];
     if (glyphText || styleGlyphs) {
-      _loadGlyphFonts(fonts).whenComplete(() {
-        if (!_disposed) _loadStyle();
-      });
+      _resources.loadFonts(fonts, shapeInWorkers: !styleGlyphs).whenComplete(
+        () {
+          if (!_disposed) _loadStyle();
+        },
+      );
     } else {
       _loadStyle();
     }
@@ -81,44 +80,27 @@ class VmapEngine extends ChangeNotifier {
   /// since the tile workers build its streams.
   final MapRenderer? renderer;
 
-  /// The fonts' bytes and families, sent to the tile workers so they
-  /// shape labels.
-  List<Uint8List>? _glyphFontBytes;
-  List<String>? _glyphFamilies;
-
-  /// The font labels are shaped with when the app gives none: Vazirmatn,
-  /// one variable font with every weight, for Arabic script and Latin.
-  static const defaultGlyphFont =
-      'packages/vmap/assets/fonts/Vazirmatn-Variable.ttf';
-
   /// Labels are laid out and drawn from the style's `glyphs` ranges, as
   /// MapLibre draws them, instead of from font files. The ranges place
   /// glyphs by their advances alone, without OpenType shaping, so Arabic
   /// script comes out unjoined; this is for drawing a style as MapLibre
   /// does, not for Kurdish or Arabic labels.
   final bool styleGlyphs;
-  String? _glyphsUrl;
 
-  Future<void> _loadGlyphFonts(List<VmapFont> given) async {
-    try {
-      final all = [
-        ...given,
-        VmapFont(
-          'Vazirmatn',
-          (await rootBundle.load(defaultGlyphFont)).buffer.asUint8List(),
-        ),
-      ];
-      if (_disposed) return;
-      final faces = [for (final f in all) f.bytes];
-      final families = [for (final f in all) f.family];
-      if (!styleGlyphs) _glyphFontBytes = faces;
-      _glyphFamilies = families;
-      _labels.useGlyphs(GlyphFonts(faces, families: families));
-      notifyListeners();
-    } catch (e) {
-      onError?.call(e);
-    }
-  }
+  /// The font labels are shaped with when the app gives none.
+  static const defaultGlyphFont = StyleResources.defaultGlyphFont;
+
+  late final StyleResources _resources = StyleResources(
+    _labels,
+    source,
+    onSprites: (sheet) => _meshes.sprites = _labels.sheet = sheet,
+    onChange: () {
+      if (!_disposed) notifyListeners();
+    },
+    onError: (e) => onError?.call(e),
+  );
+
+  final _zoomOutHold = ZoomOutHold();
 
   final TileSourceConfig source;
   final int maxCachedTiles;
@@ -127,8 +109,6 @@ class VmapEngine extends ChangeNotifier {
   StyleSheet? _sheet;
   final LabelEngine _labels;
   final List<TileSource> _sources = [];
-  SpriteSheet? _sprites;
-  String? _spriteUrl;
   final List<RasterDrawing<RasterLayer>> _rasters = [];
   final VmapStats stats = VmapStats();
   final EvalContext _context = EvalContext();
@@ -178,7 +158,7 @@ class VmapEngine extends ChangeNotifier {
     _labels.clear();
     _sheet = null;
     _rasterKey = null;
-    _spriteUrl = null;
+    _resources.forgetSprites();
     _loadStyle();
   }
 
@@ -351,22 +331,7 @@ class VmapEngine extends ChangeNotifier {
       nameKeys: from.nameKeys,
       zoomOffset: from.zoomOffset,
     );
-    final glyphs = styleGlyphs ? sheet.glyphs : null;
-    if (glyphs != _glyphsUrl) {
-      _glyphsUrl = glyphs;
-      _labels.pbf = glyphs == null
-          ? null
-          : PbfStore(
-              glyphs,
-              userAgent: source.userAgent,
-              headers: source.headers,
-              onLoaded: (face, loaded) {
-                if (_disposed) return;
-                _labels.pbfArrived(face, loaded);
-                notifyListeners();
-              },
-            );
-    }
+    _resources.useGlyphRanges(styleGlyphs ? sheet.glyphs : null);
     final sameShape = _sheet != null && _sheet!.shape == sheet.shape;
     final rasterKey = [for (final r in sheet.rasters) r.signature].join('\n');
     final rasters = _sheet == null || rasterKey != _rasterKey;
@@ -392,7 +357,7 @@ class VmapEngine extends ChangeNotifier {
         _rasters[i].restyle(sheet.rasters[i]);
       }
     }
-    if (sheet.sprite != _spriteUrl) _loadSprites(sheet.sprite);
+    _resources.useSprites(sheet.sprite);
     _meshes.resize(sheet.layers.length);
     _labels
       ..symbols = sheet.symbols
@@ -427,8 +392,8 @@ class VmapEngine extends ChangeNotifier {
           onError?.call(error);
         },
         script: webWorker,
-        fonts: _glyphFontBytes,
-        families: _glyphFamilies,
+        fonts: _resources.fontBytes,
+        families: _resources.families,
         gpu: renderer != null,
       );
       final before = byName[def.name];
@@ -451,36 +416,6 @@ class VmapEngine extends ChangeNotifier {
   }
 
   String? _rasterKey;
-
-  int _spritesLoading = 0;
-
-  Future<void> _loadSprites(String? url) async {
-    _spriteUrl = url;
-    _sprites?.dispose();
-    _sprites = _meshes.sprites = _labels.sheet = null;
-    if (url == null) return;
-    SpriteSheet? loaded;
-    _spritesLoading++;
-    try {
-      loaded = await SpriteSheet.load(
-        url,
-        cacheDirectory: source.cacheDirectory,
-        userAgent: source.userAgent,
-        headers: source.headers,
-      );
-    } catch (e) {
-      onError?.call(e);
-    } finally {
-      _spritesLoading--;
-    }
-    if (loaded == null) return;
-    if (_disposed || url != _spriteUrl) {
-      loaded.dispose();
-      return;
-    }
-    _sprites = _meshes.sprites = _labels.sheet = loaded;
-    notifyListeners();
-  }
 
   /// Markers the app draws above the map with a `MarkerLayer`. Map labels
   /// keep clear of each one, and a [NamedMarker]'s name is placed beside it
@@ -807,7 +742,8 @@ class VmapEngine extends ChangeNotifier {
     _onGpu = onGpu;
     var waiting = false;
     _lastZoom = camera.zoom;
-    final hold = _holdTiles(camera);
+    final hold = _zoomOutHold.at(camera.view?.zoom, _clock.elapsedMilliseconds);
+    if (hold > 0) _requestFrame();
     for (final s in _sources) {
       final preparing = s.cover(
         camera,
@@ -868,7 +804,7 @@ class VmapEngine extends ChangeNotifier {
           _context,
           styleZoom,
           camera.devicePixelRatio,
-          _sprites,
+          _resources.sprites,
         );
         _buildingMicros = _clock.elapsedMicroseconds - gpuStarted;
         if (more) waiting = true;
@@ -962,40 +898,12 @@ class VmapEngine extends ChangeNotifier {
       ..labelStates = _labels.stateCount
       ..labelSprites = _labels.spriteCount
       ..tilesLoading = loading
-      ..resourcesLoading = _spritesLoading + _labels.rangesPending
+      ..resourcesLoading = _resources.loading
       ..drawCalls = draws;
     for (final s in _sources) {
       s.evict(maxCachedTiles, _frame);
     }
   }
-
-  /// How far above the camera's zoom tiles are picked. Zooming out past a
-  /// tile zoom keeps the finer tiles for [_holdMs], so layers they alone
-  /// carry fade out on them instead of vanishing with them; a fall of a
-  /// whole level or more lets go at once.
-  double _holdTiles(VmapCamera camera) {
-    final zoom = camera.view?.zoom;
-    if (zoom == null) return 0;
-    final level = zoom.floor();
-    final now = _clock.elapsedMilliseconds;
-    if (level >= _heldLevel || zoom <= _heldLevel - 1) {
-      _heldLevel = level;
-      _holdUntil = -1;
-      return 0;
-    }
-    if (_holdUntil < 0) _holdUntil = now + _holdMs;
-    if (now >= _holdUntil) {
-      _heldLevel = level;
-      _holdUntil = -1;
-      return 0;
-    }
-    _requestFrame();
-    return _heldLevel - zoom + 1e-6;
-  }
-
-  int _heldLevel = 0;
-  int _holdUntil = -1;
-  static const _holdMs = 300;
 
   bool _retryPending = false;
 
@@ -1046,7 +954,6 @@ class VmapEngine extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    _labels.pbf = null;
     for (final s in _sources) {
       s.dispose();
     }
@@ -1055,7 +962,7 @@ class VmapEngine extends ChangeNotifier {
       ..clear()
       ..disposeGlyphs();
     _buildings.dispose();
-    _sprites?.dispose();
+    _resources.dispose();
     _meshes.dispose();
     for (final r in _rasters) {
       r.close();

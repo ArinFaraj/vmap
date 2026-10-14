@@ -404,6 +404,19 @@ class StyleCompiler {
         iconOverlaps: layout['icon-allow-overlap'] == true,
         textOverlaps: layout['text-allow-overlap'] == true,
         textFit: (layout['icon-text-fit'] ?? 'none') != 'none',
+        iconTextFit: switch (layout['icon-text-fit']) {
+          final String fit => fit,
+          _ => 'none',
+        },
+        iconTextFitPadding: switch (layout['icon-text-fit-padding']) {
+          [final num t, final num r, final num b, final num l] => [
+            t.toDouble(),
+            r.toDouble(),
+            b.toDouble(),
+            l.toDouble(),
+          ],
+          _ => const [0, 0, 0, 0],
+        },
         anchors: anchors is List
             ? anchors.whereType<String>().toList()
             : const [],

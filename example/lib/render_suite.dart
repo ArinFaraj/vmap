@@ -92,7 +92,7 @@ Future<void> _runAll() async {
 
 Future<_Result> _runOne(String id, String dir) async {
   final result = _Result(id);
-  VmapEngine? engine;
+  _Session? session;
   try {
     final style = jsonDecode(
       File('$dir/style.json').readAsStringSync(),
@@ -101,208 +101,246 @@ Future<_Result> _runOne(String id, String dir) async {
         ((style['metadata'] as Map?)?['test'] as Map?)
             ?.cast<String, Object?>() ??
         const {};
-    final width = (test['width'] as num? ?? 512).toInt();
-    final height = (test['height'] as num? ?? 512).toInt();
-    final ratio = (test['pixelRatio'] as num? ?? 1).toDouble();
-    final threshold = (test['threshold'] as num? ?? 0.1285).toDouble();
     result.allowed = (test['allowed'] as num? ?? 0.00025).toDouble();
-    final camera = _Camera();
-    _readCamera(style, camera);
-
-    VmapEngine make(Map<String, Object?> document) {
-      final made = VmapEngine(
-        style: VmapStyle.json(_localize(document) as Map<String, Object?>),
-        maxCachedTiles: 200,
-        styleGlyphs: true,
-        renderer: _gpu ? GpuMap.create() : null,
-      );
-      made.onError = (e) => result.error ??= 'engine: $e';
-      return made;
-    }
-
-    var document = style;
-    final edits = <VmapStyleEdit>[];
-    final states = <(String, Object?), Map<String, Object?>>{};
-    void restyle() => engine!.style = VmapStyle.json(
-      _localize(document) as Map<String, Object?>,
+    session = _Session(
+      style,
+      width: (test['width'] as num? ?? 512).toInt(),
+      height: (test['height'] as num? ?? 512).toInt(),
+      ratio: (test['pixelRatio'] as num? ?? 1).toDouble(),
+      onError: (e) => result.error ??= 'engine: $e',
     );
-    void edit(VmapStyleEdit e) => engine!.edits = [...edits..add(e)];
-    void restate() => engine!.featureStates = [
-      for (final MapEntry(key: (source, id), :value) in states.entries)
-        VmapFeatureState(source: source, id: id, state: value),
-    ];
-    List<Object?> layers() => [...(document['layers'] as List?) ?? const []];
-
-    engine = make(style);
-    void paint() => _paint(engine!, camera, width, height, ratio, null);
-    await _settle(engine, paint);
+    await session.settle();
     for (final op in (test['operations'] as List?) ?? const []) {
-      final o = op as List;
-      switch (o[0]) {
-        case 'wait' || 'idle':
-          await _settle(engine!, paint);
-        case 'sleep':
-          await Future<void>.delayed(
-            Duration(milliseconds: (o[1] as num).toInt()),
-          );
-          await _settle(engine!, paint);
-        case 'setStyle':
-          final next = o[1] is String
-              ? jsonDecode(
-                  File(
-                    '$_suite/assets/${(o[1] as String).replaceFirst('local://', '')}',
-                  ).readAsStringSync(),
-                ) as Map<String, Object?>
-              : (o[1] as Map).cast<String, Object?>();
-          engine!.dispose();
-          document = next;
-          edits.clear();
-          states.clear();
-          engine = make(next);
-          await _settle(engine, paint);
-        case 'setGlobalStateProperty':
-          edit(VmapStyleEdit.state(o[1] as String, o[2]));
-        case 'setPaintProperty':
-          edit(VmapStyleEdit.paint(o[1] as String, o[2] as String, o[3]));
-        case 'setLayoutProperty':
-          edit(VmapStyleEdit.layout(o[1] as String, o[2] as String, o[3]));
-        case 'setFilter':
-          edit(
-            VmapStyleEdit.filter(o[1] as String, o.length > 2 ? o[2] : null),
-          );
-        case 'setLayerZoomRange':
-          edit(
-            VmapStyleEdit.zoomRange(
-              o[1] as String,
-              min: (o[2] as num?)?.toDouble(),
-              max: (o[3] as num?)?.toDouble(),
-            ),
-          );
-        case 'addLayer':
-          final all = layers();
-          final before = o.length > 2 ? o[2] : null;
-          final at = all.indexWhere((l) => (l as Map)['id'] == before);
-          all.insert(at < 0 ? all.length : at, o[1]);
-          document = {...document, 'layers': all};
-          restyle();
-        case 'removeLayer':
-          document = {
-            ...document,
-            'layers': layers()..removeWhere((l) => (l as Map)['id'] == o[1]),
-          };
-          restyle();
-        case 'addSource':
-          document = {
-            ...document,
-            'sources': {
-              ...?(document['sources'] as Map?)?.cast<String, Object?>(),
-              o[1] as String: o[2],
-            },
-          };
-          restyle();
-        case 'removeSource':
-          document = {
-            ...document,
-            'sources': {
-              ...?(document['sources'] as Map?)?.cast<String, Object?>(),
-            }..remove(o[1]),
-          };
-          restyle();
-        case 'setFeatureState':
-          final target = o[1] as Map;
-          final key = (target['source'] as String, target['id']);
-          states[key] = {
-            ...?states[key],
-            ...(o[2] as Map).cast<String, Object?>(),
-          };
-          restate();
-        case 'removeFeatureState':
-          final target = o[1] as Map;
-          final name = o.length > 2 ? o[2] as String? : null;
-          states.removeWhere((k, v) {
-            if (k.$1 != target['source']) return false;
-            if (target.containsKey('id') && k.$2 != target['id']) return false;
-            if (name == null) return true;
-            v.remove(name);
-            return v.isEmpty;
-          });
-          restate();
-        case 'easeTo' || 'flyTo' || 'jumpTo':
-          final to = o[1] as Map;
-          final c = to['center'] as List?;
-          if (c != null) {
-            camera
-              ..longitude = (c[0] as num).toDouble()
-              ..latitude = (c[1] as num).toDouble();
-          }
-          camera
-            ..zoom = (to['zoom'] as num? ?? camera.zoom).toDouble()
-            ..bearing = (to['bearing'] as num? ?? camera.bearing).toDouble()
-            ..pitch = (to['pitch'] as num? ?? camera.pitch).toDouble();
-        case 'setZoom':
-          camera.zoom = (o[1] as num).toDouble();
-        case 'setCenter':
-          final c = o[1] as List;
-          camera
-            ..longitude = (c[0] as num).toDouble()
-            ..latitude = (c[1] as num).toDouble();
-        case 'setBearing':
-          camera.bearing = (o[1] as num).toDouble();
-        case 'setPitch':
-          camera.pitch = (o[1] as num).toDouble();
-        default:
-          throw UnsupportedError('operation ${o[0]}');
-      }
+      await session.apply(op as List);
     }
-    await _settle(engine!, paint);
-    final actual = _paint(engine, camera, width, height, ratio, true)!;
-    final pixels = (await actual.toByteData(
-      format: ui.ImageByteFormat.rawStraightRgba,
-    ))!.buffer.asUint8List();
-    final w = actual.width, h = actual.height;
-    final diff = Uint8List(w * h * 4);
-    var best = double.infinity;
-    Uint8List? bestDiff;
-    for (final f in Directory(dir).listSync()) {
-      final name = f.uri.pathSegments.last;
-      if (!name.startsWith('expected') || !name.endsWith('.png')) continue;
-      final expected = await _decode((f as File).readAsBytesSync());
-      if (expected.width != w || expected.height != h) continue;
-      final count = pixelmatch(
-        expected.pixels,
-        pixels,
-        diff,
-        w,
-        h,
-        threshold: threshold,
-      );
-      final share = count / (w * h);
-      if (share < best) {
-        best = share;
-        bestDiff = Uint8List.fromList(diff);
-      }
-    }
-    result
-      ..difference = best.isFinite ? best : 1
-      ..ok = result.error == null && best <= result.allowed;
-    if (!result.ok) {
-      final out = Directory('$_out/$id')..createSync(recursive: true);
-      File('${out.path}/actual.png').writeAsBytesSync(
-        (await actual.toByteData(format: ui.ImageByteFormat.png))!.buffer
-            .asUint8List(),
-      );
-      if (bestDiff != null) {
-        File('${out.path}/diff.png')
-            .writeAsBytesSync(await _encode(bestDiff, w, h));
-      }
-    }
+    await session.settle();
+    final actual = session.capture();
+    await _score(
+      result,
+      actual,
+      dir,
+      (test['threshold'] as num? ?? 0.1285).toDouble(),
+    );
     actual.dispose();
   } catch (e) {
     result.error ??= '$e';
   } finally {
-    engine?.dispose();
+    session?.dispose();
   }
   return result;
+}
+
+/// One test's engine, style, camera and the changes its operations made.
+class _Session {
+  _Session(
+    this._document, {
+    required this.width,
+    required this.height,
+    required this.ratio,
+    required this.onError,
+  }) {
+    _readCamera(_document, _camera);
+    _engine = _make();
+  }
+
+  final int width, height;
+  final double ratio;
+  final void Function(Object error) onError;
+  final _camera = _Camera();
+  Map<String, Object?> _document;
+  final _edits = <VmapStyleEdit>[];
+  final _states = <(String, Object?), Map<String, Object?>>{};
+  late VmapEngine _engine;
+
+  VmapEngine _make() => VmapEngine(
+    style: VmapStyle.json(_localize(_document) as Map<String, Object?>),
+    maxCachedTiles: 200,
+    styleGlyphs: true,
+    renderer: _gpu ? GpuMap.create() : null,
+  )..onError = onError;
+
+  Future<void> settle() => _settle(_engine, () => _paintNow(false));
+
+  ui.Image capture() => _paintNow(true)!;
+
+  ui.Image? _paintNow(bool capture) =>
+      _paint(_engine, _camera, width, height, ratio, capture);
+
+  void dispose() => _engine.dispose();
+
+  void _restyle() => _engine.style = VmapStyle.json(
+    _localize(_document) as Map<String, Object?>,
+  );
+
+  void _edit(VmapStyleEdit e) => _engine.edits = [..._edits..add(e)];
+
+  void _restate() => _engine.featureStates = [
+    for (final MapEntry(key: (source, id), :value) in _states.entries)
+      VmapFeatureState(source: source, id: id, state: value),
+  ];
+
+  List<Object?> get _layers => [...(_document['layers'] as List?) ?? const []];
+
+  Map<String, Object?> get _sources => {
+    ...?(_document['sources'] as Map?)?.cast<String, Object?>(),
+  };
+
+  /// Makes one of the test's operations, as MapLibre's runner names them.
+  Future<void> apply(List o) async {
+    switch (o[0]) {
+      case 'wait' || 'idle':
+        await settle();
+      case 'sleep':
+        await Future<void>.delayed(
+          Duration(milliseconds: (o[1] as num).toInt()),
+        );
+        await settle();
+      case 'setStyle':
+        _engine.dispose();
+        _document = o[1] is String
+            ? jsonDecode(
+                File(
+                  '$_suite/assets/${(o[1] as String).replaceFirst('local://', '')}',
+                ).readAsStringSync(),
+              ) as Map<String, Object?>
+            : (o[1] as Map).cast<String, Object?>();
+        _edits.clear();
+        _states.clear();
+        _engine = _make();
+        await settle();
+      case 'setGlobalStateProperty':
+        _edit(VmapStyleEdit.state(o[1] as String, o[2]));
+      case 'setPaintProperty':
+        _edit(VmapStyleEdit.paint(o[1] as String, o[2] as String, o[3]));
+      case 'setLayoutProperty':
+        _edit(VmapStyleEdit.layout(o[1] as String, o[2] as String, o[3]));
+      case 'setFilter':
+        _edit(VmapStyleEdit.filter(o[1] as String, o.length > 2 ? o[2] : null));
+      case 'setLayerZoomRange':
+        _edit(
+          VmapStyleEdit.zoomRange(
+            o[1] as String,
+            min: (o[2] as num?)?.toDouble(),
+            max: (o[3] as num?)?.toDouble(),
+          ),
+        );
+      case 'addLayer':
+        final all = _layers;
+        final before = o.length > 2 ? o[2] : null;
+        final at = all.indexWhere((l) => (l as Map)['id'] == before);
+        all.insert(at < 0 ? all.length : at, o[1]);
+        _document = {..._document, 'layers': all};
+        _restyle();
+      case 'removeLayer':
+        _document = {
+          ..._document,
+          'layers': _layers..removeWhere((l) => (l as Map)['id'] == o[1]),
+        };
+        _restyle();
+      case 'addSource':
+        _document = {
+          ..._document,
+          'sources': _sources..[o[1] as String] = o[2],
+        };
+        _restyle();
+      case 'removeSource':
+        _document = {..._document, 'sources': _sources..remove(o[1])};
+        _restyle();
+      case 'setFeatureState':
+        final target = o[1] as Map;
+        final key = (target['source'] as String, target['id']);
+        _states[key] = {
+          ...?_states[key],
+          ...(o[2] as Map).cast<String, Object?>(),
+        };
+        _restate();
+      case 'removeFeatureState':
+        final target = o[1] as Map;
+        final name = o.length > 2 ? o[2] as String? : null;
+        _states.removeWhere((k, v) {
+          if (k.$1 != target['source']) return false;
+          if (target.containsKey('id') && k.$2 != target['id']) return false;
+          if (name == null) return true;
+          v.remove(name);
+          return v.isEmpty;
+        });
+        _restate();
+      case 'easeTo' || 'flyTo' || 'jumpTo':
+        final to = o[1] as Map;
+        if (to['center'] case [final num lon, final num lat]) {
+          _camera
+            ..longitude = lon.toDouble()
+            ..latitude = lat.toDouble();
+        }
+        _camera
+          ..zoom = (to['zoom'] as num? ?? _camera.zoom).toDouble()
+          ..bearing = (to['bearing'] as num? ?? _camera.bearing).toDouble()
+          ..pitch = (to['pitch'] as num? ?? _camera.pitch).toDouble();
+      case 'setZoom':
+        _camera.zoom = (o[1] as num).toDouble();
+      case 'setCenter':
+        final c = o[1] as List;
+        _camera
+          ..longitude = (c[0] as num).toDouble()
+          ..latitude = (c[1] as num).toDouble();
+      case 'setBearing':
+        _camera.bearing = (o[1] as num).toDouble();
+      case 'setPitch':
+        _camera.pitch = (o[1] as num).toDouble();
+      default:
+        throw UnsupportedError('operation ${o[0]}');
+    }
+  }
+}
+
+/// Scores [actual] against the test's expected images in [dir] as
+/// MapLibre's runner does, keeping the closest, and saves ours and the
+/// difference when it fails.
+Future<void> _score(
+  _Result result,
+  ui.Image actual,
+  String dir,
+  double threshold,
+) async {
+  final pixels = (await actual.toByteData(
+    format: ui.ImageByteFormat.rawStraightRgba,
+  ))!.buffer.asUint8List();
+  final w = actual.width, h = actual.height;
+  final diff = Uint8List(w * h * 4);
+  var best = double.infinity;
+  Uint8List? bestDiff;
+  for (final f in Directory(dir).listSync()) {
+    final name = f.uri.pathSegments.last;
+    if (!name.startsWith('expected') || !name.endsWith('.png')) continue;
+    final expected = await _decode((f as File).readAsBytesSync());
+    if (expected.width != w || expected.height != h) continue;
+    final count = pixelmatch(
+      expected.pixels,
+      pixels,
+      diff,
+      w,
+      h,
+      threshold: threshold,
+    );
+    final share = count / (w * h);
+    if (share < best) {
+      best = share;
+      bestDiff = Uint8List.fromList(diff);
+    }
+  }
+  result
+    ..difference = best.isFinite ? best : 1
+    ..ok = result.error == null && best <= result.allowed;
+  if (result.ok) return;
+  final out = Directory('$_out/${result.id}')..createSync(recursive: true);
+  File('${out.path}/actual.png').writeAsBytesSync(
+    (await actual.toByteData(format: ui.ImageByteFormat.png))!.buffer
+        .asUint8List(),
+  );
+  if (bestDiff != null) {
+    File('${out.path}/diff.png')
+        .writeAsBytesSync(await _encode(bestDiff, w, h));
+  }
 }
 
 void _readCamera(Map<String, Object?> style, _Camera camera) {

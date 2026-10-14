@@ -24,7 +24,7 @@ class GlyphCell {
 /// [flush] runs and come back as a new image; once a page has many images,
 /// one batch packs all its glyphs into a single image again.
 class GlyphPage {
-  GlyphPage(this.key, this._worker, this._changed) : em = emOf(key.size);
+  GlyphPage(this.key, this._worker, this._changed) : em = pageEm(key);
 
   final PageKey key;
   final GlyphRasterWorker _worker;
@@ -191,13 +191,25 @@ class GlyphPages {
     for (var step = 1; step <= 4; step++) {
       for (var sign = 1; sign >= -1; sign -= 2) {
         final near =
-            _pages[(
-              size: key.size + step * sign,
-              weight: key.weight,
-              italic: key.italic,
-              halo: key.halo,
-              blur: key.blur,
-            )];
+            _pages[key.sixteenths > 0
+                ? (
+                    size: key.size,
+                    weight: key.weight,
+                    italic: key.italic,
+                    halo: key.halo,
+                    blur: key.blur,
+                    sixteenths: key.sixteenths + step * sign,
+                    phase: key.phase,
+                  )
+                : (
+                    size: key.size + step * sign,
+                    weight: key.weight,
+                    italic: key.italic,
+                    halo: key.halo,
+                    blur: key.blur,
+                    sixteenths: 0,
+                    phase: 0,
+                  )];
         final cell = near?.peek(face, glyph);
         if (cell != null) {
           near!.usedFrame = _frame;

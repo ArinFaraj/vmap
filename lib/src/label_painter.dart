@@ -5,9 +5,9 @@ import 'dart:ui' as ui;
 import 'expr.dart';
 import 'glyphs/glyph_layout.dart';
 import 'glyphs/glyph_pages.dart';
-import 'glyphs/glyph_pbf.dart';
-import 'glyphs/glyph_raster.dart' show emOf, exactSize;
+import 'icon_stretch.dart';
 import 'label_path.dart';
+import 'label_rules.dart';
 import 'label_sprites.dart';
 import 'label_state.dart';
 import 'label_view.dart';
@@ -27,9 +27,7 @@ class LabelPainter {
   /// Where glyph text is drawn from, once vmap's fonts are loaded.
   GlyphPages? glyphs;
 
-  /// Icons are drawn where MapLibre puts them instead of on whole device
-  /// pixels, for drawing a style as MapLibre does.
-  bool exact = false;
+  LabelRules rules = LabelRules.vmap;
   final ui.Paint _imagePaint = ui.Paint()
     ..filterQuality = ui.FilterQuality.medium;
   final Map<VmapPin, ui.Image> _pinImages = {};
@@ -94,8 +92,8 @@ class LabelPainter {
         : _tint(st, icon, symbol, tint, devicePixelRatio);
     final fit = symbol?.textFit ?? false;
     _view.project(st.worldX, st.worldY);
-    final ix = _view.x + (fit ? st.dx : st.iconDx);
-    final iy = _view.y + (fit ? st.dy : st.iconDy);
+    final ix = _view.x + (fit ? st.dx * st.iconScale + st.iconDx : st.iconDx);
+    final iy = _view.y + (fit ? st.dy * st.iconScale + st.iconDy : st.iconDy);
     final turn = switch (st.candidate) {
       TileLabel(tile: BuiltLabel(:final angle, :final turns)) =>
         turns ? _view.screenAngle(st.worldX, st.worldY, angle) : angle,
@@ -107,25 +105,31 @@ class LabelPainter {
       st.iconW,
       st.iconH,
     );
+    final pieces = fit
+        ? stretchedIcon(icon, area, st.iconScale)
+        : [(icon.source, area)];
     for (final filter in [?rim, fill]) {
       _imagePaint.colorFilter = filter;
-      if (turn == 0 && !exact) {
-        canvas.drawImageRect(
-          sheet.image,
-          icon.source,
-          area.translate(
-            (ix * devicePixelRatio).roundToDouble() / devicePixelRatio,
-            (iy * devicePixelRatio).roundToDouble() / devicePixelRatio,
-          ),
-          _imagePaint,
-        );
+      if (turn == 0 && rules.snapIcons) {
+        final dx = (ix * devicePixelRatio).roundToDouble() / devicePixelRatio;
+        final dy = (iy * devicePixelRatio).roundToDouble() / devicePixelRatio;
+        for (final (from, to) in pieces) {
+          canvas.drawImageRect(
+            sheet.image,
+            from,
+            to.translate(dx, dy),
+            _imagePaint,
+          );
+        }
       } else {
         canvas
           ..save()
           ..translate(ix, iy)
-          ..rotate(turn)
-          ..drawImageRect(sheet.image, icon.source, area, _imagePaint)
-          ..restore();
+          ..rotate(turn);
+        for (final (from, to) in pieces) {
+          canvas.drawImageRect(sheet.image, from, to, _imagePaint);
+        }
+        canvas.restore();
       }
     }
     _imagePaint.colorFilter = null;
@@ -142,6 +146,8 @@ class LabelPainter {
   ) {
     _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
     switch (sprite) {
+      case RangeSprite() when st.curve == null && _turnOf(st) == 0:
+        _rangeGlyphs(st, sprite, devicePixelRatio);
       case GlyphSprite() when st.curve != null:
         _glyphsBent(st, sprite, devicePixelRatio);
       case GlyphSprite():
@@ -234,6 +240,8 @@ class LabelPainter {
       italic: look.italic,
       halo: halo,
       blur: blur,
+      sixteenths: 0,
+      phase: 0,
     );
     final g = sprite.shaped.glyphs;
     final n = g.length ~/ 5;
@@ -272,9 +280,7 @@ class LabelPainter {
     final shaped = sprite.shaped;
     final left = -shaped.width * em / 2, top = -shaped.height * em / 2;
     var ox = sx, oy = sy;
-    // Glyph range text is placed where MapLibre places it, unsnapped.
-    final ranges = shaped.count > 0 && shaped.glyphs[0] >= GlyphPbf.firstFace;
-    if (turn == 0 && !ranges) {
+    if (turn == 0) {
       ox = _snap(sx + left, devicePixelRatio) - left;
       oy = _snap(sy + top, devicePixelRatio) - top;
     }
@@ -283,18 +289,6 @@ class LabelPainter {
         ? null
         : _faded(sprite.look.halo!, st.opacity);
     final g = shaped.glyphs;
-    if (ranges && turn == 0) {
-      _rangeGlyphs(
-        sprite,
-        ox + left,
-        oy + top,
-        em,
-        devicePixelRatio,
-        ink,
-        halo,
-      );
-      return;
-    }
     for (var i = 0; i < g.length; i += 5) {
       final cell = cells[i ~/ 5];
       if (cell == null) continue;
@@ -314,26 +308,26 @@ class LabelPainter {
 
   /// Glyph range text drawn upright from cells made at its exact size and
   /// for the quarter pixel each glyph falls on, so every glyph is sampled
-  /// once at the place MapLibre puts it. [x], [y] is the text's top left.
+  /// once at the place MapLibre puts it.
   void _rangeGlyphs(
-    GlyphSprite sprite,
-    double x,
-    double y,
-    double em,
+    LabelState st,
+    RangeSprite sprite,
     double devicePixelRatio,
-    int ink,
-    int? halo,
   ) {
     final pages = glyphs!;
     final look = sprite.look;
+    _view.project(st.worldX, st.worldY);
+    final em = sprite.fontSize * st.scale;
+    final x = _view.x + st.dx - sprite.shaped.width * em / 2;
+    final y = _view.y + st.dy - sprite.shaped.height * em / 2;
+    final ink = _faded(look.color, st.opacity);
+    final halo = look.halo == null ? null : _faded(look.halo!, st.opacity);
     final haloWidth = look.halo == null ? 0.0 : look.haloWidth;
-    final key = (
-      size: exactSize(em * devicePixelRatio),
-      weight: 400,
-      italic: false,
-      halo: (haloWidth * devicePixelRatio * 4).round(),
-      blur: haloWidth == 0 ? 0 : (look.haloBlur * devicePixelRatio * 4).round(),
-    );
+    final sixteenths = (em * devicePixelRatio * 16).round();
+    final haloQuarters = (haloWidth * devicePixelRatio * 4).round();
+    final blur = haloWidth == 0
+        ? 0
+        : (look.haloBlur * devicePixelRatio * 4).round();
     final k = 1 / devicePixelRatio;
     final g = sprite.shaped.glyphs;
     for (var i = 0; i < g.length; i += 5) {
@@ -345,15 +339,23 @@ class LabelPainter {
       final oy = dy.floorToDouble() + (qy == 4 ? 1 : 0);
       qx %= 4;
       qy %= 4;
-      final glyph = g[i + 1].toInt() | qx << 16 | qy << 18;
-      final cell = pages.cell(key, g[i].toInt(), glyph);
+      final key = (
+        size: 0,
+        weight: 400,
+        italic: false,
+        halo: haloQuarters,
+        blur: blur,
+        sixteenths: sixteenths,
+        phase: qx | qy << 2,
+      );
+      final cell = pages.cell(key, g[i].toInt(), g[i + 1].toInt());
       if (cell == null) continue;
       pages.add(
         cell,
         (ox + qx / 4) * k,
         (oy + qy / 4) * k,
         0,
-        k * emOf(key.size) / pages.found.em,
+        k * sixteenths / 16 / pages.found.em,
         ink,
         halo,
       );
@@ -372,31 +374,10 @@ class LabelPainter {
         c.tile.line == null) {
       return st.screenAngle;
     }
-    var turn =
-        _view.screenAngle(st.worldX, st.worldY, st.angle) % (2 * math.pi);
-    if (turn > math.pi) turn -= 2 * math.pi;
-    if (turn > math.pi / 2) turn -= math.pi;
-    if (turn < -math.pi / 2) turn += math.pi;
-    return turn;
+    return _view.uprightAngle(st.worldX, st.worldY, st.angle);
   }
 
   final Float64List _along = Float64List(3);
-  Float64List _screen = Float64List(64);
-
-  /// [path], points of the world, where they fall on the screen. Letters
-  /// facing the screen are laid along this, in screen pixels, as MapLibre
-  /// lays them: on a tilted map the road shrinks with distance faster than
-  /// the letters do, so spacing them along the flat road crams them.
-  Float64List _screenPath(Float64List path) {
-    if (_screen.length < path.length) _screen = Float64List(path.length * 2);
-    for (var i = 0; i < path.length; i += 2) {
-      _view.project(path[i], path[i + 1]);
-      _screen[i] = _view.x;
-      _screen[i + 1] = _view.y;
-    }
-    return Float64List.sublistView(_screen, 0, path.length);
-  }
-
   void _glyphsBent(LabelState st, GlyphSprite sprite, double devicePixelRatio) {
     final pages = glyphs!;
     final em = sprite.fontSize * st.scale;
@@ -404,8 +385,7 @@ class LabelPainter {
     final cells = sprite.cells, ems = sprite.cellEms;
     final shaped = sprite.shaped;
     final path = st.curve!;
-    final onScreen = _screenPath(path);
-    final middle = screenDistance(path, onScreen, st.curveMid);
+    final (onScreen, middle) = _view.onScreen(path, st.curveMid);
     final flip =
         math.cos(_view.screenAngle(st.worldX, st.worldY, st.angle)) < 0;
     final half = shaped.width * em / 2;
@@ -536,7 +516,7 @@ class LabelPainter {
     EvalContext context,
     double devicePixelRatio,
   ) {
-    final by = st.iconW / icon.width;
+    final by = st.iconScale;
     final fill = sdf(
       Rgba.of(symbol.iconColor(context)) ?? Rgba.black,
       by * devicePixelRatio,

@@ -13,7 +13,18 @@ class SpriteImage {
     this.height,
     this.pixelRatio, {
     this.sdf = false,
+    this.stretchX,
+    this.stretchY,
+    this.content,
   });
+
+  /// The spans of the picture, in its own pixels, that grow when it is
+  /// fitted to text; the rest keeps its size.
+  final List<(double, double)>? stretchX, stretchY;
+
+  /// The part of the picture, left, top, right and bottom in its own
+  /// pixels, that text is fitted into.
+  final List<double>? content;
 
   /// Where it sits in the sheet, in the sheet's pixels.
   final ui.Rect source;
@@ -153,8 +164,28 @@ class SpriteSheet {
         h / ratio,
         ratio,
         sdf: v['sdf'] == true,
+        stretchX: _spans(v['stretchX']),
+        stretchY: _spans(v['stretchY']),
+        content: switch (v['content']) {
+          [final num l, final num t, final num r, final num b] => [
+            l.toDouble(),
+            t.toDouble(),
+            r.toDouble(),
+            b.toDouble(),
+          ],
+          _ => null,
+        },
       );
     }
     return SpriteSheet(frame.image, entries);
   }
+}
+
+List<(double, double)>? _spans(Object? value) {
+  if (value is! List || value.isEmpty) return null;
+  return [
+    for (final span in value)
+      if (span case [final num from, final num to])
+        (from.toDouble(), to.toDouble()),
+  ];
 }

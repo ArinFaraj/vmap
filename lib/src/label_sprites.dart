@@ -4,7 +4,8 @@ import 'dart:ui' as ui;
 
 import 'glyphs/glyph_layout.dart';
 import 'glyphs/glyph_pages.dart';
-import 'glyphs/glyph_pbf.dart';
+import 'glyphs/glyph_ranges.dart';
+import 'glyphs/maplibre_shaping.dart';
 import 'platform.dart';
 import 'stats.dart';
 
@@ -99,6 +100,19 @@ final class PictureSprite extends LabelSprite {
 
 /// Text shaped by vmap itself and drawn glyph by glyph from shared pages,
 /// at any size, turned, or along a bent road.
+/// Text from a style's glyph ranges, drawn where MapLibre draws it.
+final class RangeSprite extends GlyphSprite {
+  RangeSprite(
+    super.shaped,
+    super.look,
+    super.width,
+    super.height,
+    super.textWidth,
+    super.textHeight,
+    super.fontSize,
+  );
+}
+
 final class GlyphSprite extends LabelSprite {
   GlyphSprite(
     this.shaped,
@@ -192,7 +206,7 @@ class LabelSprites {
 
   /// The style's glyph ranges, which labels are laid out and drawn with
   /// instead of [glyphFonts] when set.
-  PbfStore? pbf;
+  GlyphRanges? ranges;
   final Stopwatch _clock = Stopwatch()..start();
 
   /// Kept when more are drawn than this, only those used in the last pass.
@@ -242,8 +256,8 @@ class LabelSprites {
 
   /// Draws [look] once and keeps it under [key]. The halo is the text
   /// redrawn in the halo colour around itself, so the text is laid out a
-  /// single time.
-  LabelSprite draw(
+  /// single time. Null while the glyph ranges it needs are on their way.
+  LabelSprite? draw(
     String key,
     TextLook look, {
     required double dpr,
@@ -251,22 +265,12 @@ class LabelSprites {
     ShapedText? shaped,
   }) {
     final fonts = glyphFonts;
-    final store = pbf;
+    final store = ranges;
     if (fonts != null && store != null && shaped == null) {
       final face = store.face(look.fontStack);
-      if (!store.ready(face, look.text)) {
-        return GlyphSprite(
-          ShapedText(Float32List(0), 0, 0, 0),
-          look,
-          1,
-          1,
-          0,
-          0,
-          look.fontSize,
-        )..dropped = true;
-      }
-      shaped = layoutPbf(
-        store,
+      if (!store.ready(face, look.text)) return null;
+      final laid = layoutRanges(
+        (c) => store.glyph(face, c),
         face,
         look.text,
         letterSpacing: look.letterSpacing,
@@ -280,6 +284,7 @@ class LabelSprites {
           _ => 0,
         },
       );
+      if (laid != null) return _keep(key, _glyphSprite(laid, look, pass, true));
     }
     if (fonts != null) {
       final started = _clock.elapsedMicroseconds;
@@ -302,20 +307,7 @@ class LabelSprites {
       );
       work.layoutMicros += _clock.elapsedMicroseconds - started;
       if (shaped != null) {
-        final textW = math.max(1.0, shaped.width * look.fontSize);
-        final textH = shaped.height * look.fontSize;
-        return _keep(
-          key,
-          GlyphSprite(
-            shaped,
-            look,
-            textW + haloPad * 2,
-            textH + haloPad * 2,
-            textW,
-            textH,
-            look.fontSize,
-          )..usedPass = pass,
-        );
+        return _keep(key, _glyphSprite(shaped, look, pass, false));
       }
     }
     final fontSize = look.fontSize;
@@ -449,6 +441,22 @@ class LabelSprites {
       ImageSprite(image, pixelW / dpr, pixelH / dpr, textW, textH, fontSize)
         ..usedPass = pass,
     );
+  }
+
+  GlyphSprite _glyphSprite(
+    ShapedText shaped,
+    TextLook look,
+    int pass,
+    bool fromRanges,
+  ) {
+    final textW = math.max(1.0, shaped.width * look.fontSize);
+    final textH = shaped.height * look.fontSize;
+    final w = textW + haloPad * 2, h = textH + haloPad * 2;
+    final size = look.fontSize;
+    return (fromRanges
+          ? RangeSprite(shaped, look, w, h, textW, textH, size)
+          : GlyphSprite(shaped, look, w, h, textW, textH, size))
+      ..usedPass = pass;
   }
 
   LabelSprite _keep(String key, LabelSprite sprite) {

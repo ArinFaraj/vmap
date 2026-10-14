@@ -68,6 +68,17 @@ class GpuStream {
   static bool isLine(int kind) =>
       kind == line || kind == patternedLine || kind == gradientLine;
 
+  /// The kind [layer] is drawn as, or -1 for one the stream leaves out.
+  static int kindOf(PaintLayer layer) => switch (layer) {
+    FillLayer(pattern: null, extruded: false) => fill,
+    FillLayer(extruded: false) => patterned,
+    CircleLayer() => circle,
+    LineLayer(pattern: null, gradient: null) => line,
+    LineLayer(gradient: null) => patternedLine,
+    LineLayer() => gradientLine,
+    _ => -1,
+  };
+
   /// What a gradient line's distance along it is at its end.
   static const progressSpan = LineMesher.shareSpan;
 
@@ -118,15 +129,7 @@ class GpuStream {
     for (var p = 0; p < sheet.layers.length; p++) {
       layerFirst[p] = indices.length;
       final layer = sheet.layers[p];
-      final kind = switch (layer) {
-        FillLayer(pattern: null, extruded: false) => fill,
-        FillLayer(extruded: false) => patterned,
-        CircleLayer() => circle,
-        LineLayer(pattern: null, gradient: null) => line,
-        LineLayer(gradient: null) => patternedLine,
-        LineLayer() => gradientLine,
-        _ => -1,
-      };
+      final kind = kindOf(layer);
       if (kind < 0) continue;
       for (final m in byBucket[layer.bucket] ?? const <BuiltMesh>[]) {
         final chunk = m.chunk;

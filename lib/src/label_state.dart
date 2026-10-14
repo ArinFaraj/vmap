@@ -156,6 +156,9 @@ class LabelState {
 
   /// How far the icon's middle is drawn from the point.
   double iconDx = 0;
+
+  /// The icon's size, by which an icon fitted to the text scales with it.
+  double iconScale = 1;
   double iconDy = 0;
 
   /// Which of the layer's variable anchors the text took last.

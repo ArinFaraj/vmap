@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:vmap/renderer.dart';
 
 /// A fill or line layer's paint for one frame, in screen pixels.
@@ -147,6 +149,102 @@ class LayerPaint {
       );
     } finally {
       if (props != null) context.props = const {};
+    }
+  }
+
+  /// Writes this paint into the two vec4 of a shader slot at [o], laid out
+  /// for [kind] as `map.vert` reads them; lengths in tile units for a tile
+  /// [scale] screen pixels to the unit. [sprites] places patterns and
+  /// [rampRow] is a gradient line's row in the gradient texture.
+  void writeSlot(
+    Float32List out,
+    int o,
+    int kind,
+    double scale,
+    SpriteSheet? sprites,
+    double? rampRow,
+  ) {
+    void put(
+      double a,
+      double b,
+      double c,
+      double d,
+      double e,
+      double f,
+      double g,
+      double h,
+    ) {
+      out
+        ..[o] = a
+        ..[o + 1] = b
+        ..[o + 2] = c
+        ..[o + 3] = d
+        ..[o + 4] = e
+        ..[o + 5] = f
+        ..[o + 6] = g
+        ..[o + 7] = h;
+    }
+
+    final entry = pattern == null ? null : sprites?.entries[pattern];
+    final source = entry?.source;
+    switch (kind) {
+      case GpuStream.circle:
+        // dashOn and dashPeriod carry the ring's colour and alpha.
+        put(r, g, b, a, halfWidth / scale, offset / scale, dashOn, dashPeriod);
+      case GpuStream.gradientLine:
+        put(
+          rampRow ?? 0,
+          1 / GpuStream.progressSpan,
+          0,
+          rampRow == null ? 0 : a,
+          halfWidth / scale,
+          offset / scale,
+          0,
+          0,
+        );
+      case GpuStream.patternedLine:
+        // Stretched across the line's width and repeated along it, as the
+        // canvas draws it.
+        final length = source == null || source.height <= 0
+            ? 0.0
+            : source.width / source.height * halfWidth * 2 / scale;
+        put(
+          halfWidth / scale,
+          offset / scale,
+          length > 0 ? length : 1,
+          length > 0 ? a : 0,
+          source?.left ?? 0,
+          source?.top ?? 0,
+          source?.width ?? 1,
+          source?.height ?? 1,
+        );
+      case GpuStream.patterned:
+        put(
+          entry?.pixelRatio ?? 1,
+          0,
+          0,
+          entry == null ? 0 : a,
+          source?.left ?? 0,
+          source?.top ?? 0,
+          source?.width ?? 1,
+          source?.height ?? 1,
+        );
+      case GpuStream.fill:
+        put(r, g, b, a, translateX / scale, translateY / scale, 0, 0);
+      default:
+        // A dash period of zero means no dashes, and then a line drawn as
+        // two gives its gap's share of the half width as a negative dash
+        // length.
+        put(
+          r,
+          g,
+          b,
+          a,
+          halfWidth / scale,
+          offset / scale,
+          dashPeriod > 0 ? dashOn / scale : -gapShare,
+          dashPeriod / scale,
+        );
     }
   }
 }

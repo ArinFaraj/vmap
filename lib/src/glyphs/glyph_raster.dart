@@ -17,20 +17,27 @@ import 'glyph_pbf.dart';
 /// octave and a glyph is rasterized at the step at or above the size it is
 /// drawn at, so it is only ever shrunk, by at most 16%, which keeps it
 /// sharp.
-typedef PageKey = ({int size, int weight, bool italic, int halo, int blur});
+///
+/// A page of glyph range text is made at an exact size instead, in
+/// [sixteenths] of a device pixel to the em, and for one quarter pixel
+/// [phase] its glyphs' origins fall on: x in the low two bits, y in the
+/// next two. Font pages leave both 0.
+typedef PageKey = ({
+  int size,
+  int weight,
+  bool italic,
+  int halo,
+  int blur,
+  int sixteenths,
+  int phase,
+});
 
-/// Device pixels to the em of a page of [size].
-double emOf(int size) => size >= exactSizes
-    ? (size - exactSizes) / 16
-    : math.pow(2, size / 4).toDouble();
+/// Device pixels to the em of a font page of [size].
+double emOf(int size) => math.pow(2, size / 4).toDouble();
 
-/// Sizes from here up are exact: sixteenths of a device pixel per em above
-/// it, for glyph ranges drawn where MapLibre draws them.
-const exactSizes = 1 << 20;
-
-/// The exact size of [devicePixelsPerEm].
-int exactSize(double devicePixelsPerEm) =>
-    exactSizes + (devicePixelsPerEm * 16).round();
+/// Device pixels to the em of the page [key].
+double pageEm(PageKey key) =>
+    key.sixteenths > 0 ? key.sixteenths / 16 : emOf(key.size);
 
 /// One drawn batch: a premultiplied white RGBA image [width] wide, and per
 /// glyph [stride] numbers: its id, the ink cell's x, y, width and height, the
@@ -65,7 +72,7 @@ class GlyphRasterizer {
 
   /// The glyphs of the style's glyph ranges by face, faces from
   /// [GlyphPbf.firstFace] up.
-  final Map<int, Map<int, PbfGlyph>> pbf = {};
+  final Map<int, Map<int, PbfGlyph>> ranges = {};
   final Map<int, GlyphPath?> _outlines = {};
   final Map<PageKey, Map<int, _Bitmap?>> _bitmaps = {};
 
@@ -138,22 +145,17 @@ class GlyphRasterizer {
 
   /// A glyph of a style's glyph range drawn from its distance field with
   /// the edge and halo of MapLibre's `symbol_sdf.fragment.glsl` for text
-  /// facing the screen, so it comes out as MapLibre draws it.
-  ///
-  /// The glyph number carries the code point and, from bit 16, which
-  /// quarter pixel along x (two bits) and along y (two more) the glyph's
-  /// origin falls on; the cell is drawn for that offset and placed so its
-  /// corner lands on a whole device pixel, so it is sampled once, as
-  /// MapLibre samples it.
-  _Bitmap? _pbfGlyph(PageKey key, int face, int glyph) {
-    final codePoint = glyph & 0xFFFF;
-    final px = (glyph >> 16 & 3) / 4, py = (glyph >> 18 & 3) / 4;
-    final g = pbf[face]?[codePoint];
+  /// facing the screen, so it comes out as MapLibre draws it. The cell is
+  /// drawn for the page's phase and placed so its corner lands on a whole
+  /// device pixel, so it is sampled once, as MapLibre samples it.
+  _Bitmap? _pbfGlyph(PageKey key, int face, int codePoint) {
+    final px = (key.phase & 3) / 4, py = (key.phase >> 2) / 4;
+    final g = ranges[face]?[codePoint];
     if (g == null || g.width == 0) return null;
     const border = GlyphPbf.border;
     final sw = g.width + 2 * border, sh = g.height + 2 * border;
     if (g.bitmap.length < sw * sh) return null;
-    final s = emOf(key.size) / GlyphPbf.em;
+    final s = pageEm(key) / GlyphPbf.em;
     final left = (g.left - border) * s, top = (-g.top - border) * s;
     final cellLeft = (px + left).floorToDouble() - px;
     final cellTop = (py + top).floorToDouble() - py;
@@ -640,7 +642,7 @@ class GlyphRasterWorker {
         case _Forget(:final key):
           rasterizer.forget(key);
         case _AddPbf(:final face, :final glyphs):
-          final known = rasterizer.pbf[face] ??= {};
+          final known = rasterizer.ranges[face] ??= {};
           for (final g in glyphs) {
             known[g.id] = g;
           }

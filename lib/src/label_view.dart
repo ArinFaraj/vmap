@@ -1,7 +1,9 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'expr.dart';
+import 'label_path.dart';
 import 'view.dart';
 
 /// Where points of the world land on the screen for one frame, with the
@@ -90,6 +92,35 @@ class LabelView {
     y = keepY;
     ratio = keepRatio;
     return turn;
+  }
+
+  /// [screenAngle] turned by half a turn where needed so text along it
+  /// reads left to right: between minus and plus a quarter turn.
+  double uprightAngle(double wx, double wy, double angle) {
+    var turn = screenAngle(wx, wy, angle) % (2 * math.pi);
+    if (turn > math.pi) turn -= 2 * math.pi;
+    if (turn > math.pi / 2) turn -= math.pi;
+    if (turn < -math.pi / 2) turn += math.pi;
+    return turn;
+  }
+
+  Float64List _screen = Float64List(64);
+
+  /// [path], points of the world, where they fall on the screen, and how
+  /// far along that the point [at] along [path] lands. Text facing the
+  /// screen is laid along this in screen pixels, as MapLibre lays it: on a
+  /// tilted map a road shrinks with distance faster than its letters do,
+  /// so spacing them along the flat road would cram them. The list is
+  /// reused by the next call.
+  (Float64List, double) onScreen(Float64List path, double at) {
+    if (_screen.length < path.length) _screen = Float64List(path.length * 2);
+    for (var i = 0; i < path.length; i += 2) {
+      project(path[i], path[i + 1]);
+      _screen[i] = x;
+      _screen[i + 1] = y;
+    }
+    final points = Float64List.sublistView(_screen, 0, path.length);
+    return (points, screenDistance(path, points, at));
   }
 
   /// A style's translate read in [context], as the upright label frame
