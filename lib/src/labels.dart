@@ -225,6 +225,30 @@ class LabelEngine {
     return made;
   }
 
+  /// How far past the screen's edge [c]'s anchor may lie with its text
+  /// still reaching in: its offsets, half its widest line and its
+  /// translation. Only labels that can show are placed, however far their
+  /// layer throws them.
+  double _reach(LabelCandidate c, double styleZoom) {
+    final symbol = _symbolOf(c);
+    if (symbol == null) return 0;
+    final ems =
+        math.max(symbol.offsetX.abs(), symbol.offsetY.abs()) +
+        (symbol.radialOffset ?? 0).abs() +
+        symbol.maxWidth / 2;
+    var reach = ems * _size(c, styleZoom);
+    if (symbol.textTranslate case final translate?) {
+      _bind(c);
+      final (dx, dy) = _view.moved(
+        translate,
+        symbol.textTranslateOnScreen,
+        _context,
+      );
+      reach += math.max(dx.abs(), dy.abs());
+    }
+    return reach;
+  }
+
   /// Whether [a] and [b] are two features of one tile, which are never the
   /// same label however close: MapLibre only joins copies across tiles.
   static bool _sameTileApart(LabelCandidate a, LabelCandidate b) =>
@@ -515,10 +539,11 @@ class LabelEngine {
             c.tile.line != null) {
           continue;
         }
-        if (sx < -margin ||
-            sy < -margin ||
-            sx > size.width + margin ||
-            sy > size.height + margin) {
+        final reach = margin + _reach(c, styleZoom);
+        if (sx < -reach ||
+            sy < -reach ||
+            sx > size.width + reach ||
+            sy > size.height + reach) {
           continue;
         }
         final st = _stateFor(c, world);
