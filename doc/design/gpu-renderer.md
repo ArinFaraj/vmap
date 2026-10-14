@@ -27,13 +27,21 @@ its geometry passes a buffer's size:
 
 ## Vertex format
 
-Packed into 32 bit words, as the buildings are:
+Six floats a vertex, every one an exact integer or a value the shader
+can unpack with arithmetic alone, since OpenGL ES 2 shaders have no
+integers or bit operations (`GpuStream` in `lib/src/gpu_stream.dart` is
+the reference):
 
-- position: x and y, 16 bits each, half tile units plus 16384;
-- extrusion: a line vertex's direction from its centre line, two signed
-  bytes scaled to unit length, and the side for a line's offset;
-- distance along a line for dashes, 16 bits;
-- style slot, 16 bits, and the kind: fill, line, circle.
+- position: x and y in tile units;
+- extrusion: a line vertex's direction from its centre line, two 12 bit
+  numbers in one float;
+- the offset direction for a line's `line-offset`, packed the same way;
+- the slot within its draw, plus 16384 times the kind (fill, line,
+  patterned fill, circle, patterned line, gradient line), plus for a
+  patterned line 131072 times where the vertex sits across it in 127ths.
+  The largest value stays under 2^24, so the float is exact;
+- distance along a line in tile units, or for a gradient line its share
+  of the whole line times 256.
 
 The shader puts a line vertex at `base + extrusion * halfWidth[slot]`,
 so a width change is a texture write, not a rebuild.
@@ -45,12 +53,16 @@ with the stencil buffer: each ideal tile writes its own reference value
 over its square first, and draws test equal. Scissor rectangles stop
 being rectangles once the map tilts, so they are not used.
 
-## What stays on the canvas, at first
+## What stays on the canvas
 
-Labels and icons (drawn over the GPU image, as now), raster and
-hillshade layers, heatmaps, fill and line patterns, line gradients.
-A style using them in the middle of its fill and line layers is drawn by
-the canvas tier entirely until each moves over, so order is never wrong.
+Labels and icons (drawn over the GPU image), raster and hillshade layers
+in the middle of the vector layers, and heatmaps. A style using a
+heatmap is drawn by the canvas tier entirely, so order is never wrong.
+
+Patterned lines stretch their sprite across the line's width and repeat
+it along the line, as the canvas tier draws them. Gradient lines read a
+texture with one 256 pixel row per gradient layer, made when the style
+changes.
 
 ## Depth
 

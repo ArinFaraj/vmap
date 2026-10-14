@@ -210,3 +210,16 @@ Tried and dropped the same evening: crossfading tiles when the zoom level
 swaps (7dfc0b7, reverted in 5fbbe35). Fading every swap made roads and
 lines visibly shift during each change; a clean swap read better on the
 phone.
+
+## 2026-10-14: patterned and gradient lines on the GPU
+
+`line-pattern` and `line-gradient` draw on the GPU, so a style with
+either no longer falls back to the canvas. Checked on macOS (Metal)
+against the canvas with the spike's `LINES` overlay on Liberty: the same
+sprite at the same size and spacing, and the same colours along the
+route. Not yet seen on the phone.
+
+Known gap, found in the same check: the GPU draws 3D buildings opaque
+and ignores `fill-extrusion-opacity`. Liberty asks for 0.8, so the canvas
+shows the ground faintly through buildings while the GPU does not.
+
