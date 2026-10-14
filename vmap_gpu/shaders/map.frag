@@ -6,14 +6,14 @@ in vec3 v_uv;
 in vec4 v_circle;
 in vec3 v_edge;
 
+// The sprite sheet's width and height, then the gradient texture's.
 uniform FragInfo {
   vec4 sheet_size;
 }
 frag_info;
 
-
-
 uniform sampler2D sprite_sheet;
+uniform sampler2D gradient_ramp;
 out vec4 frag_color;
 
 void main() {
@@ -38,6 +38,15 @@ void main() {
     vec4 rim = vec4(vec3(r, g, b) / 255.0 * v_pattern.w, v_pattern.w);
     float inside = ring > 0.0 ? clamp((radius - d) / pixel + 0.5, 0.0, 1.0) : 1.0;
     color = mix(rim, v_color, inside) * shape;
+  } else if (v_uv.z > 2.5) {
+    float ramp = frag_info.sheet_size.z;
+    float u = (clamp(v_uv.x, 0.0, 1.0) * (ramp - 1.0) + 0.5) / ramp;
+    color = texture(gradient_ramp, vec2(u, v_uv.y)) * v_color.a;
+  } else if (v_uv.z > 1.5) {
+    // Inset half a texel so the neighbours in the sheet do not bleed in.
+    vec2 inside = vec2(fract(v_uv.x), clamp(v_uv.y, 0.0, 1.0));
+    vec2 at = v_pattern.xy + 0.5 + inside * (v_pattern.zw - 1.0);
+    color = texture(sprite_sheet, at / frag_info.sheet_size.xy) * v_color.a;
   } else if (v_uv.z > 0.5) {
     vec2 at = v_pattern.xy + mod(v_uv.xy, v_pattern.zw);
     color = texture(sprite_sheet, at / frag_info.sheet_size.xy) * v_color.a;

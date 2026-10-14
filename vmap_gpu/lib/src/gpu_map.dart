@@ -38,7 +38,7 @@ class GpuMap implements MapRenderer {
   gpu.ShaderLibrary? _library;
   gpu.RenderPipeline? _flat, _buildings, _stencil;
   gpu.UniformSlot? _flatFrame, _flatSlots, _buildingFrame, _stencilFrame;
-  gpu.UniformSlot? _flatFrag, _flatSprites;
+  gpu.UniformSlot? _flatFrag, _flatSprites, _flatRamp;
   SpriteSheet? _sheet;
   ui.Image? _sheetImage;
   gpu.Texture? _sheetTexture;
@@ -109,12 +109,6 @@ class GpuMap implements MapRenderer {
     }
     for (final layer in sheet.layers) {
       if (layer is HeatmapLayer) return false;
-      // Not drawn on the GPU yet: the canvas draws the map rather than
-      // leave these lines out.
-      if (layer is LineLayer &&
-          (layer.pattern != null || layer.gradient != null)) {
-        return false;
-      }
     }
     return _library != null && !_failed;
   }
@@ -177,6 +171,7 @@ class GpuMap implements MapRenderer {
     _flatSlots = mapVertex.getUniformSlot('SlotInfo');
     _flatFrag = mapFragment.getUniformSlot('FragInfo');
     _flatSprites = mapFragment.getUniformSlot('sprite_sheet');
+    _flatRamp = mapFragment.getUniformSlot('gradient_ramp');
     _buildings = gpu.gpuContext.createRenderPipeline(
       buildingVertex,
       buildingFragment,
@@ -376,6 +371,7 @@ class GpuMap implements MapRenderer {
     _reveal.begin(sheet, styleZoom);
     _presence.begin(sheet, styleZoom, ideal);
     _layerPaint.clear();
+    _makeRamps(sheet, context);
     final pass = _MapPass(
       this,
       _beginPass(commands, target),
@@ -540,19 +536,68 @@ class GpuMap implements MapRenderer {
       if (image != null) _loadSprites(image);
     }
     final texture = _sheetTexture ?? _blank;
+    final ramp = _rampTexture ?? _blank;
     _fragInfo
       ..[0] = texture.width.toDouble()
-      ..[1] = texture.height.toDouble();
+      ..[1] = texture.height.toDouble()
+      ..[2] = ramp.width.toDouble()
+      ..[3] = ramp.height.toDouble();
+    final sampler = gpu.SamplerOptions(
+      minFilter: gpu.MinMagFilter.linear,
+      magFilter: gpu.MinMagFilter.linear,
+    );
     pass
       ..bindUniform(_flatFrag!, _host!.emplace(_fragBytes))
-      ..bindTexture(
-        _flatSprites!,
-        texture,
-        sampler: gpu.SamplerOptions(
-          minFilter: gpu.MinMagFilter.linear,
-          magFilter: gpu.MinMagFilter.linear,
-        ),
-      );
+      ..bindTexture(_flatSprites!, texture, sampler: sampler)
+      ..bindTexture(_flatRamp!, ramp, sampler: sampler);
+  }
+
+  /// Every gradient line layer's colours from the start of a line to its
+  /// end, a row of [_rampWidth] each, made again when the style changes.
+  StyleSheet? _rampSheet;
+  gpu.Texture? _rampTexture;
+  final Map<int, double> _rampRow = {};
+  static const _rampWidth = 256;
+
+  void _makeRamps(StyleSheet sheet, EvalContext context) {
+    if (identical(sheet, _rampSheet)) return;
+    _rampSheet = sheet;
+    _rampRow.clear();
+    _rampTexture = null;
+    final ramps = [
+      for (var i = 0; i < sheet.layers.length; i++)
+        if (sheet.layers[i] case LineLayer(:final gradient?)) (i, gradient),
+    ];
+    if (ramps.isEmpty) return;
+    final bytes = Uint8List(_rampWidth * ramps.length * 4);
+    int byte(double v) => (v.clamp(0.0, 1.0) * 255).round();
+    for (var row = 0; row < ramps.length; row++) {
+      final (layerIndex, gradient) = ramps[row];
+      _rampRow[layerIndex] = (row + 0.5) / ramps.length;
+      for (var x = 0; x < _rampWidth; x++) {
+        context.progress = x / (_rampWidth - 1);
+        final c = Rgba.of(gradient(context));
+        if (c == null) continue;
+        final o = (row * _rampWidth + x) * 4;
+        bytes
+          ..[o] = byte(c.r * c.a)
+          ..[o + 1] = byte(c.g * c.a)
+          ..[o + 2] = byte(c.b * c.a)
+          ..[o + 3] = byte(c.a);
+      }
+    }
+    context.progress = 0;
+    try {
+      _rampTexture = gpu.gpuContext.createTexture(
+        gpu.StorageMode.hostVisible,
+        _rampWidth,
+        ramps.length,
+        format: gpu.PixelFormat.r8g8b8a8UNormInt,
+      )..overwrite(ByteData.sublistView(bytes));
+    } catch (e) {
+      _rampRow.clear();
+      debugPrint('vmap_gpu: the line gradients are not on the GPU: $e');
+    }
   }
 
   /// A layer's paint for tile [d]: faded in and out as the zoom enters and
@@ -633,6 +678,38 @@ class GpuMap implements MapRenderer {
         out[o + 7] = paint.dashPeriod;
         continue;
       }
+      final layer = sheet.layers[layerIndex];
+      if (layer is LineLayer && layer.gradient != null) {
+        final row = _rampRow[layerIndex];
+        out[o] = row ?? 0;
+        out[o + 1] = 1 / GpuStream.progressSpan;
+        out[o + 2] = 0;
+        out[o + 3] = row == null ? 0 : paint.a;
+        out[o + 4] = paint.halfWidth / scale;
+        out[o + 5] = paint.offset / scale;
+        out[o + 6] = 0;
+        out[o + 7] = 0;
+        continue;
+      }
+      if (layer is LineLayer && layer.pattern != null) {
+        // The pattern is stretched across the line's width and repeats
+        // along it, as the canvas draws it.
+        final name = paint.pattern;
+        final entry = name == null ? null : _sheet?.entries[name];
+        final source = entry?.source;
+        final length = source == null || source.height <= 0
+            ? 0.0
+            : source.width / source.height * paint.halfWidth * 2 / scale;
+        out[o] = paint.halfWidth / scale;
+        out[o + 1] = paint.offset / scale;
+        out[o + 2] = length > 0 ? length : 1;
+        out[o + 3] = length > 0 ? paint.a : 0;
+        out[o + 4] = source?.left ?? 0;
+        out[o + 5] = source?.top ?? 0;
+        out[o + 6] = source?.width ?? 1;
+        out[o + 7] = source?.height ?? 1;
+        continue;
+      }
       final pattern = paint.pattern;
       if (pattern != null) {
         final entry = _sheet?.entries[pattern];
@@ -650,7 +727,7 @@ class GpuMap implements MapRenderer {
       out[o + 1] = paint.g;
       out[o + 2] = paint.b;
       out[o + 3] = paint.a;
-      if (sheet.layers[layerIndex] is! LineLayer) {
+      if (layer is! LineLayer) {
         // A fill: how far it is moved, in tile units.
         out[o + 4] = paint.translateX / scale;
         out[o + 5] = paint.translateY / scale;

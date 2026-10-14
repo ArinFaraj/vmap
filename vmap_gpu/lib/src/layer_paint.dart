@@ -23,7 +23,7 @@ class LayerPaint {
   /// blue and [dashPeriod] the ring's alpha.
   final bool circle;
 
-  /// The sprite a patterned fill repeats.
+  /// The sprite a patterned fill or line repeats.
   final String? pattern;
 
   /// A line drawn as two: the share of its half width the gap down its
@@ -125,7 +125,10 @@ class LayerPaint {
           ty = (asNumber(moved[1]) ?? 0).toDouble();
         }
       }
-      final pattern = layer is FillLayer ? layer.pattern?.call(context) : null;
+      final pattern = switch (layer) {
+        PatternedLayer(:final pattern?) => pattern(context),
+        _ => null,
+      };
       return LayerPaint(
         color.r * a,
         color.g * a,

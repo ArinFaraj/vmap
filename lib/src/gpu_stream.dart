@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'platform.dart';
 import 'style_model.dart';
+import 'tessellate.dart' show LineMesher;
 import 'tile_builder.dart' show BuiltMesh;
 import 'typed_buffer.dart';
 
@@ -17,9 +18,11 @@ import 'typed_buffer.dart';
 /// - a line vertex's extrusion from its centre line, x and y in 1/128ths
 ///   plus 2048, the second times 4096, zero for a fill;
 /// - an offset line's sideways vector, packed as the extrusion is;
-/// - the slot within its segment, plus 16384 for a line, 32768 for a fill
-///   drawn with a pattern, or 49152 for a circle;
-/// - the distance along the line in tile units.
+/// - the slot within its segment, plus 16384 times its kind, plus for a
+///   patterned line 131072 times where the vertex sits across it, in
+///   127ths from its left edge;
+/// - the distance along the line in tile units, or for a gradient line its
+///   share of the whole line times [progressSpan].
 class GpuStream {
   GpuStream(
     this.vertices,
@@ -55,7 +58,18 @@ class GpuStream {
     return (q(x) + q(y) * 4096).toDouble();
   }
 
-  static const fill = 0, line = 1, patterned = 2, circle = 3;
+  static const fill = 0,
+      line = 1,
+      patterned = 2,
+      circle = 3,
+      patternedLine = 4,
+      gradientLine = 5;
+
+  static bool isLine(int kind) =>
+      kind == line || kind == patternedLine || kind == gradientLine;
+
+  /// What a gradient line's distance along it is at its end.
+  static const progressSpan = LineMesher.shareSpan;
 
   List<Object?> toMessage() => [
     pack(vertices),
@@ -88,8 +102,7 @@ class GpuStream {
   }
 
   /// Builds the stream for [meshes] in [sheet]'s layer order, leaving out
-  /// layers the GPU does not draw yet: patterns, gradients, circles and
-  /// heatmaps.
+  /// the layers the GPU does not draw: extrusions, heatmaps and symbols.
   static GpuStream? build(StyleSheet sheet, List<BuiltMesh> meshes) {
     final byBucket = <int, List<BuiltMesh>>{};
     for (final m in meshes) {
@@ -110,6 +123,8 @@ class GpuStream {
         FillLayer(extruded: false) => patterned,
         CircleLayer() => circle,
         LineLayer(pattern: null, gradient: null) => line,
+        LineLayer(gradient: null) => patternedLine,
+        LineLayer() => gradientLine,
         _ => -1,
       };
       if (kind < 0) continue;
@@ -130,9 +145,11 @@ class GpuStream {
         slots.add((p, m.props));
         final base = vertices.length ~/ floatsPerVertex;
         final pos = chunk.positions;
-        final ext = kind == line ? chunk.extrusions : null;
-        final off = kind == line ? chunk.offsets : null;
-        final along = kind == line ? chunk.distances : null;
+        final stroked = isLine(kind);
+        final ext = stroked ? chunk.extrusions : null;
+        final off = stroked ? chunk.offsets : null;
+        final along = stroked ? chunk.distances : null;
+        final across = kind == patternedLine ? along : null;
         final n = pos.length ~/ 2;
         if (kind == circle) {
           // A circle is a square around its centre, each corner carrying
@@ -165,7 +182,13 @@ class GpuStream {
               off == null ? 0 : packPair(off[v * 2], off[v * 2 + 1]),
             )
             ..add2(
-              (slot + kind * 16384).toDouble(),
+              (slot +
+                      kind * 16384 +
+                      (across == null
+                          ? 0
+                          : (across[v * 2 + 1].clamp(0.0, 1.0) * 127).round() *
+                                131072))
+                  .toDouble(),
               along == null ? 0 : along[v * 2],
             );
         }
