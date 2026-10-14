@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:payv/payv.dart';
+
 import 'glyph_layout.dart';
 import 'glyph_pbf.dart';
 
@@ -43,7 +45,7 @@ ShapedText? layoutRanges(
     final line = raw.trim();
     final glyphs = <double>[];
     var x = 0.0;
-    for (final c in line.runes) {
+    for (final c in _visualOrder(line.runes.toList())) {
       final g = glyphOf(c);
       if (g == null) continue;
       glyphs.addAll([
@@ -184,3 +186,31 @@ List<int> _lineBreaks(
   }
   return out;
 }
+
+/// One line's [codes] in the order they are drawn, left to right: runs of
+/// right-to-left text reversed by the Unicode bidi algorithm, as MapLibre
+/// orders a line after breaking the text into lines. The characters that
+/// only steer the ordering are dropped, as no font draws them.
+List<int> _visualOrder(List<int> codes) {
+  if (!codes.any((c) => c >= 0x0590 && c <= 0x08FF || c >= 0xFB1D)) {
+    return [
+      for (final c in codes)
+        if (!_bidiControl(c)) c,
+    ];
+  }
+  final out = <int>[];
+  for (final run in Bidi.resolve(codes).visualRuns) {
+    final part = codes.sublist(run.start, run.end);
+    for (final c in run.level.isOdd ? part.reversed : part) {
+      if (!_bidiControl(c)) out.add(c);
+    }
+  }
+  return out;
+}
+
+bool _bidiControl(int c) =>
+    c == 0x061C ||
+    c == 0x200E ||
+    c == 0x200F ||
+    (c >= 0x202A && c <= 0x202E) ||
+    (c >= 0x2066 && c <= 0x2069);

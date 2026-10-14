@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'glyphs/arabic_forms.dart';
 import 'glyphs/glyph_layout.dart';
 import 'glyphs/glyph_pages.dart';
 import 'glyphs/glyph_ranges.dart';
@@ -268,11 +269,14 @@ class LabelSprites {
     final store = ranges;
     if (fonts != null && store != null && shaped == null) {
       final face = store.face(look.fontStack);
-      if (!store.ready(face, look.text)) return null;
+      final text = hasJoiningLetters(look.text)
+          ? String.fromCharCodes(joinArabic(look.text.runes.toList()))
+          : look.text;
+      if (!store.ready(face, text)) return null;
       final laid = layoutRanges(
         (c) => store.glyph(face, c),
         face,
-        look.text,
+        text,
         letterSpacing: look.letterSpacing,
         lineHeight: look.lineHeight,
         maxWidth: look.road
