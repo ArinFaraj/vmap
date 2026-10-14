@@ -199,8 +199,8 @@ hand, until Arin called it smooth.
   our own arena (Flutter's HostBuffer has two open bugs). Pipelines are
   warmed and the sprite sheet is copied in off the frame.
 - A tile shows only once its geometry and buildings are on the GPU; until
-  then its parent or children stand in. Buildings rise out of their
-  footprints, which fade per tile as that tile's buildings rise.
+  then its parent or children stand in. Buildings fade in at full
+  height over their footprints, which fade out per tile as they do.
 - A camera move fetches and prepares the tiles where it ends; twelve
   tiles are fetched at once. In a recording a fetch took 160 ms and a
   build 18 ms, so the network sets how fast a new city fills.

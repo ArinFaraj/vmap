@@ -4,21 +4,19 @@ import 'package:vmap/renderer.dart';
 
 import 'gpu_buffers.dart';
 
-/// How buildings come and go. A building layer rises out of its footprints
-/// over [riseMicros] once the zoom enters its range and sinks back when it
-/// leaves. Buildings showing where none stood a moment ago grow from the
-/// ground over [growMicros] and fade in over [fadeMicros]; buildings
-/// replacing others while zooming swaps tiles show at full height at once.
+/// How buildings come and go: always at full height, fading. A building
+/// layer fades in over its footprints over [fadeMicros] once the zoom
+/// enters its range and out when it leaves. Buildings showing where none
+/// stood a moment ago fade in over [fadeMicros]; buildings replacing others
+/// while zooming swaps tiles show at once.
 class BuildingReveal {
   BuildingReveal(this._clock);
 
   final Stopwatch _clock;
 
-  static const riseMicros = 400000;
-  static const growMicros = 520000;
-  static const fadeMicros = 180000;
+  static const fadeMicros = 300000;
 
-  /// How long a tile's standing buildings let a neighbour skip growing.
+  /// How long a tile's standing buildings let a neighbour skip fading in.
   static const _standingFrames = 90;
 
   final Map<ExtrusionLayer, double> _presence = Map.identity();
@@ -36,7 +34,7 @@ class BuildingReveal {
     _frame++;
     animating = false;
     final now = _clock.elapsedMicroseconds;
-    final step = math.min(1.0, (now - _at) / riseMicros);
+    final step = math.min(1.0, (now - _at) / fadeMicros);
     _at = now;
     for (final layer in sheet.extrusions) {
       final target = styleZoom >= layer.minZoom && styleZoom < layer.maxZoom
@@ -56,37 +54,29 @@ class BuildingReveal {
 
   bool shows(ExtrusionLayer layer) => (_presence[layer] ?? 0) > 0;
 
-  /// How far [layer] has risen, eased: 0 flat, 1 at full height.
-  double risen(ExtrusionLayer layer) {
+  /// How far [layer] has faded in, eased.
+  double _shown(ExtrusionLayer layer) {
     final p = _presence[layer] ?? 0;
     return p * p * (3 - 2 * p);
   }
 
-  /// The opacity and height, as fractions, of [buildings] in [tile].
-  (double, double) motion(
-    LoadedTile tile,
-    ExtrusionLayer layer,
-    BuildingGpu buildings,
-  ) {
+  /// The opacity of [buildings] in [tile].
+  double opacity(LoadedTile tile, ExtrusionLayer layer, BuildingGpu buildings) {
     final id = tile.id;
     final now = _clock.elapsedMicroseconds;
     if (buildings.shownAt < 0) {
-      final grows =
-          risen(layer) >= 1 && _stood[tile] == null && !_standingNear(id);
-      buildings.shownAt = grows ? now : now - growMicros;
+      final fades =
+          _shown(layer) >= 1 && _stood[tile] == null && !_standingNear(id);
+      buildings.shownAt = fades ? now : now - fadeMicros;
     }
-    final t = math.min(1.0, (now - buildings.shownAt) / growMicros);
+    final t = math.min(1.0, (now - buildings.shownAt) / fadeMicros);
     if (t < 1) {
       animating = true;
     } else {
       _standing[tileKey(id.z, id.x, id.y)] = _frame;
       _stood[tile] = true;
     }
-    final rest = 1 - t;
-    return (
-      math.min(1.0, t * growMicros / fadeMicros),
-      (1 - rest * rest * rest) * risen(layer),
-    );
+    return t * _shown(layer);
   }
 
   bool _standingNear(TileId id) {

@@ -691,19 +691,20 @@ class GpuMap implements MapRenderer {
       final zoom = styleZoom.clamp(layer.minZoom, layer.maxZoom - 1e-3);
       return LayerPaint.of(layer, context, zoom, props).scaled(present);
     }
-    final shown = _presence.of(layerIndex) * (1 - _risenIn(d, data, building));
+    final shown =
+        _presence.of(layerIndex) * (1 - _standingIn(d, data, building));
     if (shown <= 0) return LayerPaint.clear;
     final zoom = styleZoom.clamp(layer.minZoom, layer.maxZoom - 1e-3);
     return LayerPaint.of(layer, context, zoom, props).scaled(shown);
   }
 
-  /// How far [layer]'s buildings in tile [d] stand, as a fraction of their
-  /// height: 0 where the tile has none.
-  double _risenIn(TileDraw d, TileGpu data, ExtrusionLayer layer) {
+  /// How far [layer]'s buildings in tile [d] have faded in: 0 where the
+  /// tile has none.
+  double _standingIn(TileDraw d, TileGpu data, ExtrusionLayer layer) {
     if (!_reveal.shows(layer)) return 0;
     for (final b in data.buildings) {
       if (b.extrusion.bucket != layer.bucket) continue;
-      return _reveal.motion(d.tile, layer, b).$2;
+      return _reveal.opacity(d.tile, layer, b);
     }
     return 0;
   }
@@ -1015,9 +1016,8 @@ class _MapPass {
       map._drape.bindGround(_pass, map.terrain, d.tile.id);
       for (final b in data.buildings) {
         if (b.extrusion.bucket != layer.bucket) continue;
-        final (fade, grow) = map._reveal.motion(d.tile, layer, b);
+        final fade = map._reveal.opacity(d.tile, layer, b);
         map._times(_clip, d.size / tileExtent, perMetre, d.left, d.top, fade);
-        map._frameInfo[18] = grow;
         _pass
           ..bindVertexBuffer(
             gpu.BufferView(
