@@ -17,9 +17,6 @@ uniform sampler2D gradient_ramp;
 out vec4 frag_color;
 
 void main() {
-  if (v_dash.z > 0.0 && mod(v_dash.x, v_dash.z) > v_dash.y) {
-    discard;
-  }
   vec4 color = v_color;
   if (v_circle.z > 0.5) {
     float radius = v_pattern.x;
@@ -58,6 +55,21 @@ void main() {
   if (v_edge.z > 0.0) {
     float across = length(v_edge.xy);
     color *= clamp(v_edge.z * (1.0 - across), 0.0, 1.0);
+    // Dashes: the ramp row holds the signed distance to the nearest dash
+    // end as a share of a repeat. A round cap makes each dash a capsule
+    // half the line's width around it, exact at any width; a square cap
+    // lengthens it by as much.
+    if (v_dash.z > 0.0) {
+      float cap = floor(v_dash.y / 2.0);
+      float row = v_dash.y - cap * 2.0;
+      float sd = (texture(gradient_ramp, vec2(fract(v_dash.x), row)).r * 255.0 - 127.5) / 254.0 * v_dash.z;
+      float half_width = v_edge.z - 0.5;
+      float off_middle = across * v_edge.z;
+      float inside = cap > 1.5 ? sd + half_width
+          : cap > 0.5 ? (sd >= 0.0 ? half_width : half_width - length(vec2(sd, off_middle)))
+          : sd;
+      color *= clamp(inside + 0.5, 0.0, 1.0);
+    }
     // A line drawn as two: -v_dash.y is the gap's share of the half width,
     // its inner edge faded the same way.
     if (v_dash.y < 0.0) {

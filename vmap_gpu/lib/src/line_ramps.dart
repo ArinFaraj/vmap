@@ -1,0 +1,158 @@
+import 'dart:math' as math;
+import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'package:vmap/renderer.dart';
+
+/// What lines read along their length, a row of [width] texels each in one
+/// texture, made again when the style changes: a gradient line layer's
+/// colours from its start to its end, and a dashed layer's pattern as the
+/// signed distance to the nearest dash end.
+class LineRamps {
+  static const width = 256;
+
+  StyleSheet? _sheet;
+  final Map<int, double> _gradients = {};
+  final Map<int, double> _dashes = {};
+
+  /// Null while the style has no gradient or dashed lines.
+  gpu.Texture? texture;
+
+  /// Where the gradient row of style layer [layer] is, from 0 at the
+  /// texture's top to 1 at its bottom; null for a layer without one.
+  double? gradientOf(int layer) => _gradients[layer];
+
+  /// Where the dash row of style layer [layer] is, as [gradientOf]; null
+  /// for a layer without dashes.
+  double? dashOf(int layer) => _dashes[layer];
+
+  void update(StyleSheet sheet, EvalContext context) {
+    if (identical(sheet, _sheet)) return;
+    _sheet = sheet;
+    _gradients.clear();
+    _dashes.clear();
+    texture = null;
+    final ramps = <(int, LineLayer)>[];
+    final dashes = <(int, LineLayer)>[];
+    for (var i = 0; i < sheet.layers.length; i++) {
+      if (sheet.layers[i] case final LineLayer line
+          when line.gradient != null) {
+        ramps.add((i, line));
+      } else if (sheet.layers[i] case final LineLayer line
+          when (line.dash?.fold(0.0, (a, b) => a + b) ?? 0) > 0) {
+        dashes.add((i, line));
+      }
+    }
+    final rows = ramps.length + dashes.length;
+    if (rows == 0) return;
+    final bytes = Uint8List(width * rows * 4);
+    int byte(double v) => (v.clamp(0.0, 1.0) * 255).round();
+    for (var row = 0; row < ramps.length; row++) {
+      final (layer, line) = ramps[row];
+      final gradient = line.gradient!;
+      _gradients[layer] = (row + 0.5) / rows;
+      for (var x = 0; x < width; x++) {
+        context.progress = x / (width - 1);
+        final c = Rgba.of(gradient(context));
+        if (c == null) continue;
+        final o = (row * width + x) * 4;
+        bytes
+          ..[o] = byte(c.r * c.a)
+          ..[o + 1] = byte(c.g * c.a)
+          ..[o + 2] = byte(c.b * c.a)
+          ..[o + 3] = byte(c.a);
+      }
+    }
+    context.progress = 0;
+    for (var k = 0; k < dashes.length; k++) {
+      final row = ramps.length + k;
+      final (layer, line) = dashes[k];
+      _dashes[layer] = (row + 0.5) / rows;
+      final distances = dashDistances(
+        line.dash!,
+        width,
+        dots: line.dashCap == DashCap.round,
+      );
+      for (var x = 0; x < width; x++) {
+        final v = byte(0.5 + distances[x] * 254 / 255);
+        final o = (row * width + x) * 4;
+        bytes
+          ..[o] = v
+          ..[o + 1] = v
+          ..[o + 2] = v
+          ..[o + 3] = v;
+      }
+    }
+    try {
+      texture = gpu.gpuContext.createTexture(
+        gpu.StorageMode.hostVisible,
+        width,
+        rows,
+        format: gpu.PixelFormat.r8g8b8a8UNormInt,
+      )..overwrite(ByteData.sublistView(bytes));
+    } catch (e) {
+      _gradients.clear();
+      _dashes.clear();
+      debugPrint('vmap_gpu: the line ramps are not on the GPU: $e');
+    }
+  }
+
+  /// At [samples] points over one repeat of [dash], dashes and gaps in
+  /// turn, the signed distance to the nearest dash end as a share of the
+  /// repeat: positive inside a dash, negative in a gap. Dashes that touch
+  /// are one dash. A dash of length 0 is a point when [dots], which round
+  /// caps draw as a dot, and nothing otherwise.
+  @visibleForTesting
+  static Float64List dashDistances(
+    Float64List dash,
+    int samples, {
+    bool dots = false,
+  }) {
+    final period = dash.fold(0.0, (a, b) => a + b);
+    var spans = <(double, double)>[];
+    var at = 0.0;
+    for (var i = 0; i < dash.length; i++) {
+      if (i.isEven) spans.add((at, at + dash[i]));
+      at += dash[i];
+    }
+    // An odd count ends on a dash, which runs on into the first.
+    if (dash.length.isOdd && spans.length > 1) {
+      final (start, _) = spans.removeLast();
+      spans[0] = (start - period, spans[0].$2);
+    }
+    if (!dots) spans.removeWhere((s) => s.$2 <= s.$1);
+    final out = Float64List(samples);
+    if (spans.isEmpty) return out..fillRange(0, samples, -0.5);
+    final merged = <(double, double)>[spans.first];
+    for (final span in spans.skip(1)) {
+      final (from, to) = merged.last;
+      if (span.$1 <= to) {
+        merged.last = (from, math.max(to, span.$2));
+      } else {
+        merged.add(span);
+      }
+    }
+    if (merged.length > 1 && merged.last.$2 >= merged.first.$1 + period) {
+      final (from, _) = merged.removeLast();
+      merged[0] = (from - period, merged[0].$2);
+    }
+    spans = merged;
+    if (spans.any((s) => s.$2 - s.$1 >= period)) {
+      return out..fillRange(0, samples, 0.5);
+    }
+    for (var s = 0; s < samples; s++) {
+      final x = (s + 0.5) / samples * period;
+      var best = -double.infinity;
+      for (final (from, to) in spans) {
+        for (final shift in [-period, 0.0, period]) {
+          final a = from + shift, b = to + shift;
+          final d = x < a ? x - a : (x > b ? b - x : math.min(x - a, b - x));
+          if (d > best) best = d;
+        }
+      }
+      out[s] = (best / period).clamp(-0.5, 0.5);
+    }
+    return out;
+  }
+}

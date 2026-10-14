@@ -22,7 +22,9 @@ class LayerPaint {
 
   /// A circle: [halfWidth] is its radius, [offset] its ring's width,
   /// [dashOn] its ring's colour packed as red plus 256 green plus 65536
-  /// blue and [dashPeriod] the ring's alpha.
+  /// blue and [dashPeriod] the ring's alpha. A dashed line: [dashOn] is its
+  /// cap's index in [DashCap] and [dashPeriod] one repeat's length in
+  /// logical pixels.
   final bool circle;
 
   /// The sprite a patterned fill or line repeats.
@@ -81,10 +83,9 @@ class LayerPaint {
         final gap = (asNumber(layer.gap?.call(context)) ?? 0).toDouble();
         if (gap > 0 && width > 0) gapShare = (gap / width).clamp(0.0, 1.0);
         offset = (asNumber(layer.offset?.call(context)) ?? 0).toDouble();
-        final dash = layer.dash;
-        if (dash != null && dash.length >= 2 && width > 0) {
-          dashOn = dash[0] * width;
-          dashPeriod = (dash[0] + dash[1]) * width;
+        if (layer.dash case final dash?) {
+          dashOn = layer.dashCap.index.toDouble();
+          dashPeriod = dash.fold(0.0, (a, b) => a + b) * width;
         }
       }
       if (layer is CircleLayer) {
@@ -154,8 +155,9 @@ class LayerPaint {
 
   /// Writes this paint into the two vec4 of a shader slot at [o], laid out
   /// for [kind] as `map.vert` reads them; lengths in tile units for a tile
-  /// [scale] screen pixels to the unit. [sprites] places patterns and
-  /// [rampRow] is a gradient line's row in the gradient texture.
+  /// [scale] screen pixels to the unit. [sprites] places patterns,
+  /// [rampRow] is a gradient line's row in the line ramps and [dashRow] a
+  /// dashed line's.
   void writeSlot(
     Float32List out,
     int o,
@@ -163,6 +165,7 @@ class LayerPaint {
     double scale,
     SpriteSheet? sprites,
     double? rampRow,
+    double? dashRow,
   ) {
     void put(
       double a,
@@ -232,9 +235,11 @@ class LayerPaint {
       case GpuStream.fill:
         put(r, g, b, a, translateX / scale, translateY / scale, 0, 0);
       default:
-        // A dash period of zero means no dashes, and then a line drawn as
-        // two gives its gap's share of the half width as a negative dash
-        // length.
+        // A dashed line gives its dash row plus twice its cap's index and
+        // the length of one repeat. Otherwise the repeat is zero, and a
+        // line drawn as two gives its gap's share of the half width,
+        // negated.
+        final dashed = dashRow != null && dashPeriod > 0;
         put(
           r,
           g,
@@ -242,8 +247,8 @@ class LayerPaint {
           a,
           halfWidth / scale,
           offset / scale,
-          dashPeriod > 0 ? dashOn / scale : -gapShare,
-          dashPeriod / scale,
+          dashed ? dashRow + 2 * dashOn : -gapShare,
+          dashed ? dashPeriod / scale : 0,
         );
     }
   }

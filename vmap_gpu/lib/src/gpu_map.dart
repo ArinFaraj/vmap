@@ -10,7 +10,7 @@ import 'package:vmap/renderer.dart';
 
 import 'building_reveal.dart';
 import 'gpu_buffers.dart';
-import 'gradient_ramps.dart';
+import 'line_ramps.dart';
 import 'layer_paint.dart';
 import 'layer_presence.dart';
 
@@ -88,7 +88,7 @@ class GpuMap implements MapRenderer {
 
   /// One layer's paint this frame, in screen pixels, before a tile's scale.
   final Map<int, LayerPaint> _layerPaint = {};
-  final _ramps = GradientRamps();
+  final _ramps = LineRamps();
 
   @override
   Terrain? terrain;
@@ -742,7 +742,8 @@ class GpuMap implements MapRenderer {
         GpuStream.kindOf(sheet.layers[layerIndex]),
         scale,
         _sheet,
-        _ramps.rowOf(layerIndex),
+        _ramps.gradientOf(layerIndex),
+        _ramps.dashOf(layerIndex),
       );
     }
   }

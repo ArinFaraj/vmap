@@ -49,6 +49,7 @@ void main() {
   vec2 stroke = patterned_line ? color.xy : p.xy;
   vec2 pos = position;
   v_edge = vec3(0.0);
+  float line_pixel = 1.0;
   if (kind < 0.5) {
     // A fill: p.xy is how far it is moved, in tile units.
     pos += p.xy;
@@ -65,6 +66,7 @@ void main() {
     float w = (frame_info.mvp * vec4(centre, 0.0, 1.0)).w;
     float pixel = w / max(frame_info.fade.y * frame_info.fog_range.z, 1e-6);
     float outer = stroke.x + pixel * 0.5;
+    line_pixel = pixel;
     pos = centre + ext * outer;
     // A mitre corner reaches past the edge; faded by its own length, the
     // segment after it would thin to a wedge. MapLibre fades by the side
@@ -93,7 +95,15 @@ void main() {
     v_uv = vec3(pos * color.r * frame_info.fade.y, abs(kind - 2.0) < 0.5 ? 1.0 : 0.0);
   }
   v_color = color;
-  v_dash = vec3(packed_data.w, abs(kind - 1.0) < 0.5 ? p.z : 0.0, abs(kind - 1.0) < 0.5 ? p.w : 0.0);
+  // A line: p.z its dash row plus twice its cap, p.w one repeat in tile
+  // units, zero when undashed; then p.z is a line drawn as two's gap.
+  // v_dash is how many repeats along, p.z, and the repeat in device pixels.
+  bool plain_line = abs(kind - 1.0) < 0.5;
+  bool dashed = plain_line && p.w > 0.0;
+  v_dash = vec3(
+    dashed ? packed_data.w / p.w : 0.0,
+    plain_line ? p.z : 0.0,
+    dashed ? p.w / line_pixel : 0.0);
   v_circle = vec4(corner, circle ? 1.0 : 0.0, 1.0 / max(frame_info.fade.y, 1e-6));
   gl_Position = frame_info.mvp * vec4(pos, 0.0, 1.0);
   float far = smoothstep(frame_info.fog_range.x, frame_info.fog_range.y, gl_Position.w);

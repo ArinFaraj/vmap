@@ -853,10 +853,12 @@ class StyleCompiler {
       list = list[1];
     }
     if (list is! List || list.length < 2) return null;
-    final out = Float64List(list.length.isOdd ? list.length * 2 : list.length);
+    // An odd count is kept as it is: as in MapLibre its last dash runs on
+    // into the first, where SVG would repeat the list.
+    final out = Float64List(list.length);
     var gaps = 0.0;
     for (var i = 0; i < out.length; i++) {
-      final v = asNumber(list[i % list.length]);
+      final v = asNumber(list[i]);
       if (v == null || v < 0) return null;
       out[i] = v.toDouble();
       if (i.isOdd) gaps += v;
