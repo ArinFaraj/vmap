@@ -299,13 +299,14 @@ class PointLabels {
     (double, double) moved,
     double? pinReach,
   ) {
-    final away = pinReach ?? symbol.radialOffset * fontSize;
+    final radial = symbol.radialOffset;
+    final away = pinReach ?? (radial == null ? null : radial * fontSize);
     final first = st.side < sides.length ? st.side : 0;
     for (var k = 0; k < sides.length; k++) {
       final at = (first + k) % sides.length;
       final (ax, ay) = anchorSides(sides[at]);
       final double fx, fy;
-      if (away > 0) {
+      if (away != null) {
         final reach = ax != 0 && ay != 0 ? away / math.sqrt2 : away;
         fx = moved.$1 + ax * (reach + spot.textW / 2);
         fy = moved.$2 + ay * (reach + spot.textH / 2);

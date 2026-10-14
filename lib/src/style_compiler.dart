@@ -431,7 +431,7 @@ class StyleCompiler {
         anchors: anchors is List
             ? anchors.whereType<String>().toList()
             : const [],
-        radialOffset: asNumber(layout['text-radial-offset'])?.toDouble() ?? 0,
+        radialOffset: asNumber(layout['text-radial-offset'])?.toDouble(),
         iconAnchor: iconAnchor is String ? iconAnchor : 'center',
         iconOffsetX: iconOffset.$1,
         iconOffsetY: iconOffset.$2,

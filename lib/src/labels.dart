@@ -214,6 +214,7 @@ class LabelEngine {
     const near = _sameLabelPx * _sameLabelPx;
     final same = _states[c.key] ??= [];
     for (final st in same) {
+      if (_sameTileApart(st.candidate, c)) continue;
       final dx = (st.candidate.worldX - c.worldX) * world;
       final dy = (st.candidate.worldY - c.worldY) * world;
       if (dx * dx + dy * dy > near) continue;
@@ -223,6 +224,16 @@ class LabelEngine {
     same.add(made);
     return made;
   }
+
+  /// Whether [a] and [b] are two features of one tile, which are never the
+  /// same label however close: MapLibre only joins copies across tiles.
+  static bool _sameTileApart(LabelCandidate a, LabelCandidate b) =>
+      a is TileLabel &&
+      b is TileLabel &&
+      !identical(a.tile, b.tile) &&
+      a.tileX == b.tileX &&
+      a.tileY == b.tileY &&
+      a.tileSpan == b.tileSpan;
 
   /// Whether [c]'s text and icon both overlap anything and are ignored by
   /// everything else, so placing it tests nothing.
