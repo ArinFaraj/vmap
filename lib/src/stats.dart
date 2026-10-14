@@ -47,6 +47,10 @@ class VmapTimings {
   int tileSetupMicros = 0;
   int maxTileSetupMicros = 0;
 
+  /// Frames that left part of the map blank: a tile wanted, nothing loaded
+  /// to stand in for it.
+  int framesWithHoles = 0;
+
   /// What drawing label text cost.
   final VmapLabelWork labels = VmapLabelWork();
 

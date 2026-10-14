@@ -43,6 +43,7 @@ class GpuMap implements MapRenderer {
   gpu.UniformSlot? _groundFrame, _groundDrape, _groundDem, _groundHeights;
   late final _drape = _Drape(this);
   gpu.UniformSlot? _flatFrame, _flatSlots, _buildingFrame, _stencilFrame;
+  gpu.UniformSlot? _buildingDem, _buildingHeights;
   gpu.UniformSlot? _flatFrag, _flatSprites, _flatRamp;
   SpriteSheet? _sheet;
   ui.Image? _sheetImage;
@@ -207,6 +208,8 @@ class GpuMap implements MapRenderer {
       ),
     );
     _buildingFrame = buildingVertex.getUniformSlot('FrameInfo');
+    _buildingDem = buildingVertex.getUniformSlot('DemInfo');
+    _buildingHeights = buildingVertex.getUniformSlot('heights');
     final groundVertex = library['TerrainVertex'];
     final groundFragment = library['TerrainFragment'];
     if (groundVertex != null && groundFragment != null) {
@@ -571,6 +574,7 @@ class GpuMap implements MapRenderer {
       ..setDepthCompareOperation(gpu.CompareFunction.lessEqual)
       ..bindVertexBuffer(vertices)
       ..bindUniform(_buildingFrame!, frame);
+    _drape.bindGround(pass, null, null);
     for (final config in [gpu.StencilConfig(), equal]) {
       pass
         ..setStencilConfig(config)
@@ -760,28 +764,21 @@ class GpuMap implements MapRenderer {
   }
 
   /// [clip] times a tile's placement into the frame info block: tile units
-  /// scaled by [scale] and moved to [left], [top], heights by [perMetre]
-  /// times [grow].
+  /// scaled by [scale] and moved to [left], [top], heights by [perMetre].
   void _times(
     Float64List clip,
     double scale,
     double perMetre,
     double left,
     double top,
-    double fade, [
-    double grow = 1,
-    double lift = 0,
-  ]) {
+    double fade,
+  ) {
     final out = _frameInfo;
     for (var r = 0; r < 4; r++) {
       out[r] = clip[r] * scale;
       out[4 + r] = clip[4 + r] * scale;
-      out[8 + r] = clip[8 + r] * perMetre * grow;
-      out[12 + r] =
-          clip[r] * left +
-          clip[4 + r] * top +
-          clip[8 + r] * perMetre * lift +
-          clip[12 + r];
+      out[8 + r] = clip[8 + r] * perMetre;
+      out[12 + r] = clip[r] * left + clip[4 + r] * top + clip[12 + r];
     }
     out[16] = fade;
     out[17] = scale;
@@ -884,26 +881,6 @@ class _MapPass {
     ..setStencilConfig(
       gpu.StencilConfig(compareFunction: gpu.CompareFunction.equal),
     );
-
-  /// Draws the paint layers of [runs] of the tiles [inSlot] picks, from
-  /// above and without clipping stand-ins: the drape laid over terrain.
-  void drape(Iterable<StyleRun> runs, bool Function(TileDraw d) inSlot) {
-    _pass
-      ..bindPipeline(_map._flat!)
-      ..setDepthWriteEnable(false)
-      ..setDepthCompareOperation(gpu.CompareFunction.always)
-      ..setCullMode(gpu.CullMode.none)
-      ..setColorBlendEnable(true)
-      ..setColorBlendEquation(GpuMap._over)
-      ..setStencilConfig(gpu.StencilConfig());
-    _map._bindSprites(_pass);
-    for (final run in runs) {
-      if (run.source < 0 || run.source >= _ideal.length) continue;
-      for (final d in _ideal[run.source]) {
-        if (inSlot(d)) _drawFlat(d, run);
-      }
-    }
-  }
 
   /// Draws the paint layers of [runs] into this pass.
   void drawRuns(Iterable<StyleRun> runs) {
@@ -1032,21 +1009,15 @@ class _MapPass {
     for (final d in tiles) {
       final data = _map._gpuOf(d);
       if (data == null) continue;
+      if (data.buildings.every((b) => b.extrusion.bucket != layer.bucket)) {
+        continue;
+      }
+      map._drape.bindGround(_pass, map.terrain, d.tile.id);
       for (final b in data.buildings) {
         if (b.extrusion.bucket != layer.bucket) continue;
         final (fade, grow) = map._reveal.motion(d.tile, layer, b);
-        final scale = d.size / tileExtent;
-        final ground = map.terrain;
-        map._times(
-          _clip,
-          scale,
-          perMetre,
-          d.left,
-          d.top,
-          fade,
-          grow,
-          ground == null ? 0 : map._drape.liftOf(d, ground),
-        );
+        map._times(_clip, d.size / tileExtent, perMetre, d.left, d.top, fade);
+        map._frameInfo[18] = grow;
         _pass
           ..bindVertexBuffer(
             gpu.BufferView(

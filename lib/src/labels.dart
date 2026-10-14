@@ -536,7 +536,11 @@ class LabelEngine {
         st.placed = false;
         continue;
       }
-      st.occluded = occlusion.hides(c.worldX, c.worldY) ?? st.occluded;
+      // Buildings hiding labels are worked out at sea level, which raised
+      // ground would make flip from frame to frame.
+      st.occluded =
+          _view.ground == null &&
+          (occlusion.hides(c.worldX, c.worldY) ?? st.occluded);
       if (st.occluded) {
         st.placed = false;
         continue;

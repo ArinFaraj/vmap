@@ -55,17 +55,24 @@ Arin's smoothness on the phone, not the 38 terrain render tests.
 
 Built: elevation tiles with filled borders and a height lookup; the
 style's `terrain` source loaded through the raster tile store; the drape
-atlas drawn in one pass; one shared grid raised and lit in the vertex
-shader from r32Float height textures; buildings lifted to the ground at
-their tile's middle; labels projected standing on the ground.
+atlas drawn in one pass, stand-in tiles included so a tile still loading
+leaves no hole; one shared grid with skirts, raised and lit in the vertex
+shader from r32Float height textures; buildings standing on the ground at
+each corner, read from the same textures, their feet sunk 2 m into slopes;
+labels projected standing on the ground. Everything is drawn relative to
+the ground under the map's middle, eased as the camera moves, so depth
+precision does not depend on how high the land is.
+
+The atlas gives the 32 nearest tiles 512 px slots and up to 128 more
+256 px slots in a 4096 px square. A tilted view wants many far tiles; with
+64 slots of one size the farthest fell out for a few frames on every zoom,
+and the top of the screen showed only labels.
 
 On the phone (Vivo V2514, Vulkan), flying to Korek mountain with Liberty
 and the AWS Terrain Tiles at 1.5 times: 568 frames in 4.8 s, build p99
 5.5 ms, raster p99 3.8 ms, the same as without terrain. A first version
 that made a mesh per tile on the UI thread fell to 14 frames in 3 s.
 
-Still to come: skirts between tiles of different zoom, raster and
-hillshade layers draped instead of left flat under the ground, labels
-hidden behind hills, buildings standing on the ground at each building
-rather than at its tile's middle, the camera kept above the ground, and
-the `setTerrain` test operation.
+Still to come: raster and hillshade layers draped instead of left flat
+under the ground, labels hidden behind hills, the camera kept above the
+ground, and the `setTerrain` test operation.

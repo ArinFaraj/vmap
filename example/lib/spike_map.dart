@@ -366,7 +366,7 @@ class _DemoState extends State<_Demo> {
       'tile setup ${t.tileSetupMicros ~/ 1000} ms (max ${t.maxTileSetupMicros} us), '
       'labels ${t.labelMicros ~/ 1000} ms, place ${t.placeMicros ~/ 1000} ms '
       '(max ${t.maxPlaceMicros} us), paint ${t.paintMicros ~/ 1000} ms over '
-      '${t.frames} frames',
+      '${t.frames} frames, ${t.framesWithHoles} with holes',
     );
     for (final line in engine.stats.timings.slowPaints.take(40)) {
       debugPrint('zoomtest slow: $line');

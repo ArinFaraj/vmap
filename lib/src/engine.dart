@@ -468,12 +468,26 @@ class VmapEngine extends ChangeNotifier {
       for (final t in view.cover(maxZoom: terrain.maxZoom))
         TileId(t.z, t.x % (1 << t.z), t.y),
     ]);
+    final exaggeration = terrain.layer.exaggeration;
+    final under =
+        terrain.heights.heightAt(
+          view.centerX,
+          view.centerY,
+          math.min(view.zoom.floor(), terrain.maxZoom),
+        ) *
+        exaggeration;
+    // Eased, so an arriving tile of heights does not make the map jump.
+    final centre = _groundCentre += (under - _groundCentre) * 0.15;
+    if ((under - centre).abs() > 0.5) _requestFrame();
     gpu.terrain = Terrain(
       terrain.heights,
-      terrain.layer.exaggeration,
+      exaggeration,
       terrain.maxZoom,
+      centre,
     );
   }
+
+  double _groundCentre = 0;
 
   /// Markers the app draws above the map with a `MarkerLayer`. Map labels
   /// keep clear of each one, and a [NamedMarker]'s name is placed beside it
@@ -926,7 +940,9 @@ class VmapEngine extends ChangeNotifier {
     }
     final finished = _clock.elapsedMicroseconds;
     var ideal = 0, fallback = 0, cached = 0, loading = 0, unpack = 0;
+    var holes = 0;
     for (final s in _sources) {
+      holes += s.uncovered;
       ideal += s.ideal.length;
       fallback += s.fallback.length;
       cached += s.tiles.length;
@@ -954,6 +970,7 @@ class VmapEngine extends ChangeNotifier {
             'tiles=$ideal+$fallback cached=$cached',
       );
     timings.labels.take(_labels.work);
+    if (holes > 0) timings.framesWithHoles++;
     stats.busy = animating || waiting || _budget.stale;
     if (stats.busy) {
       _requestFrame();

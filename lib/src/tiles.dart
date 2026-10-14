@@ -297,6 +297,9 @@ class TileSource {
   final List<TileDraw> ideal = [];
   final List<TileDraw> fallback = [];
   final Map<int, TileDraw> fallbackByKey = {};
+
+  /// Tiles this frame wanted that nothing loaded could stand in for.
+  int uncovered = 0;
   final List<TileId> wanted = [];
   final List<(TileId, double)> missing = [];
   bool hadWanted = false;
@@ -354,6 +357,7 @@ class TileSource {
     ideal.clear();
     fallback.clear();
     fallbackByKey.clear();
+    uncovered = 0;
     missing.clear();
     var waiting = false;
     var covered = true;
@@ -403,6 +407,7 @@ class TileSource {
     ideal.clear();
     fallback.clear();
     fallbackByKey.clear();
+    uncovered = 0;
     missing.clear();
     var waiting = false;
     var covered = true;
@@ -520,16 +525,38 @@ class TileSource {
       draw.clips!.add(ui.Rect.fromLTWH(left, top, tileSize, tileSize));
       return;
     }
-    if (id.z >= maxDataZoom) return;
+    if (!_addChildren(frame, id, left, top, tileSize, 3)) uncovered++;
+  }
+
+  /// Covers [id] with its loaded descendants down to [depth] levels, as
+  /// MapLibre does: zooming out, what was on the screen is often two or
+  /// three levels deeper than the tile now wanted. Returns whether any was.
+  bool _addChildren(
+    int frame,
+    TileId id,
+    double left,
+    double top,
+    double tileSize,
+    int depth,
+  ) {
+    if (depth == 0 || id.z >= maxDataZoom) return false;
     final half = tileSize / 2;
+    var any = false;
     for (var cy = 0; cy < 2; cy++) {
       for (var cx = 0; cx < 2; cx++) {
-        final child = tiles[TileId(id.z + 1, id.x * 2 + cx, id.y * 2 + cy)];
-        if (child == null || !child.prepared) continue;
-        child.usedFrame = frame;
-        fallback.add(TileDraw(child, left + cx * half, top + cy * half, half));
+        final childId = TileId(id.z + 1, id.x * 2 + cx, id.y * 2 + cy);
+        final cl = left + cx * half, ct = top + cy * half;
+        final child = tiles[childId];
+        if (child != null && child.prepared) {
+          child.usedFrame = frame;
+          fallback.add(TileDraw(child, cl, ct, half));
+          any = true;
+        } else if (_addChildren(frame, childId, cl, ct, half, depth - 1)) {
+          any = true;
+        }
       }
     }
+    return any;
   }
 
   void _updateWanted(
