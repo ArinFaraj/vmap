@@ -470,6 +470,7 @@ class SymbolLayer {
     this.textPadding,
     this.iconPadding,
     this.textIgnored = false,
+    this.keepUpright = true,
     this.iconIgnored = false,
     required this.maxWidth,
     required this.iconSize,
@@ -541,6 +542,10 @@ class SymbolLayer {
 
   /// The text or icon takes no room from the labels placed after it.
   final bool textIgnored;
+
+  /// `text-keep-upright`: a name along a line is turned half round when it
+  /// would read upside down.
+  final bool keepUpright;
   final bool iconIgnored;
 
   /// How far the edge of the halo fades out, in logical pixels.

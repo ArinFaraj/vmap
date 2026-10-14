@@ -224,6 +224,16 @@ class LabelEngine {
     return made;
   }
 
+  /// Whether [c]'s text and icon both overlap anything and are ignored by
+  /// everything else, so placing it tests nothing.
+  bool _free(LabelCandidate c) {
+    final layer = _symbolOf(c);
+    if (layer == null) return false;
+    final text = !c.hasText || (layer.textOverlaps && layer.textIgnored);
+    final icon = layer.iconOverlaps && layer.iconIgnored;
+    return text && icon;
+  }
+
   /// How far apart in pixels two labels of one text in one cell may be and
   /// still be the same label.
   static const double _sameLabelPx = 3;
@@ -516,11 +526,14 @@ class LabelEngine {
     final fitKey = (zoom * 3).round();
     var considered = 0;
     for (final st in states) {
-      if (++considered > _maxConsidered) {
+      final c = st.candidate;
+      // Only labels that test for collisions count towards the cap: one
+      // that may overlap anything and is ignored by everything costs
+      // nothing to place.
+      if (!_free(c) && ++considered > _maxConsidered) {
         st.placed = false;
         continue;
       }
-      final c = st.candidate;
       st.occluded = occlusion.hides(c.worldX, c.worldY) ?? st.occluded;
       if (st.occluded) {
         st.placed = false;
@@ -636,7 +649,13 @@ class LabelEngine {
     _view.project(st.worldX, st.worldY);
     final sx = _view.x + roadX;
     final sy = _view.y + roadY;
-    final turn = _view.uprightAngle(st.worldX, st.worldY, st.angle);
+    st.keepUpright = layer?.keepUpright ?? true;
+    final turn = _view.uprightAngle(
+      st.worldX,
+      st.worldY,
+      st.angle,
+      keep: st.keepUpright,
+    );
     st.screenAngle = turn;
     if (st.curve != null) {
       final reach = (textH + room) / 2 + textPad;

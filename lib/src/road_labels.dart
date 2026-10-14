@@ -44,8 +44,10 @@ class RoadLabels {
     final need = textW * 1.15 / unitPx;
     if (road.lineLength < need) return false;
     final half = textW / 2 / unitPx;
-    final from = road.lineLength / 2 - half;
-    final to = road.lineLength / 2 + half;
+    // Centred on its anchor, moved along the road just enough to stay on it.
+    final middle = road.anchorAlong.clamp(half, road.lineLength - half);
+    final from = middle - half;
+    final to = middle + half;
     var walked = 0.0;
     var ax = 0.0, ay = 0.0, bx = 0.0, by = 0.0;
     var first = -1;

@@ -546,7 +546,8 @@ class TileBuilder {
               ? ''
               : symbol.build.icon!(context) as String;
           if (text.isEmpty && icon.isEmpty) continue;
-          final along = '${symbol.build.placement(context)}'.startsWith('line');
+          final placement = '${symbol.build.placement(context)}';
+          final along = placement.startsWith('line');
           final base = (sheet.symbols.length - 1 - s) * 4096;
           final order = _order(symbol, context);
           final carried = symbol.build.paintKeys.isEmpty
@@ -579,15 +580,20 @@ class TileBuilder {
             continue;
           }
           scaled();
+          final deeper = math.max(0, (symbol.minZoom - styleZoom).ceil());
+          // line-center names a line once, at its middle.
+          final spacing = placement == 'line-center'
+              ? double.infinity
+              : symbol.build.spacing * 8 / (1 << deeper);
           if (along && text.isNotEmpty && !symbol.build.textUpright) {
-            final label = _lineLabel(s, base, text);
-            if (label != null) labels.add(label..props = carried);
+            for (final label in _lineLabels(s, base, text, spacing)) {
+              labels.add(label..props = carried);
+            }
             continue;
           }
           final turns = along && text.isEmpty && !symbol.build.iconUpright;
-          final deeper = math.max(0, (symbol.minZoom - styleZoom).ceil());
           _repeat(
-            along ? symbol.build.spacing * 8 / (1 << deeper) : double.infinity,
+            along ? spacing : double.infinity,
             (x, y, angle) => labels.add(
               BuiltLabel(
                 s,
@@ -860,49 +866,54 @@ class TileBuilder {
     return BuiltLabel(layer, priority, text, x, y, null, icon: icon);
   }
 
-  /// Labels the feature's longest line, anchored at its middle.
-  BuiltLabel? _lineLabel(int layer, int base, String text) {
+  /// A name for every line of the feature long enough to carry one, one
+  /// per [spacing] tile units of it, anchored at the middle of each stretch,
+  /// as MapLibre repeats a road's name along it.
+  List<BuiltLabel> _lineLabels(
+    int layer,
+    int base,
+    String text,
+    double spacing,
+  ) {
     final c = _sink.coords;
-    var best = -1;
-    var bestLength = 0.0;
+    final out = <BuiltLabel>[];
     for (var r = 0; r < _sink.ringCount; r++) {
+      final start = _sink.ringStart(r);
+      final count = _sink.ringEnd(r) - start;
       var length = 0.0;
-      for (var i = _sink.ringStart(r) + 1; i < _sink.ringEnd(r); i++) {
-        final dx = c[i * 2] - c[i * 2 - 2];
-        final dy = c[i * 2 + 1] - c[i * 2 - 1];
+      for (var i = 1; i < count; i++) {
+        final dx = c[(start + i) * 2] - c[(start + i - 1) * 2];
+        final dy = c[(start + i) * 2 + 1] - c[(start + i - 1) * 2 + 1];
         length += math.sqrt(dx * dx + dy * dy);
       }
-      if (length > bestLength) {
-        bestLength = length;
-        best = r;
+      if (length < 160) continue;
+      final line = Float32List(count * 2);
+      for (var i = 0; i < count * 2; i++) {
+        line[i] = c[start * 2 + i];
+      }
+      final repeats = spacing.isFinite
+          ? (length / spacing).round().clamp(1, _maxRepeats)
+          : 1;
+      final step = length / repeats;
+      final priority = base + 9 - (length / 80).clamp(0, 9).toInt();
+      var walked = 0.0;
+      var next = step / 2;
+      for (var i = 1; i < count && next < length; i++) {
+        final x0 = line[i * 2 - 2], y0 = line[i * 2 - 1];
+        final dx = line[i * 2] - x0, dy = line[i * 2 + 1] - y0;
+        final seg = math.sqrt(dx * dx + dy * dy);
+        while (seg > 0 && next <= walked + seg) {
+          final t = (next - walked) / seg;
+          final x = x0 + dx * t, y = y0 + dy * t;
+          if (x >= 0 && y >= 0 && x < tileExtent && y < tileExtent) {
+            out.add(BuiltLabel(layer, priority, text, x, y, line));
+          }
+          next += step;
+        }
+        walked += seg;
       }
     }
-    if (best < 0 || bestLength < 160) return null;
-    final start = _sink.ringStart(best);
-    final count = _sink.ringEnd(best) - start;
-    final line = Float32List(count * 2);
-    for (var i = 0; i < count * 2; i++) {
-      line[i] = c[start * 2 + i];
-    }
-    var walked = 0.0;
-    var mx = line[0].toDouble();
-    var my = line[1].toDouble();
-    final half = bestLength / 2;
-    for (var i = 1; i < count; i++) {
-      final dx = line[i * 2] - line[i * 2 - 2];
-      final dy = line[i * 2 + 1] - line[i * 2 - 1];
-      final seg = math.sqrt(dx * dx + dy * dy);
-      if (walked + seg >= half) {
-        final t = seg == 0 ? 0.0 : (half - walked) / seg;
-        mx = line[i * 2 - 2] + dx * t;
-        my = line[i * 2 - 1] + dy * t;
-        break;
-      }
-      walked += seg;
-    }
-    if (mx < 0 || my < 0 || mx >= tileExtent || my >= tileExtent) return null;
-    final lengthBonus = (bestLength / 80).clamp(0, 9).toInt();
-    return BuiltLabel(layer, base + 9 - lengthBonus, text, mx, my, line);
+    return out;
   }
 }
 

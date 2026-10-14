@@ -95,10 +95,12 @@ class LabelView {
   }
 
   /// [screenAngle] turned by half a turn where needed so text along it
-  /// reads left to right: between minus and plus a quarter turn.
-  double uprightAngle(double wx, double wy, double angle) {
+  /// reads left to right: between minus and plus a quarter turn. With
+  /// [keep] false it is only brought between minus and plus a half turn.
+  double uprightAngle(double wx, double wy, double angle, {bool keep = true}) {
     var turn = screenAngle(wx, wy, angle) % (2 * math.pi);
     if (turn > math.pi) turn -= 2 * math.pi;
+    if (!keep) return turn;
     if (turn > math.pi / 2) turn -= math.pi;
     if (turn < -math.pi / 2) turn += math.pi;
     return turn;

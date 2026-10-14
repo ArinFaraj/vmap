@@ -72,6 +72,33 @@ final class TileLabel extends LabelCandidate {
   /// point.
   late final double lineLength = _length(tile.line);
 
+  /// How far along the road the name's anchor lies, in tile units: where
+  /// the name is centred. A road named every `symbol-spacing` has one
+  /// label per anchor.
+  late final double anchorAlong = _along(tile.line, tile.x, tile.y);
+
+  static double _along(Float32List? line, double x, double y) {
+    if (line == null) return 0;
+    var walked = 0.0, best = 0.0, nearest = double.infinity;
+    for (var i = 2; i < line.length; i += 2) {
+      final ax = line[i - 2], ay = line[i - 1];
+      final dx = line[i] - ax, dy = line[i + 1] - ay;
+      final seg2 = dx * dx + dy * dy;
+      final t = seg2 == 0
+          ? 0.0
+          : (((x - ax) * dx + (y - ay) * dy) / seg2).clamp(0.0, 1.0);
+      final px = ax + dx * t - x, py = ay + dy * t - y;
+      final d = px * px + py * py;
+      final seg = math.sqrt(seg2);
+      if (d < nearest) {
+        nearest = d;
+        best = walked + seg * t;
+      }
+      walked += seg;
+    }
+    return best;
+  }
+
   static double _length(Float32List? line) {
     if (line == null) return 0;
     var total = 0.0;
@@ -121,6 +148,9 @@ class LabelState {
   /// down.
   double angle = 0;
   double screenAngle = 0;
+
+  /// Its layer's `text-keep-upright`, for a name along a road.
+  bool keepUpright = true;
 
   /// For a name that follows a bend: the stretch of road it sits on, as x,y
   /// pairs in fractions of the world, and how far along it the middle of the

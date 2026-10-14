@@ -169,6 +169,7 @@ class LabelPainter {
     final n = RoadLabels.stripCount(textW, sprite.textHeight * st.scale);
     final strips = _roads.strips(st, n, textW / n / _view.world);
     final flip =
+        st.keepUpright &&
         math.cos(_view.screenAngle(st.worldX, st.worldY, st.angle)) < 0;
     final pad = LabelSprites.haloPad * pixelW / sprite.width;
     final slice = (pixelW - pad * 2) / n;
@@ -382,7 +383,12 @@ class LabelPainter {
         c.tile.line == null) {
       return st.screenAngle;
     }
-    return _view.uprightAngle(st.worldX, st.worldY, st.angle);
+    return _view.uprightAngle(
+      st.worldX,
+      st.worldY,
+      st.angle,
+      keep: st.keepUpright,
+    );
   }
 
   final Float64List _along = Float64List(3);
@@ -395,6 +401,7 @@ class LabelPainter {
     final path = st.curve!;
     final (onScreen, middle) = _view.onScreen(path, st.curveMid);
     final flip =
+        st.keepUpright &&
         math.cos(_view.screenAngle(st.worldX, st.worldY, st.angle)) < 0;
     final half = shaped.width * em / 2;
     final top = -shaped.height * em / 2;
