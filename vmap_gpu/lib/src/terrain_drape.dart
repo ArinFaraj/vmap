@@ -39,6 +39,14 @@ class _Drape {
   final Float32List _demInfo = Float32List(8);
   late final ByteData _demBytes = ByteData.sublistView(_demInfo);
 
+  /// Each raster tile's picture on the GPU, with the colour filter it was
+  /// drawn through.
+  final Expando<(ui.ColorFilter?, gpu.Texture)> _pictures = Expando();
+  final Expando<bool> _inFlight = Expando();
+
+  /// Whether a picture the last atlas wanted is still on its way.
+  bool sending = false;
+
   /// Each of [tiles]' slots: as many device pixels on a side as the tile
   /// covers on the screen, rounded up to a size in [_sizes], so the map
   /// laid over the ground is as sharp as the flat map. Slots are packed in
@@ -134,15 +142,15 @@ class _Drape {
     final all = view.cover(maxZoom: view.zoom.ceil(), variableZoom: true);
     _slots = _layout(all, view, _map._frameInfo[26]);
     _tiles = all.sublist(0, _slots.length);
+    sending = false;
     if (_tiles.isEmpty) return;
     _fit();
     final commands = gpu.gpuContext.createCommandBuffer();
     buffers.add(commands);
     final pass = commands.createRenderPass(
       gpu.RenderTarget.singleColor(
-        // Clear: where no vector layer is drawn, the canvas's background
-        // and raster layers, drawn under the GPU's picture, show through.
-        // They lie flat until rasters are draped too.
+        // Clear: where no layer is drawn, the canvas's background, drawn
+        // under the GPU's picture, shows through.
         gpu.ColorAttachment(texture: _atlas!, clearValue: Vector4.zero()),
         depthStencilAttachment: gpu.DepthStencilAttachment(
           texture: _atlasDepth!,
@@ -166,6 +174,7 @@ class _Drape {
         ..[13] = 1 + 2 * top / span
         ..[14] = 0.5
         ..[15] = 1;
+      _drawPictures(pass, clip, left, top, span);
       _map._frameInfo[26] = size / span;
       bool inSlot(TileDraw d) =>
           d.left < left + span &&
@@ -187,6 +196,144 @@ class _Drape {
       ).drawRuns(sheet.runs);
     }
     _map._frameInfo[26] = dpr;
+  }
+
+  /// Draws the raster tiles over the slot whose clip matrix is [clip] and
+  /// whose tile spans [span] from [left], [top], under its other layers, as
+  /// flat ground with the ground's pipeline.
+  void _drawPictures(
+    gpu.RenderPass pass,
+    Float64List clip,
+    double left,
+    double top,
+    double span,
+  ) {
+    final map = _map;
+    var bound = false;
+    for (final piece in map.rasters) {
+      final target = piece.target;
+      if (target.left >= left + span ||
+          target.right <= left ||
+          target.top >= top + span ||
+          target.bottom <= top) {
+        continue;
+      }
+      final texture = _pictureOf(piece);
+      if (texture == null) continue;
+      if (!bound) {
+        final corners = _corners ??= _gridCorners();
+        final indices = _indices ??= _gridIndices();
+        pass
+          ..clearBindings()
+          ..bindPipeline(map._ground!)
+          ..setCullMode(gpu.CullMode.none)
+          ..setColorBlendEnable(true)
+          ..setColorBlendEquation(GpuMap._over)
+          ..setStencilConfig(gpu.StencilConfig())
+          ..setDepthWriteEnable(false)
+          ..setDepthCompareOperation(gpu.CompareFunction.always)
+          ..bindVertexBuffer(
+            gpu.BufferView(
+              corners,
+              offsetInBytes: 0,
+              lengthInBytes: corners.sizeInBytes,
+            ),
+          )
+          ..bindIndexBuffer(
+            gpu.BufferView(
+              indices,
+              offsetInBytes: 0,
+              lengthInBytes: indices.sizeInBytes,
+            ),
+            gpu.IndexType.int16,
+          )
+          ..bindTexture(
+            map._groundHeights!,
+            _flatHeights(0, 0),
+            sampler: gpu.SamplerOptions(
+              minFilter: gpu.MinMagFilter.nearest,
+              magFilter: gpu.MinMagFilter.nearest,
+            ),
+          );
+        bound = true;
+      }
+      final source = piece.source;
+      final width = piece.image.width, height = piece.image.height;
+      map._times(
+        clip,
+        target.width / tileExtent,
+        0,
+        target.left,
+        target.top,
+        0,
+      );
+      for (var r = 0; r < 4; r++) {
+        map._frameInfo[4 + r] = clip[4 + r] * target.height / tileExtent;
+      }
+      map._frameInfo
+        ..[16] = source.left / width
+        ..[17] = source.top / height
+        ..[18] = source.width / width
+        ..[19] = source.height / height
+        ..[27] = piece.opacity;
+      final filter = piece.smooth
+          ? gpu.MinMagFilter.linear
+          : gpu.MinMagFilter.nearest;
+      pass
+        ..bindTexture(
+          map._groundDrape!,
+          texture,
+          sampler: gpu.SamplerOptions(minFilter: filter, magFilter: filter),
+        )
+        ..bindUniform(map._groundFrame!, map._host!.emplace(map._frameBytes))
+        ..bindUniform(map._groundDem!, map._host!.emplace(_demBytes))
+        ..drawIndexed(_indexCount);
+    }
+    map._frameInfo[27] = 1;
+  }
+
+  /// [piece]'s picture on the GPU, sent there when it is not yet; until it
+  /// arrives, the one it had under another colour filter, or null.
+  gpu.Texture? _pictureOf(RasterPiece piece) {
+    final kept = _pictures[piece.image];
+    if (kept != null && kept.$1 == piece.filter) return kept.$2;
+    sending = true;
+    if (_inFlight[piece.image] != true) _send(piece);
+    return kept?.$2;
+  }
+
+  /// Copies [piece]'s picture, through its colour filter, into a texture.
+  /// Read back on the raster thread off the frame, as the sprites are.
+  Future<void> _send(RasterPiece piece) async {
+    final image = piece.image;
+    _inFlight[image] = true;
+    ui.Image? filtered;
+    try {
+      if (piece.filter case final filter?) {
+        final recorder = ui.PictureRecorder();
+        ui.Canvas(recorder)
+            .drawImage(image, ui.Offset.zero, ui.Paint()..colorFilter = filter);
+        final picture = recorder.endRecording();
+        filtered = await picture.toImage(image.width, image.height);
+        picture.dispose();
+      }
+      final pixels = await (filtered ?? image).toByteData();
+      if (pixels == null) return;
+      _pictures[image] = (
+        piece.filter,
+        gpu.gpuContext.createTexture(
+          gpu.StorageMode.hostVisible,
+          image.width,
+          image.height,
+          format: gpu.PixelFormat.r8g8b8a8UNormInt,
+        )..overwrite(pixels),
+      );
+    } catch (e) {
+      debugPrint('vmap_gpu: a raster tile is not on the GPU: $e');
+    } finally {
+      filtered?.dispose();
+      _inFlight[image] = false;
+    }
   }
 
   /// Draws the raised ground of every tile [drawAtlas] drew, coloured from
@@ -315,6 +462,7 @@ class _Drape {
     double sink,
   ) {
     final n = 1 << tz;
+    tx %= n;
     final found = terrain.heights.locate(
       (tx + 0.5) / n,
       (ty + 0.5) / n,

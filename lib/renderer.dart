@@ -6,7 +6,7 @@ export 'src/expr.dart' show EvalContext, Rgba, asNumber;
 export 'src/extrusion.dart'
     show BuildingRenderer, BuiltExtrusion, ExtrusionPainter;
 export 'src/gpu_stream.dart' show GpuStream;
-export 'src/map_renderer.dart' show MapRenderer, RendererTileData;
+export 'src/map_renderer.dart' show MapRenderer, RasterPiece, RendererTileData;
 export 'src/mercator.dart' show latitudeAt, worldX, worldY;
 export 'src/sprites.dart' show SpriteImage, SpriteSheet;
 export 'src/style_model.dart';

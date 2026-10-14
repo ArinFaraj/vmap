@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'expr.dart';
+import 'map_renderer.dart' show RasterPiece;
 import 'pmtiles.dart';
 import 'raster_style.dart';
 import 'style_model.dart';
@@ -15,6 +16,7 @@ import 'net.dart';
 import 'platform.dart';
 import 'tile_id.dart';
 import 'mercator.dart';
+import 'view.dart';
 
 class _RasterTile {
   ui.Image? image;
@@ -98,21 +100,29 @@ sealed class RasterDrawing<L extends RasterLayer> {
   final ui.Paint _paint = ui.Paint()..filterQuality = ui.FilterQuality.low;
   bool _closed = false;
 
-  /// Draws the layer for the view. [zoom] is the slippy-map zoom and
-  /// [origin] the world pixel at the canvas origin.
+  /// The tiles the last [paint] laid down.
+  final List<RasterPiece> drawn = [];
+
+  /// Draws the layer for the view. [zoom] is the slippy-map zoom, [origin]
+  /// the world pixel at the canvas origin, and [view] what a tilted screen
+  /// shows. With [drape], a tiled layer only gathers its tiles into
+  /// [drawn], for the GPU to lay over raised ground.
   void paint(
     ui.Canvas canvas,
     EvalContext context,
     double zoom,
     ui.Offset origin,
-    ui.Size size,
-  ) {
+    ui.Size size, {
+    MapView? view,
+    bool drape = false,
+  }) {
+    drawn.clear();
     final styleZoom = context.zoom;
     if (styleZoom < layer.minZoom || styleZoom >= layer.maxZoom) return;
     final opacity = (asNumber(layer.opacity(context)) ?? 1).clamp(0.0, 1.0);
     if (opacity <= 0) return;
     _paint.color = ui.Color.fromRGBO(255, 255, 255, opacity);
-    _draw(canvas, context, zoom, origin, size);
+    _draw(canvas, context, zoom, origin, size, view, drape: drape);
   }
 
   void _draw(
@@ -121,7 +131,9 @@ sealed class RasterDrawing<L extends RasterLayer> {
     double zoom,
     ui.Offset origin,
     ui.Size size,
-  );
+    MapView? view, {
+    required bool drape,
+  });
 
   void close() {
     _closed = true;
@@ -175,7 +187,9 @@ final class PictureDrawing extends RasterDrawing<ImageLayer> {
     }
   }
 
-  /// Draws the picture once for every copy of the world in view.
+  /// Draws the picture once for every copy of the world in view. Over
+  /// raised ground a north-up picture is draped; one at any other angle
+  /// lies flat under the ground.
   @override
   void _draw(
     ui.Canvas canvas,
@@ -183,7 +197,9 @@ final class PictureDrawing extends RasterDrawing<ImageLayer> {
     double zoom,
     ui.Offset origin,
     ui.Size size,
-  ) {
+    MapView? view, {
+    required bool drape,
+  }) {
     final image = _picture;
     if (image == null) return;
     _paint
@@ -194,6 +210,29 @@ final class PictureDrawing extends RasterDrawing<ImageLayer> {
     final w = image.width.toDouble(), h = image.height.toDouble();
     final first = (origin.dx / world).floor() - 1;
     final last = ((origin.dx + size.width) / world).floor() + 1;
+    final northUp =
+        corners[1] == corners[3] &&
+        corners[5] == corners[7] &&
+        corners[0] == corners[6] &&
+        corners[2] == corners[4];
+    if (drape && northUp) {
+      for (var copy = first; copy <= last; copy++) {
+        drawn.add((
+          image: image,
+          source: ui.Rect.fromLTWH(0, 0, w, h),
+          target: ui.Rect.fromLTRB(
+            (corners[0] + copy) * world - origin.dx,
+            corners[1] * world - origin.dy,
+            (corners[2] + copy) * world - origin.dx,
+            corners[5] * world - origin.dy,
+          ),
+          opacity: _paint.color.a,
+          filter: _paint.colorFilter,
+          smooth: !layer.nearest,
+        ));
+      }
+      return;
+    }
     _paint.shader = _shader;
     for (var copy = first; copy <= last; copy++) {
       final at = Float32List(8);
@@ -317,19 +356,28 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
   Future<bool> keep(int z, int x, int y) async =>
       await _store?.keep(z, x, y) ?? false;
 
-  @override
-  void _draw(
-    ui.Canvas canvas,
-    EvalContext context,
-    double zoom,
+  /// The tiles at zoom [z] in view: those under the tilted screen when
+  /// [view] is set, as [origin] and [size] frame only its middle.
+  Iterable<(int, int)> _inView(
+    int z,
+    double span,
     ui.Offset origin,
     ui.Size size,
-  ) {
-    if (_template == null) return;
-    _frame++;
-    final z = tileZoom(zoom);
-    final span = 256.0 * math.pow(2, zoom - z);
-    final TileRange(:n, :x0, :x1, :y0, :y1) = TileRange(
+    MapView? view,
+  ) sync* {
+    if (view != null) {
+      // The hold takes the cover to [z] whatever the view's own zoom.
+      for (final t in view.cover(
+        maxZoom: z,
+        minZoom: z,
+        hold: z + 0.5 - view.zoom,
+        variableZoom: false,
+      )) {
+        yield (t.x, t.y);
+      }
+      return;
+    }
+    final TileRange(:x0, :x1, :y0, :y1) = TileRange(
       z,
       origin.dx,
       origin.dy,
@@ -337,36 +385,66 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
       origin.dy + size.height,
       tileSpan: span,
     );
+    for (var y = y0; y <= y1; y++) {
+      for (var x = x0; x <= x1; x++) {
+        yield (x, y);
+      }
+    }
+  }
+
+  @override
+  void _draw(
+    ui.Canvas canvas,
+    EvalContext context,
+    double zoom,
+    ui.Offset origin,
+    ui.Size size,
+    MapView? view, {
+    required bool drape,
+  }) {
+    if (_template == null) return;
+    _frame++;
+    final z = tileZoom(zoom);
+    final n = 1 << z;
+    final span = 256.0 * math.pow(2, zoom - z);
     _setUpPaint(context);
     final lap = _lap, ring = _ring;
     waiting = 0;
-    for (var y = y0; y <= y1; y++) {
-      for (var x = x0; x <= x1; x++) {
-        final key = tileKey(z, x % n, y);
-        final tile = _tiles[key] ??= _RasterTile();
-        tile.usedFrame = _frame;
-        final image = tile.image;
-        if (image == null) {
-          _load(tile, z, x % n, y);
-          final failed =
-              tile.failedAtMs >= 0 &&
-              _clock.elapsedMilliseconds - tile.failedAtMs < 5000;
-          final covered = _store?.cover.has(z, x % n, y) ?? false;
-          if (covered && !failed) waiting++;
-          continue;
-        }
-        canvas.drawImageRect(
-          image,
-          ui.Rect.fromLTRB(ring, ring, image.width - ring, image.height - ring),
-          ui.Rect.fromLTRB(
-            x * span - origin.dx,
-            y * span - origin.dy,
-            (x + 1) * span - origin.dx + lap,
-            (y + 1) * span - origin.dy + lap,
-          ),
-          _paint,
-        );
+    for (final (x, y) in _inView(z, span, origin, size, view)) {
+      final key = tileKey(z, x % n, y);
+      final tile = _tiles[key] ??= _RasterTile();
+      tile.usedFrame = _frame;
+      final image = tile.image;
+      if (image == null) {
+        _load(tile, z, x % n, y);
+        final failed =
+            tile.failedAtMs >= 0 &&
+            _clock.elapsedMilliseconds - tile.failedAtMs < 5000;
+        final covered = _store?.cover.has(z, x % n, y) ?? false;
+        if (covered && !failed) waiting++;
+        continue;
       }
+      final source = ui.Rect.fromLTRB(
+        ring,
+        ring,
+        image.width - ring,
+        image.height - ring,
+      );
+      final target = ui.Rect.fromLTRB(
+        x * span - origin.dx,
+        y * span - origin.dy,
+        (x + 1) * span - origin.dx + lap,
+        (y + 1) * span - origin.dy + lap,
+      );
+      drawn.add((
+        image: image,
+        source: source,
+        target: target,
+        opacity: _paint.color.a,
+        filter: _paint.colorFilter,
+        smooth: _paint.filterQuality != ui.FilterQuality.none,
+      ));
+      if (!drape) canvas.drawImageRect(image, source, target, _paint);
     }
     if (_tiles.length > _maxTiles) {
       final stale = [
@@ -921,12 +999,15 @@ final class TerrainTiles extends TileDrawing<TerrainLayer> {
     double zoom,
     ui.Offset origin,
     ui.Size size,
-  ) {}
+    MapView? view, {
+    required bool drape,
+  }) {}
 
   /// Fetches the tiles [ids] that are not here yet, each taken to the
   /// source's deepest zoom where it is deeper, and lets go of those not
   /// asked for in a while.
   void want(Iterable<TileId> ids) {
+    waiting = 0;
     if (_template == null) return;
     _frame++;
     // Each tile's ancestor four zooms up comes too: a handful of small
@@ -944,6 +1025,10 @@ final class TerrainTiles extends TileDrawing<TerrainLayer> {
       tile.usedFrame = _frame;
       if (!heights.has(TileId(z, x, y)) && !_empty.contains(tileKey(z, x, y))) {
         _load(tile, z, x, y);
+        final failed =
+            tile.failedAtMs >= 0 &&
+            _clock.elapsedMilliseconds - tile.failedAtMs < 5000;
+        if (!failed && (_store?.cover.has(z, x, y) ?? false)) waiting++;
       }
     }
     if (_tiles.length > TileDrawing._maxTiles) {

@@ -853,6 +853,7 @@ class VmapEngine extends ChangeNotifier {
           view.matrix(originX: camera.origin.dx, originY: camera.origin.dy),
         );
     }
+    final drape = onGpu && gpu.terrain != null;
     for (final run in sheet.runs) {
       if (run.raster >= 0) {
         _rasters[run.raster].paint(
@@ -861,6 +862,8 @@ class VmapEngine extends ChangeNotifier {
           camera.zoom,
           camera.origin,
           size,
+          view: view,
+          drape: drape,
         );
         continue;
       }
@@ -889,6 +892,7 @@ class VmapEngine extends ChangeNotifier {
       canvas.restore();
       if (onGpu) {
         final gpuStarted = _clock.elapsedMicroseconds;
+        gpu.rasters = drape ? [for (final r in _rasters) ...r.drawn] : const [];
         final more = gpu.paint(
           canvas,
           view,
@@ -999,7 +1003,11 @@ class VmapEngine extends ChangeNotifier {
       ..labelSprites = _labels.spriteCount
       ..tilesLoading =
           loading +
-          _rasters.whereType<TileDrawing>().fold(0, (n, r) => n + r.waiting)
+          _rasters.whereType<TileDrawing>().fold<int>(
+            0,
+            (n, r) => n + r.waiting,
+          ) +
+          (_terrain?.waiting ?? 0)
       ..resourcesLoading = _resources.loading
       ..drawCalls = draws;
     for (final s in _sources) {

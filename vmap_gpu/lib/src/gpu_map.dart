@@ -93,6 +93,9 @@ class GpuMap implements MapRenderer {
   @override
   Terrain? terrain;
 
+  @override
+  List<RasterPiece> rasters = const [];
+
   /// Premultiplied source over, which also leaves the colour untouched
   /// where the stencil pass writes its transparent squares.
   static final _over = gpu.ColorBlendEquation(
@@ -407,7 +410,9 @@ class GpuMap implements MapRenderer {
     final buffers = <gpu.CommandBuffer>[];
     _host!.reset();
     _setFog(sheet, context, view);
-    _frameInfo[26] = devicePixelRatio;
+    _frameInfo
+      ..[26] = devicePixelRatio
+      ..[27] = 1;
     _reveal.begin(sheet, styleZoom);
     _presence.begin(sheet, styleZoom, ideal);
     _layerPaint.clear();
@@ -509,7 +514,10 @@ class GpuMap implements MapRenderer {
       buffers.last.submit(completionCallback: (_) => _finished());
     });
     _present(canvas, _last = shown, view);
-    return _reveal.animating || _presence.animating || _spritesLoading;
+    return _reveal.animating ||
+        _presence.animating ||
+        _spritesLoading ||
+        _drape.sending;
   }
 
   bool _warm = false;
