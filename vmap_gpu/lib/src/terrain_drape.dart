@@ -9,18 +9,19 @@ class _Drape {
 
   final GpuMap _map;
 
-  /// The atlas's width, the device pixels on a side of the slots of the
-  /// [_near] nearest tiles and of the rest, and grid cells on a side of the
-  /// ground every tile shares. A tilted view wants many far tiles, each
-  /// small on the screen: all must fit, or the far ground goes missing.
-  static const _width = 4096, _slot = 512, _farSlot = 256, _near = 32;
-  static const _grid = 32;
+  /// The atlas's width and tallest height, the sizes a slot may take in
+  /// device pixels, largest first, and grid cells on a side of the ground
+  /// every tile shares.
+  static const _width = 4096, _maxHeight = 4096, _grid = 32;
+  static const _sizes = [1024, 512, 256];
 
   gpu.Texture? _atlas, _atlasDepth;
   int _height = 0;
 
-  /// The tiles of ground drawn this frame, nearest first, and their slots.
+  /// The tiles of ground drawn this frame, nearest first, and their slots:
+  /// corner and size in the atlas.
   List<CoverTile> _tiles = const [];
+  List<(int, int, int)> _slots = const [];
 
   /// The grid every tile of ground is drawn with, raised in the vertex
   /// shader from its tile of heights.
@@ -38,31 +39,68 @@ class _Drape {
   final Float32List _demInfo = Float32List(8);
   late final ByteData _demBytes = ByteData.sublistView(_demInfo);
 
-  /// The near slots fill rows of [_slot] from the top, the far ones rows of
-  /// [_farSlot] below them, up to the atlas's width tall.
-  static const _capacity =
-      _near +
-      (_width - _near ~/ (_width ~/ _slot) * _slot) ~/
-          _farSlot *
-          (_width ~/ _farSlot);
+  /// Each of [tiles]' slots: as many device pixels on a side as the tile
+  /// covers on the screen, rounded up to a size in [_sizes], so the map
+  /// laid over the ground is as sharp as the flat map. Slots are packed in
+  /// rows of one size, largest first; when they do not fit, the farthest
+  /// tiles take smaller slots, and the farthest of all are left out.
+  List<(int, int, int)> _layout(
+    List<CoverTile> tiles,
+    MapView view,
+    double dpr,
+  ) {
+    final want = [
+      for (final t in tiles)
+        () {
+          final span = view.worldSize / (1 << t.z);
+          final onScreen =
+              span * view.cameraToCenterDistance / t.distance * dpr;
+          final size = _sizes.lastIndexWhere((s) => s >= onScreen * 0.85);
+          return size < 0 ? 0 : size;
+        }(),
+    ];
+    int height() {
+      var total = 0;
+      for (var k = 0; k < _sizes.length; k++) {
+        final count = want.where((w) => w == k).length;
+        total += (count / (_width ~/ _sizes[k])).ceil() * _sizes[k];
+      }
+      return total;
+    }
 
-  /// Where tile [i] of [count] is drawn in the atlas: its corner and size.
-  static (int, int, int) _place(int i, int count) {
-    const across = _width ~/ _slot, farAcross = _width ~/ _farSlot;
-    if (i < _near) return ((i % across) * _slot, (i ~/ across) * _slot, _slot);
-    final nearRows = (math.min(count, _near) / across).ceil();
-    final k = i - _near;
-    return (
-      (k % farAcross) * _farSlot,
-      nearRows * _slot + (k ~/ farAcross) * _farSlot,
-      _farSlot,
-    );
+    while (want.isNotEmpty && height() > _maxHeight) {
+      final larger = want.lastIndexWhere((w) => w < _sizes.length - 1);
+      if (larger < 0) {
+        want.removeLast();
+      } else {
+        want[larger]++;
+      }
+    }
+    final out = <(int, int, int)>[];
+    final rowTop = <int>[];
+    var top = 0;
+    for (var k = 0; k < _sizes.length; k++) {
+      rowTop.add(top);
+      final count = want.where((w) => w == k).length;
+      top += (count / (_width ~/ _sizes[k])).ceil() * _sizes[k];
+    }
+    final used = List.filled(_sizes.length, 0);
+    for (final k in want) {
+      final size = _sizes[k];
+      final across = _width ~/ size;
+      final n = used[k]++;
+      out.add(((n % across) * size, rowTop[k] + (n ~/ across) * size, size));
+    }
+    return out;
   }
 
-  /// Grows the atlas to hold [count] slots.
-  void _fit(int count) {
-    final (_, y, size) = _place(count - 1, count);
-    final height = ((y + size) / _slot).ceil() * _slot;
+  /// Grows the atlas to hold [_slots].
+  void _fit() {
+    var bottom = 0;
+    for (final (_, y, size) in _slots) {
+      bottom = math.max(bottom, y + size);
+    }
+    final height = (bottom / 512).ceil() * 512;
     if (_atlas != null && height <= _height) return;
     _height = height;
     _atlas = gpu.gpuContext.createTexture(
@@ -91,10 +129,13 @@ class _Drape {
     List<List<TileDraw>> fallback,
     List<List<TileDraw>> ideal,
   ) {
-    final all = view.cover(maxZoom: 14, variableZoom: true);
-    _tiles = all.length > _capacity ? all.sublist(0, _capacity) : all;
+    // As deep as the view, past the data's own zoom: a tile drawn from
+    // zoom 14 data into a deeper slot is as sharp as the flat map.
+    final all = view.cover(maxZoom: view.zoom.ceil(), variableZoom: true);
+    _slots = _layout(all, view, _map._frameInfo[26]);
+    _tiles = all.sublist(0, _slots.length);
     if (_tiles.isEmpty) return;
-    _fit(_tiles.length);
+    _fit();
     final commands = gpu.gpuContext.createCommandBuffer();
     buffers.add(commands);
     final pass = commands.createRenderPass(
@@ -113,7 +154,7 @@ class _Drape {
     for (final (i, t) in _tiles.indexed) {
       final span = view.worldSize / (1 << t.z);
       final left = t.x * span - origin.dx, top = t.y * span - origin.dy;
-      final (x, y, size) = _place(i, _tiles.length);
+      final (x, y, size) = _slots[i];
       pass
         ..setViewport(gpu.Viewport(x: x, y: y, width: size, height: size))
         ..setScissor(gpu.Scissor(x: x, y: y, width: size, height: size));
@@ -203,7 +244,7 @@ class _Drape {
       );
     final height = _height.toDouble();
     for (final (i, t) in _tiles.indexed) {
-      final (x, y, size) = _place(i, _tiles.length);
+      final (x, y, size) = _slots[i];
       final span = view.worldSize / (1 << t.z);
       map._times(
         clip,
