@@ -377,11 +377,10 @@ class LabelEngine {
           symbol,
           icon.sdf && symbol != null ? _bound(st.candidate, styleZoom) : null,
           devicePixelRatio,
-          rotation,
         );
       }
       if (sprite == null || !wantsText) continue;
-      _painter.paintText(canvas, st, sprite, devicePixelRatio, rotation);
+      _painter.paintText(canvas, st, sprite, devicePixelRatio);
     }
     _live.length = kept;
     final pages = _glyphPages;
@@ -567,7 +566,8 @@ class LabelEngine {
     _view.project(st.worldX, st.worldY);
     final sx = _view.x + roadX;
     final sy = _view.y + roadY;
-    var turn = (st.angle + _view.rotation) % (2 * math.pi);
+    var turn =
+        _view.screenAngle(st.worldX, st.worldY, st.angle) % (2 * math.pi);
     if (turn > math.pi) turn -= 2 * math.pi;
     if (turn > math.pi / 2) turn -= math.pi;
     if (turn < -math.pi / 2) turn += math.pi;

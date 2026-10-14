@@ -72,6 +72,26 @@ class LabelView {
     y = cy + dx * sin + dy * cos;
   }
 
+  /// The direction on screen of a line through the point [wx], [wy] of the
+  /// world that runs at [angle] on the flat map. On a tilted map that is
+  /// measured between two projected points, since perspective and the
+  /// bearing both bend it. Leaves [x] and [y] where they were.
+  double screenAngle(double wx, double wy, double angle) {
+    final view = tilted;
+    if (view == null) return angle + rotation;
+    final keepX = x, keepY = y, keepRatio = ratio;
+    final step = 8 / view.worldSize;
+    final dx = math.cos(angle) * step, dy = math.sin(angle) * step;
+    project(wx - dx, wy - dy);
+    final ax = x, ay = y;
+    project(wx + dx, wy + dy);
+    final turn = math.atan2(y - ay, x - ax);
+    x = keepX;
+    y = keepY;
+    ratio = keepRatio;
+    return turn;
+  }
+
   /// A style's translate read in [context], as the upright label frame
   /// sees it: a move along the map's sides turns with the map, one along
   /// the screen's sides when [onScreen] does not.

@@ -76,7 +76,6 @@ class LabelPainter {
     SymbolLayer? symbol,
     EvalContext? tint,
     double devicePixelRatio,
-    double rotation,
   ) {
     _imagePaint.color = ui.Color.fromRGBO(
       255,
@@ -93,7 +92,7 @@ class LabelPainter {
     final iy = _view.y + (fit ? st.dy : st.iconDy);
     final turn = switch (st.candidate) {
       TileLabel(tile: BuiltLabel(:final angle, :final turns)) =>
-        turns ? angle + rotation : angle,
+        turns ? _view.screenAngle(st.worldX, st.worldY, angle) : angle,
       MarkerName() => 0.0,
     };
     final area = ui.Rect.fromLTWH(
@@ -134,16 +133,15 @@ class LabelPainter {
     LabelState st,
     LabelSprite sprite,
     double devicePixelRatio,
-    double rotation,
   ) {
     _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
     switch (sprite) {
       case GlyphSprite() when st.curve != null:
-        _glyphsBent(st, sprite, devicePixelRatio, rotation);
+        _glyphsBent(st, sprite, devicePixelRatio);
       case GlyphSprite():
         _glyphs(st, sprite, devicePixelRatio);
       case ImageSprite() when st.curve != null:
-        _drawBent(canvas, st, sprite, rotation);
+        _drawBent(canvas, st, sprite);
       case PictureSprite():
         _drawRecording(canvas, st, sprite, devicePixelRatio);
       case ImageSprite():
@@ -151,18 +149,14 @@ class LabelPainter {
     }
   }
 
-  void _drawBent(
-    ui.Canvas canvas,
-    LabelState st,
-    ImageSprite sprite,
-    double rotation,
-  ) {
+  void _drawBent(ui.Canvas canvas, LabelState st, ImageSprite sprite) {
     final pixelW = sprite.pixelW;
     final pixelH = sprite.pixelH;
     final textW = sprite.textWidth * st.scale;
     final n = RoadLabels.stripCount(textW, sprite.textHeight * st.scale);
     final strips = _roads.strips(st, n, textW / n / _view.world);
-    final flip = math.cos(st.angle + rotation) < 0;
+    final flip =
+        math.cos(_view.screenAngle(st.worldX, st.worldY, st.angle)) < 0;
     final pad = LabelSprites.haloPad * pixelW / sprite.width;
     final slice = (pixelW - pad * 2) / n;
     final k = sprite.width * st.scale / pixelW;
@@ -170,7 +164,13 @@ class LabelPainter {
     final rects = Float32List(n * 4);
     for (var j = 0; j < n; j++) {
       final i = flip ? n - 1 - j : j;
-      final a = strips[i * 3 + 2] + rotation + (flip ? math.pi : 0);
+      final a =
+          _view.screenAngle(
+            strips[i * 3],
+            strips[i * 3 + 1],
+            strips[i * 3 + 2],
+          ) +
+          (flip ? math.pi : 0);
       _view.project(strips[i * 3], strips[i * 3 + 1]);
       final left = j == 0 ? 0.0 : pad + j * slice - 0.5;
       final right = j == n - 1 ? pixelW : pad + (j + 1) * slice + 0.5;
@@ -294,12 +294,7 @@ class LabelPainter {
 
   final Float64List _along = Float64List(3);
 
-  void _glyphsBent(
-    LabelState st,
-    GlyphSprite sprite,
-    double devicePixelRatio,
-    double rotation,
-  ) {
+  void _glyphsBent(LabelState st, GlyphSprite sprite, double devicePixelRatio) {
     final pages = glyphs!;
     final em = sprite.fontSize * st.scale;
     _resolve(sprite, em, devicePixelRatio);
@@ -307,7 +302,8 @@ class LabelPainter {
     final shaped = sprite.shaped;
     final path = st.curve!;
     final world = _view.world;
-    final flip = math.cos(st.angle + rotation) < 0;
+    final flip =
+        math.cos(_view.screenAngle(st.worldX, st.worldY, st.angle)) < 0;
     final half = shaped.width * em / 2;
     final top = -shaped.height * em / 2;
     final ink = _faded(sprite.look.color, st.opacity);
