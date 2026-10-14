@@ -51,6 +51,75 @@ class Rgba {
     x.a + (y.a - x.a) * t,
   );
 
+  /// [x] to [y] by [t] through CIELAB, as MapLibre's `interpolate-lab`.
+  static Rgba lerpLab(Rgba x, Rgba y, double t) {
+    final a = x._lab, b = y._lab;
+    return Rgba._fromLab(
+      a.$1 + (b.$1 - a.$1) * t,
+      a.$2 + (b.$2 - a.$2) * t,
+      a.$3 + (b.$3 - a.$3) * t,
+      x.a + (y.a - x.a) * t,
+    );
+  }
+
+  /// [x] to [y] by [t] through hue, chroma and lightness, the hue taking
+  /// the short way round, as MapLibre's `interpolate-hcl`.
+  static Rgba lerpHcl(Rgba x, Rgba y, double t) {
+    final a = x._lab, b = y._lab;
+    var h0 = math.atan2(a.$3, a.$2), h1 = math.atan2(b.$3, b.$2);
+    final c0 = math.sqrt(a.$2 * a.$2 + a.$3 * a.$3);
+    final c1 = math.sqrt(b.$2 * b.$2 + b.$3 * b.$3);
+    var d = h1 - h0;
+    if (d > math.pi) d -= 2 * math.pi;
+    if (d < -math.pi) d += 2 * math.pi;
+    h0 += d * t;
+    final c = c0 + (c1 - c0) * t;
+    return Rgba._fromLab(
+      a.$1 + (b.$1 - a.$1) * t,
+      math.cos(h0) * c,
+      math.sin(h0) * c,
+      x.a + (y.a - x.a) * t,
+    );
+  }
+
+  // CIELAB against the D50 white MapLibre's style spec uses
+  // (color_spaces.ts), so blends match its pixels.
+  static const _xn = 0.96422, _zn = 0.82521;
+  static const _t0 = 4 / 29, _t1 = 6 / 29;
+  static const _t2 = 3 * _t1 * _t1, _t3 = _t1 * _t1 * _t1;
+
+  (double, double, double) get _lab {
+    double linear(double v) => v <= 0.04045
+        ? v / 12.92
+        : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
+    double f(double v) =>
+        v > _t3 ? math.pow(v, 1 / 3).toDouble() : v / _t2 + _t0;
+    final lr = linear(r), lg = linear(g), lb = linear(b);
+    final y = f(0.2225045 * lr + 0.7168786 * lg + 0.0606169 * lb);
+    final x = r == g && g == b
+        ? y
+        : f((0.4360747 * lr + 0.3850649 * lg + 0.1430804 * lb) / _xn);
+    final z = r == g && g == b
+        ? y
+        : f((0.0139322 * lr + 0.0971045 * lg + 0.7141733 * lb) / _zn);
+    return (math.max(0, 116 * y - 16), 500 * (x - y), 200 * (y - z));
+  }
+
+  static Rgba _fromLab(double l, double a, double b, double alpha) {
+    double f(double v) => v > _t1 ? v * v * v : _t2 * (v - _t0);
+    double gamma(double v) =>
+        (v <= 0.0031308 ? 12.92 * v : 1.055 * math.pow(v, 1 / 2.4) - 0.055)
+            .clamp(0.0, 1.0);
+    final fy = (l + 16) / 116;
+    final y = f(fy), x = _xn * f(fy + a / 500), z = _zn * f(fy - b / 200);
+    return Rgba(
+      gamma(3.1338561 * x - 1.6168667 * y - 0.4906146 * z),
+      gamma(-0.9787684 * x + 1.9161415 * y + 0.0334540 * z),
+      gamma(0.0719453 * x - 0.2289914 * y + 1.4052427 * z),
+      alpha,
+    );
+  }
+
   static final Map<String, Rgba?> _parsed = {};
 
   static Rgba? of(Object? value) {
@@ -612,6 +681,11 @@ Expr _op(String op, List<Object?> args) {
         arg(1),
         stops,
         outs,
+        space: switch (op) {
+          'interpolate-hcl' => 'hcl',
+          'interpolate-lab' => 'lab',
+          _ => null,
+        },
         base: kind.first == 'exponential' && kind.length > 1
             ? asNumber(kind[1]) ?? 1
             : 1,
@@ -814,6 +888,7 @@ Expr _interpolate(
   double base = 1,
   bool geometric = false,
   List<double>? bezier,
+  String? space,
 }) {
   if (stops.isEmpty) return _constant(null);
   return (c) {
@@ -847,7 +922,13 @@ Expr _interpolate(
       ];
     }
     final ca = Rgba.of(a), cb = Rgba.of(b);
-    if (ca != null && cb != null) return Rgba.lerp(ca, cb, t);
+    if (ca != null && cb != null) {
+      return switch (space) {
+        'hcl' => Rgba.lerpHcl(ca, cb, t),
+        'lab' => Rgba.lerpLab(ca, cb, t),
+        _ => Rgba.lerp(ca, cb, t),
+      };
+    }
     return a;
   };
 }
@@ -881,6 +962,10 @@ Expr _legacyFunction(Map<Object?, Object?> json) {
   if (type == 'identity' || rawStops is! List || rawStops.isEmpty) {
     return (c) => input(c) ?? fallback;
   }
+  if (property is String &&
+      rawStops.every((s) => s is List && s.isNotEmpty && s.first is Map)) {
+    return _compositeFunction(json, rawStops);
+  }
   final keys = <Object?>[];
   final values = <Object?>[];
   for (final s in rawStops) {
@@ -913,7 +998,37 @@ Expr _legacyFunction(Map<Object?, Object?> json) {
     stops,
     outs,
     base: asNumber(json['base']) ?? 1,
+    space: json['colorSpace'] as String?,
   );
   if (property is! String) return curve;
   return (c) => c.props[property] == null ? fallback : curve(c);
+}
+
+/// A legacy function of both zoom and a feature property: its stops keyed
+/// `{"zoom": z, "value": v}` make one property function per zoom, and the
+/// zoom interpolates between them, as MapLibre's `createFunction` does.
+Expr _compositeFunction(Map<Object?, Object?> json, List<Object?> rawStops) {
+  final byZoom = <double, List<Object?>>{};
+  for (final s in rawStops.cast<List<Object?>>()) {
+    final key = s.first! as Map;
+    final zoom = (asNumber(key['zoom']) ?? 0).toDouble();
+    (byZoom[zoom] ??= []).add([key['value'], s.length > 1 ? s[1] : null]);
+  }
+  final zooms = byZoom.keys.toList()..sort();
+  return _interpolate(
+    (c) => c.zoom,
+    zooms,
+    [
+      for (final z in zooms)
+        _legacyFunction({
+          'type': json['type'],
+          'property': json['property'],
+          'default': json['default'],
+          'colorSpace': json['colorSpace'],
+          'stops': byZoom[z],
+        }),
+    ],
+    base: asNumber(json['base']) ?? 1,
+    space: json['colorSpace'] as String?,
+  );
 }

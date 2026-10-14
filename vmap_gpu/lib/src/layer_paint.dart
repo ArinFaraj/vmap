@@ -75,6 +75,7 @@ class LayerPaint {
       var gapShare = 0.0;
       if (layer is LineLayer) {
         width = (asNumber(layer.width(context)) ?? 0).toDouble();
+        if (width <= 0) return clear;
         final gap = (asNumber(layer.gap?.call(context)) ?? 0).toDouble();
         if (gap > 0 && width > 0) gapShare = (gap / width).clamp(0.0, 1.0);
         offset = (asNumber(layer.offset?.call(context)) ?? 0).toDouble();

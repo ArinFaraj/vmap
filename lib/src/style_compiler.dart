@@ -216,7 +216,7 @@ class StyleCompiler {
 
   void _addBackground(_Layer layer) {
     final paint = layer.paint;
-    final color = compileExpr(paint['background-color']);
+    final color = compileExpr(paint['background-color'] ?? '#000000');
     final opacity = compileExpr(paint['background-opacity'] ?? 1);
     final picture = paint['background-pattern'];
     _backgroundPattern = picture == null ? null : compileText(picture);
