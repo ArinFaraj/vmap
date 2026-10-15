@@ -47,6 +47,4 @@ void main() {
   }
   float h = position.z + ground;
   gl_Position = frame_info.mvp * vec4(position.xy, h, 1.0);
-  float far = smoothstep(frame_info.fog_range.x, frame_info.fog_range.y, gl_Position.w);
-  v_color.rgb = mix(v_color.rgb, frame_info.fog_color.rgb, far * frame_info.fog_color.a);
 }

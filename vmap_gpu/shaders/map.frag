@@ -1,6 +1,5 @@
 in vec4 v_color;
 in vec3 v_dash;
-in vec4 v_fog;
 in vec4 v_pattern;
 in vec3 v_uv;
 in vec4 v_circle;
@@ -49,7 +48,6 @@ void main() {
     vec2 at = v_pattern.xy + mod(v_uv.xy, v_pattern.zw);
     color = texture(sprite_sheet, at / frag_info.sheet_size.xy) * v_color.a;
   }
-  // Toward the haze with distance, the colour staying premultiplied.
   // A line's outermost device pixel fades to its edge; v_edge.z is its
   // half width in device pixels, zero for anything not a line.
   if (v_edge.z > 0.0) {
@@ -76,5 +74,5 @@ void main() {
       color *= clamp(v_edge.z * (across + v_dash.y) + 0.5, 0.0, 1.0);
     }
   }
-  frag_color = vec4(mix(color.rgb, v_fog.rgb * color.a, v_fog.a), color.a);
+  frag_color = color;
 }

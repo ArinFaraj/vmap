@@ -79,7 +79,9 @@ and the AWS Terrain Tiles at 1.5 times: 568 frames in 4.8 s, build p99
 that made a mesh per tile on the UI thread fell to 14 frames in 3 s.
 
 The ground is not lit of its own accord: as in MapLibre, a style lights it
-with a hillshade layer, and lighting it as well would shade it twice. An
+with a hillshade layer, and lighting it as well would shade it twice. Nor
+is it hazed of its own accord: as in MapLibre, a style's `sky` fades it
+into its fog colour past 60 degrees of pitch. An
 image source at an angle other than north up still lies flat.
 
 Still to come: the `setTerrain` test operation, and covering the ground a
