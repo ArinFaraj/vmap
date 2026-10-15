@@ -150,7 +150,7 @@ class MeshPainter {
       HeatmapLayer(:final heat) => heat,
       _ => null,
     };
-    final shown = _colors[run.first] >>> 24;
+    final shown = _colors[run.first] >> 24 & 0xFF;
     if (heat != null && (shown == 0 || _widths[run.first] <= 0)) return 0;
     final onto = heat == null ? canvas : _heat.begin();
     var draws = 0;
