@@ -2,12 +2,13 @@
 
 | | |
 | --- | --- |
-| Layers | `background` with `background-pattern`, `fill`, `line`, `circle`, `symbol`, `raster`, `hillshade`, `heatmap`, `fill-extrusion` (standing on a tilted `VMap`, flat under flutter_map) |
+| Layers | `background` with `background-pattern`, `fill`, `line`, `circle`, `symbol`, `raster`, `hillshade`, `color-relief`, `heatmap`, `fill-extrusion` (standing on a tilted `VMap`, flat under flutter_map) |
 | Sources | any number of `vector`, `geojson`, `raster`, `raster-dem` and `image` sources. Tiles by TileJSON `url` or `tiles` templates (several addresses are spread over and fall back to one another), with the source's `minzoom`, `maxzoom`, `bounds` and `scheme`, GeoJSON inline or by address, with `cluster`, `clusterRadius`, `clusterMaxZoom`, `clusterMinPoints` and `clusterProperties`. `pmtiles://` archives over HTTP or on disk. `promoteId`, and `generateId` for GeoJSON |
 | Order | layers are drawn in the style's order, across sources and with raster layers where the style puts them |
 | Fills | colour, opacity, `fill-outline-color`, `fill-pattern`, `fill-translate` with `fill-translate-anchor` |
 | Raster | opacity, `raster-hue-rotate`, `raster-saturation`, `raster-contrast`, `raster-brightness-min` and `-max`, `raster-resampling`. An `image` source is one picture stretched between its four `coordinates` |
 | Lines | colour, opacity, width, gap width, `line-offset`, round caps, `line-join` round, bevel and miter, `line-dasharray` with butt, round and square dash caps, `line-blur`, `line-pattern`, `line-gradient` on a GeoJSON source, `line-translate` with `line-translate-anchor` |
+| Color relief | `color-relief-color` over `['elevation']`, `color-relief-opacity`, `resampling`, and a source's `custom` encoding |
 | Hillshade | Mapbox and Terrarium heights, exaggeration, shadow and highlight colours, `hillshade-accent-color` when the style names one, light direction |
 | Heatmap | radius, weight, intensity, opacity and `heatmap-color` |
 | Circles | radius, colour, opacity, the stroke's width, colour and opacity, `circle-translate` with `circle-translate-anchor` |

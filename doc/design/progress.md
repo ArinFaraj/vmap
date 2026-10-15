@@ -334,6 +334,17 @@ with the fonts in Vazirmatn rather than the style's own glyphs.
 
 Terrain is built: see `terrain.md`.
 
+2026-10-15: **715 of 1,730**. Every background layer is drawn in the
+style's order; patterns grow with the zoom between whole zooms; the
+app's own images are drawn by name (`VmapOverlay.images`, MapLibre's
+`addImage`); all CSS colour names are read, which had left heatmaps with
+only the red end of their ramp; `heatmap-opacity` works (a packed colour
+read back as signed lost any alpha of a half or more); circles and
+heatmap glows stand on every vertex of lines and polygons; and
+`color-relief` layers are drawn. The render suite had been waiting out a
+20 second limit on some tests since its window was hidden, as the engine
+asks for frames through the scheduler; it paints for itself now.
+
 Known gaps carried forward: road label anchors are spread evenly over a
 line where MapLibre steps them at exactly `symbol-spacing` from an
 offset of half the label's length (the tile workers do not know label
