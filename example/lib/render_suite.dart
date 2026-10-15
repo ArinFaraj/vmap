@@ -275,6 +275,10 @@ class _Session {
           'layers': _layers..removeWhere((l) => (l as Map)['id'] == o[1]),
         };
         _restyle();
+      case 'setTerrain':
+        _document = {..._document}..remove('terrain');
+        if (o.length > 1 && o[1] != null) _document['terrain'] = o[1];
+        _restyle();
       case 'addSource':
         _document = {
           ..._document,
