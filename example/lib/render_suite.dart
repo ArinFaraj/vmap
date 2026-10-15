@@ -81,6 +81,7 @@ Future<void> _runAll() async {
   Future<void> worker() async {
     while (next < ids.length) {
       final i = next++;
+      final clock = Stopwatch()..start();
       final result = results[i] = await _runOne(
         ids[i],
         '${testsDir.path}/${ids[i]}',
@@ -88,7 +89,8 @@ Future<void> _runAll() async {
       debugPrint(
         'render ${++done}/${ids.length} ${result.ok ? 'pass' : 'FAIL'} '
         '${ids[i]} '
-        '${result.error ?? result.difference.toStringAsFixed(4)}',
+        '${result.error ?? result.difference.toStringAsFixed(4)} '
+        '${(clock.elapsedMilliseconds / 1000).toStringAsFixed(1)}s',
       );
     }
   }
@@ -465,7 +467,10 @@ Future<void> _settle(VmapEngine engine, void Function() paint) async {
     await Future<void>.delayed(const Duration(milliseconds: 16));
     // The engine asks for its next frame through the scheduler, which a
     // hidden window seldom drives; this loop paints in its place.
-    if (engine.stats.busy) dirty = true;
+    final stats = engine.stats;
+    if (stats.busy || stats.tilesLoading > 0 || stats.resourcesLoading > 0) {
+      dirty = true;
+    }
     if (!dirty &&
         engine.styleLoaded &&
         engine.stats.tilesLoading == 0 &&

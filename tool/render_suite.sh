@@ -18,10 +18,18 @@ port=2900
 
 # The stock server listens with a queue of 5, which drops connections
 # when several tests load at once.
+# As MapLibre's runner, tiles under sparse204 at zoom 1 answer 204.
 python3 -c '
 import functools, http.server, sys
+class Handler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if "/sparse204/1-" in self.path:
+            self.send_response(204)
+            self.end_headers()
+            return
+        super().do_GET()
 http.server.ThreadingHTTPServer.request_queue_size = 256
-handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=sys.argv[2])
+handler = functools.partial(Handler, directory=sys.argv[2])
 http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), handler).serve_forever()
 ' "$port" "$suite/assets" >/dev/null 2>&1 &
 server=$!
