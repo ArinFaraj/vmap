@@ -163,7 +163,7 @@ class LayerPaint {
   /// for [kind] as `map.vert` reads them; lengths in tile units for a tile
   /// [scale] screen pixels to the unit. [sprites] places patterns,
   /// [rampRow] is a gradient line's row in the line ramps and [dashRow] a
-  /// dashed line's.
+  /// dashed line's. A patterned fill's pattern is [growth] times its size.
   void writeSlot(
     Float32List out,
     int o,
@@ -171,8 +171,9 @@ class LayerPaint {
     double scale,
     SpriteSheet? sprites,
     double? rampRow,
-    double? dashRow,
-  ) {
+    double? dashRow, {
+    double growth = 1,
+  }) {
     void put(
       double a,
       double b,
@@ -229,7 +230,7 @@ class LayerPaint {
         );
       case GpuStream.patterned:
         put(
-          entry?.pixelRatio ?? 1,
+          (entry?.pixelRatio ?? 1) / growth,
           0,
           0,
           entry == null ? 0 : a,

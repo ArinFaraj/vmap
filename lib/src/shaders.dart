@@ -8,6 +8,12 @@ import 'sprites.dart';
 import 'style_model.dart';
 import 'tessellate.dart';
 
+/// How much larger than its own size a pattern is drawn at style zoom
+/// [zoom]: as in MapLibre, a pattern is held to the tiles of the whole zoom
+/// below, so it grows to twice its size and starts again at each zoom.
+double patternGrowth(double zoom) =>
+    math.pow(2, zoom - zoom.floor()).toDouble();
+
 /// The repeating pictures layers are drawn through: dashes and patterns.
 class LayerShaders {
   final Map<String, _DashImage> _dashImages = {};
@@ -20,17 +26,18 @@ class LayerShaders {
 
   final List<ui.ImageShader> _backdrops = [];
 
-  /// The sprite image [name] repeated over the whole view, held to the
-  /// world pixel at [origin] so it moves with the map. Null while the sprite
-  /// sheet has not loaded or has no such image.
+  /// The sprite image [name] repeated over the whole view at style zoom
+  /// [zoom], held to the world pixel at [origin] so it moves with the map.
+  /// Null while the sprite sheet has not loaded or has no such image.
   ui.ImageShader? backdrop(
     String name,
     SpriteSheet? sprites,
     ui.Offset origin,
+    double zoom,
   ) {
     final image = sprites?.pattern(name);
     if (image == null) return null;
-    final stretch = 1 / sprites!.entries[name]!.pixelRatio;
+    final stretch = patternGrowth(zoom) / sprites!.entries[name]!.pixelRatio;
     _matrix
       ..[0] = stretch
       ..[5] = stretch
@@ -150,7 +157,8 @@ class LayerShaders {
       image = found;
       stretch = line != null
           ? width / scale / image.height
-          : 1 / (sheet.entries[name]!.pixelRatio * scale);
+          : patternGrowth(context.zoom) /
+                (sheet.entries[name]!.pixelRatio * scale);
     }
     final along = line != null;
     _matrix

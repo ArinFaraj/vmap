@@ -78,7 +78,12 @@ class MeshPainter {
     final pattern = layer.pattern?.call(_context);
     final ui.Paint paint;
     if (pattern is String) {
-      final shader = _shaders.backdrop(pattern, sprites, camera.origin);
+      final shader = _shaders.backdrop(
+        pattern,
+        sprites,
+        camera.origin,
+        _context.zoom,
+      );
       if (shader == null) return;
       final opacity = asNumber(layer.opacity(_context)) ?? 1;
       paint = _paint

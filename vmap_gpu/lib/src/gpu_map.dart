@@ -752,6 +752,7 @@ class GpuMap implements MapRenderer {
         _sheet,
         _ramps.gradientOf(layerIndex),
         _ramps.dashOf(layerIndex),
+        growth: patternGrowth(styleZoom),
       );
     }
   }

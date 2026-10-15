@@ -8,6 +8,7 @@ export 'src/extrusion.dart'
 export 'src/gpu_stream.dart' show GpuStream;
 export 'src/map_renderer.dart' show MapRenderer, RasterPiece, RendererTileData;
 export 'src/mercator.dart' show latitudeAt, worldX, worldY;
+export 'src/shaders.dart' show patternGrowth;
 export 'src/sprites.dart' show SpriteImage, SpriteSheet;
 export 'src/style_model.dart';
 export 'src/terrain/dem_tile.dart' show DemTile, DemTiles;
