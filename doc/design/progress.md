@@ -345,6 +345,22 @@ heatmap glows stand on every vertex of lines and polygons; and
 20 second limit on some tests since its window was hidden, as the engine
 asks for frames through the scheduler; it paints for itself now.
 
+Later the same day: **779 of 1,730**. Raster and hillshade tiles are laid
+on whole pixels of a flat, unturned map, as MapLibre aligns a map at
+rest, so a tile at its own zoom is drawn pixel for pixel (46 tests); a
+raster tile the server does not have is drawn from the tile above it,
+and a loading one shows what is loaded above it instead of a hole; image
+sources are warped as the perspective view of a picture; a text size
+that is not a finite number is drawn at 16 instead of throwing; and the
+ways of one road are joined before it is named, as MapLibre's
+mergeLines joins them (the Liberty views: 37.11 to 36.87 summed). The
+suite now serves the real-world tiles its six real-world tests read.
+
+Set aside again: dropping the extra room vmap keeps around road names.
+On Chicago it placed names MapLibre leaves out while still missing
+others; MapLibre tests a name along a line against small boxes along the
+road, not one rectangle, which is the difference to chase.
+
 Known gaps carried forward: road label anchors are spread evenly over a
 line where MapLibre steps them at exactly `symbol-spacing` from an
 offset of half the label's length (the tile workers do not know label
