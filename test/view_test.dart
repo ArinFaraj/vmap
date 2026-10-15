@@ -79,7 +79,10 @@ void main() {
 
   test('a tilted view uses coarser tiles far away and stays small', () {
     for (final pitch in [45.0, 60.0]) {
-      final tiles = _view(pitch: pitch, bearing: 37).cover(maxZoom: 22);
+      final tiles = _view(
+        pitch: pitch,
+        bearing: 37,
+      ).cover(maxZoom: 22, variableZoom: true);
       expect(tiles.map((t) => t.z).toSet(), containsAll([14, 15]));
       expect(tiles.length, lessThan(40));
     }

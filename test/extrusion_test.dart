@@ -35,11 +35,19 @@ void main() {
     expect(built.roofIndices.length, greaterThan(6));
   });
 
-  test('a building no taller than its base is left out', () {
-    final b = ExtrusionBuilder(0)
-      ..add(square(0, 0, 10), [0], [5], 3, 3, const Rgba(0, 0, 0, 1));
-    expect(b.finish(), isNull);
-  });
+  test(
+    'a building as tall as its base keeps its roof, one below it is left out',
+    () {
+      final flat =
+          (ExtrusionBuilder(0)
+                ..add(square(0, 0, 10), [0], [5], 3, 3, const Rgba(0, 0, 0, 1)))
+              .finish()!;
+      expect(flat.roofIndices, isNotEmpty);
+      final sunk = ExtrusionBuilder(0)
+        ..add(square(0, 0, 10), [0], [5], 2, 3, const Rgba(0, 0, 0, 1));
+      expect(sunk.finish(), isNull);
+    },
+  );
 
   test('buildings survive the trip between isolates', () {
     final built = (ExtrusionBuilder(

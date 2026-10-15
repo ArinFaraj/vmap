@@ -205,7 +205,7 @@ class MapView {
 
   /// The tiles that cover the ground in view. As MapLibre covers a map,
   /// every tile is at the view's zoom unless [variableZoom], which MapLibre
-  /// allows with terrain or past 60 degrees of pitch: then each tile is at
+  /// allows with terrain: then each tile is at
   /// the zoom its distance from the camera asks for, by MapLibre's
   /// `calculateTileZoom`. Tiles off the ground are left out. Each copy of
   /// the world in view has its own columns, counted on past the world's
@@ -214,14 +214,13 @@ class MapView {
     required int maxZoom,
     int minZoom = 0,
     double hold = 0,
-    bool? variableZoom,
+    bool variableZoom = false,
   }) {
     final quad = ground();
     final (x: camX, y: camY, height: camH) = eye;
     final top = math.min((zoom + hold).floor(), maxZoom);
-    final variable = variableZoom ?? pitch > maxPitch;
     final out = <CoverTile>[];
-    final tileZoom = variable ? _TileZoom(this) : null;
+    final tileZoom = variableZoom ? _TileZoom(this) : null;
 
     void visit(int z, int x, int y) {
       final span = worldSize / (1 << z);
