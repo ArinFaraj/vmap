@@ -192,7 +192,9 @@ class ExtrusionBuilder {
         roofFrom.toDouble(),
         (_indices.length - roofFrom).toDouble(),
       )
-      ..add4(color.r, color.g, color.b, color.a);
+      // As MapLibre, the colour's alpha darkens it and is dropped:
+      // fill-extrusion-opacity alone sees through buildings.
+      ..add4(color.r * color.a, color.g * color.a, color.b * color.a, 1);
   }
 
   BuiltExtrusion? finish() {
