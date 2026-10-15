@@ -379,6 +379,19 @@ frame so a light kept to the screen turns with the map; they take
 ground; and a colour's alpha darkens a building instead of fading it.
 Left for buildings: patterns and rounded corners.
 
+The GPU renderer runs in the browser. Of the WebGPU and GPU packages for
+Flutter (flutter3d, gpux, nitro_webgpu, minigpu, flutter_angle), the one
+that fits is flutter_scene's internal `flutter_gpu` shim: Flutter GPU on
+native and a WebGL2 implementation of the same API on the web, reading the
+same shader bundle, so vmap_gpu needed no second renderer and no second
+shader language. It is copied into `vmap_gpu/lib/src/gpu_shim` with one
+fix. In Chrome on an M4 Pro over Erbil with Liberty, a frame is built in
+1.1 ms at the median and 3.5 ms at the 99th percentile on the GPU, against
+5.6 and 29.6 on the canvas. Frames on the web are not multisampled: the
+shim's multisample resolve leaves vmap's frames empty. The canvas stays as
+the fallback where WebGL2 is missing. WebGPU can come later under the same
+API.
+
 Known gaps carried forward: road label anchors are spread evenly over a
 line where MapLibre steps them at exactly `symbol-spacing` from an
 offset of half the label's length (the tile workers do not know label
