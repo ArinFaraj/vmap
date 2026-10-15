@@ -239,29 +239,40 @@ class MapView {
 
   /// The ground the screen shows, as the four corners in world pixels,
   /// clockwise from the top left, its far edge at [groundTopY] when that
-  /// is on the screen.
-  List<WorldPoint> ground() => [
-    unproject(0, math.max(0, groundTopY))!,
-    unproject(width, math.max(0, groundTopY))!,
-    unproject(width, height)!,
-    unproject(0, height)!,
-  ];
+  /// is on the screen. With [beyond], over raised ground, the far edge is
+  /// that many pixels above the screen's top instead, still under the
+  /// horizon: hills there rise into view, as MapLibre's far plane, measured
+  /// from sea level, lets them.
+  List<WorldPoint> ground({double beyond = 0}) {
+    final far = beyond > 0
+        ? math.max(
+            -beyond,
+            height / 2 - cameraToCenterDistance * _cosP / _sinP + 1,
+          )
+        : math.max(0.0, groundTopY);
+    return [
+      unproject(0, far)!,
+      unproject(width, far)!,
+      unproject(width, height)!,
+      unproject(0, height)!,
+    ];
+  }
 
   /// The tiles that cover the ground in view. As MapLibre covers a map,
   /// every tile is at the view's zoom unless [variableZoom], which MapLibre
   /// allows with terrain, or the view is pitched past 60 degrees: then each
-  /// tile is at
-  /// the zoom its distance from the camera asks for, by MapLibre's
-  /// `calculateTileZoom`. Tiles off the ground are left out. Each copy of
-  /// the world in view has its own columns, counted on past the world's
-  /// edge, not wrapped.
+  /// tile is at the zoom its distance from the camera asks for, by MapLibre's
+  /// `calculateTileZoom`. Tiles off the [ground] reaching [beyond] the
+  /// screen's top are left out. Each copy of the world in view has its own
+  /// columns, counted on past the world's edge, not wrapped.
   List<CoverTile> cover({
     required int maxZoom,
     int minZoom = 0,
     double hold = 0,
     bool variableZoom = false,
+    double beyond = 0,
   }) {
-    final quad = ground();
+    final quad = ground(beyond: beyond);
     final (x: camX, y: camY, height: camH) = eye;
     final top = math.min((zoom + hold).floor(), maxZoom);
     final out = <CoverTile>[];

@@ -419,6 +419,7 @@ class TileSource {
       maxZoom: maxDataZoom,
       hold: hold,
       variableZoom: variableZoom,
+      beyond: variableZoom ? view.height : 0,
     );
     for (final (rank, t) in picked.indexed) {
       final n = 1 << t.z;

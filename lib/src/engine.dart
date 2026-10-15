@@ -468,7 +468,11 @@ class VmapEngine extends ChangeNotifier {
       return false;
     }
     terrain.want([
-      for (final t in view.cover(maxZoom: terrain.maxZoom, variableZoom: true))
+      for (final t in view.cover(
+        maxZoom: terrain.maxZoom,
+        variableZoom: true,
+        beyond: view.height,
+      ))
         TileId(t.z, t.x % (1 << t.z), t.y),
     ]);
     final exaggeration = terrain.layer.exaggeration;

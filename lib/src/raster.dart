@@ -466,6 +466,7 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
         minZoom: spread ? 0 : z,
         hold: z + 0.5 - view.zoom,
         variableZoom: spread,
+        beyond: variable ? view.height : 0,
       )) {
         yield (t.z, t.x, t.y);
       }

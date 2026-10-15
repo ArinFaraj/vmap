@@ -139,7 +139,12 @@ class _Drape {
   ) {
     // As deep as the view, past the data's own zoom: a tile drawn from
     // zoom 14 data into a deeper slot is as sharp as the flat map.
-    final all = view.cover(maxZoom: view.zoom.ceil(), variableZoom: true);
+    // Ground past the screen's top as well: hills there rise into view.
+    final all = view.cover(
+      maxZoom: view.zoom.ceil(),
+      variableZoom: true,
+      beyond: view.height,
+    );
     _slots = _layout(all, view, _map._frameInfo[26]);
     _tiles = all.sublist(0, _slots.length);
     sending = false;
