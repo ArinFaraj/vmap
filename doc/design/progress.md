@@ -372,6 +372,13 @@ percent from MapLibre; most terrain tests are now within 10. Tried and
 reverted: MapLibre's line-label collision circles (worse on Liberty) and
 eighth-pixel glyph phases (broke label placement).
 
+Then **809 of 1,730**. Buildings are lit by the style's root `light` with
+MapLibre's fill-extrusion formula and vertical gradient, on the GPU every
+frame so a light kept to the screen turns with the map; they take
+`fill-extrusion-translate` and its anchor; nothing stands below the
+ground; and a colour's alpha darkens a building instead of fading it.
+Left for buildings: patterns and rounded corners.
+
 Known gaps carried forward: road label anchors are spread evenly over a
 line where MapLibre steps them at exactly `symbol-spacing` from an
 offset of half the label's length (the tile workers do not know label
