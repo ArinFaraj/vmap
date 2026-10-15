@@ -485,10 +485,55 @@ between 10 and 196. vmap does more work per frame to get there. The full
 table, the caveats and how to run it are in
 [doc/benchmark.md](https://github.com/ArinFaraj/vmap/blob/v0.26.0/doc/benchmark.md).
 
+## Tilt, 3D buildings and terrain (preview)
+
+`VMap` is vmap's own map widget, without flutter_map. It tilts up to 60
+degrees and stands the style's `fill-extrusion` buildings up. With the GPU
+renderer from `vmap_gpu` the buildings are drawn with a depth buffer and the
+style's `terrain` raises the ground:
+
+```dart
+final controller = VMapController(
+  const MapCameraPosition(latitude: 36.19, longitude: 44.01, zoom: 15, pitch: 50),
+);
+final engine = VmapEngine(
+  style: VmapStyle.url('https://tiles.openfreemap.org/styles/liberty'),
+  renderer: GpuMap.create(),
+);
+
+VMap(controller: controller, engine: engine)
+```
+
+`GpuMap.create()` gives null where the device has no Flutter GPU, and the
+canvas draws the map, tilted and with buildings, on flat ground.
+Flutter GPU is switched on in the app: `io.flutter.embedding.android.EnableFlutterGPU`
+in the Android manifest's `<application>`, `FLTEnableFlutterGPU` in the iOS
+and macOS `Info.plist`. `vmap_gpu` needs Flutter 3.47 or newer and is not on
+pub.dev yet; depend on it from this repository.
+
+`controller.flyTo` and `controller.easeTo` move the camera as MapLibre's do.
+Terrain comes from the style's root `terrain`, or from a `VmapOverlay`:
+
+```dart
+VmapOverlay(
+  sources: {
+    'dem': {
+      'type': 'raster-dem',
+      'tiles': ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+      'encoding': 'terrarium',
+      'maxzoom': 15,
+    },
+  },
+  terrain: {'source': 'dem', 'exaggeration': 1.5},
+)
+```
+
 ## Limits
 
-- No 3D: buildings are flat and the map does not pitch.
-- Fonts come from the app, not from the style's glyph server.
+- Under flutter_map (`VmapMap`, `VmapLayer`) the map does not tilt and
+  buildings are flat; tilt and 3D need `VMap`.
+- Fonts come from the app, not from the style's glyph server, unless the
+  engine is made with `styleGlyphs: true`.
 - On the web there is no disk cache and a PMTiles archive has to be at an
   `https://` address. It has been run in Chrome only. Use the default
   JavaScript build: the `--wasm` build froze its tab in three of about a

@@ -1,3 +1,19 @@
+## Unreleased
+
+- `VMap`, a map widget of vmap's own: it tilts up to 60 degrees and stands
+  `fill-extrusion` buildings up, and its gestures and
+  `VMapController.flyTo` and `easeTo` keep their speed.
+- `vmap_gpu`, a renderer on Flutter GPU: `VmapEngine(renderer:
+  GpuMap.create())`. It draws buildings with a depth buffer and the
+  style's `terrain` with the map draped over it.
+- `VmapOverlay.images`: pictures of the app's own that the style draws by
+  name, as MapLibre's `addImage`.
+- `VmapEngine(styleGlyphs: true)` draws labels from the style's glyph
+  ranges, as MapLibre does.
+- Every `background` layer is drawn, in the style's order.
+- Labels are placed at MapLibre's anchors; road names lie on the ground of
+  a tilted map.
+
 ## 0.26.0
 
 - On pub.dev: `flutter pub add vmap`.

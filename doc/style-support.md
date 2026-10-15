@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| Layers | `background` with `background-pattern`, `fill`, `line`, `circle`, `symbol`, `raster`, `hillshade`, `heatmap`. `fill-extrusion` is drawn flat |
+| Layers | `background` with `background-pattern`, `fill`, `line`, `circle`, `symbol`, `raster`, `hillshade`, `heatmap`, `fill-extrusion` (standing on a tilted `VMap`, flat under flutter_map) |
 | Sources | any number of `vector`, `geojson`, `raster`, `raster-dem` and `image` sources. Tiles by TileJSON `url` or `tiles` templates (several addresses are spread over and fall back to one another), with the source's `minzoom`, `maxzoom`, `bounds` and `scheme`, GeoJSON inline or by address, with `cluster`, `clusterRadius`, `clusterMaxZoom`, `clusterMinPoints` and `clusterProperties`. `pmtiles://` archives over HTTP or on disk. `promoteId`, and `generateId` for GeoJSON |
 | Order | layers are drawn in the style's order, across sources and with raster layers where the style puts them |
 | Fills | colour, opacity, `fill-outline-color`, `fill-pattern`, `fill-translate` with `fill-translate-anchor` |
@@ -24,14 +24,17 @@ and halo and an icon's size, colour and opacity, and all of them may read
 
 ## What it does not read
 
-- 3D: buildings are flat and the map does not pitch. Neither does
-  flutter_map, which the camera comes from.
+- 3D under flutter_map: its camera does not tilt, so `VmapMap` and
+  `VmapLayer` draw flat buildings. `VMap` tilts and stands buildings up;
+  with `vmap_gpu` it also raises the style's `terrain`.
+- Globe projection and `sky`.
 - `video` sources, and line patterns on round caps.
 - `line-gradient` together with dashes, a pattern, `line-blur`, or a width
   or colour read from the feature. The gradient is drawn alone.
 - `within` and `distance` in what `featuresAt` returns, and for lines a
   `within` that looks at more than the line's corners.
-- The style's `glyphs`. Text is drawn in the app's fonts.
+- The style's `glyphs`, unless the engine is made with `styleGlyphs: true`.
+  Otherwise text is drawn in the app's fonts.
 - A road name on a bend sharper than about 24 degrees between one slice of
   the text and the next is left out there, unless the style sets
   `text-max-angle`, which is then the limit.
