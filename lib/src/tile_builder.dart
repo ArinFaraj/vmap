@@ -458,7 +458,7 @@ class TileBuilder {
           final bucket = sheet.buckets[b];
           final fits = switch (bucket.kind) {
             BucketKind.fill || BucketKind.extrusion => f.type == mvtPolygon,
-            BucketKind.circle => f.type == mvtPoint,
+            BucketKind.circle => true,
             BucketKind.line =>
               bucket.outline ? f.type == mvtPolygon : f.type != mvtPoint,
           };
@@ -493,15 +493,29 @@ class TileBuilder {
           scaled();
           if (bucket.kind == BucketKind.circle) {
             final points = group.points ??= [];
-            for (var i = 0; i < _sink.coordCount; i += 2) {
+            void add(int i) {
               final x = _sink.coords[i];
               final y = _sink.coords[i + 1];
-              if (x < 0 || y < 0 || x >= tileExtent || y >= tileExtent) {
-                continue;
-              }
+              if (x < 0 || y < 0 || x >= tileExtent || y >= tileExtent) return;
               points
                 ..add(x)
                 ..add(y);
+            }
+
+            // As MapLibre, a circle or a heatmap glow stands on every vertex
+            // of a line or a polygon too, and a ring's first vertex twice.
+            for (var r = 0; r < _sink.ringCount; r++) {
+              final start = _sink.ringStart(r) * 2;
+              final end = _sink.ringEnd(r) * 2;
+              for (var i = start; i < end; i += 2) {
+                add(i);
+              }
+              if (f.type == mvtPolygon &&
+                  end - start >= 6 &&
+                  (_sink.coords[start] != _sink.coords[end - 2] ||
+                      _sink.coords[start + 1] != _sink.coords[end - 1])) {
+                add(start);
+              }
             }
             continue;
           }
