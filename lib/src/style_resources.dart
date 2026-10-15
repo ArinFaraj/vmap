@@ -34,7 +34,9 @@ class StyleResources {
       'packages/vmap/assets/fonts/Vazirmatn-Variable.ttf';
 
   SpriteSheet? _styleSprites;
-  SpriteSheet? _sprites;
+
+  /// The style's sheet with the app's images, while there are any.
+  SpriteSheet? _joined;
   Map<String, VmapImage> _images = const {};
   String? _spriteUrl;
   int _spritesLoading = 0;
@@ -45,7 +47,7 @@ class StyleResources {
   List<Uint8List>? fontBytes;
   List<String>? families;
 
-  SpriteSheet? get sprites => _sprites;
+  SpriteSheet? get sprites => _joined ?? _styleSprites;
 
   /// Sprite sheets and glyph ranges asked for and not yet answered.
   int get loading => _spritesLoading + _labels.rangesPending;
@@ -107,11 +109,9 @@ class StyleResources {
 
   /// Hands on the style's sheet with the app's images joined to it.
   void _join() {
-    if (!identical(_sprites, _styleSprites)) _sprites?.dispose();
-    _sprites = _images.isEmpty
-        ? _styleSprites
-        : SpriteSheet.join(_styleSprites, _images);
-    onSprites(_sprites);
+    _joined?.dispose();
+    _joined = _images.isEmpty ? null : SpriteSheet.join(_styleSprites, _images);
+    onSprites(sprites);
   }
 
   /// Makes the next [useSprites] load again whatever it is given.
@@ -150,7 +150,7 @@ class StyleResources {
   void dispose() {
     _closed = true;
     _labels.useRanges(null, _config, () {});
-    if (!identical(_sprites, _styleSprites)) _sprites?.dispose();
+    _joined?.dispose();
     _styleSprites?.dispose();
   }
 }
