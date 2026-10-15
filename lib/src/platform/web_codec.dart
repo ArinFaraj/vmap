@@ -46,6 +46,9 @@ JSArray<JSAny?> _list(Iterable<Object?> items, List<JSObject>? moved) {
       case final Uint8List v:
         kinds.write('U');
         out.add(_moving(v, v.toJS, moved));
+      case final Int32List v:
+        kinds.write('I');
+        out.add(_moving(v, v.toJS, moved));
       case final Map<Object?, Object?> v:
         kinds.write('m');
         out.add(
@@ -69,7 +72,9 @@ JSAny _moving(TypedData data, JSObject js, List<JSObject>? moved) {
       data.offsetInBytes == 0 &&
       data.lengthInBytes == data.buffer.lengthInBytes &&
       data.lengthInBytes > 0) {
-    moved.add(data.buffer.toJS);
+    // A buffer listed twice for transfer fails the whole message.
+    final buffer = data.buffer.toJS;
+    if (!moved.any((b) => identical(b, buffer))) moved.add(buffer);
   }
   return js;
 }
@@ -90,6 +95,7 @@ List<Object?> _items(JSArray<JSAny?> list) {
       'S' => (item! as JSUint16Array).toDart,
       'D' => (item! as JSFloat64Array).toDart,
       'U' => (item! as JSUint8Array).toDart,
+      'I' => (item! as JSInt32Array).toDart,
       'm' => _map(_items(item! as JSArray<JSAny?>)),
       _ => _items(item! as JSArray<JSAny?>),
     };
