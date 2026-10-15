@@ -1057,6 +1057,7 @@ class _MapPass {
         view.worldSize /
         (40075016.686 * math.cos(latitudeAt(view.centerY) * math.pi / 180));
     final host = map._host!;
+    final (mx, my) = layer.moved(_context, view.bearing);
     for (final d in tiles) {
       final data = _map._gpuOf(d);
       if (data == null) continue;
@@ -1067,7 +1068,14 @@ class _MapPass {
       for (final b in data.buildings) {
         if (b.extrusion.bucket != layer.bucket) continue;
         final fade = map._reveal.opacity(d.tile, layer, b);
-        map._times(_clip, d.size / tileExtent, perMetre, d.left, d.top, fade);
+        map._times(
+          _clip,
+          d.size / tileExtent,
+          perMetre,
+          d.left + mx,
+          d.top + my,
+          fade,
+        );
         _pass
           ..bindVertexBuffer(
             gpu.BufferView(

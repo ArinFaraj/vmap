@@ -327,10 +327,11 @@ class ExtrusionPainter implements BuildingRenderer {
         }
       }
       if (n == 0) continue;
+      final (mx, my) = layer.moved(context, view.bearing);
       _draw(
         canvas,
         view,
-        origin,
+        origin.translate(mx, my),
         n,
         opacity,
         sheet.light,

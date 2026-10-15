@@ -727,6 +727,8 @@ class StyleCompiler {
           minZoom: layer.minZoom,
           maxZoom: layer.maxZoom,
           opacity: compileExpr(opacity),
+          translate: layer.translate,
+          translateOnScreen: layer.translateOnScreen,
         ),
       );
     }

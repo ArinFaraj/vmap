@@ -156,6 +156,8 @@ class ExtrusionLayer {
     required this.minZoom,
     required this.maxZoom,
     required this.opacity,
+    this.translate,
+    this.translateOnScreen = false,
   });
 
   final String id;
@@ -164,6 +166,24 @@ class ExtrusionLayer {
   final double minZoom;
   final double maxZoom;
   final Expr opacity;
+
+  /// `fill-extrusion-translate`, in pixels, turned with the map unless
+  /// [translateOnScreen].
+  final Expr? translate;
+  final bool translateOnScreen;
+
+  /// How far [translate] moves the buildings at [context], in world pixels
+  /// across the ground, on a map turned [bearing] degrees.
+  (double, double) moved(EvalContext context, double bearing) {
+    final by = translate?.call(context);
+    if (by is! List || by.length != 2) return (0, 0);
+    final x = (asNumber(by[0]) ?? 0).toDouble();
+    final y = (asNumber(by[1]) ?? 0).toDouble();
+    if (!translateOnScreen || bearing == 0) return (x, y);
+    final turn = bearing * math.pi / 180;
+    final c = math.cos(turn), s = math.sin(turn);
+    return (x * c - y * s, x * s + y * c);
+  }
 }
 
 /// Features of one source layer that pass one filter, built into one mesh.
