@@ -406,7 +406,12 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
     super.initState();
     FrameRateVote.attach();
     _attach(widget.controller);
+    PaintingBinding.instance.systemFonts.addListener(_fontsChanged);
   }
+
+  /// A font arriving late, as the browser's fallback fonts do, draws the
+  /// labels again; those drawn before it keep their boxes otherwise.
+  void _fontsChanged() => _engine.fontsChanged();
 
   void _attach(VMapController c) {
     c
@@ -432,6 +437,7 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
 
   @override
   void dispose() {
+    PaintingBinding.instance.systemFonts.removeListener(_fontsChanged);
     FrameRateVote.detach();
     widget.controller
       ..stop()
