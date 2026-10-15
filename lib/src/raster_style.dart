@@ -262,6 +262,65 @@ final class HillshadeLayer extends TiledRasterLayer {
   String get signature => 'hillshade|$_source';
 }
 
+/// How a `raster-dem` source packs a height into a pixel: metres are
+/// red, green and blue times their factors, less [baseShift].
+class DemEncoding {
+  const DemEncoding(this.red, this.green, this.blue, this.baseShift);
+
+  static const terrarium = DemEncoding(256, 1, 1 / 256, 32768);
+  static const mapbox = DemEncoding(6553.6, 25.6, 0.1, 10000);
+
+  /// The source's `encoding`, with its factors when it is `custom`.
+  factory DemEncoding.of(Map<Object?, Object?> source) =>
+      switch (source['encoding']) {
+        'terrarium' => terrarium,
+        'custom' => DemEncoding(
+          (asNumber(source['redFactor']) ?? 1).toDouble(),
+          (asNumber(source['greenFactor']) ?? 1).toDouble(),
+          (asNumber(source['blueFactor']) ?? 1).toDouble(),
+          (asNumber(source['baseShift']) ?? 0).toDouble(),
+        ),
+        _ => mapbox,
+      };
+
+  final double red, green, blue, baseShift;
+
+  @override
+  String toString() => '$red,$green,$blue,$baseShift';
+}
+
+/// A `color-relief` layer: tiles of heights coloured by a ramp over
+/// `['elevation']`.
+final class ColorReliefLayer extends TiledRasterLayer {
+  ColorReliefLayer({
+    required super.minZoom,
+    required super.maxZoom,
+    required super.opacity,
+    required super.tileJsonUrl,
+    required super.tiles,
+    required super.tileSize,
+    required super.sourceMaxZoom,
+    required this.encoding,
+    required this.elevations,
+    required this.colors,
+    required this.resampling,
+    super.cover,
+  });
+
+  final DemEncoding encoding;
+
+  /// The ramp's stops in metres, rising, and their colours premultiplied,
+  /// four values each.
+  final Float64List elevations;
+  final Float64List colors;
+
+  /// `resampling`: `nearest` shows each height as a square.
+  final Expr resampling;
+
+  @override
+  String get signature => 'color-relief|$_source|$encoding|$elevations|$colors';
+}
+
 /// The heights the ground is raised by: the `raster-dem` source the
 /// style's root `terrain` names, never drawn itself.
 final class TerrainLayer extends TiledRasterLayer {

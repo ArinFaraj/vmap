@@ -72,6 +72,12 @@ sealed class RasterDrawing<L extends RasterLayer> {
       onLoaded: onLoaded,
       onError: onError,
     ),
+    ColorReliefLayer() => ReliefTiles(
+      layer,
+      config: config,
+      onLoaded: onLoaded,
+      onError: onError,
+    ),
     TerrainLayer() => TerrainTiles(
       layer,
       config: config,
@@ -728,6 +734,114 @@ final class ShadedTiles extends TileDrawing<HillshadeLayer> {
     );
     return done.future;
   }
+}
+
+/// Tiles of heights coloured by a ramp over the elevation.
+final class ReliefTiles extends TileDrawing<ColorReliefLayer> {
+  ReliefTiles(
+    super.layer, {
+    required super.config,
+    required super.onLoaded,
+    required super.onError,
+  });
+
+  @override
+  double get _lap => 0;
+
+  @override
+  double get _ring => 0;
+
+  @override
+  void _setUpPaint(EvalContext context) => _paint
+    ..filterQuality = layer.resampling(context) == 'nearest'
+        ? ui.FilterQuality.none
+        : ui.FilterQuality.low
+    ..isAntiAlias = false
+    ..colorFilter = null;
+
+  @override
+  Future<void> _decoded(
+    _RasterTile tile,
+    ui.Image image,
+    int z,
+    int x,
+    int y,
+  ) async {
+    final data = await image.toByteData();
+    final width = image.width, height = image.height;
+    image.dispose();
+    if (data == null) return;
+    final layer = this.layer;
+    final pixels = data.buffer.asUint8List();
+    final coloured = await runAside(
+      () => colorHeights(
+        pixels,
+        width,
+        height,
+        layer.encoding,
+        layer.elevations,
+        layer.colors,
+      ),
+    );
+    final done = Completer<ui.Image>();
+    ui.decodeImageFromPixels(
+      coloured,
+      width,
+      height,
+      ui.PixelFormat.rgba8888,
+      done.complete,
+    );
+    final picture = await done.future;
+    if (_closed) return picture.dispose();
+    tile.image?.dispose();
+    tile.image = picture;
+    onLoaded();
+  }
+}
+
+/// Colours a tile of heights through a ramp of [elevations] and
+/// premultiplied [colors], blended between stops as MapLibre's
+/// color-relief shader does.
+Uint8List colorHeights(
+  Uint8List pixels,
+  int width,
+  int height,
+  DemEncoding encoding,
+  Float64List elevations,
+  Float64List colors,
+) {
+  final stops = elevations.length;
+  final out = Uint8List(width * height * 4);
+  var o = 0;
+  for (var y = 0; y < height; y++) {
+    for (var x = 0; x < width; x++) {
+      final at = (y * width + x) * 4;
+      final metres =
+          pixels[at] * encoding.red +
+          pixels[at + 1] * encoding.green +
+          pixels[at + 2] * encoding.blue -
+          encoding.baseShift;
+      var l = 0, r = stops - 1;
+      while (r - l > 1) {
+        final m = (l + r) >> 1;
+        if (metres < elevations[m]) {
+          r = m;
+        } else {
+          l = m;
+        }
+      }
+      final span = elevations[r] - elevations[l];
+      final along = (l + (span == 0 ? 0 : (metres - elevations[l]) / span))
+          .clamp(0.0, stops - 1.0);
+      final low = along.floor().clamp(0, stops - 2);
+      final t = along - low;
+      for (var k = 0; k < 4; k++) {
+        final a = colors[low * 4 + k], b = colors[(low + 1) * 4 + k];
+        out[o++] = ((a + (b - a) * t).clamp(0.0, 1.0) * 255).round();
+      }
+    }
+  }
+  return out;
 }
 
 /// Shades a grid of heights as [light] says, the way MapLibre's hillshade

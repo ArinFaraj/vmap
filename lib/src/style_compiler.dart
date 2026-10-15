@@ -125,7 +125,9 @@ class StyleCompiler {
         }
       } else if (layer.type == 'background') {
         _addBackground(layer);
-      } else if (layer.type == 'raster' || layer.type == 'hillshade') {
+      } else if (layer.type == 'raster' ||
+          layer.type == 'hillshade' ||
+          layer.type == 'color-relief') {
         _addRaster(layer);
       }
     }
@@ -312,11 +314,72 @@ class StyleCompiler {
           altitudes: _numbers(paint['hillshade-illumination-altitude'], 45),
         ),
       ),
+      ('color-relief', 'raster-dem') => _colorRelief(
+        layer,
+        from,
+        tileJsonUrl: tileJsonUrl,
+        tiles: tiles,
+        tileSize: tileSize,
+        sourceMaxZoom: sourceMaxZoom,
+      ),
       _ => null,
     };
     if (made == null) return;
     _alone.add((_layers.length, StyleRun.raster(_rasters.length)));
     _rasters.add(made);
+  }
+
+  ColorReliefLayer _colorRelief(
+    _Layer layer,
+    Map<Object?, Object?> from, {
+    required String? tileJsonUrl,
+    required String? tiles,
+    required num tileSize,
+    required int? sourceMaxZoom,
+  }) {
+    final paint = layer.paint;
+    final elevations = <double>[];
+    final colors = <double>[];
+    // As MapLibre, the ramp is the colours at the stops of an `interpolate`
+    // over the elevation, blended in straight lines between them.
+    if (paint['color-relief-color'] case [
+      'interpolate',
+      _,
+      ['elevation'],
+      ...final stops,
+    ]) {
+      final context = EvalContext();
+      for (var i = 0; i + 1 < stops.length; i += 2) {
+        final at = asNumber(stops[i]);
+        if (at == null) continue;
+        final c =
+            Rgba.of(compileExpr(stops[i + 1])(context)) ?? Rgba.transparent;
+        elevations.add(at.toDouble());
+        colors.addAll([c.r * c.a, c.g * c.a, c.b * c.a, c.a]);
+      }
+    }
+    if (elevations.isEmpty) {
+      elevations.add(0);
+      colors.addAll([0, 0, 0, 0]);
+    }
+    if (elevations.length < 2) {
+      elevations.add(elevations.first + 1);
+      colors.addAll(colors.sublist(0, 4));
+    }
+    return ColorReliefLayer(
+      minZoom: layer.minZoom,
+      maxZoom: layer.maxZoom,
+      opacity: compileExpr(paint['color-relief-opacity'] ?? 1),
+      tileJsonUrl: tileJsonUrl,
+      tiles: tiles,
+      tileSize: tileSize.toDouble(),
+      sourceMaxZoom: sourceMaxZoom,
+      cover: TileCover.of(from),
+      encoding: DemEncoding.of(from),
+      elevations: Float64List.fromList(elevations),
+      colors: Float64List.fromList(colors),
+      resampling: compileExpr(paint['resampling'] ?? 'linear'),
+    );
   }
 
   static const _symbolPaintReads = [
