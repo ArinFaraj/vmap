@@ -241,7 +241,7 @@ final class PictureDrawing extends RasterDrawing<ImageLayer> {
     }
     _paint.shader = _shader;
     for (var copy = first; copy <= last; copy++) {
-      final at = Float32List(8);
+      final at = Float64List(8);
       var left = double.infinity, right = -double.infinity;
       for (var i = 0; i < 4; i++) {
         final x = (corners[i * 2] + copy) * world - origin.dx;
@@ -251,12 +251,7 @@ final class PictureDrawing extends RasterDrawing<ImageLayer> {
         right = math.max(right, x);
       }
       if (right < 0 || left > size.width) continue;
-      final quad = ui.Vertices.raw(
-        ui.VertexMode.triangles,
-        at,
-        textureCoordinates: Float32List.fromList([0, 0, w, 0, w, h, 0, h]),
-        indices: Uint16List.fromList(const [0, 1, 2, 0, 2, 3]),
-      );
+      final quad = warpedQuad(at, w, h);
       canvas.drawVertices(quad, ui.BlendMode.srcOver, _paint);
       quad.dispose();
     }
@@ -269,6 +264,87 @@ final class PictureDrawing extends RasterDrawing<ImageLayer> {
     _shader?.dispose();
     _picture?.dispose();
   }
+}
+
+/// A picture [w] by [h] laid on the quad [corners], x, y pairs from the
+/// top left clockwise, as MapLibre warps an image source: as the
+/// perspective view of a flat picture, blended towards a sheet pinned at
+/// its corners as the quad stops looking like one. A parallelogram is two
+/// triangles; any other quad is a grid fine enough that its triangles
+/// follow the warp.
+ui.Vertices warpedQuad(Float64List corners, double w, double h) {
+  final [x0, y0, x1, y1, x2, y2, x3, y3] = corners;
+  final texture = Float32List.fromList([0, 0, w, 0, w, h, 0, h]);
+  if (x0 + x2 == x1 + x3 && y0 + y2 == y1 + y3) {
+    return ui.Vertices.raw(
+      ui.VertexMode.triangles,
+      Float32List.fromList([x0, y0, x1, y1, x2, y2, x3, y3]),
+      textureCoordinates: texture,
+      indices: Uint16List.fromList(const [0, 1, 2, 0, 2, 3]),
+    );
+  }
+  final (px, py, blend) = _imageWarp(corners);
+  const cells = 16;
+  final positions = Float32List((cells + 1) * (cells + 1) * 2);
+  final coords = Float32List(positions.length);
+  var o = 0;
+  for (var j = 0; j <= cells; j++) {
+    final fy = j / cells;
+    for (var i = 0; i <= cells; i++) {
+      final fx = i / cells;
+      final bx = (x0 + (x1 - x0) * fx) * (1 - fy) + (x3 + (x2 - x3) * fx) * fy;
+      final by = (y0 + (y1 - y0) * fx) * (1 - fy) + (y3 + (y2 - y3) * fx) * fy;
+      final d = px * fx + py * fy + 1;
+      final ax = x1 - x0 + px * x1, ay = y1 - y0 + px * y1;
+      final dx = x3 - x0 + py * x3, dy = y3 - y0 + py * y3;
+      final qx = (ax * fx + dx * fy + x0) / d;
+      final qy = (ay * fx + dy * fy + y0) / d;
+      positions[o] = qx + (bx - qx) * blend;
+      positions[o + 1] = qy + (by - qy) * blend;
+      coords[o] = fx * w;
+      coords[o + 1] = fy * h;
+      o += 2;
+    }
+  }
+  final indices = Uint16List(cells * cells * 6);
+  var k = 0;
+  for (var j = 0; j < cells; j++) {
+    for (var i = 0; i < cells; i++) {
+      final a = j * (cells + 1) + i, b = a + cells + 1;
+      indices.setAll(k, [a, a + 1, b + 1, a, b + 1, b]);
+      k += 6;
+    }
+  }
+  return ui.Vertices.raw(
+    ui.VertexMode.triangles,
+    positions,
+    textureCoordinates: coords,
+    indices: indices,
+  );
+}
+
+/// MapLibre's `calculateImageWarp` for `auto`: the perspective terms of the
+/// projective map from the unit square onto [corners], and how far it is
+/// blended towards the bilinear one.
+(double, double, double) _imageWarp(Float64List corners) {
+  final [x0, y0, x1, y1, x2, y2, x3, y3] = corners;
+  final sumX = x0 - x1 + x2 - x3, sumY = y0 - y1 + y2 - y3;
+  final rightX = x1 - x2, rightY = y1 - y2, downX = x3 - x2, downY = y3 - y2;
+  final determinant = rightX * downY - downX * rightY;
+  final px = (sumX * downY - downX * sumY) / determinant;
+  final py = (rightX * sumY - sumX * rightY) / determinant;
+  final denominators = [1.0, 1 + px, 1 + px + py, 1 + py];
+  final foreshortening =
+      denominators.reduce(math.max) / denominators.reduce(math.min);
+  const projective = 4.0, bilinear = 512.0;
+  final blend = math.max(
+    0.0,
+    (1 - projective / foreshortening) / (1 - projective / bilinear),
+  );
+  if (!(foreshortening >= 1 && foreshortening <= bilinear) || blend >= 1) {
+    return (0, 0, 1);
+  }
+  return (px, py, blend);
 }
 
 /// A layer drawn from tiles, fetched through a [TileStore].
