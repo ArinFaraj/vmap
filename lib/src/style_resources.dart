@@ -33,6 +33,11 @@ class StyleResources {
   static const defaultGlyphFont =
       'packages/vmap/assets/fonts/Vazirmatn-Variable.ttf';
 
+  /// Syriac, which Vazirmatn has no letters for: Assyrian names in
+  /// Kurdistan, as in Ankawa and Duhok, are written in it.
+  static const syriacGlyphFont =
+      'packages/vmap/assets/fonts/NotoSansSyriacEastern-Variable.ttf';
+
   SpriteSheet? _styleSprites;
 
   /// The style's sheet with the app's images, while there are any.
@@ -52,7 +57,7 @@ class StyleResources {
   /// Sprite sheets and glyph ranges asked for and not yet answered.
   int get loading => _spritesLoading + _labels.rangesPending;
 
-  /// Loads [given] and vmap's own font for labels. The tile workers shape
+  /// Loads [given] and vmap's own fonts for labels. The tile workers shape
   /// with them unless [shapeInWorkers] is false.
   Future<void> loadFonts(
     List<VmapFont> given, {
@@ -64,6 +69,10 @@ class StyleResources {
         VmapFont(
           'Vazirmatn',
           (await rootBundle.load(defaultGlyphFont)).buffer.asUint8List(),
+        ),
+        VmapFont(
+          'Noto Sans Syriac Eastern',
+          (await rootBundle.load(syriacGlyphFont)).buffer.asUint8List(),
         ),
       ];
       if (_closed) return;

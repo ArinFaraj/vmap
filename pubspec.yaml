@@ -44,6 +44,7 @@ flutter:
         pluginClass: VmapPlugin
   assets:
     - assets/fonts/Vazirmatn-Variable.ttf
+    - assets/fonts/NotoSansSyriacEastern-Variable.ttf
     - path: assets/vmap_worker.js
       platforms:
         - web
