@@ -361,6 +361,17 @@ On Chicago it placed names MapLibre leaves out while still missing
 others; MapLibre tests a name along a line against small boxes along the
 road, not one rectangle, which is the difference to chase.
 
+Later: **788 of 1,730**. The map pitches to 85 degrees as MapLibre's
+does: the ground ends at MapLibre's far plane, a style's `sky` is drawn
+above the horizon, and raised ground fades into the sky's fog. vmap's own
+distance haze is gone, since MapLibre never hazes without a sky. Over
+terrain, far raster tiles take coarser zooms, hills past the flat
+ground's far edge are covered, and a map is not reported settled while
+its ground eases to its height. terrain/default went from 44 to 2.8
+percent from MapLibre; most terrain tests are now within 10. Tried and
+reverted: MapLibre's line-label collision circles (worse on Liberty) and
+eighth-pixel glyph phases (broke label placement).
+
 Known gaps carried forward: road label anchors are spread evenly over a
 line where MapLibre steps them at exactly `symbol-spacing` from an
 offset of half the label's length (the tile workers do not know label
