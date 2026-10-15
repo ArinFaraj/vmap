@@ -445,24 +445,29 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
   Future<bool> keep(int z, int x, int y) async =>
       await _store?.keep(z, x, y) ?? false;
 
-  /// The tiles at zoom [z] in view: those under the tilted screen when
-  /// [view] is set, as [origin] and [size] frame only its middle.
-  Iterable<(int, int)> _inView(
+  /// The tiles in view as zoom, column and row: at zoom [z] those under
+  /// the screen, or under the tilted screen when [view] is set. Over raised
+  /// ground ([variable]) or past 60 degrees of pitch, as MapLibre covers
+  /// them, each at the zoom its distance from the camera asks for, up to
+  /// [z].
+  Iterable<(int, int, int)> _inView(
     int z,
     double span,
     ui.Offset origin,
     ui.Size size,
-    MapView? view,
-  ) sync* {
+    MapView? view, {
+    bool variable = false,
+  }) sync* {
     if (view != null) {
+      final spread = variable || view.pitch > 60;
       // The hold takes the cover to [z] whatever the view's own zoom.
       for (final t in view.cover(
         maxZoom: z,
-        minZoom: z,
+        minZoom: spread ? 0 : z,
         hold: z + 0.5 - view.zoom,
-        variableZoom: false,
+        variableZoom: spread,
       )) {
-        yield (t.x, t.y);
+        yield (t.z, t.x, t.y);
       }
       return;
     }
@@ -476,7 +481,7 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
     );
     for (var y = y0; y <= y1; y++) {
       for (var x = x0; x <= x1; x++) {
-        yield (x, y);
+        yield (z, x, y);
       }
     }
   }
@@ -493,14 +498,21 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
   }) {
     if (_template == null) return;
     _frame++;
-    final z = tileZoom(zoom);
-    final n = 1 << z;
-    final span = 256.0 * math.pow(2, zoom - z);
+    final top = tileZoom(zoom);
     _setUpPaint(context);
     final lap = _lap, ring = _ring;
     final (snapX, snapY) = _snap(origin, view);
     waiting = 0;
-    for (final (x, y) in _inView(z, span, origin, size, view)) {
+    for (final (z, x, y) in _inView(
+      top,
+      256.0 * math.pow(2, zoom - top),
+      origin,
+      size,
+      view,
+      variable: drape,
+    )) {
+      final n = 1 << z;
+      final span = 256.0 * math.pow(2, zoom - z);
       final key = tileKey(z, x % n, y);
       final tile = _tiles[key] ??= _RasterTile();
       tile.usedFrame = _frame;
