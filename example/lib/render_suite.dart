@@ -213,7 +213,7 @@ class _Session {
         await settle();
       case 'sleep':
         await Future<void>.delayed(
-          Duration(milliseconds: (o[1] as num).toInt()),
+          Duration(milliseconds: num.parse('${o[1]}').toInt()),
         );
         await settle();
       case 'setStyle':
