@@ -16,6 +16,8 @@ void main() {
     expect(Rgba.of('rgba(255, 0, 0, 0.5)')!.toArgb(), 0x80FF0000);
     expect(Rgba.of('hsl(0, 0%, 100%)')!.toArgb(), 0xFFFFFFFF);
     expect(Rgba.of('black')!.toArgb(), 0xFF000000);
+    expect(Rgba.of('RoyalBlue')!.toArgb(), 0xFF4169E1);
+    expect(Rgba.of('lime')!.toArgb(), 0xFF00FF00);
     expect(Rgba.of('no such colour'), isNull);
   });
 
