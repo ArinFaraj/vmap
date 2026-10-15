@@ -84,5 +84,6 @@ is it hazed of its own accord: as in MapLibre, a style's `sky` fades it
 into its fog colour past 60 degrees of pitch. An
 image source at an angle other than north up still lies flat.
 
-Still to come: the `setTerrain` test operation, and covering the ground a
-hill raises into view past the flat ground's far edge.
+Hills beyond the flat ground's far edge are covered too, up to just under
+the horizon, so far mountains stand into the view as in MapLibre. Still to
+come: the `setTerrain` test operation.
