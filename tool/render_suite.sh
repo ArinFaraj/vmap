@@ -33,7 +33,15 @@ handler = functools.partial(Handler, directory=sys.argv[2])
 http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), handler).serve_forever()
 ' "$port" "$suite/assets" >/dev/null 2>&1 &
 server=$!
-trap 'kill $server 2>/dev/null || true' EXIT
+# The real-world tests read @mapbox/mvt-fixtures from a second server, as
+# MapLibre's runner serves them; npm install in the checkout provides them.
+fixtures="$checkout/node_modules/@mapbox/mvt-fixtures/real-world"
+mvt=
+if [ -d "$fixtures" ]; then
+  python3 -m http.server 2901 --bind 127.0.0.1 --directory "$fixtures" >/dev/null 2>&1 &
+  mvt=$!
+fi
+trap 'kill $server $mvt 2>/dev/null || true' EXIT
 
 mkdir -p "$out"
 cd "$(dirname "$0")/../example"
