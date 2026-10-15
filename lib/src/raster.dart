@@ -491,6 +491,7 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
     final span = 256.0 * math.pow(2, zoom - z);
     _setUpPaint(context);
     final lap = _lap, ring = _ring;
+    final (snapX, snapY) = _snap(origin, view);
     waiting = 0;
     for (final (x, y) in _inView(z, span, origin, size, view)) {
       final key = tileKey(z, x % n, y);
@@ -513,10 +514,10 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
         image.height - ring,
       );
       final target = ui.Rect.fromLTRB(
-        x * span - origin.dx,
-        y * span - origin.dy,
-        (x + 1) * span - origin.dx + lap,
-        (y + 1) * span - origin.dy + lap,
+        x * span - origin.dx + snapX,
+        y * span - origin.dy + snapY,
+        (x + 1) * span - origin.dx + snapX + lap,
+        (y + 1) * span - origin.dy + snapY + lap,
       );
       drawn.add((
         image: image,
@@ -537,6 +538,20 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
         _tiles.remove(key)?.image?.dispose();
       }
     }
+  }
+
+  /// How far to move the tiles so the world's pixels fall on the screen's,
+  /// as MapLibre aligns a map at rest: a tile at its own zoom is then drawn
+  /// pixel for pixel instead of blurred across two. None on a tilted or
+  /// turned map, where no pixel lines up.
+  static (double, double) _snap(ui.Offset origin, MapView? view) {
+    double nearest(double v) => v.roundToDouble() - v;
+    if (view == null) return (nearest(-origin.dx), nearest(-origin.dy));
+    if (view.pitch != 0 || view.bearing % 360 != 0) return (0, 0);
+    return (
+      nearest(view.width / 2 - view.center.x),
+      nearest(view.height / 2 - view.center.y),
+    );
   }
 
   Future<void> _load(_RasterTile tile, int z, int x, int y) async {
