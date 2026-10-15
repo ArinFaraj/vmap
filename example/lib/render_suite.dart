@@ -463,6 +463,9 @@ Future<void> _settle(VmapEngine engine, void Function() paint) async {
       lastPaint = clock.elapsedMilliseconds;
     }
     await Future<void>.delayed(const Duration(milliseconds: 16));
+    // The engine asks for its next frame through the scheduler, which a
+    // hidden window seldom drives; this loop paints in its place.
+    if (engine.stats.busy) dirty = true;
     if (!dirty &&
         engine.styleLoaded &&
         engine.stats.tilesLoading == 0 &&
