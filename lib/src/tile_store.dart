@@ -105,14 +105,15 @@ class TileStore {
     return file != null && fileExists(file);
   }
 
-  /// The bytes of tile [z]/[x]/[y], empty when the tile set has no such
-  /// tile.
-  Future<Uint8List> read(int z, int x, int y) async {
+  /// The bytes of tile [z]/[x]/[y]: empty for a tile with nothing in it,
+  /// or outside the tile set's bounds, and null where the server has no
+  /// such tile.
+  Future<Uint8List?> read(int z, int x, int y) async {
     if (!cover.has(z, x, y)) return Uint8List(0);
     final file = fileOf(z, x, y);
     if (file != null && fileExists(file)) return readFile(file);
     final bytes = await _fetch(z, x, y);
-    if (file != null && bytes.isNotEmpty) {
+    if (file != null && bytes != null && bytes.isNotEmpty) {
       unawaited(writeFile(file, bytes).then<void>((_) {}, onError: (_) {}));
     }
     return bytes;
@@ -124,12 +125,12 @@ class TileStore {
     final file = fileOf(z, x, y);
     if (file == null || !cover.has(z, x, y) || fileExists(file)) return false;
     final bytes = await _fetch(z, x, y);
-    if (bytes.isEmpty) return false;
+    if (bytes == null || bytes.isEmpty) return false;
     await writeFile(file, bytes);
     return true;
   }
 
-  Future<Uint8List> _fetch(int z, int x, int y) async {
+  Future<Uint8List?> _fetch(int z, int x, int y) async {
     if (archive case final archive?) return archive.tile(z, x, y);
     final (url, reply) = await getTile(
       client,
@@ -139,7 +140,8 @@ class TileStore {
       cover.row(z, y),
       headers,
     );
-    if (reply.status == 204 || reply.status == 404) return Uint8List(0);
+    if (reply.status == 204) return Uint8List(0);
+    if (reply.status == 404) return null;
     if (reply.status != 200) throw HttpFailure(reply.status, url);
     return reply.bytes;
   }

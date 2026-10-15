@@ -501,7 +501,7 @@ Future<void> tileWorkerMain(
       recent[key] = kept;
       return kept;
     }
-    final bytes = await store!.read(id.z, id.x, id.y);
+    final bytes = await store!.read(id.z, id.x, id.y) ?? Uint8List(0);
     recent[key] = bytes;
     if (recent.length > 24) recent.remove(recent.keys.first);
     return bytes;

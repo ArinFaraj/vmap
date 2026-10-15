@@ -24,6 +24,13 @@ class _RasterTile {
   int failedAtMs = -1;
   bool loading = false;
 
+  /// The server has no such tile, which a sparse source leaves out: the
+  /// tile above it is drawn in its place.
+  bool missing = false;
+
+  /// The server answered with nothing, a tile with nothing to draw.
+  bool empty = false;
+
   /// A tile of heights as it was downloaded, kept until it has been shaded
   /// with all four tiles around it.
   Uint8List? pixels;
@@ -497,28 +504,36 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
       final key = tileKey(z, x % n, y);
       final tile = _tiles[key] ??= _RasterTile();
       tile.usedFrame = _frame;
-      final image = tile.image;
-      if (image == null) {
-        _load(tile, z, x % n, y);
-        final failed =
-            tile.failedAtMs >= 0 &&
-            _clock.elapsedMilliseconds - tile.failedAtMs < 5000;
-        final covered = _store?.cover.has(z, x % n, y) ?? false;
-        if (covered && !failed) waiting++;
-        continue;
-      }
-      final source = ui.Rect.fromLTRB(
-        ring,
-        ring,
-        image.width - ring,
-        image.height - ring,
-      );
       final target = ui.Rect.fromLTRB(
         x * span - origin.dx + snapX,
         y * span - origin.dy + snapY,
         (x + 1) * span - origin.dx + snapX + lap,
         (y + 1) * span - origin.dy + snapY + lap,
       );
+      var image = tile.image;
+      ui.Rect source;
+      if (image != null) {
+        source = ui.Rect.fromLTRB(
+          ring,
+          ring,
+          image.width - ring,
+          image.height - ring,
+        );
+      } else if (tile.empty) {
+        continue;
+      } else {
+        final failed =
+            tile.failedAtMs >= 0 &&
+            _clock.elapsedMilliseconds - tile.failedAtMs < 5000;
+        if (!tile.missing) {
+          _load(tile, z, x % n, y);
+          final covered = _store?.cover.has(z, x % n, y) ?? false;
+          if (covered && !failed) waiting++;
+        }
+        final stand = _standIn(z, x % n, y, ask: tile.missing || failed);
+        if (stand == null) continue;
+        (image, source) = stand;
+      }
       drawn.add((
         image: image,
         source: source,
@@ -540,6 +555,40 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
     }
   }
 
+  /// The part of the deepest loaded tile above [z]/[x]/[y] that covers it,
+  /// to draw while that tile loads or where it has none. With [ask], the
+  /// nearest tile above that may come is asked for, as the tile itself will
+  /// not come.
+  (ui.Image, ui.Rect)? _standIn(int z, int x, int y, {required bool ask}) {
+    for (var dz = 1; dz <= z; dz++) {
+      final pz = z - dz, px = x >> dz, py = y >> dz;
+      final key = tileKey(pz, px, py);
+      var above = _tiles[key];
+      if (above == null && ask && (_store?.cover.has(pz, px, py) ?? false)) {
+        above = _tiles[key] = _RasterTile();
+      }
+      if (above == null) continue;
+      above.usedFrame = _frame;
+      final image = above.image;
+      if (image == null) {
+        if (ask && !above.missing && !above.empty) {
+          _load(above, pz, px, py);
+          if (above.loading) waiting++;
+          ask = false;
+        }
+        continue;
+      }
+      final ring = _ring;
+      final part = 1 << dz;
+      final w = (image.width - 2 * ring) / part;
+      final h = (image.height - 2 * ring) / part;
+      final left = ring + (x - (px << dz)) * w;
+      final top = ring + (y - (py << dz)) * h;
+      return (image, ui.Rect.fromLTWH(left, top, w, h));
+    }
+    return null;
+  }
+
   /// How far to move the tiles so the world's pixels fall on the screen's,
   /// as MapLibre aligns a map at rest: a tile at its own zoom is then drawn
   /// pixel for pixel instead of blurred across two. None on a tilted or
@@ -555,7 +604,8 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
   }
 
   Future<void> _load(_RasterTile tile, int z, int x, int y) async {
-    if (tile.loading || _loading >= _maxLoading) return;
+    if (tile.loading || tile.empty || tile.missing) return;
+    if (_loading >= _maxLoading) return;
     if (!(_store?.cover.has(z, x, y) ?? false)) return;
     if (tile.failedAtMs >= 0 &&
         _clock.elapsedMilliseconds - tile.failedAtMs < 5000) {
@@ -565,7 +615,15 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
     _loading++;
     try {
       final bytes = await _store!.read(z, x, y);
-      if (bytes.isEmpty) throw HttpFailure(404, '$_template $z/$x/$y');
+      if (bytes == null) {
+        tile.missing = true;
+        if (!_closed) onLoaded();
+        return;
+      }
+      if (bytes.isEmpty) {
+        tile.empty = true;
+        return;
+      }
       final codec = await ui.instantiateImageCodec(bytes);
       final frame = await codec.getNextFrame();
       codec.dispose();
@@ -1228,7 +1286,10 @@ final class TerrainTiles extends TileDrawing<TerrainLayer> {
       final z = id.z - up, x = id.x >> up, y = id.y >> up;
       final tile = _tiles[tileKey(z, x, y)] ??= _RasterTile();
       tile.usedFrame = _frame;
-      if (!heights.has(TileId(z, x, y)) && !_empty.contains(tileKey(z, x, y))) {
+      if (!heights.has(TileId(z, x, y)) &&
+          !_empty.contains(tileKey(z, x, y)) &&
+          !tile.empty &&
+          !tile.missing) {
         _load(tile, z, x, y);
         final failed =
             tile.failedAtMs >= 0 &&
