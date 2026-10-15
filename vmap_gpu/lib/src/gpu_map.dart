@@ -4,7 +4,9 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_gpu/gpu.dart' as gpu;
+
+import 'gpu_shim/gpu.dart' as gpu;
+
 import 'package:vector_math/vector_math.dart' show Vector4;
 import 'package:vmap/renderer.dart';
 
@@ -71,7 +73,7 @@ class GpuMap implements MapRenderer {
   gpu.Texture? _depth, _samples;
   int _next = 0, _width = 0, _height = 0, _frame = 0;
   bool _transient = true;
-  late final bool _msaa = gpu.gpuContext.doesSupportOffscreenMSAA;
+  late final bool _msaa = !kIsWeb && gpu.gpuContext.doesSupportOffscreenMSAA;
   late final gpu.PixelFormat _color =
       gpu.gpuContext.defaultColorFormat == gpu.PixelFormat.unknown
       ? gpu.PixelFormat.r8g8b8a8UNormInt
@@ -107,7 +109,7 @@ class GpuMap implements MapRenderer {
 
   Future<void> _load() async {
     try {
-      _library = await gpu.ShaderLibrary.fromAsset(_bundle);
+      _library = await gpu.loadShaderLibraryAsync(_bundle);
     } catch (e) {
       debugPrint('vmap_gpu: shaders did not load: $e');
     }
@@ -451,6 +453,7 @@ class GpuMap implements MapRenderer {
     // go into a texture of their own and what is above them into another,
     // so the canvas lays them over each other in order.
     final shown = <(ui.Image, double)>[(frame.image, 1)];
+    final textures = <gpu.Texture>[frame.map];
     var overlays = 0;
     (gpu.Texture, ui.Image) next() => frame.overlay(overlays++, _target);
     final ground = terrain;
@@ -487,6 +490,9 @@ class GpuMap implements MapRenderer {
       shown
         ..add((aloneImage, opacity))
         ..add((aboveImage, 1));
+      textures
+        ..add(alone)
+        ..add(above);
     }
 
     Timeline.timeSync('vmap.gpu.draw', () {
@@ -527,6 +533,7 @@ class GpuMap implements MapRenderer {
       }
       buffers.last.submit(completionCallback: (_) => _finished());
     });
+    if (kIsWeb) _snapshot(shown, textures);
     _present(canvas, _last = shown, view);
     return _reveal.animating ||
         _presence.animating ||
@@ -630,6 +637,22 @@ class GpuMap implements MapRenderer {
         ),
       ),
     );
+  }
+
+  /// The images of the last frame taken on the web, let go a frame later.
+  List<ui.Image> _snapshots = const [];
+
+  /// On the web a texture's image is a copy taken when it is asked for,
+  /// not the texture itself as on Impeller: [shown] takes fresh copies of
+  /// [textures] once they are drawn.
+  void _snapshot(_Shown shown, List<gpu.Texture> textures) {
+    for (final image in _snapshots) {
+      image.dispose();
+    }
+    _snapshots = [for (final t in textures) t.asImage()];
+    for (var i = 0; i < shown.length; i++) {
+      shown[i] = (_snapshots[i], shown[i].$2);
+    }
   }
 
   void _present(ui.Canvas canvas, _Shown shown, MapView view) {
@@ -1013,7 +1036,7 @@ class _MapPass {
         ..bindUniform(map._flatSlots!, host.emplace(map._slotBytes))
         ..bindIndexBuffer(
           gpu.BufferView(
-            data.buffer!,
+            data.indexBuffer!,
             offsetInBytes: data.indexOffset + first * 4,
             lengthInBytes: count * 4,
           ),

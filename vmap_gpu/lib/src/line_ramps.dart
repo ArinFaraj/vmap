@@ -2,7 +2,9 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_gpu/gpu.dart' as gpu;
+
+import 'gpu_shim/gpu.dart' as gpu;
+
 import 'package:vmap/renderer.dart';
 
 /// What lines read along their length, a row of [width] texels each in one

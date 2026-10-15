@@ -2,7 +2,8 @@ import 'dart:developer' show Timeline;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter_gpu/gpu.dart' as gpu;
+import 'gpu_shim/gpu.dart' as gpu;
+
 import 'package:vmap/renderer.dart';
 
 /// Frames the GPU may still be reading while the next one is written.
@@ -57,7 +58,8 @@ class UniformArena {
 /// the frame that asks, about a millisecond for every 2 MB on a phone. A
 /// range given back waits until every frame submitted before it has
 /// finished on the GPU, which may still read it, before it is handed out
-/// again.
+/// again. Indices come from slabs of their own: WebGL never lets a buffer
+/// that has held indices hold vertices.
 class GpuHeap {
   static const _slabBytes = 4 << 20;
   static const align = 256;
@@ -70,6 +72,7 @@ class GpuHeap {
   static const _headroom = 12 << 20;
 
   final List<_Slab> _slabs = [];
+  final List<_Slab> _indexSlabs = [];
   final List<(GpuRange, int)> _given = [];
   int used = 0;
   int _oversize = 0;
@@ -80,7 +83,8 @@ class GpuHeap {
   /// Frames handed to the GPU, and frames it has finished.
   int submitted = 0, completed = 0;
 
-  int get _total => _slabs.length * _slabBytes + _oversize;
+  int get _total =>
+      (_slabs.length + _indexSlabs.length) * _slabBytes + _oversize;
 
   /// Adds a slab while free room is short, one a frame, so uploads find
   /// room without allocating.
@@ -91,7 +95,8 @@ class GpuHeap {
     }
   }
 
-  GpuRange take(int bytes) {
+  /// [bytes] of room, from the slabs for [indices] or for vertices.
+  GpuRange take(int bytes, {bool indices = false}) {
     _release();
     final size = (bytes + align - 1) ~/ align * align;
     used += size;
@@ -99,12 +104,13 @@ class GpuHeap {
       _oversize += size;
       return GpuRange(_create(size), 0, size, null);
     }
-    for (final slab in _slabs) {
+    final slabs = indices ? _indexSlabs : _slabs;
+    for (final slab in slabs) {
       final at = slab.take(size);
       if (at >= 0) return GpuRange(slab.buffer, at, size, slab);
     }
     final slab = _Slab(_create(_slabBytes), _slabBytes);
-    _slabs.add(slab);
+    slabs.add(slab);
     return GpuRange(slab.buffer, slab.take(size), size, slab);
   }
 
@@ -132,6 +138,7 @@ class GpuHeap {
 
   void clear() {
     _slabs.clear();
+    _indexSlabs.clear();
     _given.clear();
     used = 0;
     _oversize = 0;
@@ -186,9 +193,10 @@ class _Slab {
   }
 }
 
-/// A tile on the GPU, all in one range of a [GpuHeap]: its flat layers'
-/// vertices and indices, then each building layer's vertices. Filled over
-/// as many frames as the engine's budget needs; drawn once [ready].
+/// A tile on the GPU in two ranges of a [GpuHeap]: its flat layers'
+/// vertices and then each building layer's vertices in one, the flat
+/// layers' indices in the other. Filled over as many frames as the engine's
+/// budget needs; drawn once [ready].
 class TileGpu implements RendererTileData {
   factory TileGpu(LoadedTile tile, GpuHeap heap) {
     final parts = <(ByteData, int)>[];
@@ -204,24 +212,32 @@ class TileGpu implements RendererTileData {
     }
 
     final stream = tile.gpu;
-    var indexAt = 0;
-    if (stream != null) {
-      part(stream.vertices);
-      indexAt = part(stream.indices);
-    }
+    if (stream != null) part(stream.vertices);
     final buildingsAt = [
       for (final e in tile.extrusions) (e, part(e.vertices)),
     ];
     final range = at > 0 ? heap.take(at) : null;
+    final indices = stream == null || stream.indices.isEmpty
+        ? null
+        : heap.take(stream.indices.lengthInBytes, indices: true);
     final base = range?.offset ?? 0;
     return TileGpu._(
       tile,
       heap,
       stream,
       range,
-      base + indexAt,
+      indices,
       [for (final (e, offset) in buildingsAt) BuildingGpu(e, base + offset)],
-      [for (final (data, offset) in parts) (data, base + offset)],
+      [
+        for (final (data, offset) in parts)
+          (data, range!.buffer, base + offset),
+        if (indices != null)
+          (
+            ByteData.sublistView(stream!.indices),
+            indices.buffer,
+            indices.offset,
+          ),
+      ],
     );
   }
 
@@ -230,7 +246,7 @@ class TileGpu implements RendererTileData {
     this._heap,
     this.stream,
     this._range,
-    this.indexOffset,
+    this._indices,
     this.buildings,
     this._parts,
   ) : drawnFrame = _heap.frame;
@@ -242,17 +258,21 @@ class TileGpu implements RendererTileData {
   /// The renderer's frame this tile was last drawn in, or sent in when it
   /// has not been drawn yet.
   int drawnFrame;
-  GpuRange? _range;
+  GpuRange? _range, _indices;
   final List<BuildingGpu> buildings;
 
-  /// Where the flat layers' vertices and indices start in [buffer].
+  /// Where the flat layers' vertices start in [buffer].
   int get vertexOffset => _range?.offset ?? 0;
-  final int indexOffset;
 
   gpu.DeviceBuffer? get buffer => _range?.buffer;
 
-  /// What to copy, each with where it goes in [buffer], in order.
-  final List<(ByteData, int)> _parts;
+  /// Where the flat layers' indices start in [indexBuffer].
+  int get indexOffset => _indices?.offset ?? 0;
+
+  gpu.DeviceBuffer? get indexBuffer => _indices?.buffer;
+
+  /// What to copy, each with the buffer and offset it goes to, in order.
+  final List<(ByteData, gpu.DeviceBuffer, int)> _parts;
   int _part = 0, _sent = 0;
 
   static const _piece = 256 * 1024;
@@ -263,9 +283,9 @@ class TileGpu implements RendererTileData {
   /// returns [ready].
   bool send(Stopwatch clock, int deadline) {
     while (!ready) {
-      final (source, at) = _parts[_part];
+      final (source, buffer, at) = _parts[_part];
       final n = math.min(_piece, source.lengthInBytes - _sent);
-      buffer!
+      buffer
         ..overwrite(
           ByteData.sublistView(source, _sent, _sent + n),
           destinationOffsetInBytes: at + _sent,
@@ -283,9 +303,10 @@ class TileGpu implements RendererTileData {
 
   @override
   void dispose() {
-    final range = _range;
+    final range = _range, indices = _indices;
     if (range != null) _heap.give(range);
-    _range = null;
+    if (indices != null) _heap.give(indices);
+    _range = _indices = null;
   }
 }
 
