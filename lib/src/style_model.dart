@@ -754,13 +754,57 @@ final class TiledSource extends VectorSource {
   int get defaultMaxZoom => 14;
 }
 
-/// A stretch of the style drawn in one go: one raster layer, or consecutive
-/// paint layers of one source.
+/// A `background` layer: the whole map filled with a colour or a repeated
+/// sprite image.
+class BackgroundLayer {
+  BackgroundLayer({
+    required this.minZoom,
+    required this.maxZoom,
+    required this.color,
+    required this.opacity,
+    this.pattern,
+  });
+
+  final double minZoom;
+  final double maxZoom;
+  final Expr color;
+  final Expr opacity;
+
+  /// The name of the sprite image repeated over the map, which then takes
+  /// the colour's place.
+  final Expr? pattern;
+
+  /// The colour at [context] with the layer's opacity, or null where the
+  /// layer is not drawn.
+  Rgba? colorAt(EvalContext context) {
+    if (context.zoom < minZoom || context.zoom >= maxZoom) return null;
+    final c = Rgba.of(color(context));
+    final o = (asNumber(opacity(context)) ?? 1).clamp(0.0, 1.0);
+    return c == null ? null : Rgba(c.r, c.g, c.b, c.a * o);
+  }
+}
+
+/// A stretch of the style drawn in one go: one raster layer, one background
+/// layer, or consecutive paint layers of one source.
 class StyleRun {
-  const StyleRun.raster(this.raster) : source = -1, first = 0, end = 0;
-  const StyleRun.vector(this.source, this.first, this.end) : raster = -1;
+  const StyleRun.raster(this.raster)
+    : background = -1,
+      source = -1,
+      first = 0,
+      end = 0;
+  const StyleRun.background(this.background)
+    : raster = -1,
+      source = -1,
+      first = 0,
+      end = 0;
+  const StyleRun.vector(this.source, this.first, this.end)
+    : raster = -1,
+      background = -1;
 
   final int raster;
+  final int background;
+
+  /// The vector source of a run of paint layers, or -1.
   final int source;
 
   /// The paint layers from [first] up to [end].
@@ -771,7 +815,7 @@ class StyleRun {
 /// A style document compiled for drawing.
 class StyleSheet {
   StyleSheet({
-    required this.background,
+    required this.backgrounds,
     required this.buckets,
     required this.layers,
     required this.symbols,
@@ -784,8 +828,6 @@ class StyleSheet {
     this.layerOpacity = const {},
     this.terrain,
     required this.rasters,
-    required this.backgroundPattern,
-    required this.backgroundOpacity,
     required this.attributions,
     this.extrusions = const [],
     this.footprints = const {},
@@ -811,7 +853,7 @@ class StyleSheet {
   /// the building layer's fill in the style, so buildings are drawn in the
   /// style's order. Null for any other run.
   ExtrusionLayer? extrusionAt(StyleRun run) =>
-      run.raster < 0 ? _extrusionByFill[run.first] : null;
+      run.source >= 0 ? _extrusionByFill[run.first] : null;
 
   late final Map<int, ExtrusionLayer> _extrusionByFill = {
     for (final e in extrusions) e.fill: e,
@@ -820,7 +862,7 @@ class StyleSheet {
   /// [run]'s opacity as a whole at [context], or null when it is drawn
   /// straight onto the map.
   double? runOpacity(StyleRun run, EvalContext context) {
-    if (run.raster >= 0) return null;
+    if (run.source < 0) return null;
     final opacity = layerOpacity[run.first];
     if (opacity == null) return null;
     return (asNumber(opacity(context)) ?? 1).clamp(0.0, 1.0);
@@ -838,12 +880,17 @@ class StyleSheet {
   /// The credit each source asks for in its `attribution`, without repeats.
   final List<String> attributions;
 
-  final Expr background;
+  /// The style's `background` layers, in order.
+  final List<BackgroundLayer> backgrounds;
 
-  /// The name of the sprite image repeated over the background, when the
-  /// style asks for one.
-  final Expr? backgroundPattern;
-  final Expr backgroundOpacity;
+  /// The colour of the lowest background layer drawn at [context].
+  Rgba? background(EvalContext context) {
+    for (final b in backgrounds) {
+      if (b.colorAt(context) case final color?) return color;
+    }
+    return null;
+  }
+
   final List<Bucket> buckets;
   final List<PaintLayer> layers;
   final List<SymbolLayer> symbols;

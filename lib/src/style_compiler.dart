@@ -71,13 +71,12 @@ class StyleCompiler {
   final List<RasterLayer> _rasters = [];
   final List<ExtrusionLayer> _extrusions = [];
 
-  /// For each raster layer, how many paint layers come before it.
-  final List<int> _rasterAt = [];
-  final StringBuffer _shape;
+  final List<BackgroundLayer> _backgrounds = [];
 
-  Expr _background = (_) => null;
-  Expr? _backgroundPattern;
-  Expr _backgroundOpacity = (_) => 1;
+  /// Each raster and background layer's run, with how many paint layers
+  /// come before it.
+  final List<(int, StyleRun)> _alone = [];
+  final StringBuffer _shape;
 
   /// See [StyleSheet.footprints]. Widens each footprint's bucket by a zoom,
   /// so tiles past the footprints' range still carry them.
@@ -135,7 +134,7 @@ class StyleCompiler {
     return StyleSheet(
       terrain: _terrain(),
       layerOpacity: _layerOpacity,
-      background: _background,
+      backgrounds: _backgrounds,
       buckets: _buckets,
       layers: _layers,
       symbols: _symbols,
@@ -150,8 +149,6 @@ class StyleCompiler {
       },
       glyphs: json['glyphs'] as String?,
       rasters: _rasters,
-      backgroundPattern: _backgroundPattern,
-      backgroundOpacity: _backgroundOpacity,
       extrusions: _extrusions,
       footprints: footprints,
       attributions: {
@@ -227,16 +224,17 @@ class StyleCompiler {
 
   void _addBackground(_Layer layer) {
     final paint = layer.paint;
-    final color = compileExpr(paint['background-color'] ?? '#000000');
-    final opacity = compileExpr(paint['background-opacity'] ?? 1);
     final picture = paint['background-pattern'];
-    _backgroundPattern = picture == null ? null : compileText(picture);
-    _backgroundOpacity = opacity;
-    _background = (c) {
-      final v = Rgba.of(color(c));
-      final o = asNumber(opacity(c)) ?? 1;
-      return v == null ? null : Rgba(v.r, v.g, v.b, v.a * o);
-    };
+    _alone.add((_layers.length, StyleRun.background(_backgrounds.length)));
+    _backgrounds.add(
+      BackgroundLayer(
+        minZoom: layer.minZoom,
+        maxZoom: layer.maxZoom,
+        color: compileExpr(paint['background-color'] ?? '#000000'),
+        opacity: compileExpr(paint['background-opacity'] ?? 1),
+        pattern: picture == null ? null : compileText(picture),
+      ),
+    );
   }
 
   static const _adjustKeys = {
@@ -317,7 +315,7 @@ class StyleCompiler {
       _ => null,
     };
     if (made == null) return;
-    _rasterAt.add(_layers.length);
+    _alone.add((_layers.length, StyleRun.raster(_rasters.length)));
     _rasters.add(made);
   }
 
@@ -784,7 +782,7 @@ class StyleCompiler {
   List<StyleRun> _runs() {
     final layers = _layers;
     final runs = <StyleRun>[];
-    var nextRaster = 0;
+    var nextAlone = 0;
     var runStart = 0;
     int sourceAt(int i) => _buckets[layers[i].bucket].source;
     void closeRun(int end) {
@@ -795,9 +793,9 @@ class StyleCompiler {
     }
 
     for (var i = 0; i <= layers.length; i++) {
-      while (nextRaster < _rasterAt.length && _rasterAt[nextRaster] == i) {
+      while (nextAlone < _alone.length && _alone[nextAlone].$1 == i) {
         closeRun(i);
-        runs.add(StyleRun.raster(nextRaster++));
+        runs.add(_alone[nextAlone++].$2);
       }
       if (i == layers.length ||
           (i > runStart &&

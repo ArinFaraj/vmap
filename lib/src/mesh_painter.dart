@@ -67,29 +67,40 @@ class MeshPainter {
   }
 
   /// Fills the screen with the style's background, and returns its colour.
-  Rgba? drawBackground(ui.Canvas canvas, StyleSheet sheet, VmapCamera camera) {
-    final size = camera.size;
-    final background = Rgba.of(sheet.background(_context));
-    if (background != null) {
-      canvas.drawRect(
-        ui.Offset.zero & size,
-        _paint..color = ui.Color(background.toArgb()),
-      );
+  /// Fills the map with [layer]: the screen, or under the transform of a
+  /// tilted [camera] the ground it shows.
+  void drawBackground(
+    ui.Canvas canvas,
+    BackgroundLayer layer,
+    VmapCamera camera,
+  ) {
+    if (_context.zoom < layer.minZoom || _context.zoom >= layer.maxZoom) return;
+    final pattern = layer.pattern?.call(_context);
+    final ui.Paint paint;
+    if (pattern is String) {
+      final shader = _shaders.backdrop(pattern, sprites, camera.origin);
+      if (shader == null) return;
+      final opacity = asNumber(layer.opacity(_context)) ?? 1;
+      paint = _paint
+        ..color = ui.Color.fromRGBO(255, 255, 255, opacity.clamp(0, 1))
+        ..shader = shader;
+    } else {
+      final color = layer.colorAt(_context);
+      if (color == null || color.a <= 0) return;
+      paint = _paint..color = ui.Color(color.toArgb());
     }
-    if (sheet.backgroundPattern?.call(_context) case final String name) {
-      final shader = _shaders.backdrop(name, sprites, camera.origin);
-      if (shader != null) {
-        final opacity = asNumber(sheet.backgroundOpacity(_context)) ?? 1;
-        canvas.drawRect(
-          ui.Offset.zero & size,
-          _paint
-            ..color = ui.Color.fromRGBO(255, 255, 255, opacity.clamp(0, 1))
-            ..shader = shader,
-        );
-        _paint.shader = null;
-      }
+    if (camera.view case final view?) {
+      final ground = view.ground();
+      final path = ui.Path()
+        ..addPolygon([
+          for (final p in ground)
+            ui.Offset(p.x - camera.origin.dx, p.y - camera.origin.dy),
+        ], true);
+      canvas.drawPath(path, paint);
+    } else {
+      canvas.drawRect(ui.Offset.zero & camera.size, paint);
     }
-    return background;
+    _paint.shader = null;
   }
 
   /// Works out each layer's colour and width at [styleZoom].

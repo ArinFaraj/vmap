@@ -117,7 +117,7 @@ class GpuMap implements MapRenderer {
   bool supports(StyleSheet sheet) {
     var meshSeen = false;
     for (final run in sheet.runs) {
-      if (run.raster >= 0) {
+      if (run.source < 0) {
         if (meshSeen) return false;
         continue;
       }

@@ -795,7 +795,6 @@ class VmapEngine extends ChangeNotifier {
     final dataZoom = camera.zoom - 1;
     final styleZoom = dataZoom + sheet.zoomOffset;
     _context.zoom = styleZoom;
-    final background = _meshes.drawBackground(canvas, sheet, camera);
     _meshes.startFrame(
       sheet,
       styleZoom,
@@ -855,6 +854,14 @@ class VmapEngine extends ChangeNotifier {
     }
     final drape = onGpu && gpu.terrain != null;
     for (final run in sheet.runs) {
+      if (run.background >= 0) {
+        _meshes.drawBackground(
+          canvas,
+          sheet.backgrounds[run.background],
+          camera,
+        );
+        continue;
+      }
       if (run.raster >= 0) {
         _rasters[run.raster].paint(
           canvas,
@@ -942,7 +949,7 @@ class VmapEngine extends ChangeNotifier {
               ),
             ) ^
             _markerLabels.length,
-        background: background?.toArgb() ?? 0xFFFFFFFF,
+        background: sheet.background(_context)?.toArgb() ?? 0xFFFFFFFF,
         zoom: camera.zoom,
         origin: camera.origin,
         size: size,

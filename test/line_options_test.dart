@@ -158,9 +158,10 @@ void main() {
       ],
     });
     final context = EvalContext();
-    expect(sheet.backgroundPattern!(context), 'sand');
-    expect(sheet.backgroundOpacity(context), 0.5);
+    final background = sheet.backgrounds.single;
+    expect(background.pattern!(context), 'sand');
+    expect(background.opacity(context), 0.5);
     expect(sheet.symbols.single.textRotate, 30);
-    expect(_sheet({}, {}).backgroundPattern, isNull);
+    expect(_sheet({}, {}).backgrounds, isEmpty);
   });
 }
