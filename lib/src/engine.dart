@@ -296,6 +296,7 @@ class VmapEngine extends ChangeNotifier {
         value != null &&
         jsonEncode(value.layers) == jsonEncode(_overlay?.layers);
     _overlay = value;
+    _resources.useImages(value?.images ?? const {});
     final base = _base;
     if (base != null) _apply(base, _style, keepLabels: sameLayers);
   }

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'builtin_style.dart';
 import 'palette.dart';
+import 'sprites.dart' show VmapImage;
 
 /// Which map style to draw: a MapLibre style document, or the style that
 /// ships with the package.
@@ -93,7 +94,13 @@ class VmapOverlay {
     this.sources = const {},
     this.layers = const [],
     this.terrain,
+    this.images = const {},
   });
+
+  /// Pictures the style draws by name, as `icon-image` or a pattern, as if
+  /// they were in its sprite sheet. One named as an image of the sheet
+  /// takes its place.
+  final Map<String, VmapImage> images;
 
   /// By name, for example `{'route': {'type': 'geojson', 'data': {...}}}`.
   final Map<String, Object?> sources;

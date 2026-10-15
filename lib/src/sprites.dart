@@ -1,9 +1,26 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'net.dart' show cacheKey;
 import 'platform.dart';
+
+/// A picture of the app's own for the style to draw by name, as an icon or
+/// a pattern, as if it were in the style's sprite sheet.
+class VmapImage {
+  const VmapImage(this.image, {this.pixelRatio = 1, this.sdf = false});
+
+  final ui.Image image;
+
+  /// The picture's pixels to a logical pixel: 2 for a picture drawn for
+  /// screens of double density.
+  final double pixelRatio;
+
+  /// The picture is a distance field: a shape with no colour of its own,
+  /// drawn in the style's `icon-color`.
+  final bool sdf;
+}
 
 /// One image of a sprite sheet.
 class SpriteImage {
@@ -66,6 +83,55 @@ class SpriteSheet {
     picture.dispose();
     return out;
   });
+
+  /// A sheet of [base]'s images and [added] together in one picture, the
+  /// added images under the base's and in its place where a name is in
+  /// both.
+  static SpriteSheet join(SpriteSheet? base, Map<String, VmapImage> added) {
+    final width = math.max(
+      base?.image.width ?? 0,
+      added.values.fold(0, (w, a) => math.max(w, a.image.width)),
+    );
+    final entries = {...?base?.entries};
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    if (base != null) canvas.drawImage(base.image, ui.Offset.zero, ui.Paint());
+    var x = 0, y = base?.image.height ?? 0, shelf = 0;
+    for (final MapEntry(key: name, value: a) in added.entries) {
+      final w = a.image.width, h = a.image.height;
+      if (x + w > width) {
+        x = 0;
+        y += shelf;
+        shelf = 0;
+      }
+      canvas.drawImage(
+        a.image,
+        ui.Offset(x.toDouble(), y.toDouble()),
+        ui.Paint(),
+      );
+      entries[name] = SpriteImage(
+        ui.Rect.fromLTWH(
+          x.toDouble(),
+          y.toDouble(),
+          w.toDouble(),
+          h.toDouble(),
+        ),
+        w / a.pixelRatio,
+        h / a.pixelRatio,
+        a.pixelRatio,
+        sdf: a.sdf,
+      );
+      x += w;
+      shelf = math.max(shelf, h);
+    }
+    final picture = recorder.endRecording();
+    final image = picture.toImageSync(
+      math.max(width, 1),
+      math.max(y + shelf, 1),
+    );
+    picture.dispose();
+    return SpriteSheet(image, entries);
+  }
 
   void dispose() {
     image.dispose();

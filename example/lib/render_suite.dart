@@ -168,6 +168,7 @@ class _Session {
   Map<String, Object?> _document;
   final _edits = <VmapStyleEdit>[];
   final _states = <(String, Object?), Map<String, Object?>>{};
+  final _images = <String, VmapImage>{};
   late VmapEngine _engine;
 
   VmapEngine _make() => VmapEngine(
@@ -224,8 +225,25 @@ class _Session {
             : (o[1] as Map).cast<String, Object?>();
         _edits.clear();
         _states.clear();
+        _images.clear();
         _engine = _make();
         await settle();
+      case 'addImage':
+        final options = o.length > 3 ? o[3] as Map : const {};
+        final codec = await ui.instantiateImageCodec(
+          File('$_suite/assets/${o[2]}').readAsBytesSync(),
+        );
+        final frame = await codec.getNextFrame();
+        codec.dispose();
+        _images[o[1] as String] = VmapImage(
+          frame.image,
+          pixelRatio: (options['pixelRatio'] as num? ?? 1).toDouble(),
+          sdf: options['sdf'] == true,
+        );
+        _engine.overlay = VmapOverlay(images: {..._images});
+      case 'removeImage':
+        _images.remove(o[1]);
+        _engine.overlay = VmapOverlay(images: {..._images});
       case 'setGlobalStateProperty':
         _edit(VmapStyleEdit.state(o[1] as String, o[2]));
       case 'setPaintProperty':

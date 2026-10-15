@@ -14,3 +14,4 @@ export 'src/palette.dart' show Tone, VmapPalette;
 export 'src/stats.dart' show VmapLabelWork, VmapStats, VmapTimings;
 export 'src/style.dart' show VmapOverlay, VmapStyle, VmapStyleEdit;
 export 'src/source_config.dart' show TileSourceConfig;
+export 'src/sprites.dart' show VmapImage;

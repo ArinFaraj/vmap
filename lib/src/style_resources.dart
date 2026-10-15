@@ -33,7 +33,9 @@ class StyleResources {
   static const defaultGlyphFont =
       'packages/vmap/assets/fonts/Vazirmatn-Variable.ttf';
 
+  SpriteSheet? _styleSprites;
   SpriteSheet? _sprites;
+  Map<String, VmapImage> _images = const {};
   String? _spriteUrl;
   int _spritesLoading = 0;
   bool _closed = false;
@@ -85,13 +87,41 @@ class StyleResources {
     if (url != _spriteUrl) _loadSprites(url);
   }
 
+  /// Draws [images] by name as if they were in the style's sprite sheet.
+  void useImages(Map<String, VmapImage> images) {
+    if (_sameImages(images, _images)) return;
+    _images = images;
+    _join();
+    onChange();
+  }
+
+  static bool _sameImages(Map<String, VmapImage> a, Map<String, VmapImage> b) =>
+      a.length == b.length &&
+      a.entries.every((e) {
+        final o = b[e.key];
+        return o != null &&
+            identical(o.image, e.value.image) &&
+            o.pixelRatio == e.value.pixelRatio &&
+            o.sdf == e.value.sdf;
+      });
+
+  /// Hands on the style's sheet with the app's images joined to it.
+  void _join() {
+    if (!identical(_sprites, _styleSprites)) _sprites?.dispose();
+    _sprites = _images.isEmpty
+        ? _styleSprites
+        : SpriteSheet.join(_styleSprites, _images);
+    onSprites(_sprites);
+  }
+
   /// Makes the next [useSprites] load again whatever it is given.
   void forgetSprites() => _spriteUrl = null;
 
   Future<void> _loadSprites(String? url) async {
     _spriteUrl = url;
-    _sprites?.dispose();
-    onSprites(_sprites = null);
+    _styleSprites?.dispose();
+    _styleSprites = null;
+    _join();
     if (url == null) return;
     SpriteSheet? loaded;
     _spritesLoading++;
@@ -112,13 +142,15 @@ class StyleResources {
       loaded.dispose();
       return;
     }
-    onSprites(_sprites = loaded);
+    _styleSprites = loaded;
+    _join();
     onChange();
   }
 
   void dispose() {
     _closed = true;
     _labels.useRanges(null, _config, () {});
-    _sprites?.dispose();
+    if (!identical(_sprites, _styleSprites)) _sprites?.dispose();
+    _styleSprites?.dispose();
   }
 }
