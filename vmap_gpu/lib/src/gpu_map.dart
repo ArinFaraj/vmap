@@ -81,7 +81,7 @@ class GpuMap implements MapRenderer {
   late final _presence = LayerPresence(_clock);
   final ui.Paint _paint = ui.Paint()..filterQuality = ui.FilterQuality.low;
 
-  final Float32List _frameInfo = Float32List(32);
+  final Float32List _frameInfo = Float32List(40);
   late final ByteData _frameBytes = ByteData.sublistView(_frameInfo);
   final Float32List _slots = Float32List(240 * 4);
   late final ByteData _slotBytes = ByteData.sublistView(_slots);
@@ -194,7 +194,7 @@ class GpuMap implements MapRenderer {
       vertexLayout: const gpu.VertexLayout(
         buffers: [
           gpu.VertexBuffer(
-            strideInBytes: 20,
+            strideInBytes: BuildingGpu.stride,
             attributes: [
               gpu.VertexAttribute(
                 name: 'position',
@@ -204,6 +204,11 @@ class GpuMap implements MapRenderer {
                 name: 'color_data',
                 format: gpu.VertexFormat.float32x2,
                 offsetInBytes: 12,
+              ),
+              gpu.VertexAttribute(
+                name: 'normal_data',
+                format: gpu.VertexFormat.float32x3,
+                offsetInBytes: 20,
               ),
             ],
           ),
@@ -410,6 +415,7 @@ class GpuMap implements MapRenderer {
     final buffers = <gpu.CommandBuffer>[];
     _host!.reset();
     _setFog(sheet, context, view);
+    _setLight(sheet.light, view);
     _frameInfo
       ..[26] = devicePixelRatio
       ..[27] = 1;
@@ -791,6 +797,21 @@ class GpuMap implements MapRenderer {
       ..[28] = horizon.r
       ..[29] = horizon.g
       ..[30] = horizon.b;
+  }
+
+  /// The style's light for buildings, as MapLibre's fill-extrusion shader
+  /// takes it: [32..34] the direction it falls from, turned with the map
+  /// when it keeps to the screen, [35] its intensity, [36..38] its colour.
+  void _setLight(ExtrusionLight light, MapView view) {
+    final (x, y, z) = light.direction(view.bearing);
+    _frameInfo
+      ..[32] = x
+      ..[33] = y
+      ..[34] = z
+      ..[35] = light.intensity
+      ..[36] = light.color.r
+      ..[37] = light.color.g
+      ..[38] = light.color.b;
   }
 
   /// [clip] times a tile's placement into the frame info block: tile units

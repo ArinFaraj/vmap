@@ -136,6 +136,7 @@ class StyleCompiler {
     return StyleSheet(
       terrain: _terrain(),
       sky: json['sky'] == null ? null : SkyPaint.of(json['sky']),
+      light: ExtrusionLight.of(json['light']),
       layerOpacity: _layerOpacity,
       backgrounds: _backgrounds,
       buckets: _buckets,
@@ -694,6 +695,7 @@ class StyleCompiler {
         paint['fill-extrusion-height'],
         paint['fill-extrusion-base'],
         color,
+        paint['fill-extrusion-vertical-gradient'],
       ]);
       final index = _bucketIndex.putIfAbsent(key, () {
         _buckets.add(
@@ -706,6 +708,8 @@ class StyleCompiler {
               compileExpr(paint['fill-extrusion-height'] ?? 0),
               compileExpr(paint['fill-extrusion-base'] ?? 0),
               compileExpr(color),
+              verticalGradient:
+                  paint['fill-extrusion-vertical-gradient'] != false,
             ),
           ),
         );

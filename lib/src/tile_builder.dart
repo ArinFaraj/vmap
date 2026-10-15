@@ -475,7 +475,11 @@ class TileBuilder {
               _starts.add(_sink.ringStart(r));
               _ends.add(_sink.ringEnd(r));
             }
-            (extruders[b] ??= ExtrusionBuilder(b)).add(
+            (extruders[b] ??= ExtrusionBuilder(
+              b,
+              light: sheet.light,
+              gradient: extrude.verticalGradient,
+            )).add(
               _sink.coords,
               _starts,
               _ends,

@@ -37,7 +37,7 @@ class BuiltExtrusion {
   /// OpenGL ES 2 shaders, which have no integers, unpack them.
   final Float32List vertices;
 
-  static const floatsPerVertex = 5;
+  static const floatsPerVertex = 8;
 
   /// Vertices per piece the GPU takes at once, whole triangles.
   static const chunk = 8190;
@@ -93,9 +93,18 @@ class BuiltExtrusion {
 
 /// Collects buildings for one bucket while a tile is built.
 class ExtrusionBuilder {
-  ExtrusionBuilder(this.bucket);
+  ExtrusionBuilder(
+    this.bucket, {
+    this.light = const ExtrusionLight(),
+    this.gradient = true,
+  });
 
   final int bucket;
+
+  /// What the walls and roofs are shaded by, and whether walls darken
+  /// towards their feet.
+  final ExtrusionLight light;
+  final bool gradient;
   final _walls = DoubleBuffer();
   final _roof = DoubleBuffer();
   final _indices = DoubleBuffer();
@@ -198,38 +207,52 @@ class ExtrusionBuilder {
       final top = _info[i], bottom = _info[i + 1];
       final r = _info[i + 8], g = _info[i + 9], b = _info[i + 10];
       final a = (_info[i + 11] * 255).roundToDouble().clamp(0.0, 255.0);
-      void vertex(double x, double y, double z, double light) {
-        int c(double v) => (v * light * 255).round().clamp(0, 255);
+      final rgb =
+          ((r * 255).round() +
+                  (g * 255).round() * 256 +
+                  (b * 255).round() * 65536)
+              .toDouble();
+      // A vertex: where it is, its colour unlit, the outward normal of its
+      // wall (none on a roof) and how much the wall's gradient darkens it,
+      // for the renderer to light it as the map turns.
+      void vertex(
+        double x,
+        double y,
+        double z,
+        double nx,
+        double ny,
+        double t,
+      ) {
         out[o++] = x;
         out[o++] = y;
         out[o++] = z;
-        out[o++] = (c(r) + c(g) * 256 + c(b) * 65536).toDouble();
+        out[o++] = rgb;
         out[o++] = a;
+        out[o++] = nx;
+        out[o++] = ny;
+        out[o++] = nx == 0 && ny == 0
+            ? 1
+            : light.gradient(t: t, base: bottom, height: top, on: gradient);
       }
 
       final firstWall = _info[i + 4].toInt(), walls = _info[i + 5].toInt();
       for (var j = firstWall; j < firstWall + walls; j++) {
         final x0 = _walls[j * 4], y0 = _walls[j * 4 + 1];
         final x1 = _walls[j * 4 + 2], y1 = _walls[j * 4 + 3];
-        final nx = y1 - y0, ny = x0 - x1;
-        final len = math.sqrt(nx * nx + ny * ny);
-        final facing = len == 0
-            ? 0.0
-            : (nx * ExtrusionPainter.lightX + ny * ExtrusionPainter.lightY) /
-                  len;
-        final light = 0.72 + 0.2 * facing;
-        final low = light * 0.82;
-        vertex(x0, y0, bottom, low);
-        vertex(x1, y1, bottom, low);
-        vertex(x1, y1, top, light);
-        vertex(x0, y0, bottom, low);
-        vertex(x1, y1, top, light);
-        vertex(x0, y0, top, light);
+        final length = math.sqrt((y1 - y0) * (y1 - y0) + (x0 - x1) * (x0 - x1));
+        if (length == 0) continue;
+        final nx = (y1 - y0) / length, ny = (x0 - x1) / length;
+        vertex(x0, y0, bottom, nx, ny, 0);
+        vertex(x1, y1, bottom, nx, ny, 0);
+        vertex(x1, y1, top, nx, ny, 1);
+        vertex(x0, y0, bottom, nx, ny, 0);
+        vertex(x1, y1, top, nx, ny, 1);
+        vertex(x0, y0, top, nx, ny, 1);
       }
       final firstRoof = _info[i + 6].toInt(), roofs = _info[i + 7].toInt();
       for (var j = firstRoof; j < firstRoof + roofs; j++) {
         final v = _indices[j].toInt();
-        vertex(_roof[v * 2], _roof[v * 2 + 1], top, 1);
+        vertex(_roof[v * 2], _roof[v * 2 + 1], top, 0, 0, 1);
       }
     }
     final walls = _walls.toFloat32List(), info = _info.toFloat32List();
@@ -276,9 +299,6 @@ class ExtrusionPainter implements BuildingRenderer {
   Int32List _order = Int32List(1024);
   final List<(TileDraw, BuiltExtrusion)> _found = [];
 
-  /// The direction light comes from on the ground: the north west.
-  static const lightX = -0.6, lightY = -0.8;
-
   @override
   void dispose() {}
 
@@ -307,7 +327,15 @@ class ExtrusionPainter implements BuildingRenderer {
         }
       }
       if (n == 0) continue;
-      _draw(canvas, view, origin, n, opacity);
+      _draw(
+        canvas,
+        view,
+        origin,
+        n,
+        opacity,
+        sheet.light,
+        sheet.buckets[layer.bucket].extrude?.verticalGradient ?? true,
+      );
     }
     return false;
   }
@@ -318,6 +346,8 @@ class ExtrusionPainter implements BuildingRenderer {
     ui.Offset origin,
     int n,
     double opacity,
+    ExtrusionLight light,
+    bool gradient,
   ) {
     if (_keys.length < n) {
       _keys = Float64List(n * 2);
@@ -355,7 +385,18 @@ class ExtrusionPainter implements BuildingRenderer {
     for (final o in order) {
       final packed = _order[o];
       final (d, e) = _found[packed >> 20];
-      _building(view, d, e, packed & 0xFFFFF, origin, cam, perMetre, opacity);
+      _building(
+        view,
+        d,
+        e,
+        packed & 0xFFFFF,
+        origin,
+        cam,
+        perMetre,
+        opacity,
+        light,
+        gradient,
+      );
     }
     if (_vertices == 0) return;
     canvas.drawVertices(
@@ -376,12 +417,6 @@ class ExtrusionPainter implements BuildingRenderer {
     _colors = Int32List(size ~/ 2)..setAll(0, _colors);
   }
 
-  static int _shade(double r, double g, double b, double a, double light) =>
-      ((a * 255).round() << 24) |
-      ((r * light * 255).round().clamp(0, 255) << 16) |
-      ((g * light * 255).round().clamp(0, 255) << 8) |
-      (b * light * 255).round().clamp(0, 255);
-
   void _vertex(MapView view, double x, double y, double z, int color) {
     final p = view.project3(x, y, z);
     _positions[_vertices * 2] = p.x;
@@ -399,6 +434,8 @@ class ExtrusionPainter implements BuildingRenderer {
     WorldPoint cam,
     double perMetre,
     double opacity,
+    ExtrusionLight light,
+    bool gradient,
   ) {
     final info = e.info;
     final i = b * BuiltExtrusion.stride;
@@ -412,7 +449,7 @@ class ExtrusionPainter implements BuildingRenderer {
       if (view.depth3(x, y, top) < 0.05) return;
     }
     final r = info[i + 8], g = info[i + 9], bl = info[i + 10];
-    final a = info[i + 11] * opacity;
+    final alpha = (info[i + 11] * opacity * 255).round() << 24;
     final firstRoof = info[i + 6].toInt(), roofs = info[i + 7].toInt();
     _reserve(walls * 6 + roofs);
     for (var j = firstWall; j < firstWall + walls; j++) {
@@ -421,12 +458,23 @@ class ExtrusionPainter implements BuildingRenderer {
       final nx = y1 - y0, ny = x0 - x1;
       final mx = (x0 + x1) / 2 - cam.x, my = (y0 + y1) / 2 - cam.y;
       if (nx * mx + ny * my >= 0) continue;
-      final len = math.sqrt(nx * nx + ny * ny);
-      if (len == 0) continue;
-      final facing = (nx * lightX + ny * lightY) / len;
-      final light = 0.72 + 0.2 * facing;
-      final high = _shade(r, g, bl, a, light);
-      final low = _shade(r, g, bl, a, light * 0.82);
+      if (nx == 0 && ny == 0) continue;
+      int lit(double t) =>
+          alpha |
+          light.shade(
+            r,
+            g,
+            bl,
+            nx,
+            ny,
+            0,
+            t: t,
+            base: info[i + 1],
+            height: info[i],
+            gradient: gradient,
+            bearing: view.bearing,
+          );
+      final high = lit(1), low = lit(0);
       _vertex(view, x0, y0, bottom, low);
       _vertex(view, x1, y1, bottom, low);
       _vertex(view, x1, y1, top, high);
@@ -434,7 +482,8 @@ class ExtrusionPainter implements BuildingRenderer {
       _vertex(view, x1, y1, top, high);
       _vertex(view, x0, y0, top, high);
     }
-    final roofColor = _shade(r, g, bl, a, 1);
+    final roofColor =
+        alpha | light.shade(r, g, bl, 0, 0, 1, bearing: view.bearing);
     final rp = e.roof, ri = e.roofIndices;
     for (var j = firstRoof; j < firstRoof + roofs; j++) {
       final v = ri[j].toInt();
