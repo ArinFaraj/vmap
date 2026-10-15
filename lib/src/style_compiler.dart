@@ -135,6 +135,7 @@ class StyleCompiler {
     final footprints = _footprints();
     return StyleSheet(
       terrain: _terrain(),
+      sky: json['sky'] == null ? null : SkyPaint.of(json['sky']),
       layerOpacity: _layerOpacity,
       backgrounds: _backgrounds,
       buckets: _buckets,

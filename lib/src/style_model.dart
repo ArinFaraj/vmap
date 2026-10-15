@@ -816,6 +816,28 @@ class StyleRun {
   final int end;
 }
 
+/// A style's root `sky`: the colour above the horizon, and the colour it
+/// blends to near the horizon, over a share of half the screen's height.
+class SkyPaint {
+  SkyPaint({
+    required this.skyColor,
+    required this.horizonColor,
+    required this.skyHorizonBlend,
+  });
+
+  /// Reads [json], the style's `sky`, with MapLibre's defaults.
+  factory SkyPaint.of(Object? json) {
+    final sky = json is Map ? json : const {};
+    return SkyPaint(
+      skyColor: compileExpr(sky['sky-color'] ?? '#88C6FC'),
+      horizonColor: compileExpr(sky['horizon-color'] ?? '#ffffff'),
+      skyHorizonBlend: compileExpr(sky['sky-horizon-blend'] ?? 0.8),
+    );
+  }
+
+  final Expr skyColor, horizonColor, skyHorizonBlend;
+}
+
 /// A style document compiled for drawing.
 class StyleSheet {
   StyleSheet({
@@ -831,6 +853,7 @@ class StyleSheet {
     this.glyphs,
     this.layerOpacity = const {},
     this.terrain,
+    this.sky,
     required this.rasters,
     required this.attributions,
     this.extrusions = const [],
@@ -847,6 +870,10 @@ class StyleSheet {
 
   /// The heights the root `terrain` raises the ground by, when it has one.
   final TerrainLayer? terrain;
+
+  /// The root `sky`, drawn above the horizon of a steeply pitched map.
+  /// Without one, as in MapLibre, nothing is drawn there.
+  final SkyPaint? sky;
 
   /// The paint layers drawn as a whole at an opacity, `line-layer-opacity`
   /// and the like, by index: each is a run of its own, drawn apart and

@@ -108,6 +108,42 @@ class MeshPainter {
     _paint.shader = null;
   }
 
+  /// Fills the screen above [horizonY] with [sky], as MapLibre's sky shader
+  /// does: its sky colour, turning towards its horizon colour over the
+  /// blend's share of half the screen's height above the horizon.
+  void drawSky(ui.Canvas canvas, SkyPaint sky, ui.Size size, double horizonY) {
+    final top = Rgba.of(sky.skyColor(_context)) ?? Rgba.transparent;
+    final low = Rgba.of(sky.horizonColor(_context)) ?? top;
+    final band =
+        (asNumber(sky.skyHorizonBlend(_context)) ?? 0).clamp(0.0, 1.0) *
+        size.height /
+        2;
+    final area = ui.Rect.fromLTRB(0, 0, size.width, horizonY);
+    if (band <= 0) {
+      canvas.drawRect(area, _paint..color = ui.Color(top.toArgb()));
+      return;
+    }
+    const steps = 8;
+    _paint.shader = ui.Gradient.linear(
+      ui.Offset(0, horizonY - band),
+      ui.Offset(0, horizonY),
+      [
+        for (var i = 0; i <= steps; i++)
+          ui.Color(_mix(top, low, math.pow(i / steps, 2).toDouble()).toArgb()),
+      ],
+      [for (var i = 0; i <= steps; i++) i / steps],
+    );
+    canvas.drawRect(area, _paint);
+    _paint.shader = null;
+  }
+
+  static Rgba _mix(Rgba a, Rgba b, double t) => Rgba(
+    a.r + (b.r - a.r) * t,
+    a.g + (b.g - a.g) * t,
+    a.b + (b.b - a.b) * t,
+    a.a + (b.a - a.a) * t,
+  );
+
   /// Works out each layer's colour and width at [styleZoom].
   void startFrame(
     StyleSheet sheet,

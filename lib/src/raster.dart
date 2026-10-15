@@ -665,11 +665,13 @@ final class PictureTiles extends TileDrawing<PictureTileLayer> {
   @override
   double get _ring => 0;
 
+  /// Smoothed with mipmaps, as MapLibre samples raster tiles, so far
+  /// tiles of a pitched map average out instead of shimmering.
   @override
   void _setUpPaint(EvalContext context) => _paint
     ..filterQuality = layer.nearest
         ? ui.FilterQuality.none
-        : ui.FilterQuality.low
+        : ui.FilterQuality.medium
     ..isAntiAlias = false
     ..colorFilter = layer.adjust?.filter(context);
 

@@ -40,9 +40,20 @@ class MapView {
   /// MapLibre GL JS's default, from `transform_helper.ts`.
   static const double defaultFov = 0.6435011087932844;
 
-  /// With [defaultFov], every ray from the camera through the screen meets
-  /// the ground up to this pitch.
-  static const double maxPitch = 60;
+  /// MapLibre's highest pitch. Past about 60 degrees the horizon is in
+  /// view: the ground ends at [horizonY] and the sky is above it.
+  static const double maxPitch = 85;
+
+  /// Where the ground ends on the screen, in logical pixels from the top:
+  /// MapLibre's mercator horizon, short of the true horizon so the ground
+  /// drawn has a finite far edge. Negative while it is above the screen.
+  late final double horizonY =
+      height / 2 -
+      cameraToCenterDistance *
+          math.min(
+            math.tan((90 - pitch) * math.pi / 180) * 0.85,
+            math.tan((89.25 - pitch) * math.pi / 180),
+          );
 
   /// The centre as a fraction of the world's width and height.
   final double centerX, centerY;
@@ -194,18 +205,46 @@ class MapView {
     ]);
   }
 
+  /// Where the ground ends on the screen when the far plane cuts it, in
+  /// logical pixels from the top; negative while that is above the screen.
+  /// MapLibre's far plane reaches twice the angle up to [horizonY], so the
+  /// ground covers the lowest pixels of the sky.
+  late final double groundTopY = () {
+    final p = pitch * math.pi / 180;
+    if (p == 0) return -double.infinity;
+    final d = cameraToCenterDistance;
+    final ground = math.pi / 2 + p;
+    double reach(double angle) =>
+        math.sin(angle) *
+        d /
+        math.sin((math.pi - ground - angle).clamp(0.01, math.pi - 0.01));
+    final toHorizon = math.atan((height / 2 - horizonY) / d);
+    const least = (90 - 89.25) * math.pi / 180;
+    final far =
+        (math.sin(p) *
+                math.min(
+                  reach(fov / 2),
+                  reach(toHorizon > least ? 2 * toHorizon : least),
+                ) +
+            d) *
+        1.01;
+    return height / 2 + d * _cosP / _sinP * (d / far - 1);
+  }();
+
   /// The ground the screen shows, as the four corners in world pixels,
-  /// clockwise from the top left.
+  /// clockwise from the top left, its far edge at [groundTopY] when that
+  /// is on the screen.
   List<WorldPoint> ground() => [
-    unproject(0, 0)!,
-    unproject(width, 0)!,
+    unproject(0, math.max(0, groundTopY))!,
+    unproject(width, math.max(0, groundTopY))!,
     unproject(width, height)!,
     unproject(0, height)!,
   ];
 
   /// The tiles that cover the ground in view. As MapLibre covers a map,
   /// every tile is at the view's zoom unless [variableZoom], which MapLibre
-  /// allows with terrain: then each tile is at
+  /// allows with terrain, or the view is pitched past 60 degrees: then each
+  /// tile is at
   /// the zoom its distance from the camera asks for, by MapLibre's
   /// `calculateTileZoom`. Tiles off the ground are left out. Each copy of
   /// the world in view has its own columns, counted on past the world's
@@ -220,7 +259,7 @@ class MapView {
     final (x: camX, y: camY, height: camH) = eye;
     final top = math.min((zoom + hold).floor(), maxZoom);
     final out = <CoverTile>[];
-    final tileZoom = variableZoom ? _TileZoom(this) : null;
+    final tileZoom = variableZoom || pitch > 60 ? _TileZoom(this) : null;
 
     void visit(int z, int x, int y) {
       final span = worldSize / (1 << z);

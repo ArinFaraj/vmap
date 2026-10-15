@@ -83,7 +83,7 @@ class VMapController extends ChangeNotifier {
   void _set(MapCameraPosition to) {
     final clamped = to.copyWith(
       zoom: to.zoom.clamp(minZoom, maxZoom),
-      pitch: to.pitch.clamp(0, math.min(maxPitch, 60)),
+      pitch: to.pitch.clamp(0, math.min(maxPitch, MapView.maxPitch)),
     );
     final now = _clock.elapsedMicroseconds;
     _samples.add((now, clamped));
@@ -295,7 +295,7 @@ class VMap extends StatefulWidget {
   final double minZoom;
   final double maxZoom;
 
-  /// Degrees, at most 60.
+  /// Degrees, at most 85. Past about 60 the horizon and the sky show.
   final double maxPitch;
   final bool rotate;
   final bool tilt;

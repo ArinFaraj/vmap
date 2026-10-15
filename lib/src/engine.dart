@@ -846,6 +846,15 @@ class VmapEngine extends ChangeNotifier {
 
     var draws = 0;
     final view = camera.view;
+    final horizon = view?.groundTopY ?? 0;
+    if (horizon > 0) {
+      if (sheet.sky case final sky?) {
+        _meshes.drawSky(canvas, sky, size, view!.horizonY);
+      }
+      canvas
+        ..save()
+        ..clipRect(ui.Rect.fromLTRB(0, horizon, size.width, size.height));
+    }
     if (view != null) {
       canvas
         ..save()
@@ -931,6 +940,7 @@ class VmapEngine extends ChangeNotifier {
         if (more) waiting = true;
       }
     }
+    if (horizon > 0) canvas.restore();
 
     var animating = false;
     final labelsStarted = _clock.elapsedMicroseconds;

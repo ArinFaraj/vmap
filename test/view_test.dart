@@ -67,9 +67,16 @@ void main() {
     expect(v.perspectiveRatio(top.x, top.y), lessThan(1));
   });
 
-  test('pitch is held at the most every ray still meets the ground', () {
-    expect(_view(pitch: 80).pitch, MapView.maxPitch);
-  });
+  test(
+    'pitch is held at MapLibre\'s most, the ground ending short of the horizon',
+    () {
+      final steep = _view(pitch: 89);
+      expect(steep.pitch, MapView.maxPitch);
+      expect(steep.horizonY, greaterThan(0));
+      expect(steep.unproject(540, steep.horizonY), isNotNull);
+      expect(_view(pitch: 45).horizonY, lessThan(0));
+    },
+  );
 
   test('a flat view is covered by tiles of its own zoom only', () {
     final tiles = _view().cover(maxZoom: 22);
