@@ -30,6 +30,13 @@ class EvalContext {
 
 typedef Expr = Object? Function(EvalContext c);
 
+/// [v] as a number when it is one that can be drawn, otherwise [fallback]:
+/// MapLibre draws a size that comes out as NaN or infinite at its default.
+double finiteOr(Object? v, double fallback) {
+  final n = asNumber(v);
+  return n != null && n.isFinite ? n : fallback;
+}
+
 double? asNumber(Object? v) => v is num
     ? v.toDouble()
     : v is String

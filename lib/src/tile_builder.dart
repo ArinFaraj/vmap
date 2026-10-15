@@ -616,7 +616,7 @@ class TileBuilder {
               : symbol.build.spacing * 8 / (1 << deeper);
           final zoom = context.zoom;
           context.zoom = styleZoom + 1;
-          final size = (asNumber(symbol.size(context)) ?? 16).toDouble();
+          final size = finiteOr(symbol.size(context), 16);
           context.zoom = zoom;
           final em = size * tileExtent / 512;
           if (along && text.isNotEmpty && !symbol.build.textUpright) {

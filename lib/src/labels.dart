@@ -69,7 +69,7 @@ class LabelEngine {
     final symbol = _symbolOf(c);
     if (symbol == null) return text.markerSize * text.scale;
     _context.zoom = styleZoom;
-    return (asNumber(symbol.size(_context)) ?? 16) * text.scale;
+    return finiteOr(symbol.size(_context), 16) * text.scale;
   }
 
   bool _inRange(LabelCandidate c, double styleZoom) => switch (_symbolOf(c)) {
