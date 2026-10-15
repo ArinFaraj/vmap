@@ -367,6 +367,7 @@ class TileBuilder {
     final lastVariant = List<_Group?>.filled(sheet.buckets.length, null);
     final groups = <_Group>[];
     final labels = <BuiltLabel>[];
+    final namedLines = <int, List<NamedLine>>{};
     final extruders = <int, ExtrusionBuilder>{};
     final deepest = z >= maxZoom;
     final lineTolerance = deepest ? 0.75 : 2.0;
@@ -620,17 +621,31 @@ class TileBuilder {
           context.zoom = zoom;
           final em = size * tileExtent / 512;
           if (along && text.isNotEmpty && !symbol.build.textUpright) {
-            for (final label in _lineLabels(
-              s,
-              base + (symbol.build.sortKey == null ? 50 : order),
-              text,
-              spacing,
-              _textEms(symbol, text) * em,
-              em,
-              symbol.maxBend ?? math.pi / 4,
-              center: placement == 'line-center',
-            )) {
-              labels.add(label..props = carried);
+            final rings = [
+              for (var r = 0; r < _sink.ringCount; r++)
+                Float32List.fromList(
+                  _sink.coords.sublist(
+                    _sink.ringStart(r) * 2,
+                    _sink.ringEnd(r) * 2,
+                  ),
+                ),
+            ];
+            final named = NamedLine(
+              priority: base + (symbol.build.sortKey == null ? 50 : order),
+              text: text,
+              spacing: spacing,
+              labelLength: _textEms(symbol, text) * em,
+              em: em,
+              maxBend: symbol.maxBend ?? math.pi / 4,
+              props: carried,
+              rings: rings,
+            );
+            if (placement == 'line' && rings.isNotEmpty) {
+              (namedLines[s] ??= []).add(named);
+            } else {
+              labels.addAll(
+                _lineLabels(s, named, center: placement == 'line-center'),
+              );
             }
             continue;
           }
@@ -684,6 +699,12 @@ class TileBuilder {
             ),
           );
         }
+      }
+    }
+
+    for (final MapEntry(key: layer, value: lines) in namedLines.entries) {
+      for (final named in mergeNamedLines(lines)) {
+        labels.addAll(_lineLabels(layer, named));
       }
     }
 
@@ -966,50 +987,122 @@ class TileBuilder {
 
   final Map<String, double> _fontEms = {};
 
-  /// A name along each line of the feature, as MapLibre's `getAnchors`
-  /// places them: the line cut to the tile, anchors [spacing] tile units
-  /// apart from an offset of half the [labelLength] and two [em]s, where the
-  /// whole name fits on the line and the line turns no more than [maxBend]
+  /// A name along each line of [named], as MapLibre's `getAnchors` places
+  /// them: the line cut to the tile, anchors its spacing apart from an
+  /// offset of half the label's length and two ems, where the whole name
+  /// fits on the line and the line turns no more than its bend allows
   /// under it; at the middle when none does. With [center], once at the
   /// middle.
   List<BuiltLabel> _lineLabels(
     int layer,
-    int priority,
-    String text,
-    double spacing,
-    double labelLength,
-    double em,
-    double maxBend, {
+    NamedLine named, {
     bool center = false,
   }) {
     final out = <BuiltLabel>[];
-    final window = 3 / 5 * em;
-    final extra = 2 * em;
-    for (var r = 0; r < _sink.ringCount; r++) {
-      final start = _sink.ringStart(r);
-      final ring = Float32List.sublistView(
-        Float32List.fromList(
-          _sink.coords.sublist(start * 2, _sink.ringEnd(r) * 2),
-        ),
-      );
+    final window = 3 / 5 * named.em;
+    final extra = 2 * named.em;
+    for (final ring in named.rings) {
       for (final line in clipLineToTile(ring)) {
         for (final (x, y, _)
             in center
-                ? centerAnchor(line, labelLength, window, maxBend)
+                ? centerAnchor(line, named.labelLength, window, named.maxBend)
                 : lineAnchors(
                     line,
-                    spacing,
-                    labelLength,
+                    named.spacing,
+                    named.labelLength,
                     extra,
                     window,
-                    maxBend,
+                    named.maxBend,
                   )) {
-          out.add(BuiltLabel(layer, priority, text, x, y, line));
+          out.add(
+            BuiltLabel(layer, named.priority, named.text, x, y, line)
+              ..props = named.props,
+          );
         }
       }
     }
     return out;
   }
+}
+
+/// A name to lay along the [rings] of one feature, x and y in turn in tile
+/// units.
+class NamedLine {
+  NamedLine({
+    required this.priority,
+    required this.text,
+    required this.spacing,
+    required this.labelLength,
+    required this.em,
+    required this.maxBend,
+    required this.props,
+    required this.rings,
+  });
+
+  final int priority;
+  final String text;
+  final double spacing, labelLength, em, maxBend;
+  final Map<String, Object?>? props;
+  List<Float32List> rings;
+}
+
+/// [lines] with the first line of each joined to the first lines of the
+/// same name that meet it end to start, as MapLibre's `mergeLines` joins a
+/// road cut into many ways before naming it, so a name has the whole road
+/// to fit on. A joined line keeps the first feature's properties.
+List<NamedLine> mergeNamedLines(List<NamedLine> lines) {
+  final merged = <(NamedLine, List<Float32List>)?>[];
+  final leftIndex = <String, int>{};
+  final rightIndex = <String, int>{};
+  String key(String text, Float32List line, {required bool end}) => end
+      ? '$text:${line[line.length - 2]}:${line[line.length - 1]}'
+      : '$text:${line[0]}:${line[1]}';
+
+  for (final named in lines) {
+    final chunks = [named.rings.first];
+    final leftKey = key(named.text, chunks.first, end: false);
+    final rightKey = key(named.text, chunks.last, end: true);
+    final before = rightIndex[leftKey];
+    final after = leftIndex[rightKey];
+    if (before != null && after != null && before != after) {
+      // Lines of the same name meet both ends: all three become one.
+      final target = merged[before]!;
+      final tail = merged[after]!;
+      target.$2
+        ..addAll(chunks)
+        ..addAll(tail.$2);
+      merged[after] = null;
+      rightIndex.remove(leftKey);
+      leftIndex.remove(rightKey);
+      rightIndex[key(named.text, target.$2.last, end: true)] = before;
+    } else if (before != null) {
+      merged[before]!.$2.addAll(chunks);
+      rightIndex.remove(leftKey);
+      rightIndex[rightKey] = before;
+    } else if (after != null) {
+      merged[after]!.$2.insertAll(0, chunks);
+      leftIndex.remove(rightKey);
+      leftIndex[leftKey] = after;
+    } else {
+      merged.add((named, chunks));
+      leftIndex[leftKey] = merged.length - 1;
+      rightIndex[rightKey] = merged.length - 1;
+    }
+  }
+  return [
+    for (final entry in merged)
+      if (entry case (final named, final chunks))
+        named..rings = [_joinChunks(chunks), ...named.rings.skip(1)],
+  ];
+}
+
+Float32List _joinChunks(List<Float32List> chunks) {
+  if (chunks.length == 1) return chunks.first;
+  final out = <double>[...chunks.first];
+  for (final chunk in chunks.skip(1)) {
+    out.addAll(chunk.skip(2));
+  }
+  return Float32List.fromList(out);
 }
 
 /// [line], x and y in turn, cut where it leaves the tile into the pieces
