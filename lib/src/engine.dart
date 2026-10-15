@@ -458,12 +458,14 @@ class VmapEngine extends ChangeNotifier {
   }
 
   /// Asks for the heights under [view] and hands them to the renderer.
-  void _raiseGround(MapView view) {
+  /// Returns whether the ground is still easing to its height, when the
+  /// map is not settled.
+  bool _raiseGround(MapView view) {
     final terrain = _terrain, gpu = renderer;
-    if (gpu == null) return;
+    if (gpu == null) return false;
     if (terrain == null) {
       gpu.terrain = null;
-      return;
+      return false;
     }
     terrain.want([
       for (final t in view.cover(maxZoom: terrain.maxZoom, variableZoom: true))
@@ -491,13 +493,15 @@ class VmapEngine extends ChangeNotifier {
     );
     // Eased, so an arriving tile of heights does not make the map jump.
     final centre = _groundCentre += (under - _groundCentre) * 0.15;
-    if ((under - centre).abs() > 0.5) _requestFrame();
+    final easing = (under - centre).abs() > 0.5;
+    if (easing) _requestFrame();
     gpu.terrain = Terrain(
       terrain.heights,
       exaggeration,
       terrain.maxZoom,
       centre,
     );
+    return easing;
   }
 
   double _groundCentre = 0;
@@ -827,7 +831,9 @@ class VmapEngine extends ChangeNotifier {
     var waiting = false;
     _lastZoom = camera.zoom;
     final hold = _zoomOutHold.at(camera.view?.zoom, _clock.elapsedMilliseconds);
-    if (camera.view case final view? when onGpu) _raiseGround(view);
+    if (camera.view case final view? when onGpu) {
+      if (_raiseGround(view)) waiting = true;
+    }
     if (hold > 0) _requestFrame();
     for (final s in _sources) {
       final preparing = s.cover(
