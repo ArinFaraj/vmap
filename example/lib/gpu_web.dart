@@ -8,7 +8,8 @@ import 'package:vmap_gpu/vmap_gpu.dart';
 
 /// Liberty over Erbil in a browser, flying a fixed tour and printing the
 /// frame times, on the GPU renderer, or on the canvas with `?gpu=off`.
-/// `?terrain=on` raises the ground.
+/// `?terrain=on` raises the ground; `?tour=off&lat=..&lon=..&zoom=..` stays
+/// at one place.
 void main() {
   final query = Uri.base.queryParameters;
   runApp(
@@ -17,6 +18,12 @@ void main() {
       home: _Bench(
         gpu: query['gpu'] != 'off',
         terrain: query['terrain'] == 'on',
+        tour: query['tour'] != 'off',
+        start: MapCameraPosition(
+          latitude: double.tryParse(query['lat'] ?? '') ?? _erbil.latitude,
+          longitude: double.tryParse(query['lon'] ?? '') ?? _erbil.longitude,
+          zoom: double.tryParse(query['zoom'] ?? '') ?? _erbil.zoom,
+        ),
       ),
     ),
   );
@@ -25,17 +32,24 @@ void main() {
 const _erbil = MapCameraPosition(latitude: 36.19, longitude: 44.01, zoom: 14);
 
 class _Bench extends StatefulWidget {
-  const _Bench({required this.gpu, required this.terrain});
+  const _Bench({
+    required this.gpu,
+    required this.terrain,
+    required this.tour,
+    required this.start,
+  });
 
   final bool gpu;
   final bool terrain;
+  final bool tour;
+  final MapCameraPosition start;
 
   @override
   State<_Bench> createState() => _BenchState();
 }
 
 class _BenchState extends State<_Bench> {
-  final controller = VMapController(_erbil);
+  late final controller = VMapController(widget.start);
   late final VmapEngine engine = VmapEngine(
     style: VmapStyle.url('https://tiles.openfreemap.org/styles/liberty'),
     maxCachedTiles: 400,
@@ -62,8 +76,9 @@ class _BenchState extends State<_Bench> {
   @override
   void initState() {
     super.initState();
+    engine.onError = (e) => debugPrint('VMAPERROR $e');
     SchedulerBinding.instance.addTimingsCallback(_timings.addAll);
-    unawaited(_tour());
+    if (widget.tour) unawaited(_tour());
   }
 
   Future<void> _tour() async {
