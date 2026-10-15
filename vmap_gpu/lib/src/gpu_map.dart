@@ -81,7 +81,7 @@ class GpuMap implements MapRenderer {
   late final _presence = LayerPresence(_clock);
   final ui.Paint _paint = ui.Paint()..filterQuality = ui.FilterQuality.low;
 
-  final Float32List _frameInfo = Float32List(28);
+  final Float32List _frameInfo = Float32List(32);
   late final ByteData _frameBytes = ByteData.sublistView(_frameInfo);
   final Float32List _slots = Float32List(240 * 4);
   late final ByteData _slotBytes = ByteData.sublistView(_slots);
@@ -417,7 +417,15 @@ class GpuMap implements MapRenderer {
     _presence.begin(sheet, styleZoom, ideal);
     _layerPaint.clear();
     _ramps.update(sheet, context);
-    final clip = view.clipMatrix(originX: origin.dx, originY: origin.dy);
+    // Past 60 degrees MapLibre's far plane ends the ground short of the
+    // horizon; raised ground nearer than it still rises above that line.
+    final clip = view.clipMatrix(
+      originX: origin.dx,
+      originY: origin.dy,
+      far: view.pitch > 60
+          ? view.farDistance / view.cameraToCenterDistance
+          : 20,
+    );
     _MapPass passOn(gpu.Texture target) => _MapPass(
       this,
       _beginPass(
@@ -757,21 +765,44 @@ class GpuMap implements MapRenderer {
     }
   }
 
-  /// Distance haze in the style's background colour: none on a flat map,
-  /// growing with pitch, from 1.25 times the camera's distance to the
-  /// centre to 2.6 times, about where the far edge of a 60 degree view on a
-  /// phone held upright lies.
+  /// The fog raised ground fades into. With a sky in the style and the map
+  /// pitched past 60 degrees, MapLibre's: by depth between the camera's
+  /// distance and the far plane, to the sky's fog colour and then its
+  /// horizon colour ([28..31] the horizon colour and how strong the fog
+  /// is, [23] the far plane in camera distances). Otherwise vmap's haze in
+  /// the background colour, growing with pitch, from 1.25 times the
+  /// camera's distance to the centre to 2.6 times.
   void _setFog(StyleSheet sheet, EvalContext context, MapView view) {
+    final out = _frameInfo;
+    final sky = sheet.sky;
+    final opacity = ((view.pitch - 60) / 10).clamp(0.0, 1.0);
+    if (sky != null && opacity > 0) {
+      final fog = Rgba.of(sky.fogColor(context)) ?? const Rgba(1, 1, 1, 1);
+      final horizon =
+          Rgba.of(sky.horizonColor(context)) ?? const Rgba(1, 1, 1, 1);
+      out
+        ..[20] = fog.r
+        ..[21] = fog.g
+        ..[22] = fog.b
+        ..[23] = view.farDistance / view.cameraToCenterDistance
+        ..[24] = (asNumber(sky.fogGroundBlend(context)) ?? 0.5).toDouble()
+        ..[25] = (asNumber(sky.horizonFogBlend(context)) ?? 0.8).toDouble()
+        ..[28] = horizon.r
+        ..[29] = horizon.g
+        ..[30] = horizon.b
+        ..[31] = opacity;
+      return;
+    }
     final background =
         Rgba.of(sheet.background(context)) ?? const Rgba(1, 1, 1, 1);
-    final strength = ((view.pitch - 20) / 40).clamp(0.0, 1.0) * 0.75;
-    _frameInfo
+    out
       ..[20] = background.r
       ..[21] = background.g
       ..[22] = background.b
-      ..[23] = strength
+      ..[23] = ((view.pitch - 20) / 40).clamp(0.0, 1.0) * 0.75
       ..[24] = 1.25
-      ..[25] = 2.6;
+      ..[25] = 2.6
+      ..[31] = 0;
   }
 
   /// [clip] times a tile's placement into the frame info block: tile units

@@ -205,13 +205,11 @@ class MapView {
     ]);
   }
 
-  /// Where the ground ends on the screen when the far plane cuts it, in
-  /// logical pixels from the top; negative while that is above the screen.
-  /// MapLibre's far plane reaches twice the angle up to [horizonY], so the
+  /// How far MapLibre's far plane lies along the camera's line of sight,
+  /// in world pixels: it reaches twice the angle up to [horizonY], so the
   /// ground covers the lowest pixels of the sky.
-  late final double groundTopY = () {
+  late final double farDistance = () {
     final p = pitch * math.pi / 180;
-    if (p == 0) return -double.infinity;
     final d = cameraToCenterDistance;
     final ground = math.pi / 2 + p;
     double reach(double angle) =>
@@ -220,16 +218,24 @@ class MapView {
         math.sin((math.pi - ground - angle).clamp(0.01, math.pi - 0.01));
     final toHorizon = math.atan((height / 2 - horizonY) / d);
     const least = (90 - 89.25) * math.pi / 180;
-    final far =
-        (math.sin(p) *
+    return (math.sin(p) *
                 math.min(
                   reach(fov / 2),
                   reach(toHorizon > least ? 2 * toHorizon : least),
                 ) +
             d) *
         1.01;
-    return height / 2 + d * _cosP / _sinP * (d / far - 1);
   }();
+
+  /// Where the far plane cuts the ground on the screen, in logical pixels
+  /// from the top; negative while that is above the screen.
+  late final double groundTopY = pitch == 0
+      ? -double.infinity
+      : height / 2 +
+            cameraToCenterDistance *
+                _cosP /
+                _sinP *
+                (cameraToCenterDistance / farDistance - 1);
 
   /// The ground the screen shows, as the four corners in world pixels,
   /// clockwise from the top left, its far edge at [groundTopY] when that

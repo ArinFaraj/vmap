@@ -3,6 +3,9 @@ uniform FrameInfo {
   vec4 fade;
   vec4 fog_color;
   vec4 fog_range;
+  // MapLibre's fog: rgb the horizon colour, a how strong; 0 for vmap's
+  // haze, where fog_color.a is the haze's strength.
+  vec4 fog_horizon;
 }
 frame_info;
 
@@ -25,6 +28,8 @@ uniform sampler2D heights;
 in vec2 position;
 out vec2 v_uv;
 out vec4 v_fog;
+// 1 where v_fog is MapLibre's fog, blended in linear light.
+out float v_linear;
 // fog_range.w: how opaque the picture laid on the ground is.
 out float v_opacity;
 
@@ -51,6 +56,23 @@ void main() {
   v_opacity = frame_info.fog_range.w;
   v_uv = frame_info.fade.xy + at * frame_info.fade.zw;
   gl_Position = frame_info.mvp * vec4(at * 4096.0, h, 1.0);
-  float far = smoothstep(frame_info.fog_range.x, frame_info.fog_range.y, gl_Position.w);
-  v_fog = vec4(frame_info.fog_color.rgb, far * frame_info.fog_color.a);
+  float strength = frame_info.fog_horizon.a;
+  if (strength > 0.0) {
+    // MapLibre's terrain fog: the depth a perspective from the camera's
+    // distance to the far plane gives, in camera distances.
+    float f = frame_info.fog_color.a;
+    float d = max(gl_Position.w, 1e-3);
+    float depth = f * (d - 1.0) / (d * (f - 1.0));
+    float ground = frame_info.fog_range.x;
+    float toHorizon = frame_info.fog_range.y;
+    float blend = smoothstep(0.0, 1.0, max((depth - toHorizon) / (1.0 - toHorizon), 0.0));
+    vec3 color = mix(pow(frame_info.fog_color.rgb, vec3(2.2)), pow(frame_info.fog_horizon.rgb, vec3(2.2)), blend);
+    float factor = max(depth - ground, 0.0) / (1.0 - ground);
+    v_fog = vec4(color, depth > ground ? factor * factor * strength : 0.0);
+    v_linear = 1.0;
+  } else {
+    float far = smoothstep(frame_info.fog_range.x, frame_info.fog_range.y, gl_Position.w);
+    v_fog = vec4(frame_info.fog_color.rgb, far * frame_info.fog_color.a);
+    v_linear = 0.0;
+  }
 }

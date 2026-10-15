@@ -817,12 +817,16 @@ class StyleRun {
 }
 
 /// A style's root `sky`: the colour above the horizon, and the colour it
-/// blends to near the horizon, over a share of half the screen's height.
+/// blends to near the horizon, over a share of half the screen's height;
+/// and the fog raised ground fades into towards the horizon.
 class SkyPaint {
   SkyPaint({
     required this.skyColor,
     required this.horizonColor,
     required this.skyHorizonBlend,
+    required this.fogColor,
+    required this.fogGroundBlend,
+    required this.horizonFogBlend,
   });
 
   /// Reads [json], the style's `sky`, with MapLibre's defaults.
@@ -832,10 +836,14 @@ class SkyPaint {
       skyColor: compileExpr(sky['sky-color'] ?? '#88C6FC'),
       horizonColor: compileExpr(sky['horizon-color'] ?? '#ffffff'),
       skyHorizonBlend: compileExpr(sky['sky-horizon-blend'] ?? 0.8),
+      fogColor: compileExpr(sky['fog-color'] ?? '#ffffff'),
+      fogGroundBlend: compileExpr(sky['fog-ground-blend'] ?? 0.5),
+      horizonFogBlend: compileExpr(sky['horizon-fog-blend'] ?? 0.8),
     );
   }
 
   final Expr skyColor, horizonColor, skyHorizonBlend;
+  final Expr fogColor, fogGroundBlend, horizonFogBlend;
 }
 
 /// A style document compiled for drawing.

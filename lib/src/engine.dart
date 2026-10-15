@@ -846,11 +846,14 @@ class VmapEngine extends ChangeNotifier {
 
     var draws = 0;
     final view = camera.view;
-    final horizon = view?.groundTopY ?? 0;
+    final drape = onGpu && gpu.terrain != null;
+    // Raised ground is cut by the renderer's far plane instead, as hills
+    // nearer than it rise above the flat ground's far edge.
+    final horizon = drape ? 0.0 : view?.groundTopY ?? 0;
+    if (view != null && view.horizonY > 0 && sheet.sky != null) {
+      _meshes.drawSky(canvas, sheet.sky!, size, view.horizonY);
+    }
     if (horizon > 0) {
-      if (sheet.sky case final sky?) {
-        _meshes.drawSky(canvas, sky, size, view!.horizonY);
-      }
       canvas
         ..save()
         ..clipRect(ui.Rect.fromLTRB(0, horizon, size.width, size.height));
@@ -862,7 +865,6 @@ class VmapEngine extends ChangeNotifier {
           view.matrix(originX: camera.origin.dx, originY: camera.origin.dy),
         );
     }
-    final drape = onGpu && gpu.terrain != null;
     for (final run in sheet.runs) {
       if (run.background >= 0) {
         _meshes.drawBackground(
