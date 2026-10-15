@@ -1,4 +1,4 @@
-// vmap web worker, built from lib a4dc3d6e
+// vmap web worker, built from lib 91bcf825
 (function dartProgram(){function copyProperties(a,b){var s=Object.keys(a)
 for(var r=0;r<s.length;r++){var q=s[r]
 b[q]=a[q]}}function mixinPropertiesHard(a,b){var s=Object.keys(a)
@@ -15235,17 +15235,17 @@ break B}d8=i6}if(!d8||!d6.d.$1(b))continue
 d9=d6.a
 if(d9!=null){d3.$0()
 d8=d9.a.$1(b)
-if(typeof d8=="number")e0=d8
-else{if(typeof d8=="string")d8=A.S(d8)
+if(!(typeof d8=="number"))if(typeof d8=="string")d8=A.S(d8)
 else if(A.O(d8))d8=d8?1:0
 else d8=i6
-e0=d8}if(e0==null)e0=0
+if(d8==null)d8=0
+e0=Math.max(0,d8)
 d8=d9.b.$1(b)
-if(typeof d8=="number")e1=d8
-else{if(typeof d8=="string")d8=A.S(d8)
+if(!(typeof d8=="number"))if(typeof d8=="string")d8=A.S(d8)
 else if(A.O(d8))d8=d8?1:0
 else d8=i6
-e1=d8}if(e1==null)e1=0
+if(d8==null)d8=0
+e1=Math.max(0,d8)
 e2=A.bT(d9.c.$1(b))
 if(e2==null)e2=B.cO
 B.a.a3(a7)

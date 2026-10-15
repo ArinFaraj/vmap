@@ -466,8 +466,12 @@ class TileBuilder {
           if (!fits || !bucket.filter(context)) continue;
           if (bucket.extrude case final extrude?) {
             scaled();
-            final height = asNumber(extrude.height(context)) ?? 0;
-            final base = asNumber(extrude.base(context)) ?? 0;
+            // As MapLibre, nothing stands below the ground.
+            final height = math.max(
+              0.0,
+              asNumber(extrude.height(context)) ?? 0,
+            );
+            final base = math.max(0.0, asNumber(extrude.base(context)) ?? 0);
             final color = Rgba.of(extrude.color(context)) ?? Rgba.black;
             _starts.clear();
             _ends.clear();
