@@ -200,6 +200,13 @@ class LabelPainter {
         _glyphsGround(st, sprite, devicePixelRatio);
       case RangeSprite() when st.curve == null && _turnOf(st) == 0:
         _rangeGlyphs(st, sprite, devicePixelRatio);
+      case RangeSprite() when st.curve == null && _quarters(_turnOf(st)) > 0:
+        _rangeGlyphs(
+          st,
+          sprite,
+          devicePixelRatio,
+          quarters: _quarters(_turnOf(st)),
+        );
       case GlyphSprite() when st.curve != null:
         _glyphsBent(st, sprite, devicePixelRatio);
       case GlyphSprite():
@@ -362,17 +369,34 @@ class LabelPainter {
   /// Glyph range text drawn upright from cells made at its exact size and
   /// for the eighth pixel each glyph falls on, so every glyph is sampled
   /// once at the place MapLibre puts it.
+  ///
+  /// Turned [quarters] quarter turns about its middle, which lays the
+  /// pixel grid on itself: a pixel at S samples the glyph at A + Rᵀ(S - A),
+  /// A the middle, a whole grid moved by the part of A - RᵀA. Each glyph
+  /// takes the cell drawn upright for that phase, turned, so it samples
+  /// the field where MapLibre samples the turned glyph.
   void _rangeGlyphs(
     LabelState st,
     RangeSprite sprite,
-    double devicePixelRatio,
-  ) {
+    double devicePixelRatio, {
+    int quarters = 0,
+  }) {
     final pages = glyphs!;
     final look = sprite.look;
     _view.project(st.worldX, st.worldY);
     final em = sprite.fontSize * st.scale;
-    final x = _view.x + st.dx - sprite.shaped.width * em / 2;
-    final y = _view.y + st.dy - sprite.shaped.height * em / 2;
+    final midX = _view.x + st.dx, midY = _view.y + st.dy;
+    final x = midX - sprite.shaped.width * em / 2;
+    final y = midY - sprite.shaped.height * em / 2;
+    final (cos, sin) = switch (quarters) {
+      1 => (0.0, 1.0),
+      2 => (-1.0, 0.0),
+      3 => (0.0, -1.0),
+      _ => (1.0, 0.0),
+    };
+    final ax = midX * devicePixelRatio, ay = midY * devicePixelRatio;
+    final cx = ax - (ax * cos + ay * sin), cy = ay - (-ax * sin + ay * cos);
+    final partX = cx - cx.floorToDouble(), partY = cy - cy.floorToDouble();
     final ink = _faded(look.color, st.opacity);
     final halo = look.halo == null ? null : _faded(look.halo!, st.opacity);
     final haloWidth = look.halo == null ? 0.0 : look.haloWidth;
@@ -396,8 +420,8 @@ class LabelPainter {
     );
     final g = sprite.shaped.glyphs;
     for (var i = 0; i < g.length; i += 5) {
-      final dx = (x + g[i + 2] * em) * devicePixelRatio;
-      final dy = (y + g[i + 3] * em) * devicePixelRatio;
+      final dx = (x + g[i + 2] * em) * devicePixelRatio - partX;
+      final dy = (y + g[i + 3] * em) * devicePixelRatio - partY;
       var qx = ((dx - dx.floorToDouble()) * 8).round();
       var qy = ((dy - dy.floorToDouble()) * 8).round();
       final ox = dx.floorToDouble() + (qx == 8 ? 1 : 0);
@@ -410,16 +434,25 @@ class LabelPainter {
         g[i + 1].toInt(),
       );
       if (cell == null) continue;
+      final ux = ox + qx / 8 + partX - ax, uy = oy + qy / 8 + partY - ay;
       pages.add(
         cell,
-        (ox + qx / 8) * k,
-        (oy + qy / 8) * k,
-        0,
+        (ax + ux * cos - uy * sin) * k,
+        (ay + ux * sin + uy * cos) * k,
+        quarters * math.pi / 2,
         k * sixteenths / 16 / pages.found.em,
         ink,
         halo,
       );
     }
+  }
+
+  /// How many quarter turns [turn] is, 1 to 3, or 0 when it is none of
+  /// them.
+  static int _quarters(double turn) {
+    final q = turn % (2 * math.pi) / (math.pi / 2);
+    final whole = q.round();
+    return (q - whole).abs() < 1e-6 && whole % 4 != 0 ? whole % 4 : 0;
   }
 
   /// The angle [st]'s text is drawn at. A straight road name on a tilted
