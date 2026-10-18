@@ -179,6 +179,9 @@ class _Drape {
         ..[13] = 1 + 2 * top / span
         ..[14] = 0.5
         ..[15] = 1;
+      if (view.globe != null) {
+        _drawBackgrounds(pass, clip, left, top, span, sheet, context);
+      }
       _drawPictures(pass, clip, left, top, span);
       _map._frameInfo[26] = size / span;
       bool inSlot(TileDraw d) =>
@@ -226,40 +229,7 @@ class _Drape {
       final texture = _pictureOf(piece);
       if (texture == null) continue;
       if (!bound) {
-        final corners = _corners ??= _gridCorners();
-        final indices = _indices ??= _gridIndices();
-        pass
-          ..clearBindings()
-          ..bindPipeline(map._ground!)
-          ..setCullMode(gpu.CullMode.none)
-          ..setColorBlendEnable(true)
-          ..setColorBlendEquation(GpuMap._over)
-          ..setStencilConfig(gpu.StencilConfig())
-          ..setDepthWriteEnable(false)
-          ..setDepthCompareOperation(gpu.CompareFunction.always)
-          ..bindVertexBuffer(
-            gpu.BufferView(
-              corners,
-              offsetInBytes: 0,
-              lengthInBytes: corners.sizeInBytes,
-            ),
-          )
-          ..bindIndexBuffer(
-            gpu.BufferView(
-              indices,
-              offsetInBytes: 0,
-              lengthInBytes: indices.sizeInBytes,
-            ),
-            gpu.IndexType.int16,
-          )
-          ..bindTexture(
-            map._groundHeights!,
-            _flatHeights(0, 0),
-            sampler: gpu.SamplerOptions(
-              minFilter: gpu.MinMagFilter.nearest,
-              magFilter: gpu.MinMagFilter.nearest,
-            ),
-          );
+        _bindFlatGround(pass);
         bound = true;
       }
       final source = piece.source;
@@ -295,6 +265,108 @@ class _Drape {
         ..drawIndexed(_indexCount);
     }
     map._frameInfo[27] = 1;
+  }
+
+  /// Binds the ground pipeline drawing flat into a slot, for pictures and
+  /// background colours.
+  void _bindFlatGround(gpu.RenderPass pass) {
+    final map = _map;
+    final corners = _corners ??= _gridCorners();
+    final indices = _indices ??= _gridIndices();
+    pass
+      ..clearBindings()
+      ..bindPipeline(map._ground!)
+      ..setCullMode(gpu.CullMode.none)
+      ..setColorBlendEnable(true)
+      ..setColorBlendEquation(GpuMap._over)
+      ..setStencilConfig(gpu.StencilConfig())
+      ..setDepthWriteEnable(false)
+      ..setDepthCompareOperation(gpu.CompareFunction.always)
+      ..bindVertexBuffer(
+        gpu.BufferView(
+          corners,
+          offsetInBytes: 0,
+          lengthInBytes: corners.sizeInBytes,
+        ),
+      )
+      ..bindIndexBuffer(
+        gpu.BufferView(
+          indices,
+          offsetInBytes: 0,
+          lengthInBytes: indices.sizeInBytes,
+        ),
+        gpu.IndexType.int16,
+      )
+      ..bindTexture(
+        map._groundHeights!,
+        _flatHeights(0, 0),
+        sampler: gpu.SamplerOptions(
+          minFilter: gpu.MinMagFilter.nearest,
+          magFilter: gpu.MinMagFilter.nearest,
+        ),
+      );
+  }
+
+  /// One pixel textures of the background colours drawn, by colour.
+  final Map<int, gpu.Texture> _colours = {};
+
+  /// Fills the slot whose clip matrix is [clip] and whose tile spans [span]
+  /// from [left], [top] with [sheet]'s background colours, as the canvas
+  /// fills the flat map's.
+  void _drawBackgrounds(
+    gpu.RenderPass pass,
+    Float64List clip,
+    double left,
+    double top,
+    double span,
+    StyleSheet sheet,
+    EvalContext context,
+  ) {
+    final map = _map;
+    var bound = false;
+    for (final layer in sheet.backgrounds) {
+      final color = layer.colorAt(context);
+      if (color == null || color.a <= 0) continue;
+      final argb = color.toArgb();
+      final texture = _colours[argb] ??= () {
+        final a = color.a.clamp(0.0, 1.0);
+        int byte(double v) => (v.clamp(0.0, 1.0) * a * 255).round();
+        final pixel = ByteData(4)
+          ..setUint8(0, byte(color.r))
+          ..setUint8(1, byte(color.g))
+          ..setUint8(2, byte(color.b))
+          ..setUint8(3, (a * 255).round());
+        return gpu.gpuContext.createTexture(
+          gpu.StorageMode.hostVisible,
+          1,
+          1,
+          format: gpu.PixelFormat.r8g8b8a8UNormInt,
+        )..overwrite(pixel);
+      }();
+      if (!bound) {
+        _bindFlatGround(pass);
+        bound = true;
+      }
+      map._times(clip, span / tileExtent, 0, left, top, 0);
+      map._frameInfo
+        ..[16] = 0.5
+        ..[17] = 0.5
+        ..[18] = 0
+        ..[19] = 0
+        ..[27] = 1;
+      pass
+        ..bindTexture(
+          map._groundDrape!,
+          texture,
+          sampler: gpu.SamplerOptions(
+            minFilter: gpu.MinMagFilter.nearest,
+            magFilter: gpu.MinMagFilter.nearest,
+          ),
+        )
+        ..bindUniform(map._groundFrame!, map._host!.emplace(map._frameBytes))
+        ..bindUniform(map._groundDem!, map._host!.emplace(_demBytes))
+        ..drawIndexed(_indexCount);
+    }
   }
 
   /// [piece]'s picture on the GPU, sent there when it is not yet; until it
@@ -421,6 +493,157 @@ class _Drape {
         ..bindUniform(map._groundDem!, map._host!.emplace(_demBytes))
         ..drawIndexed(_indexCount);
     }
+  }
+
+  /// The grid tiles are laid on the globe with: rows of corners, then a
+  /// corner at the north pole under each corner of the top edge and one at
+  /// the south pole under each of the bottom edge.
+  gpu.DeviceBuffer? _globeCorners, _globeIndices;
+  static const _globeMain = _grid * _grid * 6, _globeCap = _grid * 6;
+  final Float32List _globeInfo = Float32List(48);
+  late final ByteData _globeBytes = ByteData.sublistView(_globeInfo);
+
+  /// Draws every tile [drawAtlas] drew on [globe], coloured from its slot,
+  /// the tiles at the top and bottom of the world stretched to the poles,
+  /// as MapLibre covers them. Between the flat map and the globe, each
+  /// point is drawn that far between where each puts it.
+  void drawGlobe(
+    gpu.RenderPass pass,
+    Globe globe,
+    MapView view,
+    ui.Offset origin,
+    Float64List clip,
+  ) {
+    final map = _map;
+    final pipeline = map._globe;
+    final atlas = _atlas;
+    if (pipeline == null || atlas == null || _tiles.isEmpty) return;
+    final corners = _globeCorners ??= _globeGridCorners();
+    final indices = _globeIndices ??= _globeGridIndices();
+    pass
+      ..clearBindings()
+      ..bindPipeline(pipeline)
+      ..setCullMode(gpu.CullMode.none)
+      ..setColorBlendEnable(true)
+      ..setColorBlendEquation(GpuMap._over)
+      ..setStencilConfig(gpu.StencilConfig())
+      ..setDepthWriteEnable(false)
+      ..setDepthCompareOperation(gpu.CompareFunction.always)
+      ..bindVertexBuffer(
+        gpu.BufferView(
+          corners,
+          offsetInBytes: 0,
+          lengthInBytes: corners.sizeInBytes,
+        ),
+      )
+      ..bindTexture(
+        map._globeDrape!,
+        atlas,
+        sampler: gpu.SamplerOptions(
+          minFilter: gpu.MinMagFilter.linear,
+          magFilter: gpu.MinMagFilter.linear,
+        ),
+      );
+    final out = _globeInfo;
+    for (var i = 0; i < 16; i++) {
+      out[i] = globe.matrix[i];
+    }
+    for (var i = 0; i < 4; i++) {
+      out[40 + i] = globe.plane[i];
+    }
+    final height = _height.toDouble();
+    out
+      ..[44] = 1
+      ..[45] = 0.5 / _width
+      ..[46] = 0.5 / height;
+    for (final (i, t) in _tiles.indexed) {
+      final (x, y, size) = _slots[i];
+      final n = 1 << t.z;
+      final span = view.worldSize / n;
+      map._times(
+        clip,
+        span / tileExtent,
+        0,
+        t.x * span - origin.dx,
+        t.y * span - origin.dy,
+        1,
+      );
+      for (var k = 0; k < 16; k++) {
+        out[16 + k] = map._frameInfo[k];
+      }
+      out
+        ..[32] = x / _width
+        ..[33] = y / height
+        ..[34] = size / _width
+        ..[35] = size / height
+        ..[36] = (t.x % n) / n
+        ..[37] = t.y / n
+        ..[38] = 1 / n
+        ..[39] = globe.transition;
+      pass.bindUniform(map._globeFrame!, map._host!.emplace(_globeBytes));
+      void draw(int first, int count) => pass
+        ..bindIndexBuffer(
+          gpu.BufferView(
+            indices,
+            offsetInBytes: first * 2,
+            lengthInBytes: count * 2,
+          ),
+          gpu.IndexType.int16,
+        )
+        ..drawIndexed(count);
+      draw(0, _globeMain);
+      if (t.y == 0) draw(_globeMain, _globeCap);
+      if (t.y == n - 1) draw(_globeMain + _globeCap, _globeCap);
+    }
+  }
+
+  static gpu.DeviceBuffer _globeGridCorners() {
+    const side = _grid + 1;
+    final out = Float32List((side * side + 2 * side) * 2);
+    var o = 0;
+    for (var j = 0; j <= _grid; j++) {
+      for (var i = 0; i <= _grid; i++) {
+        out
+          ..[o++] = i / _grid
+          ..[o++] = j / _grid;
+      }
+    }
+    for (final pole in const [-1.0, 2.0]) {
+      for (var i = 0; i <= _grid; i++) {
+        out
+          ..[o++] = i / _grid
+          ..[o++] = pole;
+      }
+    }
+    return gpu.gpuContext.createDeviceBufferWithCopy(ByteData.sublistView(out));
+  }
+
+  static gpu.DeviceBuffer _globeGridIndices() {
+    const side = _grid + 1;
+    final out = Uint16List(_globeMain + 2 * _globeCap);
+    var o = 0;
+    void quad(int a, int b, int c, int d) => out
+      ..[o++] = a
+      ..[o++] = c
+      ..[o++] = d
+      ..[o++] = a
+      ..[o++] = d
+      ..[o++] = b;
+    for (var j = 0; j < _grid; j++) {
+      for (var i = 0; i < _grid; i++) {
+        final a = j * side + i;
+        quad(a, a + 1, a + side, a + side + 1);
+      }
+    }
+    const north = side * side, south = north + side;
+    for (var i = 0; i < _grid; i++) {
+      quad(north + i, north + i + 1, i, i + 1);
+    }
+    for (var i = 0; i < _grid; i++) {
+      final edge = _grid * side + i;
+      quad(edge, edge + 1, south + i, south + i + 1);
+    }
+    return gpu.gpuContext.createDeviceBufferWithCopy(ByteData.sublistView(out));
   }
 
   /// Binds the ground under building tile [id] to the building pipeline:

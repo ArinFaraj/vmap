@@ -136,6 +136,7 @@ class StyleCompiler {
     return StyleSheet(
       terrain: _terrain(),
       sky: json['sky'] == null ? null : SkyPaint.of(json['sky']),
+      projection: StyleProjection.of(json['projection']),
       light: ExtrusionLight.of(json['light']),
       layerOpacity: _layerOpacity,
       backgrounds: _backgrounds,

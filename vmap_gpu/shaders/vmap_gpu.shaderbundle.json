@@ -27,6 +27,14 @@
     "type": "vertex",
     "file": "shaders/terrain.vert"
   },
+  "GlobeVertex": {
+    "type": "vertex",
+    "file": "shaders/globe.vert"
+  },
+  "GlobeFragment": {
+    "type": "fragment",
+    "file": "shaders/globe.frag"
+  },
   "TerrainFragment": {
     "type": "fragment",
     "file": "shaders/terrain.frag"

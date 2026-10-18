@@ -43,6 +43,8 @@ class GpuMap implements MapRenderer {
   gpu.ShaderLibrary? _library;
   gpu.RenderPipeline? _flat, _buildings, _stencil, _ground;
   gpu.UniformSlot? _groundFrame, _groundDrape, _groundDem, _groundHeights;
+  gpu.RenderPipeline? _globe;
+  gpu.UniformSlot? _globeFrame, _globeDrape;
   late final _drape = _Drape(this);
   gpu.UniformSlot? _flatFrame, _flatSlots, _buildingFrame, _stencilFrame;
   gpu.UniformSlot? _buildingDem, _buildingHeights;
@@ -244,6 +246,29 @@ class GpuMap implements MapRenderer {
       _groundDem = groundVertex.getUniformSlot('DemInfo');
       _groundHeights = groundVertex.getUniformSlot('heights');
       _groundDrape = groundFragment.getUniformSlot('drape');
+      final globeVertex = library['GlobeVertex'];
+      final globeFragment = library['GlobeFragment'];
+      if (globeVertex != null && globeFragment != null) {
+        _globe = gpu.gpuContext.createRenderPipeline(
+          globeVertex,
+          globeFragment,
+          vertexLayout: const gpu.VertexLayout(
+            buffers: [
+              gpu.VertexBuffer(
+                strideInBytes: 8,
+                attributes: [
+                  gpu.VertexAttribute(
+                    name: 'position',
+                    format: gpu.VertexFormat.float32x2,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+        _globeFrame = globeVertex.getUniformSlot('FrameInfo');
+        _globeDrape = globeFragment.getUniformSlot('drape');
+      }
     }
     final stencilVertex = library['StencilVertex'];
     final stencilFragment = library['StencilFragment'];
@@ -476,7 +501,8 @@ class GpuMap implements MapRenderer {
     var overlays = 0;
     (gpu.Texture, ui.Image) next() => frame.overlay(overlays++, _target);
     final ground = terrain;
-    final raised = ground != null && _ground != null;
+    final globe = _globe == null ? null : view.globe;
+    final raised = (ground != null || globe != null) && _ground != null;
     if (raised) {
       Timeline.timeSync(
         'vmap.gpu.drape',
@@ -518,7 +544,11 @@ class GpuMap implements MapRenderer {
       if (raised) {
         // The flat layers are in the drape; the ground and buildings stand
         // in the frame with depth.
-        _drape.drawGround(pass._pass, ground, view, origin, clip);
+        if (globe != null) {
+          _drape.drawGlobe(pass._pass, globe, view, origin, clip);
+          return;
+        }
+        _drape.drawGround(pass._pass, ground!, view, origin, clip);
         for (final building in sheet.extrusions) {
           if (_reveal.shows(building)) pass.drawBuildings(building);
         }

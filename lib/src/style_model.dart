@@ -991,6 +991,81 @@ class SkyPaint {
   final Expr fogColor, fogGroundBlend, horizonFogBlend;
 }
 
+/// A style's root `projection`, as MapLibre reads it: how far from the
+/// flat mercator map to the globe at a zoom. `globe` is the globe to zoom
+/// 11, mercator from 12 and between the two in between.
+class StyleProjection {
+  const StyleProjection._(this._stops);
+
+  /// Zooms and how much globe each is, in order; one stop holds at every
+  /// zoom, none is mercator.
+  final List<(double, double)> _stops;
+
+  static const mercator = StyleProjection._([]);
+
+  static StyleProjection of(Object? json) {
+    final type = json is Map ? json['type'] : null;
+    final stops = _stopsOf(type);
+    return stops == null || stops.isEmpty || stops.every((s) => s.$2 == 0)
+        ? mercator
+        : StyleProjection._(stops);
+  }
+
+  static double? _amount(Object? type) => switch (type) {
+    'mercator' => 0,
+    'vertical-perspective' => 1,
+    _ => null,
+  };
+
+  static List<(double, double)>? _stopsOf(Object? type) {
+    if (type == 'globe') return const [(11, 1), (12, 0)];
+    if (_amount(type) case final amount?) return [(0, amount)];
+    if (type case ['interpolate', _, ['zoom'], ...final rest]) {
+      final out = <(double, double)>[];
+      for (var i = 0; i + 1 < rest.length; i += 2) {
+        final zoom = rest[i], amount = _amount(rest[i + 1]);
+        if (zoom is! num || amount == null) return null;
+        out.add((zoom.toDouble(), amount));
+      }
+      return out;
+    }
+    if (type case ['step', ['zoom'], final first, ...final rest]) {
+      final firstAmount = _amount(first);
+      if (firstAmount == null) return null;
+      final out = <(double, double)>[(double.negativeInfinity, firstAmount)];
+      for (var i = 0; i + 1 < rest.length; i += 2) {
+        final zoom = rest[i], amount = _amount(rest[i + 1]);
+        if (zoom is! num || amount == null) return null;
+        final z = zoom.toDouble();
+        out
+          ..add((z - 1e-9, out.last.$2))
+          ..add((z, amount));
+      }
+      return out;
+    }
+    return null;
+  }
+
+  /// Whether the style asks for the globe at some zoom.
+  bool get isGlobe => _stops.isNotEmpty;
+
+  /// How much globe at [zoom]: 0 is the flat map, 1 the globe.
+  double globeAt(double zoom) {
+    final stops = _stops;
+    if (stops.isEmpty) return 0;
+    if (zoom <= stops.first.$1) return stops.first.$2;
+    for (var i = 1; i < stops.length; i++) {
+      final (z1, a1) = stops[i];
+      if (zoom <= z1) {
+        final (z0, a0) = stops[i - 1];
+        if (a0 == a1) return a0;
+        return a0 + (a1 - a0) * (zoom - z0) / (z1 - z0);
+      }
+    }
+    return stops.last.$2;
+  }
+}
+
 /// A style document compiled for drawing.
 class StyleSheet {
   StyleSheet({
@@ -1007,6 +1082,7 @@ class StyleSheet {
     this.layerOpacity = const {},
     this.terrain,
     this.sky,
+    this.projection = StyleProjection.mercator,
     this.light = const ExtrusionLight(),
     required this.rasters,
     required this.attributions,
@@ -1031,6 +1107,9 @@ class StyleSheet {
   /// The root `sky`, drawn above the horizon of a steeply pitched map.
   /// Without one, as in MapLibre, nothing is drawn there.
   final SkyPaint? sky;
+
+  /// The root `projection`.
+  final StyleProjection projection;
 
   /// The paint layers drawn as a whole at an opacity, `line-layer-opacity`
   /// and the like, by index: each is a run of its own, drawn apart and
