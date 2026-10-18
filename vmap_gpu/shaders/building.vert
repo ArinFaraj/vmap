@@ -85,7 +85,7 @@ void main() {
     }
     lit = clamp(d * tint, mix(vec3(0.0), vec3(0.3), 1.0 - tint), vec3(1.0));
     v_rect = pattern_info.rect[i];
-    v_uv = pattern_data.xy * pattern_info.ratio[i].x;
+    v_uv = pattern_data.xy * pattern_info.ratio[i].x + pattern_info.ratio[i].yz;
   }
   v_color = vec4(lit, color_data.y / 255.0);
   v_color.a *= frame_info.fade.x;

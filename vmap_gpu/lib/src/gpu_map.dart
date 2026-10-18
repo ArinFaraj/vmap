@@ -861,7 +861,19 @@ class GpuMap implements MapRenderer {
   /// [growth]: sheet pixels a tile unit is, as a patterned fill takes them.
   /// A pattern the sheet lacks has a negative width, and as MapLibre its
   /// buildings are not drawn.
-  ByteData _patternsOf(BuiltExtrusion extrusion, double scale, double growth) {
+  ///
+  /// As MapLibre's `u_pixel_coord`, patterns are laid from the world's
+  /// corner, not the tile's: the tile [id]'s corner in world pixels at the
+  /// whole zoom [zoom], in each pattern's pixels, less whole repeats.
+  ByteData _patternsOf(
+    BuiltExtrusion extrusion,
+    double scale,
+    double growth,
+    TileId id,
+    int zoom,
+  ) {
+    final tilePixels = 512 * math.pow(2, zoom - id.z).toDouble();
+    final cornerX = id.x * tilePixels, cornerY = id.y * tilePixels;
     final out = _patternInfo..fillRange(0, _patternInfo.length, 0);
     final names = extrusion.patterns;
     for (var i = 0; i < names.length && i < 16; i++) {
@@ -876,7 +888,9 @@ class GpuMap implements MapRenderer {
         ..[i * 4 + 1] = source.top
         ..[i * 4 + 2] = source.width
         ..[i * 4 + 3] = source.height
-        ..[64 + i * 4] = entry.pixelRatio / growth * scale;
+        ..[64 + i * 4] = entry.pixelRatio / growth * scale
+        ..[64 + i * 4 + 1] = (cornerX * entry.pixelRatio) % source.width
+        ..[64 + i * 4 + 2] = (cornerY * entry.pixelRatio) % source.height;
     }
     return _patternBytes;
   }
@@ -1352,6 +1366,8 @@ class _MapPass {
                 b.extrusion,
                 d.size / tileExtent,
                 patternGrowth(_styleZoom),
+                d.tile.id,
+                _styleZoom.floor(),
               ),
             ),
           )
