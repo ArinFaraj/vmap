@@ -19,7 +19,12 @@ class _Layer {
       raw = raw,
       paint = (raw['paint'] as Map?) ?? const {},
       layout = (raw['layout'] as Map?) ?? const {},
-      minZoom = asNumber(raw['minzoom']) ?? 0,
+      // As MapLibre's isHidden, a minzoom of 0 bounds nothing, so the
+      // layer shows below zoom 0 too.
+      minZoom = switch (asNumber(raw['minzoom'])) {
+        final num z when z > 0 => z.toDouble(),
+        _ => -24,
+      },
       maxZoom = asNumber(raw['maxzoom']) ?? 30;
 
   final String id;
