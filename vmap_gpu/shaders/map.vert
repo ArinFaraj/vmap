@@ -112,6 +112,9 @@ void main() {
   if (kind < 0.5) {
     // A fill: p.xy is how far it is moved, in tile units.
     pos += p.xy;
+  } else if (abs(kind - 2.0) < 0.5) {
+    // A patterned fill keeps its pattern in p, its move in q.
+    pos += q.xy;
   }
   v_line = vec2(0.0, 1.0);
   float side_v = 0.5;
@@ -176,7 +179,7 @@ void main() {
     v_uv = vec3(packed_data.w * color.y, color.x, 3.0);
   } else {
     bool patterned = abs(kind - 2.0) < 0.5;
-    vec2 uv = pos * color.r * frame_info.fade.y;
+    vec2 uv = (patterned ? position : pos) * color.r * frame_info.fade.y;
     if (patterned) {
       // As MapLibre's get_pattern_pos: the pattern laid from the world's
       // corner, so it runs on across tiles. color.g is its pixel ratio.
