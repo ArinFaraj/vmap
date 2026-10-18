@@ -11,6 +11,9 @@ uniform FrameInfo {
   vec4 globe_plane;
   mat4 globe_mvp;
   vec4 globe_centre;
+  // The tile's corner in world pixels at the whole zoom, as MapLibre's
+  // u_pixel_coord: x and y over 65536, then x and y less those.
+  vec4 pattern_corner;
 }
 frame_info;
 
@@ -172,7 +175,17 @@ void main() {
   } else if (gradient_line) {
     v_uv = vec3(packed_data.w * color.y, color.x, 3.0);
   } else {
-    v_uv = vec3(pos * color.r * frame_info.fade.y, abs(kind - 2.0) < 0.5 ? 1.0 : 0.0);
+    bool patterned = abs(kind - 2.0) < 0.5;
+    vec2 uv = pos * color.r * frame_info.fade.y;
+    if (patterned) {
+      // As MapLibre's get_pattern_pos: the pattern laid from the world's
+      // corner, so it runs on across tiles. color.g is its pixel ratio.
+      vec2 size = p.zw / color.g;
+      vec4 corner = frame_info.pattern_corner;
+      vec2 from = mod(mod(mod(corner.xy, size) * 256.0, size) * 256.0 + corner.zw, size);
+      uv += from * color.g;
+    }
+    v_uv = vec3(uv, patterned ? 1.0 : 0.0);
   }
   v_color = color;
   // A line: p.z its dash row plus twice its cap, p.w one repeat in tile

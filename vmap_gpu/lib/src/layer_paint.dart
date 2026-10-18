@@ -271,7 +271,7 @@ class LayerPaint {
       case GpuStream.patterned:
         put(
           (entry?.pixelRatio ?? 1) / growth,
-          0,
+          entry?.pixelRatio ?? 1,
           0,
           entry == null ? 0 : a,
           source?.left ?? 0,

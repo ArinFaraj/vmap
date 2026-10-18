@@ -1053,15 +1053,23 @@ class GpuMap implements MapRenderer {
 
   /// The frame info block map.vert reads: [_frameInfo]'s first 28 floats,
   /// then where it lays the tile on the globe, zero on the flat map.
-  final Float32List _mapInfo = Float32List(56);
+  final Float32List _mapInfo = Float32List(60);
   late final ByteData _mapBytes = ByteData.sublistView(_mapInfo);
 
   /// Fills [_mapInfo] for a tile [id], on [globe] when there is one.
-  ByteData _mapFrame(Globe? globe, TileId id) {
+  ByteData _mapFrame(Globe? globe, TileId id, int zoom) {
     final out = _mapInfo;
     for (var i = 0; i < 28; i++) {
       out[i] = _frameInfo[i];
     }
+    final tilePixels = 512 * math.pow(2, zoom - id.z).toDouble();
+    final cornerX = (id.x * tilePixels).floor(),
+        cornerY = (id.y * tilePixels).floor();
+    out
+      ..[56] = (cornerX >> 16).toDouble()
+      ..[57] = (cornerY >> 16).toDouble()
+      ..[58] = (cornerX & 0xFFFF).toDouble()
+      ..[59] = (cornerY & 0xFFFF).toDouble();
     if (globe == null) {
       out.fillRange(28, 56, 0);
       return _mapBytes;
@@ -1260,7 +1268,7 @@ class _MapPass {
       )
       ..bindUniform(
         map._flatFrame!,
-        host.emplace(map._mapFrame(globe, d.tile.id)),
+        host.emplace(map._mapFrame(globe, d.tile.id, _styleZoom.floor())),
       );
     final segments = stream.segments;
     for (var s = 0; s < segments.length; s += 3) {
