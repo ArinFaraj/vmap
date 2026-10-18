@@ -22,6 +22,7 @@ out vec4 v_pattern;
 out vec3 v_uv;
 out vec4 v_circle;
 out vec3 v_edge;
+out float v_butt;
 
 // Two 12 bit numbers packed in one float as the stream writes them.
 vec2 unpack_pair(float v) {
@@ -53,9 +54,13 @@ void main() {
     // A fill: p.xy is how far it is moved, in tile units.
     pos += p.xy;
   }
+  v_butt = 0.0;
+  float side_v = 0.5;
   if (is_line) {
     // A line is drawn half a device pixel wider and its outermost pixel
     // faded, as MapLibre does, so its edges are smooth without
+    // multisampling. A butt end reaches a pixel past the end, and the
+    // fragment shader cuts it at pixel centres as MapLibre's falls without
     // multisampling. fade.y is screen pixels per tile unit at the centre of
     // a flat view, w how much farther than the centre a point is, and
     // fog_range.z the device pixel ratio: one device pixel here is this
@@ -66,12 +71,19 @@ void main() {
     float pixel = w / max(frame_info.fade.y * frame_info.fog_range.z, 1e-6);
     float outer = stroke.x + pixel * 0.5;
     line_pixel = pixel;
-    pos = centre + ext * outer;
     // As MapLibre: a vertex on an edge fades by how far across the line a
     // pixel is, whatever its corner's shape; one of a round cap or join by
     // its distance from the centre line point, which cuts the true arc.
     bool round_vertex = abs(across - 64.0) < 0.5;
-    vec2 normal = round_vertex ? ext : vec2(0.0, across < 63.5 ? 1.0 : -1.0);
+    bool left = across < 63.5;
+    float past = abs(across - 1.0) < 0.5 || abs(across - 125.0) < 0.5 ? 1.0
+        : abs(across - 2.0) < 0.5 || abs(across - 126.0) < 0.5 ? -1.0
+        : 0.0;
+    vec2 n = left ? ext : -ext;
+    pos = centre + ext * outer + vec2(n.y, -n.x) * past * pixel;
+    v_butt = abs(past);
+    side_v = round_vertex ? 0.5 : left ? 0.0 : 1.0;
+    vec2 normal = round_vertex ? ext : vec2(0.0, left ? 1.0 : -1.0);
     v_edge = vec3(normal, outer / pixel);
   }
   // A circle: p.x its radius and p.y its ring's width in tile units, p.z
@@ -89,7 +101,7 @@ void main() {
   // texture and colour.y one over the distance along a whole line.
   v_pattern = p;
   if (patterned_line) {
-    v_uv = vec3(packed_data.w / color.z, across / 127.0, 2.0);
+    v_uv = vec3(packed_data.w / color.z, side_v, 2.0);
   } else if (gradient_line) {
     v_uv = vec3(packed_data.w * color.y, color.x, 3.0);
   } else {

@@ -32,8 +32,8 @@ void main() {
         cap: LineCap.butt,
       );
     final chunk = mesher.finish().single;
-    expect(chunk.indices.length, 12);
-    expect(chunk.positions.length ~/ 2, 6);
+    expect(chunk.indices.length, 12 + 12);
+    expect(chunk.positions.length ~/ 2, 10);
   });
 
   test('a right-angle bend gets a fan on the outside', () {

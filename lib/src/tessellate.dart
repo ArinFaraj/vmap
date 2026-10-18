@@ -48,11 +48,20 @@ class MeshChunk {
   /// Per line vertex, what the GPU fades its edge by: [edgeLeft] or
   /// [edgeRight] for a vertex on that side of its line, faded by how far
   /// across the line a pixel is, or [edgeRound] for one of a round cap or
-  /// join, faded by its distance from the centre line point. Kept by the
-  /// tile builder only, never sent between isolates.
+  /// join, faded by its distance from the centre line point. A butt end
+  /// is followed by a pair the GPU moves a pixel past it, [edgeLeftAhead]
+  /// to [edgeRightBehind], and draws nothing beyond the end, so under
+  /// multisampling the end is cut at pixel centres as MapLibre's is. Kept
+  /// by the tile builder only, never sent between isolates.
   final Uint8List? edges;
 
-  static const edgeLeft = 0, edgeRight = 1, edgeRound = 2;
+  static const edgeLeft = 0,
+      edgeRight = 1,
+      edgeRound = 2,
+      edgeLeftAhead = 3,
+      edgeLeftBehind = 4,
+      edgeRightAhead = 5,
+      edgeRightBehind = 6;
 }
 
 class _Buffers {
@@ -501,7 +510,9 @@ class LineMesher {
             _pair(cx, cy, nnx, nny, -shiftA, -shiftB, ojx, ojy);
           }
         case _Join.butt:
+          if (!hasPrev) _past(cx, cy, jx, jy, ojx, ojy, ahead: false);
           _pair(cx, cy, jx, jy, 0, 0, ojx, ojy);
+          if (hasPrev) _past(cx, cy, jx, jy, ojx, ojy, ahead: true);
         case _Join.square:
           final k = hasPrev ? 1.0 : -1.0;
           _pair(cx, cy, jx, jy, k, k, ojx, ojy);
@@ -585,6 +596,26 @@ class LineMesher {
     } else {
       _e1 = v;
     }
+  }
+
+  /// The pair past a butt end at ([x], [y]), [ahead] of it or behind.
+  void _past(
+    double x,
+    double y,
+    double nx,
+    double ny,
+    double ox,
+    double oy, {
+    required bool ahead,
+  }) {
+    _ox = ox;
+    _oy = oy;
+    final l = _vertex(x, y, nx, ny, 0);
+    _b.edge[l] = ahead ? MeshChunk.edgeLeftAhead : MeshChunk.edgeLeftBehind;
+    _strip(l, false);
+    final r = _vertex(x, y, -nx, -ny, 1);
+    _b.edge[r] = ahead ? MeshChunk.edgeRightAhead : MeshChunk.edgeRightBehind;
+    _strip(r, true);
   }
 
   /// Adds a vertex either side of ([x], [y]) along the normal ([nx], [ny]),

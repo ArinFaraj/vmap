@@ -34,7 +34,7 @@ StyleSheet _sheet(Map<String, Object?> layout, Map<String, Object?> paint) =>
 void main() {
   test('a mitre join shares its corner and reaches past it', () {
     final chunk = _corner(LineJoin.miter);
-    expect(chunk.indices.length, 12);
+    expect(chunk.indices.length, 12 + 12);
     final reach = [
       for (var i = 0; i < chunk.extrusions!.length; i += 2)
         chunk.extrusions![i].abs() + chunk.extrusions![i + 1].abs(),
@@ -43,15 +43,15 @@ void main() {
   });
 
   test('a bevel join closes the corner with one triangle', () {
-    expect(_corner(LineJoin.bevel).indices.length, 12 + 6);
+    expect(_corner(LineJoin.bevel).indices.length, 12 + 6 + 12);
     expect(_corner(LineJoin.round).indices.length, greaterThan(12 + 3));
-    expect(_corner(LineJoin.none).indices.length, 12);
+    expect(_corner(LineJoin.none).indices.length, 12 + 12);
   });
 
   test('a mitre join gives way to a bevel on a hairpin', () {
     final mesher = LineMesher(join: LineJoin.miter)
       ..addLine(Float64List.fromList([0, 0, 10, 0, 0, 1]), 0, 3, 0);
-    expect(mesher.finish().single.indices.length, 12 + 6);
+    expect(mesher.finish().single.indices.length, 12 + 6 + 12);
   });
 
   test('offsets point to the right of the line and meet at the corner', () {

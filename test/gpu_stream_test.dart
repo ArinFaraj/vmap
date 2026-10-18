@@ -105,7 +105,14 @@ void main() {
     expect(across, containsAll([0, 127]));
     expect(across.every((a) => a >= 0 && a <= 127), isTrue);
     final plain = GpuStream.build(sheet, [mesh(0)])!;
-    expect(vertices(plain, 0).map((v) => v.$2).toSet(), {0, 127});
+    expect(vertices(plain, 0).map((v) => v.$2).toSet(), {
+      0,
+      1,
+      2,
+      125,
+      126,
+      127,
+    });
   });
 
   test('the packed slot stays an exact float', () {

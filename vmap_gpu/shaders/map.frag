@@ -4,6 +4,7 @@ in vec4 v_pattern;
 in vec3 v_uv;
 in vec4 v_circle;
 in vec3 v_edge;
+in float v_butt;
 
 // The sprite sheet's width and height, then the gradient texture's.
 uniform FragInfo {
@@ -51,6 +52,9 @@ void main() {
   // A line's outermost device pixel fades to its edge; v_edge.z is its
   // half width in device pixels, zero for anything not a line.
   if (v_edge.z > 0.0) {
+    if (v_butt > 0.0) {
+      discard;
+    }
     float across = length(v_edge.xy);
     color *= clamp(v_edge.z * (1.0 - across), 0.0, 1.0);
     // Dashes: the ramp row holds the signed distance to the nearest dash

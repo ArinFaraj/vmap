@@ -19,8 +19,7 @@ import 'typed_buffer.dart';
 ///   plus 2048, the second times 4096, zero for a fill;
 /// - an offset line's sideways vector, packed as the extrusion is;
 /// - the slot within its segment, plus 16384 times its kind, plus for a
-///   line 131072 times where the vertex sits across it, in 127ths from its
-///   left edge, 64 for a vertex of a round cap or join;
+///   line 131072 times where the vertex sits across it (see [_edgeCode]);
 /// - the distance along the line in tile units, or for a gradient line its
 ///   share of the whole line times [progressSpan].
 class GpuStream {
@@ -79,11 +78,16 @@ class GpuStream {
     _ => -1,
   };
 
-  /// Where a line vertex sits across its line in 127ths from its left
-  /// edge: 0 or 127 on an edge, 64 for a vertex of a round cap or join.
+  /// Where a line vertex sits across its line: 0 or 127 on its left or
+  /// right edge, 64 for a vertex of a round cap or join, and 1, 2, 125 or
+  /// 126 for one the shader moves past a butt end, ahead or behind it.
   static int _edgeCode(Uint8List? edges, int v) => switch (edges?[v]) {
     MeshChunk.edgeLeft => 0,
     MeshChunk.edgeRight => 127,
+    MeshChunk.edgeLeftAhead => 1,
+    MeshChunk.edgeLeftBehind => 2,
+    MeshChunk.edgeRightAhead => 125,
+    MeshChunk.edgeRightBehind => 126,
     _ => 64,
   };
 
