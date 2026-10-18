@@ -116,6 +116,14 @@ class LayerPaint {
           dashPeriod = dash.fold(0.0, (a, b) => a + b) * floorWidth;
         }
       }
+      var tx = 0.0, ty = 0.0;
+      if (layer is MeshLayer) {
+        final moved = layer.translate?.call(context);
+        if (moved is List && moved.length == 2) {
+          tx = (asNumber(moved[0]) ?? 0).toDouble();
+          ty = (asNumber(moved[1]) ?? 0).toDouble();
+        }
+      }
       if (layer is CircleLayer) {
         final diameter = (asNumber(layer.width(context)) ?? 0).toDouble();
         final ring = layer.ring;
@@ -141,21 +149,16 @@ class LayerPaint {
           a,
           diameter / 2,
           ringWidth,
-          0,
-          0,
+          tx,
+          ty,
           ringRgb,
           ringAlpha,
           null,
           true,
+          0,
+          0,
+          layer.translateOnScreen,
         );
-      }
-      var tx = 0.0, ty = 0.0;
-      if (layer is MeshLayer) {
-        final moved = layer.translate?.call(context);
-        if (moved is List && moved.length == 2) {
-          tx = (asNumber(moved[0]) ?? 0).toDouble();
-          ty = (asNumber(moved[1]) ?? 0).toDouble();
-        }
       }
       final pattern = switch (layer) {
         PatternedLayer(:final pattern?) => pattern(context),

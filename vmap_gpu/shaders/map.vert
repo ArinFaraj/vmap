@@ -153,6 +153,9 @@ void main() {
   float facing = circle ? packed_data.w : 0.0;
   bool on_screen = mod(facing, 2.0) > 0.5;
   bool fixed_size = facing > 1.5;
+  if (circle) {
+    pos += q.xy;
+  }
   if (circle && !on_screen) {
     grow *= fixed_size ? project(pos).w : 1.0;
     pos += corner * (p.x + p.y) * grow;
