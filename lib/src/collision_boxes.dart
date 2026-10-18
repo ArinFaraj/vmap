@@ -21,6 +21,10 @@ class CollisionBoxes {
   Int32List _seen = Int32List(256);
   int _query = 0;
 
+  /// For each box, 1 when it was taken by a symbol that overlaps nothing,
+  /// which even a cooperative one keeps clear of.
+  Uint8List _never = Uint8List(256);
+
   void clear() {
     _count = 0;
     _grid.clear();
@@ -32,7 +36,7 @@ class CollisionBoxes {
 
   /// Takes the box from [l], [t] to [r], [b] as it is, and returns its
   /// number.
-  int add(double l, double t, double r, double b) {
+  int add(double l, double t, double r, double b, {bool never = true}) {
     if (_count + 4 > _boxes.length) {
       _boxes = Float32List(_boxes.length * 2)..setRange(0, _count, _boxes);
     }
@@ -43,8 +47,10 @@ class CollisionBoxes {
     _boxes[_count++] = b;
     if (number >= _seen.length) {
       _seen = Int32List(_seen.length * 2)..setRange(0, _seen.length, _seen);
+      _never = Uint8List(_never.length * 2)..setRange(0, _never.length, _never);
     }
     _seen[number] = 0;
+    _never[number] = never ? 1 : 0;
     final x1 = _at(r), y1 = _at(b);
     for (var cy = _at(t); cy <= y1; cy++) {
       for (var cx = _at(l); cx <= x1; cx++) {
@@ -55,8 +61,16 @@ class CollisionBoxes {
   }
 
   /// Whether the box from [l], [t] to [r], [b] overlaps one taken, other
-  /// than box number [except].
-  bool hits(double l, double t, double r, double b, {int? except}) {
+  /// than box number [except]. A [cooperative] box, as MapLibre's
+  /// `*-overlap: cooperative`, only minds boxes that overlap nothing.
+  bool hits(
+    double l,
+    double t,
+    double r,
+    double b, {
+    int? except,
+    bool cooperative = false,
+  }) {
     if (_count == 0) return false;
     final boxes = _boxes;
     final query = ++_query;
@@ -68,6 +82,7 @@ class CollisionBoxes {
         for (final number in cell) {
           if (number == except || _seen[number] == query) continue;
           _seen[number] = query;
+          if (cooperative && _never[number] == 0) continue;
           final i = number * 4;
           if (l < boxes[i + 2] &&
               r > boxes[i] &&
@@ -92,6 +107,7 @@ class CollisionBoxes {
     double angle, {
     required double pad,
     int? except,
+    bool cooperative = false,
   }) {
     if (angle == 0) {
       return hits(
@@ -100,6 +116,7 @@ class CollisionBoxes {
         sx + w / 2 + pad,
         sy + h / 2 + pad,
         except: except,
+        cooperative: cooperative,
       );
     }
     final count = math.max(1, (w / h).ceil());
@@ -110,7 +127,16 @@ class CollisionBoxes {
       final d = count == 1 ? 0.0 : -w / 2 + h / 2 + (w - h) * i / (count - 1);
       final x = sx + cosA * d;
       final y = sy + sinA * d;
-      if (hits(x - r, y - r, x + r, y + r, except: except)) return true;
+      if (hits(
+        x - r,
+        y - r,
+        x + r,
+        y + r,
+        except: except,
+        cooperative: cooperative,
+      )) {
+        return true;
+      }
     }
     return false;
   }
@@ -123,6 +149,7 @@ class CollisionBoxes {
     double h,
     double angle, {
     required double pad,
+    bool never = true,
   }) {
     if (angle == 0) {
       add(
@@ -130,6 +157,7 @@ class CollisionBoxes {
         sy - h / 2 - pad,
         sx + w / 2 + pad,
         sy + h / 2 + pad,
+        never: never,
       );
       return;
     }
@@ -141,7 +169,7 @@ class CollisionBoxes {
       final d = count == 1 ? 0.0 : -w / 2 + h / 2 + (w - h) * i / (count - 1);
       final x = sx + cosA * d;
       final y = sy + sinA * d;
-      add(x - r, y - r, x + r, y + r);
+      add(x - r, y - r, x + r, y + r, never: never);
     }
   }
 }

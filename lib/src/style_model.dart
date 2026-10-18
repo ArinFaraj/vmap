@@ -687,6 +687,8 @@ class SymbolLayer {
     required this.iconOptional,
     required this.iconOverlaps,
     required this.textOverlaps,
+    this.iconCooperative = false,
+    this.textCooperative = false,
     this.drawnByScreenY = false,
     this.iconSizeByFeature = false,
     required this.textFit,
@@ -855,6 +857,11 @@ class SymbolLayer {
   final bool iconOptional;
   final bool iconOverlaps;
   final bool textOverlaps;
+
+  /// `icon-overlap` and `text-overlap: cooperative`: the symbol overlaps
+  /// any other that may be overlapped, but not one that overlaps nothing.
+  final bool iconCooperative;
+  final bool textCooperative;
 
   /// Its symbols are drawn top to bottom on the screen, so lower ones
   /// cover higher ones: `symbol-z-order` viewport-y, or auto without a

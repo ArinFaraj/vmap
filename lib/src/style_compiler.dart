@@ -501,8 +501,10 @@ class StyleCompiler {
             : compileExpr(layout['text-offset']),
         textOptional: layout['text-optional'] == true,
         iconOptional: layout['icon-optional'] == true,
-        iconOverlaps: layout['icon-allow-overlap'] == true,
-        textOverlaps: layout['text-allow-overlap'] == true,
+        iconOverlaps: _overlap(layout, 'icon') == 'always',
+        textOverlaps: _overlap(layout, 'text') == 'always',
+        iconCooperative: _overlap(layout, 'icon') == 'cooperative',
+        textCooperative: _overlap(layout, 'text') == 'cooperative',
         drawnByScreenY: _drawnByScreenY(layout),
         iconSizeByFeature: _readsAny(layout['icon-size']),
         textFit: (layout['icon-text-fit'] ?? 'none') != 'none',
@@ -986,6 +988,14 @@ class StyleCompiler {
             layout['text-ignore-placement'] == true ||
             layout['icon-ignore-placement'] == true);
   }
+
+  /// `icon-overlap` or `text-overlap`, which as MapLibre's win over
+  /// `*-allow-overlap`: `never`, `always` or `cooperative`.
+  static String _overlap(Map<Object?, Object?> layout, String kind) =>
+      switch (layout['$kind-overlap']) {
+        final String mode => mode,
+        _ => layout['$kind-allow-overlap'] == true ? 'always' : 'never',
+      };
 
   static bool _isPair(Object? json) =>
       json == null ||

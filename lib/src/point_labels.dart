@@ -99,6 +99,7 @@ class PointLabels {
       spin,
       textPad: textPad,
       iconPad: iconPad,
+      cooperative: symbol?.textCooperative ?? false,
     );
     final moved = symbol == null
         ? (0.0, 0.0)
@@ -142,6 +143,7 @@ class PointLabels {
               st.iconH,
               0,
               pad: iconPad,
+              cooperative: symbol?.iconCooperative ?? false,
             ));
     final bool showText;
     final bool showIcon;
@@ -161,6 +163,9 @@ class PointLabels {
         textH,
         spin,
         pad: textPad,
+        never:
+            !(symbol?.textOverlaps ?? false) &&
+            !(symbol?.textCooperative ?? false),
       );
     }
     if (showIcon && !fitted && !(symbol?.iconIgnored ?? false)) {
@@ -171,6 +176,9 @@ class PointLabels {
         st.iconH,
         0,
         pad: iconPad,
+        never:
+            !(symbol?.iconOverlaps ?? false) &&
+            !(symbol?.iconCooperative ?? false),
       );
     }
     st
@@ -420,6 +428,7 @@ class PointLabels {
         spot.spin,
         pad: spot.textPad,
         except: except,
+        cooperative: spot.cooperative,
       );
 }
 
@@ -455,6 +464,7 @@ class _Spot {
     this.spin, {
     required this.textPad,
     required this.iconPad,
+    this.cooperative = false,
   });
 
   final double x;
@@ -466,4 +476,7 @@ class _Spot {
   final double spin;
   final double textPad;
   final double iconPad;
+
+  /// The text minds only boxes that overlap nothing.
+  final bool cooperative;
 }
