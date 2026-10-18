@@ -800,8 +800,9 @@ class VmapEngine extends ChangeNotifier {
     });
   }
 
-  void paint(ui.Canvas canvas, VmapCamera camera) {
+  void paint(ui.Canvas canvas, VmapCamera flatCamera) {
     _frame++;
+    var camera = flatCamera;
     _camera = camera;
     final now = _clock.elapsedMicroseconds;
     final dt = _lastPaintMicros == 0
@@ -843,6 +844,20 @@ class VmapEngine extends ChangeNotifier {
       }
     }
     _onGpu = onGpu;
+    // Only the GPU tier draws the globe; the canvas draws such a style flat.
+    final globeness = onGpu ? sheet.projection.globeAt(styleZoom) : 0.0;
+    if (globeness > 0 && camera.view != null) {
+      camera = VmapCamera(
+        zoom: camera.zoom,
+        origin: camera.origin,
+        size: camera.size,
+        rotation: camera.rotation,
+        devicePixelRatio: camera.devicePixelRatio,
+        view: camera.view!.withGlobe(globeness),
+        ahead: camera.ahead?.withGlobe(globeness),
+      );
+      _camera = camera;
+    }
     var waiting = false;
     _lastZoom = camera.zoom;
     final hold = _zoomOutHold.at(camera.view?.zoom, _clock.elapsedMilliseconds);
@@ -867,11 +882,12 @@ class VmapEngine extends ChangeNotifier {
 
     var draws = 0;
     final view = camera.view;
-    final drape = onGpu && gpu.terrain != null;
+    final globe = view?.globe != null;
+    final drape = onGpu && (gpu.terrain != null || globe);
     // Raised ground is cut by the renderer's far plane instead, as hills
     // nearer than it rise above the flat ground's far edge.
     final horizon = drape ? 0.0 : view?.groundTopY ?? 0;
-    if (view != null && view.horizonY > 0 && sheet.sky != null) {
+    if (view != null && !globe && view.horizonY > 0 && sheet.sky != null) {
       _meshes.drawSky(canvas, sheet.sky!, size, view.horizonY);
     }
     if (horizon > 0) {
@@ -888,6 +904,7 @@ class VmapEngine extends ChangeNotifier {
     }
     for (final run in sheet.runs) {
       if (run.background >= 0) {
+        if (globe) continue;
         _meshes.drawBackground(
           canvas,
           sheet.backgrounds[run.background],

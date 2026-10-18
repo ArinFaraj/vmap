@@ -264,7 +264,13 @@ class VmapStyleEdit {
     }
 
     Map<String, Object?>? out;
-    for (final key in const ['layers', 'sky', 'terrain', 'light']) {
+    for (final key in const [
+      'layers',
+      'sky',
+      'terrain',
+      'light',
+      'projection',
+    ]) {
       final part = document[key];
       final walked = walk(part);
       if (!identical(walked, part)) (out ??= {...document})[key] = walked;

@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'globe.dart';
+
 /// A point in world pixels: the world is [MapView.worldSize] pixels wide,
 /// x east from 180 west, y south from the top.
 typedef WorldPoint = ({double x, double y});
@@ -77,6 +79,7 @@ class MapView {
     double pitch = 0,
     this.fov = defaultFov,
     this.pad = EdgeInsets2.zero,
+    this.globeness = 0,
   }) : pitch = pitch.clamp(0, maxPitch) {
     final b = bearing * math.pi / 180;
     final p = this.pitch * math.pi / 180;
@@ -135,6 +138,29 @@ class MapView {
   final EdgeInsets2 pad;
   ({double x, double y}) get screenCenter => (x: _sx, y: _sy);
 
+  /// How far from the flat map to the globe the style draws this view at:
+  /// 0 is the flat map.
+  final double globeness;
+
+  /// The globe this view is drawn on, or null for the flat map.
+  late final Globe? globe = globeness > 0
+      ? Globe(this, transition: globeness)
+      : null;
+
+  /// The same view drawn [amount] of the way to the globe.
+  MapView withGlobe(double amount) => MapView(
+    centerX: centerX,
+    centerY: centerY,
+    zoom: zoom,
+    width: width,
+    height: height,
+    bearing: bearing,
+    pitch: pitch,
+    fov: fov,
+    pad: pad,
+    globeness: amount,
+  );
+
   late final double worldSize;
   late final double cameraToCenterDistance;
   late final double _cosB, _sinB, _cosP, _sinP, _k, _cx, _cy, _sx, _sy;
@@ -152,6 +178,7 @@ class MapView {
     pitch: pitch,
     fov: fov,
     pad: pad,
+    globeness: globeness,
   );
 
   /// Where the camera is: over world point [x], [y] at [height], all in
@@ -186,6 +213,35 @@ class MapView {
   /// A point [h] world pixels above the ground comes nearer the camera and
   /// rises on the screen with it.
   void projectTo(double x, double y, [double h = 0]) {
+    if (globe case final globe?) {
+      _projectGlobe(globe, x, y, h);
+      return;
+    }
+    _projectFlat(x, y, h);
+  }
+
+  void _projectGlobe(Globe globe, double x, double y, double h) {
+    final (gx, gy, gz) = Globe.surface(x / worldSize, y / worldSize);
+    final lift = 1 + h / globe.radius;
+    globe.projectSphere(gx * lift, gy * lift, gz * lift);
+    final amount = globe.transition;
+    var sx = globe.outX, sy = globe.outY;
+    var depth = globe.outW / cameraToCenterDistance;
+    if (!globe.outFaces) {
+      sx = sy = -1e6;
+    }
+    if (amount < 1) {
+      _projectFlat(x, y, h);
+      sx = outX + (sx - outX) * amount;
+      sy = outY + (sy - outY) * amount;
+      depth = outDepth + (depth - outDepth) * amount;
+    }
+    outX = sx;
+    outY = sy;
+    outDepth = depth;
+  }
+
+  void _projectFlat(double x, double y, double h) {
     final dx = x - _cx, dy = y - _cy;
     final u = _cosB * dx + _sinB * dy;
     final v = -_sinB * dx + _cosB * dy;
@@ -361,6 +417,9 @@ class MapView {
     bool variableZoom = false,
     double beyond = 0,
   }) {
+    if (globe case final globe?) {
+      return globe.cover(maxZoom: maxZoom, minZoom: minZoom);
+    }
     final quad = ground(beyond: beyond);
     final (x: camX, y: camY, height: camH) = eye;
     final top = math.min((zoom + hold).floor(), maxZoom);

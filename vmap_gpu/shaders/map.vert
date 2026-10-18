@@ -3,6 +3,14 @@ uniform FrameInfo {
   vec4 fade;
   vec4 fog_color;
   vec4 fog_range;
+  // On the globe, which a tile width in globe_tile.z marks: the tile's
+  // corner and width as fractions of the mercator world and how far from
+  // the flat map to the globe; MapLibre's clipping plane; the matrix from
+  // the unit sphere to clip space; and the cosine of the centre's latitude.
+  vec4 globe_tile;
+  vec4 globe_plane;
+  mat4 globe_mvp;
+  vec4 globe_centre;
 }
 frame_info;
 
@@ -24,6 +32,46 @@ out vec3 v_uv;
 out vec4 v_circle;
 out vec3 v_edge;
 out vec2 v_line;
+// Where the vertex lies in its tile, and 1 where the fragment shader cuts
+// what lies outside the tile, as the stencil does on the flat map.
+out vec3 v_clip;
+
+const float PI = 3.141592653589793;
+
+// MapLibre's projectToSphere, the latitude's sine and cosine from exp alone.
+vec3 to_sphere(vec2 p) {
+  vec2 m = frame_info.globe_tile.xy + p / 4096.0 * frame_info.globe_tile.z;
+  float lng = m.x * PI * 2.0 + PI;
+  float t = exp(PI - m.y * PI * 2.0);
+  float d = t * t + 1.0;
+  float c = 2.0 * t / d;
+  return vec3(sin(lng) * c, (t * t - 1.0) / d, cos(lng) * c);
+}
+
+// The cosine of the latitude at tile point p.
+float latitude_cos(vec2 p) {
+  float y = frame_info.globe_tile.y + p.y / 4096.0 * frame_info.globe_tile.z;
+  float t = exp(PI - y * PI * 2.0);
+  return 2.0 * t / (t * t + 1.0);
+}
+
+vec4 project(vec2 p) {
+  vec4 flat_pos = frame_info.mvp * vec4(p, 0.0, 1.0);
+  if (frame_info.globe_tile.z <= 0.0) {
+    return flat_pos;
+  }
+  vec3 s = to_sphere(p);
+  vec4 globe = frame_info.globe_mvp * vec4(s, 1.0);
+  globe.z = (1.0 - (dot(s, frame_info.globe_plane.xyz) + frame_info.globe_plane.w)) * globe.w;
+  float amount = frame_info.globe_tile.w;
+  if (amount >= 0.999) {
+    return globe;
+  }
+  vec4 result = globe;
+  result.xyw = mix(flat_pos.xyw, globe.xyw, amount);
+  result.z = mix(0.0, globe.z, clamp((amount - 0.2) / 0.8, 0.0, 1.0));
+  return result;
+}
 
 // Two 12 bit numbers packed in one float as the stream writes them.
 vec2 unpack_pair(float v) {
@@ -50,6 +98,12 @@ void main() {
   // so its half width and offset are in the colour's place.
   vec2 stroke = patterned_line ? color.xy : p.xy;
   vec2 pos = position;
+  bool globe = frame_info.globe_tile.z > 0.0;
+  // A tile unit on the sphere is smaller towards the poles than at the
+  // centre, where the sphere has the flat map's scale; widths in tile units
+  // grow by as much, as MapLibre's projectLineThickness.
+  float grow = globe ? mix(1.0, frame_info.globe_centre.x / latitude_cos(position), frame_info.globe_tile.w) : 1.0;
+  stroke *= grow;
   v_edge = vec3(0.0);
   float line_pixel = 1.0;
   if (kind < 0.5) {
@@ -69,8 +123,8 @@ void main() {
     // many tile units.
     vec2 ext = unpack_pair(packed_data.x);
     vec2 centre = pos + q.xy + unpack_pair(packed_data.y) * stroke.y;
-    float w = (frame_info.mvp * vec4(centre, 0.0, 1.0)).w;
-    float pixel = w / max(frame_info.fade.y * frame_info.fog_range.z, 1e-6);
+    float w = project(centre).w;
+    float pixel = w * grow / max(frame_info.fade.y * frame_info.fog_range.z, 1e-6);
     float outer = stroke.x + pixel * 0.5;
     line_pixel = pixel;
     // As MapLibre: a vertex on an edge fades by how far across the line a
@@ -100,7 +154,7 @@ void main() {
   bool on_screen = mod(facing, 2.0) > 0.5;
   bool fixed_size = facing > 1.5;
   if (circle && !on_screen) {
-    float grow = fixed_size ? (frame_info.mvp * vec4(pos, 0.0, 1.0)).w : 1.0;
+    grow *= fixed_size ? project(pos).w : 1.0;
     pos += corner * (p.x + p.y) * grow;
   }
   // v_uv.z tells the fragment shader what to sample. 1, a patterned fill:
@@ -129,7 +183,8 @@ void main() {
     dashed ? p.w / line_pixel : 0.0);
   // v_circle.z: one for a circle, plus its blur, packed_data.y.
   v_circle = vec4(corner, circle ? 1.0 + packed_data.y : 0.0, 1.0 / max(frame_info.fade.y, 1e-6));
-  gl_Position = frame_info.mvp * vec4(pos, 0.0, 1.0);
+  v_clip = vec3(pos, globe && !circle ? 1.0 : 0.0);
+  gl_Position = project(pos);
   if (on_screen) {
     vec2 off = corner * (p.x + p.y) * frame_info.fade.y * frame_info.fade.zw;
     gl_Position.xy += off * (fixed_size ? gl_Position.w : 1.0);
