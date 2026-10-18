@@ -587,6 +587,11 @@ class StyleCompiler {
                 opacity: compileExpr(paint['circle-stroke-opacity'] ?? 1),
               ),
         perFeature: names.isNotEmpty,
+        pitchWithMap: paint['circle-pitch-alignment'] == 'map',
+        scaleWithMap: paint['circle-pitch-scale'] != 'viewport',
+        blur: paint['circle-blur'] == null
+            ? null
+            : compileExpr(paint['circle-blur']),
       ),
     );
   }

@@ -440,6 +440,7 @@ class GpuMap implements MapRenderer {
     _frameInfo
       ..[26] = devicePixelRatio
       ..[27] = 1;
+    _clipPerPixel = (2 / view.width, 2 / view.height);
     _reveal.begin(sheet, styleZoom);
     _presence.begin(sheet, styleZoom, ideal);
     _layerPaint.clear();
@@ -856,6 +857,9 @@ class GpuMap implements MapRenderer {
       ..[38] = light.color.b;
   }
 
+  /// How far one screen pixel reaches across clip space, each way.
+  (double, double) _clipPerPixel = (0, 0);
+
   /// [clip] times a tile's placement into the frame info block: tile units
   /// scaled by [scale] and moved to [left], [top], heights by [perMetre].
   void _times(
@@ -875,6 +879,8 @@ class GpuMap implements MapRenderer {
     }
     out[16] = fade;
     out[17] = scale;
+    out[18] = _clipPerPixel.$1;
+    out[19] = _clipPerPixel.$2;
   }
 
   @override

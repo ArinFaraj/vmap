@@ -745,7 +745,7 @@ class TileBuilder {
     _shape(labels);
     return BuiltTile(meshes, labels, [
       for (final e in extruders.values) ?e.finish(),
-    ], gpu ? GpuStream.build(sheet, meshes) : null);
+    ], gpu ? GpuStream.build(sheet, meshes, zoom: styleZoom) : null);
   }
 
   /// Calls [place] at the anchors MapLibre's `getAnchors` gives a symbol
