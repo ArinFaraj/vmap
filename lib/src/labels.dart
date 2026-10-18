@@ -754,8 +754,23 @@ class LabelEngine {
           maxBend: layer?.maxBend,
         );
     }
-    if (!st.roadFits || _roads.nearSame(st)) return;
-    final room = fontSize <= 12.5 ? _minorRoadRoom : _majorRoadRoom;
+    if (!st.roadFits) return;
+    final mapLibre = identical(_rules, LabelRules.mapLibre) && layer != null;
+    if (_roads.nearSame(
+      st,
+      mapLibre
+          ? layer.build.spacing / 2 * road.tileSpan * _view.world / 512
+          : null,
+    )) {
+      return;
+    }
+    final overlaps = mapLibre && layer.textOverlaps;
+    final ignored = mapLibre && layer.textIgnored;
+    final room = mapLibre
+        ? 0.0
+        : fontSize <= 12.5
+        ? _minorRoadRoom
+        : _majorRoadRoom;
     final (roadX, roadY) = layer == null
         ? (0.0, 0.0)
         : _view.moved(
@@ -778,22 +793,25 @@ class LabelEngine {
     st.screenAngle = turn;
     if (st.curve != null) {
       final reach = (textH + room) / 2 + textPad;
-      if (_roads.curveHits(st, textW, textH, reach, add: false)) {
+      if (!overlaps && _roads.curveHits(st, textW, textH, reach, add: false)) {
         return;
       }
-      _roads.curveHits(st, textW, textH, reach, add: true);
+      if (!ignored) _roads.curveHits(st, textW, textH, reach, add: true);
     } else {
-      if (_boxes.collides(
-        sx,
-        sy,
-        textW + room,
-        textH + room,
-        turn,
-        pad: textPad,
-      )) {
+      if (!overlaps &&
+          _boxes.collides(
+            sx,
+            sy,
+            textW + room,
+            textH + room,
+            turn,
+            pad: textPad,
+          )) {
         return;
       }
-      _boxes.take(sx, sy, textW + room, textH + room, turn, pad: textPad);
+      if (!ignored) {
+        _boxes.take(sx, sy, textW + room, textH + room, turn, pad: textPad);
+      }
     }
     st
       ..dx = roadX
