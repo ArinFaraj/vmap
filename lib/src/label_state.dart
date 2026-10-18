@@ -143,6 +143,9 @@ class LabelState {
   bool placed = false;
   int seenPass = -1;
   int sortKey = 0;
+
+  /// Where it falls in its layer's drawing order by screen y.
+  double drawY = 0;
   double worldX = 0;
   double worldY = 0;
 

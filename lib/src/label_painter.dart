@@ -109,9 +109,34 @@ class LabelPainter {
     final pieces = fit
         ? stretchedIcon(icon, area, st.iconScale)
         : [(icon.source, area)];
+    final (from0, to0) = pieces.first;
+    final texelForPixel =
+        turn == 0 &&
+        !icon.sdf &&
+        (_view.tilted?.pitch ?? 0) == 0 &&
+        !(symbol?.iconSizeByFeature ?? false) &&
+        pieces.length == 1 &&
+        to0.width * devicePixelRatio == from0.width &&
+        to0.height * devicePixelRatio == from0.height;
     for (final filter in [?rim, fill]) {
       _imagePaint.colorFilter = filter;
-      if (turn == 0 && rules.snapIcons) {
+      if (texelForPixel) {
+        // MapLibre samples an unscaled icon nearest, which puts its corner
+        // on the device pixel at or below the half.
+        final x = ((ix + to0.left) * devicePixelRatio - 0.5).ceilToDouble();
+        final y = ((iy + to0.top) * devicePixelRatio - 0.5).ceilToDouble();
+        canvas.drawImageRect(
+          sheet.image,
+          from0,
+          ui.Rect.fromLTWH(
+            x / devicePixelRatio,
+            y / devicePixelRatio,
+            to0.width,
+            to0.height,
+          ),
+          _imagePaint,
+        );
+      } else if (turn == 0 && rules.snapIcons) {
         final dx = (ix * devicePixelRatio).roundToDouble() / devicePixelRatio;
         final dy = (iy * devicePixelRatio).roundToDouble() / devicePixelRatio;
         for (final (from, to) in pieces) {

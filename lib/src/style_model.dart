@@ -635,6 +635,8 @@ class SymbolLayer {
     required this.iconOptional,
     required this.iconOverlaps,
     required this.textOverlaps,
+    this.drawnByScreenY = false,
+    this.iconSizeByFeature = false,
     required this.textFit,
     this.iconTextFit = 'none',
     this.iconTextFitPadding = const [0, 0, 0, 0],
@@ -767,6 +769,15 @@ class SymbolLayer {
   final bool iconOptional;
   final bool iconOverlaps;
   final bool textOverlaps;
+
+  /// Its symbols are drawn top to bottom on the screen, so lower ones
+  /// cover higher ones: `symbol-z-order` viewport-y, or auto without a
+  /// sort key, when they may overlap.
+  final bool drawnByScreenY;
+
+  /// `icon-size` is read from each feature, which MapLibre draws filtered
+  /// even where it comes out at 1.
+  final bool iconSizeByFeature;
 
   /// The icon is stretched to sit behind the text.
   final bool textFit;
