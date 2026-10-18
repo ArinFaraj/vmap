@@ -398,3 +398,25 @@ offset of half the label's length (the tile workers do not know label
 lengths when drawing with glyph ranges); background layers are drawn
 first wherever the style puts them; globe projection and sky are not
 built.
+
+Then camera padding, MapLibre's `PaddingOptions`. The camera looks at the
+middle of what the padding leaves, so the ground under those edges is off
+screen: a pinch or a drag on a tilted map keeps working about that middle
+rather than the screen's. The camera's height is still measured from the
+whole screen, as MapLibre measures it, so the perspective is unchanged.
+`FlyPath` blends padding as it flies, and `MapView.copyWithPad` changes it
+on a view that already exists. `EdgeInsets2` in `src/view.dart` carries it
+and is exported from `vmap.dart`.
+
+Five `debug` render tests asked for it and now draw the padding overlay
+with it: a band at each padding edge in its own colour, red above, green
+below, blue on the left, magenta on the right, and a cyan crosshair where
+the camera looks, three pixels thick as MapLibre's scissored clears are.
+The render suite's `setPadding`, `setVerticalFieldOfView` and `pauseTiles`
+operations work too, so three tests that errored now score: 810 of 1,730
+on the GPU, 19 errored against 24.
+
+Still off in those five tests: on a pitched map the GPU frame covers the
+rows above the ground with its clear colour, where MapLibre's background
+layer fills them from the tile mesh. That is a rendering gap of the GPU
+tier only, since the same views on the canvas tier are within 0.2%.

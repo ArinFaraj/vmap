@@ -34,7 +34,45 @@ void main() {
 
 class _Camera {
   double longitude = 0, latitude = 0, zoom = 0, bearing = 0, pitch = 0;
+
+  /// Space kept free around the drawn area, in pixels, as the style's
+  /// operations ask for it.
+  EdgeInsets2 pad = EdgeInsets2.zero;
+
+  /// The vertical field of view the last `setVerticalFieldOfView` asked
+  /// for, in degrees: MapLibre's default is about 36.87.
+  double fovDegrees = 36.87;
+
+  /// Whether this test asks for the padding overlay (`showPadding`).
+  bool showPadding = false;
+
+  MapCameraPosition get position => MapCameraPosition(
+    latitude: latitude,
+    longitude: longitude,
+    zoom: zoom,
+    bearing: bearing,
+    pitch: pitch,
+    pad: pad,
+    fov: fovDegrees * math.pi / 180,
+  );
 }
+
+/// MapLibre's padding from a `setPadding` or `easeTo` argument.
+EdgeInsets2 _padOf(Object? value) => switch (value) {
+  final num n => EdgeInsets2(
+    top: n.toDouble(),
+    bottom: n.toDouble(),
+    left: n.toDouble(),
+    right: n.toDouble(),
+  ),
+  final Map m => EdgeInsets2(
+    top: (m['top'] as num? ?? 0).toDouble(),
+    bottom: (m['bottom'] as num? ?? 0).toDouble(),
+    left: (m['left'] as num? ?? 0).toDouble(),
+    right: (m['right'] as num? ?? 0).toDouble(),
+  ),
+  _ => EdgeInsets2.zero,
+};
 
 class _Result {
   _Result(this.id);
@@ -128,7 +166,7 @@ Future<_Result> _runOne(String id, String dir) async {
       height: (test['height'] as num? ?? 512).toInt(),
       ratio: (test['pixelRatio'] as num? ?? 1).toDouble(),
       onError: (e) => result.note ??= 'engine: $e',
-    );
+    )..camera.showPadding = test['showPadding'] == true;
     await session.settle();
     for (final op in (test['operations'] as List?) ?? const []) {
       await session.apply(op as List);
@@ -167,6 +205,7 @@ class _Session {
   final double ratio;
   final void Function(Object error) onError;
   final _camera = _Camera();
+  _Camera get camera => _camera;
   Map<String, Object?> _document;
   final _edits = <VmapStyleEdit>[];
   final _states = <(String, Object?), Map<String, Object?>>{};
@@ -318,6 +357,9 @@ class _Session {
           ..zoom = (to['zoom'] as num? ?? _camera.zoom).toDouble()
           ..bearing = (to['bearing'] as num? ?? _camera.bearing).toDouble()
           ..pitch = (to['pitch'] as num? ?? _camera.pitch).toDouble();
+        // An `easeTo` sets the padding it was given, replacing the map's
+        // (`camera.ts`: `options.padding ?? tr.padding`).
+        if (to['padding'] != null) _camera.pad = _padOf(to['padding']);
       case 'setZoom':
         _camera.zoom = (o[1] as num).toDouble();
       case 'setCenter':
@@ -329,6 +371,14 @@ class _Session {
         _camera.bearing = (o[1] as num).toDouble();
       case 'setPitch':
         _camera.pitch = (o[1] as num).toDouble();
+      case 'setPadding':
+        _camera.pad = _padOf(o[1]);
+      case 'setVerticalFieldOfView':
+        _camera.fovDegrees = (o[1] as num).toDouble();
+      case 'pauseTiles':
+        // Tiles are asked for on demand, so there is nothing to pause; a
+        // test that pauses them keeps whatever has loaded.
+        break;
       default:
         throw UnsupportedError('operation ${o[0]}');
     }
@@ -421,26 +471,22 @@ ui.Image? _paint(
   final recorder = ui.PictureRecorder();
   final canvas = ui.Canvas(recorder)..scale(ratio);
   final size = ui.Size(width.toDouble(), height.toDouble());
-  final view = MapCameraPosition(
-    latitude: camera.latitude,
-    longitude: camera.longitude,
-    zoom: camera.zoom,
-    bearing: camera.bearing,
-    pitch: camera.pitch,
-  ).view(size.width, size.height);
+  final view = camera.position.view(size.width, size.height);
   final center = view.center;
+  final screen = view.screenCenter;
   canvas.clipRect(ui.Offset.zero & size);
   engine.paint(
     canvas,
     VmapCamera(
       zoom: camera.zoom + 1,
-      origin: ui.Offset(center.x - size.width / 2, center.y - size.height / 2),
+      origin: ui.Offset(center.x - screen.x, center.y - screen.y),
       size: size,
       rotation: camera.bearing * math.pi / 180,
       devicePixelRatio: ratio,
       view: view,
     ),
   );
+  if (camera.showPadding) _paintPadding(canvas, size, view);
   final picture = recorder.endRecording();
   if (capture != true) {
     picture.dispose();
@@ -564,4 +610,47 @@ String _report(List<_Result> results, String testsDir) {
     html.writeln('</table>');
   }
   return html.toString();
+}
+
+/// MapLibre's padding overlay, as `draw_debug.ts` draws it when a test asks
+/// for `showPadding`: a band at each padding edge in its own colour, and a
+/// crosshair where the camera looks.
+///
+/// MapLibre clears it as scissored rectangles in GL space, y up, each
+/// [lineWidth] thick laid half a pixel either side of its line, and reads
+/// the frame back flipped. A rectangle from y to y + lineWidth in GL space
+/// therefore lands on the screen at height - y - lineWidth, which is what
+/// the drawRect here does.
+void _paintPadding(ui.Canvas canvas, ui.Size size, MapView view) {
+  final pad = view.pad;
+  // MapLibre clears a band with a scissor rectangle, which OpenGL takes in
+  // whole pixels: it starts at the pixel holding its fractional top and
+  // covers the pixels it straddles. The band is three of them, and the
+  // tiles below and above it are whatever was drawn, so the band's rows
+  // are the three the line sits in.
+  void band(ui.Color color, int left, int top, int width, int height) =>
+      canvas.drawRect(
+        ui.Rect.fromLTWH(
+          left.toDouble(),
+          top.toDouble(),
+          width.toDouble(),
+          height.toDouble(),
+        ),
+        ui.Paint()..color = color,
+      );
+
+  final w = size.width.toInt(), h = size.height.toInt();
+  // MapLibre puts a band's middle a pixel inside its line: the top line
+  // is `pad.top` down, the bottom one `pad.bottom` up, the left `pad.left`
+  // in and the right `pad.right` in, and the band is the three pixels
+  // about that.
+  band(const ui.Color(0xFFFF0000), 0, pad.top.toInt() - 4, w, 3);
+  band(const ui.Color(0xFF00FF00), 0, h - pad.bottom.toInt() - 2, w, 3);
+  band(const ui.Color(0xFF0000FF), pad.left.toInt() - 2, 0, 3, h);
+  band(const ui.Color(0xFFFF00FF), w - pad.right.toInt() - 2, 0, 3, h);
+  // A cyan crosshair where the camera looks.
+  final cx = view.screenCenter.x.toInt();
+  final cy = view.screenCenter.y.toInt();
+  band(const ui.Color(0xFF00FFFF), cx - 1, cy - 10, 3, 20);
+  band(const ui.Color(0xFF00FFFF), cx - 10, cy - 1, 20, 3);
 }

@@ -3,6 +3,7 @@ export 'src/engine.dart' show VmapEngine;
 export 'src/glyphs/vmap_font.dart' show VmapFont;
 export 'src/gestures.dart' show VmapGestures;
 export 'src/text_style.dart' show VmapTextStyle;
+export 'src/view.dart' show EdgeInsets2, MapView;
 export 'src/map_camera.dart' show FlyPath, MapCameraPosition, defaultEasing;
 export 'src/vmap_widget.dart' show VMap, VMapController;
 export 'src/layer.dart' show NamedMarker, VmapLayer, VmapLayerState;

@@ -5,6 +5,59 @@ import 'dart:typed_data';
 /// x east from 180 west, y south from the top.
 typedef WorldPoint = ({double x, double y});
 
+/// Padding in pixels from each edge of the screen, as MapLibre's
+/// `PaddingOptions` names them.
+class EdgeInsets2 {
+  const EdgeInsets2({
+    this.top = 0,
+    this.bottom = 0,
+    this.left = 0,
+    this.right = 0,
+  });
+
+  static const EdgeInsets2 zero = EdgeInsets2();
+
+  final double top, bottom, left, right;
+
+  EdgeInsets2 copyWith({
+    double? top,
+    double? bottom,
+    double? left,
+    double? right,
+  }) => EdgeInsets2(
+    top: top ?? this.top,
+    bottom: bottom ?? this.bottom,
+    left: left ?? this.left,
+    right: right ?? this.right,
+  );
+
+  /// The blend from [a] to [b], which is how a flight to new padding moves
+  /// it (`EdgeInsets.interpolate`).
+  static EdgeInsets2 lerp(EdgeInsets2 a, EdgeInsets2 b, double t) =>
+      EdgeInsets2(
+        top: a.top + (b.top - a.top) * t,
+        bottom: a.bottom + (b.bottom - a.bottom) * t,
+        left: a.left + (b.left - a.left) * t,
+        right: a.right + (b.right - a.right) * t,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is EdgeInsets2 &&
+      other.top == top &&
+      other.bottom == bottom &&
+      other.left == left &&
+      other.right == right;
+
+  @override
+  int get hashCode => Object.hash(top, bottom, left, right);
+
+  @override
+  String toString() =>
+      'EdgeInsets2(${top.toInt()}, ${bottom.toInt()}, '
+      '${left.toInt()}, ${right.toInt()})';
+}
+
 /// A tile picked by [MapView.cover], with the zoom its distance from the
 /// camera asks for.
 typedef CoverTile = ({int z, int x, int y, double distance});
@@ -23,6 +76,7 @@ class MapView {
     this.bearing = 0,
     double pitch = 0,
     this.fov = defaultFov,
+    this.pad = EdgeInsets2.zero,
   }) : pitch = pitch.clamp(0, maxPitch) {
     final b = bearing * math.pi / 180;
     final p = this.pitch * math.pi / 180;
@@ -35,6 +89,12 @@ class MapView {
     _k = _sinP / cameraToCenterDistance;
     _cx = centerX * worldSize;
     _cy = centerY * worldSize;
+    // MapLibre's centre of the drawn area, `edge_insets.ts`'s `getCenter`:
+    // the middle of what the padding leaves, kept inside the screen. The
+    // camera looks there, so everything projects about _sx and _sy
+    // instead of the screen's middle.
+    _sx = ((pad.left + width - pad.right) / 2).clamp(0.0, width);
+    _sy = ((pad.top + height - pad.bottom) / 2).clamp(0.0, height);
   }
 
   /// MapLibre GL JS's default, from `transform_helper.ts`.
@@ -48,7 +108,7 @@ class MapView {
   /// MapLibre's mercator horizon, short of the true horizon so the ground
   /// drawn has a finite far edge. Negative while it is above the screen.
   late final double horizonY =
-      height / 2 -
+      _sy -
       cameraToCenterDistance *
           math.min(
             math.tan((90 - pitch) * math.pi / 180) * 0.85,
@@ -69,11 +129,30 @@ class MapView {
   final double fov;
   final double width, height;
 
+  /// The space kept free around the drawn area, in pixels, as an app
+  /// insets a map under a sheet. The camera looks at the middle of what it
+  /// leaves, so the ground under those edges is off screen.
+  final EdgeInsets2 pad;
+  ({double x, double y}) get screenCenter => (x: _sx, y: _sy);
+
   late final double worldSize;
   late final double cameraToCenterDistance;
-  late final double _cosB, _sinB, _cosP, _sinP, _k, _cx, _cy;
+  late final double _cosB, _sinB, _cosP, _sinP, _k, _cx, _cy, _sx, _sy;
 
   WorldPoint get center => (x: _cx, y: _cy);
+
+  /// The same view with its [pad] replaced, for a camera that moves.
+  MapView copyWithPad(EdgeInsets2 pad) => MapView(
+    centerX: centerX,
+    centerY: centerY,
+    zoom: zoom,
+    width: width,
+    height: height,
+    bearing: bearing,
+    pitch: pitch,
+    fov: fov,
+    pad: pad,
+  );
 
   /// Where the camera is: over world point [x], [y] at [height], all in
   /// world pixels.
@@ -111,8 +190,8 @@ class MapView {
     final u = _cosB * dx + _sinB * dy;
     final v = -_sinB * dx + _cosB * dy;
     final w = 1 - _k * v - h * _cosP / cameraToCenterDistance;
-    outX = u / w + width / 2;
-    outY = (_cosP * v - _sinP * h) / w + height / 2;
+    outX = u / w + _sx;
+    outY = (_cosP * v - _sinP * h) / w + _sy;
     outDepth = w;
   }
 
@@ -120,7 +199,7 @@ class MapView {
   ({double x, double y}) project(double x, double y) {
     final (u, v) = _uv(x, y);
     final w = 1 - _k * v;
-    return (x: u / w + width / 2, y: _cosP * v / w + height / 2);
+    return (x: u / w + _sx, y: _cosP * v / w + _sy);
   }
 
   /// Where the camera stands on the ground, in world pixels.
@@ -139,7 +218,7 @@ class MapView {
   ({double x, double y}) project3(double x, double y, double z) {
     final (u, v) = _uv(x, y);
     final w = 1 - _k * v - z * _cosP / cameraToCenterDistance;
-    return (x: u / w + width / 2, y: (_cosP * v - _sinP * z) / w + height / 2);
+    return (x: u / w + _sx, y: (_cosP * v - _sinP * z) / w + _sy);
   }
 
   /// MapLibre's scale for labels at a ground point
@@ -148,7 +227,7 @@ class MapView {
 
   /// The ground point under a screen point, or null above the horizon.
   WorldPoint? unproject(double sx, double sy) {
-    final rx = sx - width / 2, ry = sy - height / 2;
+    final rx = sx - _sx, ry = sy - _sy;
     final denominator = _cosP + ry * _k;
     if (denominator <= 1e-9) return null;
     final v = ry / denominator;
@@ -161,7 +240,7 @@ class MapView {
   /// the origin near the view keeps the numbers small enough for the GPU's
   /// single precision.
   Float64List matrix({double originX = 0, double originY = 0}) {
-    final hw = width / 2, hh = height / 2;
+    final hw = _sx, hh = _sy;
     final m = _cosP - hh * _k;
     final v0 = _sinB * _cx - _cosB * _cy;
     final u0 = -(_cosB * _cx + _sinB * _cy);
@@ -197,11 +276,19 @@ class MapView {
     final w = width, h = height, d = cameraToCenterDistance;
     final a = far / (far - near), b = near * far / (near - far);
     final wx = _k * _sinB, wy = -_k * _cosB, wz = -_cosP / d, wc = 1 - _k * v0;
+    // The camera looks at the middle of what the padding leaves, so the map
+    // is drawn as though that were the screen's middle: clip x and y are
+    // shifted by the offset from the screen's middle, a fraction of the
+    // screen each way (MapLibre's off-centre perspective, `m[8]` `m[9]`).
+    final ox = (_sx - width / 2) * 2 / w;
+    // Clip y runs up the screen, so the offset from the screen's middle
+    // points the other way from the screen's.
+    final oy = (height / 2 - _sy) * 2 / h;
     return Float64List.fromList([
       2 * _cosB / w, 2 * _cosP * _sinB / h, a * wx, wx, //
       2 * _sinB / w, -2 * _cosP * _cosB / h, a * wy, wy,
       0, 2 * _sinP / h, a * wz, wz,
-      2 * u0 / w, -2 * _cosP * v0 / h, a * wc + b, wc,
+      2 * u0 / w + ox * wc, -2 * _cosP * v0 / h + oy * wc, a * wc + b, wc,
     ]);
   }
 
@@ -216,7 +303,7 @@ class MapView {
         math.sin(angle) *
         d /
         math.sin((math.pi - ground - angle).clamp(0.01, math.pi - 0.01));
-    final toHorizon = math.atan((height / 2 - horizonY) / d);
+    final toHorizon = math.atan((_sy - horizonY) / d);
     const least = (90 - 89.25) * math.pi / 180;
     return (math.sin(p) *
                 math.min(
@@ -231,7 +318,7 @@ class MapView {
   /// from the top; negative while that is above the screen.
   late final double groundTopY = pitch == 0
       ? -double.infinity
-      : height / 2 +
+      : _sy +
             cameraToCenterDistance *
                 _cosP /
                 _sinP *

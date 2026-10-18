@@ -13,7 +13,9 @@ class MapCameraPosition {
     required this.zoom,
     this.bearing = 0,
     this.pitch = 0,
-  });
+    this.pad = EdgeInsets2.zero,
+    double? fov,
+  }) : fov = fov ?? MapView.defaultFov;
 
   /// The same place at fractions [x], [y] of the world.
   MapCameraPosition.world({
@@ -22,14 +24,25 @@ class MapCameraPosition {
     required this.zoom,
     this.bearing = 0,
     this.pitch = 0,
+    this.pad = EdgeInsets2.zero,
+    double? fov,
   }) : latitude = mercator.latitudeAt(y.clamp(0, 1)),
-       longitude = mercator.longitudeAt(x - x.floorToDouble());
+       longitude = mercator.longitudeAt(x - x.floorToDouble()),
+       fov = fov ?? MapView.defaultFov;
 
   final double latitude;
   final double longitude;
   final double zoom;
   final double bearing;
   final double pitch;
+
+  /// Space kept free around the drawn area, in pixels: the camera looks at
+  /// the middle of what it leaves.
+  final EdgeInsets2 pad;
+
+  /// The camera's vertical field of view, in radians. MapLibre's default is
+  /// about 37 degrees; a wider one looks through a wider lens.
+  final double fov;
 
   double get worldX => mercator.worldX(longitude);
   double get worldY => mercator.worldY(latitude);
@@ -42,6 +55,8 @@ class MapCameraPosition {
     height: height,
     bearing: bearing,
     pitch: pitch,
+    pad: pad,
+    fov: fov,
   );
 
   MapCameraPosition copyWith({
@@ -50,12 +65,16 @@ class MapCameraPosition {
     double? zoom,
     double? bearing,
     double? pitch,
+    EdgeInsets2? pad,
+    double? fov,
   }) => MapCameraPosition(
     latitude: latitude ?? this.latitude,
     longitude: longitude ?? this.longitude,
     zoom: zoom ?? this.zoom,
     bearing: bearing ?? this.bearing,
     pitch: pitch ?? this.pitch,
+    pad: pad ?? this.pad,
+    fov: fov ?? this.fov,
   );
 
   /// Moves the map so the ground under screen point [fromX], [fromY] comes
@@ -77,6 +96,8 @@ class MapCameraPosition {
       zoom: zoom,
       bearing: bearing,
       pitch: pitch,
+      pad: pad,
+      fov: fov,
     );
   }
 
@@ -105,6 +126,8 @@ class MapCameraPosition {
       zoom: next.zoom,
       bearing: next.bearing,
       pitch: pitch,
+      pad: pad,
+      fov: fov,
     );
   }
 
@@ -120,10 +143,13 @@ class MapCameraPosition {
       other.longitude == longitude &&
       other.zoom == zoom &&
       other.bearing == bearing &&
-      other.pitch == pitch;
+      other.pitch == pitch &&
+      other.pad == pad &&
+      other.fov == fov;
 
   @override
-  int get hashCode => Object.hash(latitude, longitude, zoom, bearing, pitch);
+  int get hashCode =>
+      Object.hash(latitude, longitude, zoom, bearing, pitch, pad, fov);
 
   @override
   String toString() =>
@@ -215,6 +241,8 @@ class FlyPath {
       zoom: zoom,
       bearing: MapCameraPosition._normal(from.bearing + turn * t),
       pitch: from.pitch + (to.pitch - from.pitch) * t,
+      pad: EdgeInsets2.lerp(from.pad, to.pad, t),
+      fov: from.fov + (to.fov - from.fov) * t,
     );
   }
 }

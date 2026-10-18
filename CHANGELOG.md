@@ -13,6 +13,11 @@
 - Every `background` layer is drawn, in the style's order.
 - Labels are placed at MapLibre's anchors; road names lie on the ground of
   a tilted map.
+- `MapCameraPosition.pad` keeps space free around the map, so an app can
+  set its view under a sheet: the camera looks at the middle of what the
+  padding leaves, as MapLibre's padding does. `EdgeInsets2` carries it,
+  `MapView.copyWithPad` changes it on a view, and `flyTo` and `easeTo`
+  blend to new padding as they fly.
 
 ## 0.26.0
 
