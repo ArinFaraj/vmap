@@ -48,6 +48,12 @@ class GpuMap implements MapRenderer {
   late final _drape = _Drape(this);
   gpu.UniformSlot? _flatFrame, _flatSlots, _buildingFrame, _stencilFrame;
   gpu.UniformSlot? _buildingDem, _buildingHeights;
+  gpu.UniformSlot? _buildingPatterns, _buildingSheet, _buildingSprites;
+
+  /// A building layer's patterns as building.vert takes them: 16 places in
+  /// the sprite sheet, then 16 ratios.
+  final Float32List _patternInfo = Float32List(32 * 4);
+  late final ByteData _patternBytes = ByteData.sublistView(_patternInfo);
   gpu.UniformSlot? _flatFrag, _flatSprites, _flatRamp;
   SpriteSheet? _sheet;
   ui.Image? _sheetImage;
@@ -217,6 +223,11 @@ class GpuMap implements MapRenderer {
                 format: gpu.VertexFormat.float32x3,
                 offsetInBytes: 20,
               ),
+              gpu.VertexAttribute(
+                name: 'pattern_data',
+                format: gpu.VertexFormat.float32x3,
+                offsetInBytes: 32,
+              ),
             ],
           ),
         ],
@@ -225,6 +236,9 @@ class GpuMap implements MapRenderer {
     _buildingFrame = buildingVertex.getUniformSlot('FrameInfo');
     _buildingDem = buildingVertex.getUniformSlot('DemInfo');
     _buildingHeights = buildingVertex.getUniformSlot('heights');
+    _buildingPatterns = buildingVertex.getUniformSlot('PatternInfo');
+    _buildingSheet = buildingFragment.getUniformSlot('SheetInfo');
+    _buildingSprites = buildingFragment.getUniformSlot('sprite_sheet');
     final groundVertex = library['TerrainVertex'];
     final groundFragment = library['TerrainFragment'];
     if (groundVertex != null && groundFragment != null) {
@@ -611,8 +625,13 @@ class GpuMap implements MapRenderer {
     final commands = gpu.gpuContext.createCommandBuffer();
     final pass = _beginPass(commands, _ring.last.map);
     final host = _host!;
-    final zeros = gpu.gpuContext.createDeviceBufferWithCopy(ByteData(96));
-    final vertices = gpu.BufferView(zeros, offsetInBytes: 0, lengthInBytes: 96);
+    const size = 3 * BuildingGpu.stride > 96 ? 3 * BuildingGpu.stride : 96;
+    final zeros = gpu.gpuContext.createDeviceBufferWithCopy(ByteData(size));
+    final vertices = gpu.BufferView(
+      zeros,
+      offsetInBytes: 0,
+      lengthInBytes: size,
+    );
     final frame = host.emplace(ByteData(_mapBytes.lengthInBytes));
     final equal = gpu.StencilConfig(compareFunction: gpu.CompareFunction.equal);
     final stencil = _stencil;
@@ -662,7 +681,12 @@ class GpuMap implements MapRenderer {
       ..setDepthWriteEnable(true)
       ..setDepthCompareOperation(gpu.CompareFunction.lessEqual)
       ..bindVertexBuffer(vertices)
-      ..bindUniform(_buildingFrame!, frame);
+      ..bindUniform(_buildingFrame!, frame)
+      ..bindUniform(
+        _buildingPatterns!,
+        host.emplace(ByteData(_patternBytes.lengthInBytes)),
+      );
+    _bindBuildingSprites(pass);
     _drape.bindGround(pass, null, null);
     for (final config in [gpu.StencilConfig(), equal]) {
       pass
@@ -749,8 +773,9 @@ class GpuMap implements MapRenderer {
 
   bool _spritesLoading = false;
 
-  /// The style's sprite sheet as a texture, for patterned fills.
-  void _bindSprites(gpu.RenderPass pass) {
+  /// The style's sprite sheet as a texture, sent to the GPU when it is new,
+  /// a blank one until it is there; [_fragInfo] starts with its size.
+  gpu.Texture _sheetFor() {
     final image = _sheet?.image;
     if (!identical(image, _sheetImage)) {
       _sheetImage = image;
@@ -758,10 +783,17 @@ class GpuMap implements MapRenderer {
       if (image != null) _loadSprites(image);
     }
     final texture = _sheetTexture ?? _blank;
-    final ramp = _ramps.texture ?? _blank;
     _fragInfo
       ..[0] = texture.width.toDouble()
-      ..[1] = texture.height.toDouble()
+      ..[1] = texture.height.toDouble();
+    return texture;
+  }
+
+  /// The style's sprite sheet as a texture, for patterned fills.
+  void _bindSprites(gpu.RenderPass pass) {
+    final texture = _sheetFor();
+    final ramp = _ramps.texture ?? _blank;
+    _fragInfo
       ..[2] = ramp.width.toDouble()
       ..[3] = ramp.height.toDouble();
     final sampler = gpu.SamplerOptions(
@@ -772,6 +804,46 @@ class GpuMap implements MapRenderer {
       ..bindUniform(_flatFrag!, _host!.emplace(_fragBytes))
       ..bindTexture(_flatSprites!, texture, sampler: sampler)
       ..bindTexture(_flatRamp!, ramp, sampler: sampler);
+  }
+
+  /// The sprite sheet for patterned buildings.
+  void _bindBuildingSprites(gpu.RenderPass pass) {
+    final texture = _sheetFor();
+    pass
+      ..bindUniform(_buildingSheet!, _host!.emplace(_fragBytes))
+      ..bindTexture(
+        _buildingSprites!,
+        texture,
+        sampler: gpu.SamplerOptions(
+          minFilter: gpu.MinMagFilter.linear,
+          magFilter: gpu.MinMagFilter.linear,
+        ),
+      );
+  }
+
+  /// Where [extrusion]'s patterns are in the sprite sheet, for a tile
+  /// [scale] screen pixels a tile unit across with patterns grown by
+  /// [growth]: sheet pixels a tile unit is, as a patterned fill takes them.
+  /// A pattern the sheet lacks has a negative width, and as MapLibre its
+  /// buildings are not drawn.
+  ByteData _patternsOf(BuiltExtrusion extrusion, double scale, double growth) {
+    final out = _patternInfo..fillRange(0, _patternInfo.length, 0);
+    final names = extrusion.patterns;
+    for (var i = 0; i < names.length && i < 16; i++) {
+      final entry = _sheet?.entries[names[i]];
+      if (entry == null) {
+        out[i * 4 + 2] = -1;
+        continue;
+      }
+      final source = entry.source;
+      out
+        ..[i * 4] = source.left
+        ..[i * 4 + 1] = source.top
+        ..[i * 4 + 2] = source.width
+        ..[i * 4 + 3] = source.height
+        ..[64 + i * 4] = entry.pixelRatio / growth * scale;
+    }
+    return _patternBytes;
   }
 
   /// A layer's paint for tile [d]: faded in and out as the zoom enters and
@@ -1193,6 +1265,7 @@ class _MapPass {
         ..setStencilConfig(gpu.StencilConfig())
         ..setDepthWriteEnable(true)
         ..setDepthCompareOperation(gpu.CompareFunction.lessEqual);
+      _map._bindBuildingSprites(_pass);
       _drawBuildingsOf(layer, _ideal[source]);
       if (standIn) {
         _stencilEquals(0);
@@ -1236,6 +1309,16 @@ class _MapPass {
             ),
           )
           ..bindUniform(map._buildingFrame!, host.emplace(map._frameBytes))
+          ..bindUniform(
+            map._buildingPatterns!,
+            host.emplace(
+              map._patternsOf(
+                b.extrusion,
+                d.size / tileExtent,
+                patternGrowth(_styleZoom),
+              ),
+            ),
+          )
           ..draw(b.vertexCount);
       }
     }

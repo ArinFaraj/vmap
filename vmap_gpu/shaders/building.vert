@@ -22,12 +22,25 @@ dem_info;
 
 uniform sampler2D heights;
 
+// The patterns of fill-extrusion-pattern: each one's place in the sprite
+// sheet, in its pixels, and in ratio.x how many of those a tile unit is.
+uniform PatternInfo {
+  vec4 rect[16];
+  vec4 ratio[16];
+}
+pattern_info;
+
 in vec3 position;
 in vec2 color_data;
 // A wall's outward normal across the ground, none on a roof, and how much
 // its vertical gradient keeps of the light.
 in vec3 normal_data;
+// Where the vertex is on its pattern, in tile units, and one more than its
+// pattern's index, zero for none.
+in vec3 pattern_data;
 out vec4 v_color;
+out vec2 v_uv;
+out vec4 v_rect;
 
 float height_at(vec2 p) {
   float size = dem_info.place.w;
@@ -59,6 +72,21 @@ void main() {
   }
   vec3 tint = frame_info.light_color.rgb;
   vec3 lit = clamp((color + 0.03) * directional * tint, 0.3 * (1.0 - tint), vec3(1.0));
+  v_rect = vec4(0.0);
+  v_uv = vec2(0.0);
+  if (pattern_data.z > 0.5) {
+    // MapLibre's fill_extrusion_pattern lighting, which does not weigh the
+    // colour, the pattern being the colour.
+    int i = int(pattern_data.z - 0.5);
+    float d = clamp(dot(normal, frame_info.light.xyz), 0.0, 1.0);
+    d = mix(1.0 - intensity, max(0.5 + intensity, 1.0), d);
+    if (!roof) {
+      d *= normal_data.z;
+    }
+    lit = clamp(d * tint, mix(vec3(0.0), vec3(0.3), 1.0 - tint), vec3(1.0));
+    v_rect = pattern_info.rect[i];
+    v_uv = pattern_data.xy * pattern_info.ratio[i].x;
+  }
   v_color = vec4(lit, color_data.y / 255.0);
   v_color.a *= frame_info.fade.x;
   vec2 p = dem_info.place.xy + position.xy / 4096.0 * dem_info.place.z;

@@ -485,6 +485,7 @@ class TileBuilder {
               b,
               light: sheet.light,
               gradient: extrude.verticalGradient,
+              patternPerMetre: -(1 << z) / 8192,
             )).add(
               _sink.coords,
               _starts,
@@ -498,6 +499,10 @@ class TileBuilder {
                 z,
                 y,
               ),
+              pattern: switch (extrude.pattern?.call(context)) {
+                final String name when name.isNotEmpty => name,
+                _ => null,
+              },
             );
             continue;
           }

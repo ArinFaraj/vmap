@@ -688,7 +688,7 @@ class StyleCompiler {
     final color = paint['$prefix-color'] ?? '#000000';
     final opacity = paint['$prefix-opacity'] ?? 1;
     final names = _readsOf(paint, ['$prefix-color', '$prefix-opacity']);
-    final image = paint['fill-pattern'];
+    final image = paint['$prefix-pattern'];
     _layers.add(
       FillLayer(
         id: layer.id,
@@ -715,6 +715,7 @@ class StyleCompiler {
         color,
         paint['fill-extrusion-vertical-gradient'],
         layer.layout['fill-extrusion-rounded-corner-distance'],
+        image,
       ]);
       final index = _bucketIndex.putIfAbsent(key, () {
         _buckets.add(
@@ -726,12 +727,13 @@ class StyleCompiler {
             extrude: Extrude(
               compileExpr(paint['fill-extrusion-height'] ?? 0),
               compileExpr(paint['fill-extrusion-base'] ?? 0),
-              compileExpr(color),
+              compileExpr(image == null ? color : '#ffffff'),
               verticalGradient:
                   paint['fill-extrusion-vertical-gradient'] != false,
               roundedCorners: compileExpr(
                 layer.layout['fill-extrusion-rounded-corner-distance'] ?? 0,
               ),
+              pattern: image == null ? null : compileText(image),
             ),
           ),
         );

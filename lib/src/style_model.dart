@@ -20,6 +20,7 @@ class Extrude {
     this.color, {
     this.verticalGradient = true,
     this.roundedCorners,
+    this.pattern,
   });
 
   final Expr height;
@@ -31,6 +32,10 @@ class Extrude {
 
   /// `fill-extrusion-rounded-corner-distance`, in metres.
   final Expr? roundedCorners;
+
+  /// `fill-extrusion-pattern`: the sprite image the walls and roofs are
+  /// covered in.
+  final Expr? pattern;
 }
 
 /// A style's root `light`, which shades buildings as MapLibre's

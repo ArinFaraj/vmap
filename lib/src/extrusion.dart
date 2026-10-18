@@ -25,20 +25,26 @@ class BuiltExtrusion {
     this.roofIndices,
     this.info,
     this.vertices,
-    this.index,
-  );
+    this.index, [
+    this.patterns = const [],
+  ]);
 
   /// The buildings by where they stand, for what hides labels.
   final BuildingIndex index;
 
-  /// Every wall and roof as triangles ready for the GPU, five floats a
-  /// vertex: x and y in tile units, height in metres, the colour lit from
-  /// the north west and darker at the foot as red plus 256 green plus 65536
-  /// blue, from 0 to 255 each, and alpha from 0 to 255. Every one exact, so
+  /// Every wall and roof as triangles ready for the GPU, [floatsPerVertex]
+  /// floats a vertex: x and y in tile units, height in metres, the colour
+  /// as red plus 256 green plus 65536 blue, from 0 to 255 each, alpha from
+  /// 0 to 255, the wall's outward normal and its gradient, then where its
+  /// pattern is, in tile units, and which pattern. Every one exact, so
   /// OpenGL ES 2 shaders, which have no integers, unpack them.
   final Float32List vertices;
 
-  static const floatsPerVertex = 8;
+  static const floatsPerVertex = 11;
+
+  /// The sprite images the buildings are covered in; a vertex's last float
+  /// is one more than the index of its building's, zero for none.
+  final List<String> patterns;
 
   /// Vertices per piece the GPU takes at once, whole triangles.
   static const chunk = 8190;
@@ -74,6 +80,7 @@ class BuiltExtrusion {
     pack(index.cellStart),
     pack(index.cellItems),
     pack(index.cellTallest),
+    patterns,
   ];
 
   static BuiltExtrusion fromMessage(List<Object?> m) => BuiltExtrusion(
@@ -89,6 +96,7 @@ class BuiltExtrusion {
       unpackFloats(m[8]!),
       unpackFloats(m[9]!),
     ),
+    (m[10]! as List).cast<String>(),
   );
 }
 
@@ -98,6 +106,7 @@ class ExtrusionBuilder {
     this.bucket, {
     this.light = const ExtrusionLight(),
     this.gradient = true,
+    this.patternPerMetre = 0,
   });
 
   final int bucket;
@@ -106,16 +115,23 @@ class ExtrusionBuilder {
   /// towards their feet.
   final ExtrusionLight light;
   final bool gradient;
+
+  /// How far up a wall a metre moves its pattern, in tile units, as
+  /// MapLibre's `u_height_factor`: negative, so the pattern runs up.
+  final double patternPerMetre;
   final _walls = DoubleBuffer();
   final _roof = DoubleBuffer();
   final _indices = DoubleBuffer();
   final _info = DoubleBuffer();
   final _ring = DoubleBuffer();
   final _normals = DoubleBuffer();
+  final _edges = DoubleBuffer();
+  final List<int> _patternOf = [];
+  final List<String> _patterns = [];
 
   /// Adds one feature: rings of x, y pairs in tile units between the point
   /// indices of [starts] and [ends], its corners rounded [rounding] tile
-  /// units.
+  /// units, its walls and roof covered in the sprite [pattern] when given.
   void add(
     Float64List coords,
     List<int> starts,
@@ -124,6 +140,7 @@ class ExtrusionBuilder {
     double base,
     Rgba color, {
     double rounding = 0,
+    String? pattern,
   }) {
     // As MapLibre, a building no taller than its base still has its roof.
     if (height < base) return;
@@ -192,11 +209,20 @@ class ExtrusionBuilder {
         perps[i * 2 + 1] = x - x1;
       }
       final normals = rounding > 0 ? smoothNormals(perps) : null;
+      // As MapLibre's side faces: how far along the ring each wall's ends
+      // are, which a pattern wraps around the walls by, counted from the
+      // end of a wall back to its start and started over past 16384.
+      var along = 0.0;
       for (var i = 0; i < count; i++) {
         final nx = perps[i * 2], ny = perps[i * 2 + 1];
         if (nx == 0 && ny == 0) continue;
         final j = (i + 1) % count;
         _walls.add4(pts[i * 2], pts[i * 2 + 1], pts[j * 2], pts[j * 2 + 1]);
+        final length = math.sqrt(nx * nx + ny * ny);
+        if (along + length > 16384) along = 0;
+        final end = (along * 2).roundToDouble() / 2;
+        along += length;
+        _edges.add2((along * 2).roundToDouble() / 2, end);
         if (normals != null) {
           _normals.add4(
             normals[i * 4],
@@ -213,6 +239,15 @@ class ExtrusionBuilder {
     roof();
     final walls = _walls.length ~/ 4 - wallsFrom;
     if (walls == 0 || area == 0) return;
+    var patternIndex = -1;
+    if (pattern != null) {
+      patternIndex = _patterns.indexOf(pattern);
+      if (patternIndex < 0) {
+        patternIndex = _patterns.length;
+        _patterns.add(pattern);
+      }
+    }
+    _patternOf.add(patternIndex);
     _info
       ..add4(height, base, sx / area, sy / area)
       ..add4(
@@ -246,6 +281,7 @@ class ExtrusionBuilder {
       // A vertex: where it is, its colour unlit, the outward normal of its
       // wall (none on a roof) and how much the wall's gradient darkens it,
       // for the renderer to light it as the map turns.
+      final patternIndex = _patternOf[i ~/ BuiltExtrusion.stride] + 1.0;
       void vertex(
         double x,
         double y,
@@ -253,6 +289,8 @@ class ExtrusionBuilder {
         double nx,
         double ny,
         double t,
+        double u,
+        double v,
       ) {
         out[o++] = x;
         out[o++] = y;
@@ -264,6 +302,9 @@ class ExtrusionBuilder {
         out[o++] = nx == 0 && ny == 0
             ? 1
             : light.gradient(t: t, base: bottom, height: top, on: gradient);
+        out[o++] = u;
+        out[o++] = v;
+        out[o++] = patternIndex;
       }
 
       final firstWall = _info[i + 4].toInt(), walls = _info[i + 5].toInt();
@@ -273,17 +314,20 @@ class ExtrusionBuilder {
         if (x0 == x1 && y0 == y1) continue;
         final nx0 = _normals[j * 4], ny0 = _normals[j * 4 + 1];
         final nx1 = _normals[j * 4 + 2], ny1 = _normals[j * 4 + 3];
-        vertex(x0, y0, bottom, nx0, ny0, 0);
-        vertex(x1, y1, bottom, nx1, ny1, 0);
-        vertex(x1, y1, top, nx1, ny1, 1);
-        vertex(x0, y0, bottom, nx0, ny0, 0);
-        vertex(x1, y1, top, nx1, ny1, 1);
-        vertex(x0, y0, top, nx0, ny0, 1);
+        final e0 = _edges[j * 2], e1 = _edges[j * 2 + 1];
+        final v0 = bottom * patternPerMetre, v1 = top * patternPerMetre;
+        vertex(x0, y0, bottom, nx0, ny0, 0, e0, v0);
+        vertex(x1, y1, bottom, nx1, ny1, 0, e1, v0);
+        vertex(x1, y1, top, nx1, ny1, 1, e1, v1);
+        vertex(x0, y0, bottom, nx0, ny0, 0, e0, v0);
+        vertex(x1, y1, top, nx1, ny1, 1, e1, v1);
+        vertex(x0, y0, top, nx0, ny0, 1, e0, v1);
       }
       final firstRoof = _info[i + 6].toInt(), roofs = _info[i + 7].toInt();
       for (var j = firstRoof; j < firstRoof + roofs; j++) {
         final v = _indices[j].toInt();
-        vertex(_roof[v * 2], _roof[v * 2 + 1], top, 0, 0, 1);
+        final x = _roof[v * 2], y = _roof[v * 2 + 1];
+        vertex(x, y, top, 0, 0, 1, x, y);
       }
     }
     final walls = _walls.toFloat32List(), info = _info.toFloat32List();
@@ -295,6 +339,7 @@ class ExtrusionBuilder {
       info,
       out,
       BuildingIndex.of(walls, info),
+      List.of(_patterns),
     );
   }
 }
