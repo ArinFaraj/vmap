@@ -15,9 +15,9 @@ class HeatPainter {
   final ui.Paint _glowPaint = ui.Paint()..blendMode = ui.BlendMode.plus;
   final ui.Paint _bandPaint = ui.Paint()..filterQuality = ui.FilterQuality.low;
 
-  /// The density picture is this much smaller than the screen. A heatmap has
-  /// no sharp edges to lose.
-  static const double _coarse = 0.5;
+  /// The density picture is this much smaller than the screen, as MapLibre
+  /// draws it a quarter of the screen's size; its blur shows in the result.
+  static const double _coarse = 0.25;
 
   /// How far a glow reaches, in radii, and its height at the middle for a
   /// weight of one: the kernel MapLibre uses.
