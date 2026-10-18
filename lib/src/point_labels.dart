@@ -107,7 +107,8 @@ class PointLabels {
             symbol.textTranslateOnScreen,
             context,
           );
-    var text = _textOffset(symbol, c, fontSize, spot, moved);
+    final ems = symbol?.textOffset(context) ?? (0.0, 0.0);
+    var text = _textOffset(symbol, c, fontSize, spot, moved, ems);
     final icon = _sizeIcon(st, symbol, spot, context);
     final pin = _choosePin(st, symbol);
     if (pin != null && c.hasText) text = _besidePin(symbol!, spot, pin.$2);
@@ -118,7 +119,7 @@ class PointLabels {
     final textFits = !c.hasText
         ? false
         : sides.isNotEmpty
-        ? _fitOnSides(st, symbol!, sides, fontSize, spot, moved, pin?.$2)
+        ? _fitOnSides(st, symbol!, sides, fontSize, spot, moved, pin?.$2, ems)
         : _obstacles.isEmpty
         ? _fitInPlace(st, symbol, spot, text)
         : _fitAside(st, spot, text, hasIcon);
@@ -187,12 +188,13 @@ class PointLabels {
     double fontSize,
     _Spot spot,
     (double, double) moved,
+    (double, double) ems,
   ) {
     var tx = 0.0;
     var ty = 0.0;
     if (symbol != null && c.hasText) {
-      tx = symbol.offsetX * fontSize;
-      ty = symbol.offsetY * fontSize;
+      tx = ems.$1 * fontSize;
+      ty = ems.$2 * fontSize;
       final anchor = symbol.anchor;
       if (anchor.startsWith('top')) ty += spot.textH / 2;
       if (anchor.startsWith('bottom')) ty -= spot.textH / 2;
@@ -225,12 +227,13 @@ class PointLabels {
       ..iconDy = 0;
     if (icon == null || symbol == null) return icon;
     final by = asNumber(symbol.iconSize(context)) ?? 1;
+    final (offsetX, offsetY) = symbol.iconOffset(context);
     st.iconScale = by;
     if (!symbol.textFit) {
       final (ax, ay) = anchorSides(symbol.iconAnchor);
       st
-        ..iconDx = symbol.iconOffsetX * by + ax * icon.width * by / 2
-        ..iconDy = symbol.iconOffsetY * by + ay * icon.height * by / 2;
+        ..iconDx = offsetX * by + ax * icon.width * by / 2
+        ..iconDy = offsetY * by + ay * icon.height * by / 2;
     }
     final (ix, iy) = _view.moved(
       symbol.iconTranslate,
@@ -249,8 +252,8 @@ class PointLabels {
       st
         ..iconW = (wide ? spot.textW + left + right : icon.width) * by
         ..iconH = (tall ? spot.textH + top + bottom : icon.height) * by
-        ..iconDx = (symbol.iconOffsetX + (wide ? (right - left) / 2 : 0)) * by
-        ..iconDy = (symbol.iconOffsetY + (tall ? (bottom - top) / 2 : 0)) * by;
+        ..iconDx = (offsetX + (wide ? (right - left) / 2 : 0)) * by
+        ..iconDy = (offsetY + (tall ? (bottom - top) / 2 : 0)) * by;
     } else {
       st
         ..iconW = icon.width * by
@@ -304,6 +307,7 @@ class PointLabels {
     _Spot spot,
     (double, double) moved,
     double? pinReach,
+    (double, double) ems,
   ) {
     final radial = symbol.radialOffset;
     final away = pinReach ?? (radial == null ? null : radial * fontSize);
@@ -323,12 +327,8 @@ class PointLabels {
         fx = moved.$1 + ax * (reach + spot.textW / 2);
         fy = moved.$2 + ay * (reach + spot.textH / 2);
       } else {
-        fx =
-            moved.$1 +
-            ax * ((symbol.offsetX * fontSize).abs() + spot.textW / 2);
-        fy =
-            moved.$2 +
-            ay * ((symbol.offsetY * fontSize).abs() + spot.textH / 2);
+        fx = moved.$1 + ax * ((ems.$1 * fontSize).abs() + spot.textW / 2);
+        fy = moved.$2 + ay * ((ems.$2 * fontSize).abs() + spot.textH / 2);
       }
       if (!symbol.textOverlaps && _textHits(spot, fx, fy - ay * baseline)) {
         continue;

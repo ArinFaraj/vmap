@@ -433,6 +433,8 @@ class StyleCompiler {
     }
     _reads(layout['text-size'], paintKeys);
     _reads(layout['icon-size'], paintKeys);
+    _reads(layout['icon-offset'], paintKeys);
+    _reads(layout['text-offset'], paintKeys);
     final build = SymbolBuild({
       SymbolBuild.sourceKey: source,
       SymbolBuild.sourceLayerKey: sourceLayer,
@@ -494,6 +496,9 @@ class StyleCompiler {
         anchor: anchor is String ? anchor : 'center',
         offsetX: offset.$1,
         offsetY: offset.$2,
+        offsetBy: _isPair(layout['text-offset'])
+            ? null
+            : compileExpr(layout['text-offset']),
         textOptional: layout['text-optional'] == true,
         iconOptional: layout['icon-optional'] == true,
         iconOverlaps: layout['icon-allow-overlap'] == true,
@@ -520,6 +525,9 @@ class StyleCompiler {
         radialOffset: asNumber(layout['text-radial-offset'])?.toDouble(),
         iconAnchor: iconAnchor is String ? iconAnchor : 'center',
         iconOffsetX: iconOffset.$1,
+        iconOffsetBy: _isPair(layout['icon-offset'])
+            ? null
+            : compileExpr(layout['icon-offset']),
         iconOffsetY: iconOffset.$2,
         textTranslate: _maybe(paint['text-translate']),
         textTranslateOnScreen: paint['text-translate-anchor'] == 'viewport',
@@ -978,6 +986,10 @@ class StyleCompiler {
             layout['text-ignore-placement'] == true ||
             layout['icon-ignore-placement'] == true);
   }
+
+  static bool _isPair(Object? json) =>
+      json == null ||
+      (json is List && json.length == 2 && json.every((v) => v is num));
 
   static (double, double) _pair(Object? json) {
     var list = json;

@@ -59,6 +59,23 @@ void main() {
     expect(Rgba.of(color(at(5)))!.toArgb(), 0xFF808080);
   });
 
+  test('a legacy property function blends pairs of numbers', () {
+    final offset = compileExpr({
+      'property': 'rank',
+      'stops': [
+        [
+          0,
+          [0, 10],
+        ],
+        [
+          50,
+          [20, 10],
+        ],
+      ],
+    });
+    expect(offset(at(14, {'rank': 25})), [10.0, 10.0]);
+  });
+
   test('a legacy stops function reads like an exponential interpolate', () {
     final width = compileExpr({
       'base': 2,

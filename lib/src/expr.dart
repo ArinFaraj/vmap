@@ -773,7 +773,12 @@ Expr _legacyFunction(Map<Object?, Object?> json) {
     final table = Map<Object?, Object?>.fromIterables(keys, values);
     return (c) => table[input(c)] ?? fallback;
   }
-  final numeric = values.every((v) => v is num || Rgba.of(v) != null);
+  final numeric = values.every(
+    (v) =>
+        v is num ||
+        (v is List && v.isNotEmpty && v.every((n) => n is num)) ||
+        Rgba.of(v) != null,
+  );
   final stops = [for (final k in keys) asNumber(k) ?? 0];
   final outs = [for (final v in values) _constant(v)];
   if (type == 'interval' || (!numeric && type != 'exponential')) {

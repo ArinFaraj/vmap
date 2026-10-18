@@ -682,6 +682,7 @@ class SymbolLayer {
     required this.anchor,
     required this.offsetX,
     required this.offsetY,
+    this.offsetBy,
     required this.textOptional,
     required this.iconOptional,
     required this.iconOverlaps,
@@ -695,6 +696,7 @@ class SymbolLayer {
     this.radialOffset,
     this.iconAnchor = 'center',
     this.iconOffsetX = 0,
+    this.iconOffsetBy,
     this.iconOffsetY = 0,
     this.textTranslate,
     this.textTranslateOnScreen = false,
@@ -785,6 +787,21 @@ class SymbolLayer {
   final double offsetX;
   final double offsetY;
 
+  /// `text-offset` read per feature or zoom, when it is not one pair.
+  final Expr? offsetBy;
+
+  /// The text's offset in ems for the feature and zoom of [context].
+  (double, double) textOffset(EvalContext context) {
+    final by = offsetBy?.call(context);
+    if (by is List && by.length == 2) {
+      return (
+        (asNumber(by[0]) ?? 0).toDouble(),
+        (asNumber(by[1]) ?? 0).toDouble(),
+      );
+    }
+    return (offsetX, offsetY);
+  }
+
   /// `text-variable-anchor`: the anchors tried in turn until the text fits.
   /// Empty when the text has the one [anchor].
   final List<String> anchors;
@@ -800,6 +817,21 @@ class SymbolLayer {
   /// How far the icon is moved, in pixels at an icon size of 1.
   final double iconOffsetX;
   final double iconOffsetY;
+
+  /// `icon-offset` read per feature or zoom, when it is not one pair.
+  final Expr? iconOffsetBy;
+
+  /// The icon's offset for the feature and zoom of [context].
+  (double, double) iconOffset(EvalContext context) {
+    final by = iconOffsetBy?.call(context);
+    if (by is List && by.length == 2) {
+      return (
+        (asNumber(by[0]) ?? 0).toDouble(),
+        (asNumber(by[1]) ?? 0).toDouble(),
+      );
+    }
+    return (iconOffsetX, iconOffsetY);
+  }
 
   /// How far the text and the icon are drawn from their place, in logical
   /// pixels, along the map's sides or the screen's.
