@@ -93,9 +93,13 @@ class StyleResources {
     if (!_closed) onChange();
   });
 
-  /// Loads the sprite sheet at [url] when it is not the one in use.
-  void useSprites(String? url) {
-    if (url != _spriteUrl) _loadSprites(url);
+  /// Loads the sprite [sheets], each its images' prefix and its address,
+  /// when they are not the ones in use.
+  void useSprites(List<(String, String)> sheets) {
+    final key = sheets.isEmpty
+        ? null
+        : sheets.map((s) => '${s.$1} ${s.$2}').join('\n');
+    if (key != _spriteUrl) _loadSprites(key, sheets);
   }
 
   /// Draws [images] by name as if they were in the style's sprite sheet.
@@ -126,7 +130,7 @@ class StyleResources {
   /// Makes the next [useSprites] load again whatever it is given.
   void forgetSprites() => _spriteUrl = null;
 
-  Future<void> _loadSprites(String? url) async {
+  Future<void> _loadSprites(String? url, List<(String, String)> sheets) async {
     _spriteUrl = url;
     _styleSprites?.dispose();
     _styleSprites = null;
@@ -135,13 +139,22 @@ class StyleResources {
     SpriteSheet? loaded;
     _spritesLoading++;
     try {
-      loaded = await SpriteSheet.load(
-        url,
-        cacheDirectory: _config.cacheDirectory,
-        userAgent: _config.userAgent,
-        headers: _config.headers,
-        pixelRatio: _config.spritePixelRatio,
-      );
+      final each = await Future.wait([
+        for (final (_, address) in sheets)
+          SpriteSheet.load(
+            address,
+            cacheDirectory: _config.cacheDirectory,
+            userAgent: _config.userAgent,
+            headers: _config.headers,
+            pixelRatio: _config.spritePixelRatio,
+          ),
+      ]);
+      loaded = each.length == 1 && sheets.single.$1.isEmpty
+          ? each.single
+          : SpriteSheet.merge([
+              for (var i = 0; i < each.length; i++)
+                if (each[i] case final sheet?) (sheets[i].$1, sheet),
+            ]);
     } catch (e) {
       onError(e);
     } finally {

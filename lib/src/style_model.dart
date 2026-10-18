@@ -1192,6 +1192,7 @@ class StyleSheet {
     required this.zoomOffset,
     required this.shape,
     required this.sprite,
+    List<(String, String)>? spriteSheets,
     this.glyphs,
     this.layerOpacity = const {},
     this.aboveLabels = -1,
@@ -1203,7 +1204,7 @@ class StyleSheet {
     required this.attributions,
     this.extrusions = const [],
     this.footprints = const {},
-  });
+  }) : spriteSheets = spriteSheets ?? [if (sprite != null) ('', sprite)];
 
   /// The style's `fill-extrusion` layers, in order.
   final List<ExtrusionLayer> extrusions;
@@ -1298,6 +1299,11 @@ class StyleSheet {
 
   /// The address of the sprite sheet, without `.json` or `.png`.
   final String? sprite;
+
+  /// Every sprite sheet of a style that names several: the prefix its
+  /// images are named by, `id:` or none for the one called `default`, and
+  /// its address.
+  final List<(String, String)> spriteSheets;
 
   /// The style's glyph ranges, with `{fontstack}` and `{range}` in it.
   final String? glyphs;

@@ -163,6 +163,13 @@ class StyleCompiler {
         [{'url': final String url}, ...] => url,
         _ => null,
       },
+      spriteSheets: [
+        if (sprite is String) ('', sprite),
+        if (sprite is List)
+          for (final s in sprite)
+            if (s case {'id': final String id, 'url': final String url})
+              (id == 'default' ? '' : '$id:', url),
+      ],
       glyphs: json['glyphs'] as String?,
       rasters: _rasters,
       extrusions: _extrusions,

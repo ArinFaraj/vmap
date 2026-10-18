@@ -54,6 +54,18 @@ class SpriteImage {
   /// The picture is a distance field: a shape with no colour of its own,
   /// drawn in the colour the style gives it.
   final bool sdf;
+
+  /// The same image [dy] sheet pixels lower, in a sheet stacked on others.
+  SpriteImage movedDown(double dy) => SpriteImage(
+    source.translate(0, dy),
+    width,
+    height,
+    pixelRatio,
+    sdf: sdf,
+    stretchX: stretchX,
+    stretchY: stretchY,
+    content: content,
+  );
 }
 
 /// The icons and patterns a style draws with.
@@ -83,6 +95,29 @@ class SpriteSheet {
     picture.dispose();
     return out;
   });
+
+  /// [sheets] in one picture, one under another, each image named by its
+  /// sheet's prefix and its own name. The sheets are let go of.
+  static SpriteSheet? merge(List<(String, SpriteSheet)> sheets) {
+    if (sheets.isEmpty) return null;
+    final width = sheets.fold(0, (w, s) => math.max(w, s.$2.image.width));
+    final entries = <String, SpriteImage>{};
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    var y = 0;
+    for (final (prefix, sheet) in sheets) {
+      canvas.drawImage(sheet.image, ui.Offset(0, y.toDouble()), ui.Paint());
+      for (final MapEntry(key: name, value: e) in sheet.entries.entries) {
+        entries['$prefix$name'] = e.movedDown(y.toDouble());
+      }
+      y += sheet.image.height;
+      sheet.dispose();
+    }
+    final picture = recorder.endRecording();
+    final image = picture.toImageSync(math.max(width, 1), math.max(y, 1));
+    picture.dispose();
+    return SpriteSheet(image, entries);
+  }
 
   /// A sheet of [base]'s images and [added] together in one picture, the
   /// added images under the base's and in its place where a name is in

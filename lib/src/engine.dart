@@ -365,7 +365,7 @@ class VmapEngine extends ChangeNotifier {
       }
     }
     _useTerrain(sheet.terrain);
-    _resources.useSprites(sheet.sprite);
+    _resources.useSprites(sheet.spriteSheets);
     _meshes.resize(sheet.layers.length);
     _labels
       ..symbols = sheet.symbols
