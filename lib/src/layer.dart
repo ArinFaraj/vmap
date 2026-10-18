@@ -130,7 +130,7 @@ class VmapLayer extends StatefulWidget {
 }
 
 /// Reached through a `GlobalKey<VmapLayerState>` on the layer.
-class VmapLayerState extends State<VmapLayer> {
+class VmapLayerState extends State<VmapLayer> with WidgetsBindingObserver {
   VmapEngine? _owned;
 
   /// What draws the layer: ask it what is on the map, about clusters, to
@@ -172,7 +172,11 @@ class VmapLayerState extends State<VmapLayer> {
             ..featureStates = widget.featureStates;
     }
     PaintingBinding.instance.systemFonts.addListener(_fontsChanged);
+    WidgetsBinding.instance.addObserver(this);
   }
+
+  @override
+  void didHaveMemoryPressure() => engine.trimMemory();
 
   @override
   void didUpdateWidget(VmapLayer oldWidget) {
@@ -214,6 +218,7 @@ class VmapLayerState extends State<VmapLayer> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     PaintingBinding.instance.systemFonts.removeListener(_fontsChanged);
     _owned?.dispose();
     super.dispose();

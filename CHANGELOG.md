@@ -18,6 +18,9 @@
   padding leaves, as MapLibre's padding does. `EdgeInsets2` carries it,
   `MapView.copyWithPad` changes it on a view, and `flyTo` and `easeTo`
   blend to new padding as they fly.
+- The map lets go of tiles, label images and GPU memory out of view when
+  the system is short of memory (`VmapEngine.trimMemory`), as `VMap` and
+  `VmapLayer` do on their own.
 
 ## 0.26.0
 

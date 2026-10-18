@@ -59,6 +59,9 @@ abstract class MapRenderer {
   /// draws them. Set before each [paint].
   List<RasterPiece> rasters = const [];
 
+  /// Lets go of the memory of tiles not drawn in the last frame.
+  void trimMemory() {}
+
   void dispose();
 }
 

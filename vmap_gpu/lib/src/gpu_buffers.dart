@@ -136,6 +136,17 @@ class GpuHeap {
     () => gpu.gpuContext.createDeviceBuffer(gpu.StorageMode.hostVisible, bytes),
   );
 
+  /// Lets go of the slabs nothing is held in, and returns true once the
+  /// GPU has finished with every range given back.
+  bool shrink() {
+    _release();
+    bool empty(_Slab slab) =>
+        slab._free.length == 1 && slab._free.first == (0, _slabBytes);
+    _slabs.removeWhere(empty);
+    _indexSlabs.removeWhere(empty);
+    return _given.isEmpty;
+  }
+
   void clear() {
     _slabs.clear();
     _indexSlabs.clear();

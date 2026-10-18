@@ -574,6 +574,17 @@ class VmapEngine extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Lets go of what is not on screen: tiles out of view, label images not
+  /// drawn, and the renderer's memory for them. Call it when the system is
+  /// short of memory; what comes back into view is loaded again.
+  void trimMemory() {
+    for (final s in _sources) {
+      s.evict(0, _frame);
+    }
+    _labels.trimMemory();
+    renderer?.trimMemory();
+  }
+
   /// Draws every label again. Call it when a font has finished loading: a
   /// label drawn before that keeps the boxes it was drawn with.
   void fontsChanged() {

@@ -351,6 +351,9 @@ class LabelEngine {
     _glyphPages = null;
   }
 
+  /// Lets go of the label images not drawn in the last pass.
+  void trimMemory() => _sprites.drop(_pass);
+
   void clear() {
     _sprites.clear();
     _painter.dropPins();

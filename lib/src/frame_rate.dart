@@ -29,7 +29,10 @@ class FrameRateVote {
 
   static void detach() {
     _users = (_users - 1).clamp(0, 1 << 30);
-    if (_users == 0) _send(false);
+    if (_users > 0) return;
+    _release?.cancel();
+    _release = null;
+    _send(false);
   }
 
   static final Stopwatch _clock = Stopwatch()..start();

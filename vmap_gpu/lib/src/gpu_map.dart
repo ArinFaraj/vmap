@@ -378,6 +378,24 @@ class GpuMap implements MapRenderer {
   }
 
   @override
+  void trimMemory() {
+    _held.removeWhere((data) => !identical(data.tile.rendererData, data));
+    for (final data in [..._held]) {
+      if (data.drawnFrame == _frame) continue;
+      _held.remove(data);
+      data.tile
+        ..rendererData = null
+        ..uploadAgain();
+      data.dispose();
+    }
+    _shrinking = true;
+  }
+
+  /// Whether slabs freed by [trimMemory] are still to be let go, once the
+  /// GPU finishes the frames that may read them.
+  bool _shrinking = false;
+
+  @override
   bool paint(
     ui.Canvas canvas,
     MapView view,
@@ -397,6 +415,7 @@ class GpuMap implements MapRenderer {
       ..frame = _frame
       ..topUp();
     _trim();
+    if (_shrinking) _shrinking = !_heap.shrink();
     final width = (view.width * devicePixelRatio).round();
     final height = (view.height * devicePixelRatio).round();
     if (width <= 0 || height <= 0) return false;

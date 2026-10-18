@@ -242,6 +242,15 @@ class LabelSprites {
     _byKey.clear();
   }
 
+  /// Drops every sprite not used in [pass].
+  void drop(int pass) {
+    _byKey.removeWhere((_, sprite) {
+      if (sprite.usedPass == pass) return false;
+      sprite.dispose();
+      return true;
+    });
+  }
+
   /// Drops sprites not used in [pass] once there are too many.
   void trim(int pass) {
     if (_byKey.length <= _max) return;

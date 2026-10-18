@@ -350,7 +350,8 @@ class _Rate {
   }
 }
 
-class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
+class _VMapState extends State<VMap>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   VmapEngine? _owned;
   late final Ticker _ticker = createTicker(
     (elapsed) => widget.controller._tick(elapsed),
@@ -407,7 +408,11 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
     FrameRateVote.attach();
     _attach(widget.controller);
     PaintingBinding.instance.systemFonts.addListener(_fontsChanged);
+    WidgetsBinding.instance.addObserver(this);
   }
+
+  @override
+  void didHaveMemoryPressure() => _engine.trimMemory();
 
   /// A font arriving late, as the browser's fallback fonts do, draws the
   /// labels again; those drawn before it keep their boxes otherwise.
@@ -437,6 +442,7 @@ class _VMapState extends State<VMap> with SingleTickerProviderStateMixin {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     PaintingBinding.instance.systemFonts.removeListener(_fontsChanged);
     FrameRateVote.detach();
     widget.controller
