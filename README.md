@@ -459,6 +459,7 @@ in October 2026:
 | [maplibre_gl](https://pub.dev/packages/maplibre_gl) | a map widget of its own | MapLibre's own renderer, MapLibre GL JS on the web | yes |
 | [maplibre](https://pub.dev/packages/maplibre) | a map widget of its own | MapLibre's own renderer, MapLibre GL JS on the web | yes |
 | [maplibre_flutter_gpu](https://pub.dev/packages/maplibre_flutter_gpu) | a map widget of its own | Flutter GPU | no |
+| vmap | its own widget and a flutter_map layer | Flutter GPU, WebGL2 on the web, `Canvas` where neither runs | yes |
 
 vmap has been measured against one of them so far.
 

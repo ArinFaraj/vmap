@@ -34,20 +34,21 @@ fall back to "the legacy OpenGL renderer".
 
 ## Web
 
-Flutter on the web renders with Skia and has no Flutter GPU, so the canvas
-renderer is the web renderer.
+Flutter on the web has no Flutter GPU. vmap_gpu draws there through a
+WebGL2 implementation of the same API, copied from flutter_scene, and the
+canvas renderer is the fallback where WebGL2 is missing.
 
 ## The existing packages
 
 | Package | Engine | Tilt | Web | Notes |
 | --- | --- | --- | --- | --- |
-| `maplibre_flutter_gpu` 0.1.1 | MapLibre Native core, drawn through Flutter GPU | 0 to 60 degrees | no | Beta, one author. Labels are widgets, custom 3D in map space |
+| `maplibre_flutter_gpu` 0.2.0 | MapLibre Native core, drawn through Flutter GPU | 0 to 60 degrees | no | Beta, one author. Labels are widgets, custom 3D in map space, heatmap and hillshade, frees tile memory under memory pressure |
 | `flutter_map_maplibre_gpu` 0.0.1 | the above, as a flutter_map layer | no | no | |
 | `maplibre_gl` | MapLibre Native in a platform view, GL JS on web | yes | yes | Widgets on top lag the map |
 | `maplibre` | MapLibre Native over FFI and JNI, GL JS on web | yes | yes | |
 | `flutter_map_maplibre` 0.0.5 | `maplibre` with flutter_map | no, its example sets `maxPitch: 0` | yes | |
 | `vector_map_tiles` | flutter_map layer | no | not listed | latest stable 8.0.0, two years old |
-| vmap 0.26 | flutter_map layer, Flutter canvas | no | yes | `fill-extrusion` drawn flat |
+| vmap | own engine in Dart: Flutter GPU, WebGL2 on the web, canvas fallback | 0 to 85 degrees | yes | 3D buildings, 3D terrain and sky; its own widget and a flutter_map layer |
 
 MapLibre Native has no 3D terrain in a release: maplibre/maplibre-native#252
 "Terrain3D" is open since 2022, and the September 2026 newsletter calls it a
