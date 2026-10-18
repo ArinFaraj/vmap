@@ -9,6 +9,7 @@ import 'glyphs/arabic_forms.dart';
 import 'glyphs/glyph_layout.dart';
 import 'gpu_stream.dart';
 import 'extrusion.dart';
+import 'format.dart';
 import 'mvt.dart';
 import 'platform.dart';
 import 'round_corners.dart';
@@ -308,7 +309,8 @@ class TileBuilder {
     for (final l in labels) {
       if (l.layer < 0 || l.text.isEmpty) continue;
       final symbol = sheet.symbols[l.layer];
-      final text = symbol.uppercase ? l.text.toUpperCase() : l.text;
+      final plain = plainText(l.text);
+      final text = symbol.uppercase ? plain.toUpperCase() : plain;
       final rtl = textIsRightToLeft(text);
       final road = l.line != null;
       l.shaped = layoutText(
@@ -629,11 +631,11 @@ class TileBuilder {
           for (final s in symbols) {
             final symbol = sheet.symbols[s];
             if (!symbol.build.filter(context)) continue;
-            final text = symbol.build.text(context) as String;
+            final (text, format) = labelText(symbol.build.text(context));
             final icon = symbol.build.icon == null
                 ? ''
                 : symbol.build.icon!(context) as String;
-            if (text.isEmpty && icon.isEmpty) continue;
+            if (plainText(text).isEmpty && icon.isEmpty) continue;
             final placement = '${symbol.build.placement(context)}';
             final along = placement.startsWith('line');
             final base = (sheet.symbols.length - 1 - s) * 4096;
@@ -642,13 +644,14 @@ class TileBuilder {
                 (asNumber(symbol.build.iconRotate(context)) ?? 0) *
                 math.pi /
                 180;
-            final carried = symbol.build.paintKeys.isEmpty
+            final carried = symbol.build.paintKeys.isEmpty && format == null
                 ? null
                 : {
                     for (final k in symbol.build.paintKeys)
                       k: k.startsWith(r'$geometry:')
                           ? geometryExpr(k)?.call(context)
                           : context.props[k],
+                    if (format != null) formatKey: format,
                   };
             if (f.type == mvtPolygon) {
               if (along) continue;
@@ -1064,7 +1067,8 @@ class TileBuilder {
   /// when the labels are drawn from them; else as the fonts set it, or
   /// about half an em a letter.
   double _textEms(SymbolLayer symbol, String text) {
-    final label = symbol.uppercase ? text.toUpperCase() : text;
+    final plain = plainText(text);
+    final label = symbol.uppercase ? plain.toUpperCase() : plain;
     final ranges = this.ranges;
     if (ranges != null) {
       final face = ranges.face(symbol.fontStack);

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import 'collision_boxes.dart';
 import 'expr.dart';
+import 'format.dart';
 import 'label_painter.dart';
 import 'text_style.dart';
 import 'label_sprites.dart';
@@ -660,7 +661,7 @@ class LabelEngine {
           c is TileLabel &&
           c.tile.props != null &&
           c.hasText) {
-        final ink = _ink(layer).hashCode;
+        final ink = Object.hash(_ink(layer), '${c.tile.props?[formatKey]}');
         if (ink != c.ink) {
           c
             ..ink = ink
@@ -864,7 +865,7 @@ class LabelEngine {
       (color, halo, haloWidth) = _ink(symbol);
       weight = symbol.weight;
     }
-    final rightToLeft = isRightToLeft(label);
+    final rightToLeft = isRightToLeft(plainText(label));
     return _sprites.draw(
       _spriteKey(st),
       TextLook(
@@ -895,6 +896,9 @@ class LabelEngine {
         fontFamily: text.fontFamily,
         fontFamilyFallback: text.fontFamilyFallback,
         fontStack: symbol?.fontStack ?? const [],
+        format: c is TileLabel
+            ? (c.tile.props?[formatKey] as List<Object?>?)
+            : null,
       ),
       dpr: dpr,
       pass: _pass,

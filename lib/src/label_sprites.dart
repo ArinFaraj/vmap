@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'format.dart';
 import 'glyphs/arabic_forms.dart';
 import 'glyphs/glyph_layout.dart';
 import 'glyphs/glyph_pages.dart';
@@ -163,10 +164,15 @@ class TextLook {
     required this.fontFamily,
     required this.fontFamilyFallback,
     this.fontStack = const [],
+    this.format,
   });
 
   /// The style's `text-font` for this label.
   final List<String> fontStack;
+
+  /// A formatted label's sections, as [labelText] gives them; its [text]
+  /// then has their marks in it.
+  final List<Object?>? format;
 
   final String text;
   final double fontSize;
@@ -277,21 +283,44 @@ class LabelSprites {
   }) {
     final fonts = glyphFonts;
     final store = ranges;
+    final format = look.format;
+    final plain = plainText(look.text);
     // Glyph ranges cannot join a letter Unicode gives no forms, such as the
     // Kurdish ڵ, ڕ, ێ and ە; the fonts shape it properly.
     if (fonts != null &&
         store != null &&
         shaped == null &&
-        !needsFontShaping(look.text)) {
+        !needsFontShaping(plain)) {
       final face = store.face(look.fontStack);
-      final text = hasJoiningLetters(look.text)
+      List<RangeSection>? sections;
+      if (format != null) {
+        sections = [
+          for (final f in format)
+            if (f case [final num scale, final fonts, final color, final align])
+              (
+                face: fonts is List ? store.face(fonts.cast<String>()) : face,
+                scale: scale.toDouble(),
+                color: color as int?,
+                align: switch (align) {
+                  'top' => 0.0,
+                  'center' => 0.5,
+                  _ => 1.0,
+                },
+              ),
+        ];
+        for (final section in {for (final s in sections) s.face}) {
+          if (!store.ready(section, plain)) return null;
+        }
+      }
+      final text = format == null && hasJoiningLetters(look.text)
           ? String.fromCharCodes(joinArabic(look.text.runes.toList()))
           : look.text;
-      if (!store.ready(face, text)) return null;
+      if (format == null && !store.ready(face, text)) return null;
       final laid = layoutRanges(
-        (c) => store.glyph(face, c),
+        store.glyph,
         face,
         text,
+        sections: sections,
         letterSpacing: look.letterSpacing,
         lineHeight: look.lineHeight,
         maxWidth: look.road
@@ -310,7 +339,7 @@ class LabelSprites {
     double Function(int)? breakAdvance;
     if (fonts != null && store != null && shaped == null) {
       final face = store.face(look.fontStack);
-      final forms = joinedForms(look.text.runes.toList());
+      final forms = joinedForms(plain.runes.toList());
       final joined = String.fromCharCodes([
         for (final c in forms)
           if (c >= 0) c,
@@ -327,7 +356,7 @@ class LabelSprites {
       final started = _clock.elapsedMicroseconds;
       shaped ??= layoutText(
         fonts,
-        look.text,
+        plain,
         weight: look.weight,
         letterSpacing: look.letterSpacing,
         lineHeight: look.lineHeight,
@@ -387,7 +416,7 @@ class LabelSprites {
                 height: look.lineHeight,
               ),
             )
-            ..addText(look.text);
+            ..addText(plain);
       final laid = builder.build()
         ..layout(ui.ParagraphConstraints(width: look.layoutWidth));
       work.layoutMicros += _clock.elapsedMicroseconds - started;

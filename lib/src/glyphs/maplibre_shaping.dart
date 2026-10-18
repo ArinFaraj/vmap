@@ -4,7 +4,14 @@ import 'dart:typed_data';
 import 'package:payv/payv.dart';
 
 import 'glyph_layout.dart';
+import '../format.dart';
 import 'glyph_pbf.dart';
+
+/// One run of a formatted label as the glyph ranges lay it out: the face
+/// its glyphs come from, its size against the label's, its colour or
+/// null for the label's own, and how a smaller run sits on its line, 0 at
+/// the top, 0.5 in the middle and 1, MapLibre's default, at the bottom.
+typedef RangeSection = ({int face, double scale, int? color, double align});
 
 /// Lays [text] out with the glyphs [glyphOf] finds, as MapLibre's
 /// `shaping.ts` does for glyph range fonts: each glyph placed by its
@@ -14,56 +21,97 @@ import 'glyph_pbf.dart';
 /// 0 centre, 1 right). [letterSpacing] is in ems. Glyphs the ranges lack
 /// are left out. Breaks between ideographs are not taken yet.
 ///
+/// With [sections], [text] is a formatted label as [labelText] writes it:
+/// each run opened by its section's mark, laid out in that section's face
+/// and size, its line as tall as its largest run.
+///
 /// The result's origins are MapLibre's glyph positions, which the cells
 /// [GlyphRasterizer] draws for these faces are placed against.
 ShapedText? layoutRanges(
-  PbfGlyph? Function(int codePoint) glyphOf,
+  PbfGlyph? Function(int face, int codePoint) glyphOf,
   int face,
   String text, {
   double letterSpacing = 0,
   double lineHeight = 1.2,
   int justify = 0,
   double maxWidth = double.infinity,
+  List<RangeSection>? sections,
 }) {
   const em = GlyphPbf.em;
   const shapingOffset = -17.0;
   final spacing = letterSpacing * em;
   final lineStep = lineHeight * em;
   final share = (justify + 1) / 2;
-  final codes = text.runes.toList();
+  final codes = <int>[];
+  final runOf = <int>[];
+  var run = -1;
+  final runes = text.runes.toList();
+  for (var i = 0; i < runes.length; i++) {
+    if (runes[i] == formatMark && i + 1 < runes.length) {
+      run = runes[++i] - formatIndexBase;
+      continue;
+    }
+    codes.add(runes[i]);
+    runOf.add(run);
+  }
+  RangeSection? sectionOf(int run) =>
+      sections == null || run < 0 || run >= sections.length
+      ? null
+      : sections[run];
+  int faceOf(int run) => sectionOf(run)?.face ?? face;
+  double scaleOf(int run) => sectionOf(run)?.scale ?? 1;
   final breaks = mapLibreLineBreaks(
     codes,
     (i) {
-      final g = glyphOf(codes[i]);
-      return g == null ? 0 : g.advance + spacing;
+      final g = glyphOf(faceOf(runOf[i]), codes[i]);
+      return g == null ? 0 : g.advance * scaleOf(runOf[i]) + spacing;
     },
     maxWidth * em,
     spacing: spacing,
   );
-  final lines = <String>[];
-  var from = 0;
-  for (final to in breaks) {
-    lines.add(String.fromCharCodes(codes, from, to));
-    from = to;
-  }
   final placed = <List<double>>[];
+  final scales = <double>[];
+  final colors = <int>[];
+  var scaled = false;
   var maxLength = 0.0;
   var y = 0.0;
-  for (final raw in lines) {
-    final line = raw.trim();
+  var from = 0;
+  for (final to in breaks) {
+    var start = from, end = to;
+    while (start < end && _trimmed(codes[start])) {
+      start++;
+    }
+    while (end > start && _trimmed(codes[end - 1])) {
+      end--;
+    }
+    from = to;
+    // As MapLibre's getMaxScale: the largest run on the line.
+    var lineScale = start < end ? 0.0 : 1.0;
+    for (var i = start; i < end; i++) {
+      lineScale = math.max(lineScale, scaleOf(runOf[i]));
+    }
+    if (lineScale != 1) scaled = true;
     final glyphs = <double>[];
     var x = 0.0;
-    for (final c in _visualOrder(line.runes.toList())) {
-      final g = glyphOf(c);
+    for (final k in _visualIndices(codes.sublist(start, end))) {
+      final i = start + k;
+      final c = codes[i];
+      final r = runOf[i];
+      final g = glyphOf(faceOf(r), c);
       if (g == null) continue;
+      final scale = scaleOf(r);
+      final section = sectionOf(r);
+      final lift = (lineScale - scale) * em * (section?.align ?? 1);
       glyphs.addAll([
-        face.toDouble(),
+        faceOf(r).toDouble(),
         c.toDouble(),
         x,
-        y + shapingOffset,
-        g.advance.toDouble(),
+        y + shapingOffset + lift,
+        g.advance * scale,
       ]);
-      x += g.advance + spacing;
+      scales.add(scale);
+      colors.add(section?.color ?? 0);
+      x += g.advance * scale + spacing;
     }
     if (glyphs.isNotEmpty) {
       maxLength = math.max(maxLength, x - spacing);
@@ -74,11 +122,15 @@ ShapedText? layoutRanges(
       }
     }
     placed.add(glyphs);
-    y += lineStep;
+    y += lineStep * lineScale;
   }
   if (placed.every((l) => l.isEmpty)) return null;
   final shiftX = (share - 0.5) * maxLength;
-  final shiftY = -0.5 * lines.length * lineStep + 0.5 * lineStep;
+  // As MapLibre's align: lines of one height are centred by their count,
+  // a block with taller lines by its height.
+  final shiftY = scaled
+      ? -0.5 * y - shapingOffset
+      : -0.5 * placed.length * lineStep + 0.5 * lineStep;
   final left = -0.5 * maxLength, top = -0.5 * y;
   final out = <double>[];
   for (final line in placed) {
@@ -96,7 +148,9 @@ ShapedText? layoutRanges(
     Float32List.fromList(out),
     maxLength / em,
     y / em,
-    lines.length,
+    placed.length,
+    sections == null ? null : Float32List.fromList(scales),
+    sections == null ? null : Int32List.fromList(colors),
   );
 }
 
@@ -104,6 +158,20 @@ const _breakAfter = {
   0x0a, 0x0d, 0x20, 0x26, 0x29, 0x2b, 0x2d, 0x2f, 0xad, 0xb7, //
   0x200b, 0x2010, 0x2013, 0x2027,
 };
+
+/// What Dart's `String.trim` takes off the ends of a line.
+bool _trimmed(int c) =>
+    _whitespace(c) ||
+    c == 0x85 ||
+    c == 0xA0 ||
+    c == 0x1680 ||
+    (c >= 0x2000 && c <= 0x200A) ||
+    c == 0x2028 ||
+    c == 0x2029 ||
+    c == 0x202F ||
+    c == 0x205F ||
+    c == 0x3000 ||
+    c == 0xFEFF;
 
 bool _whitespace(int c) => c == 0x20 || (c >= 0x09 && c <= 0x0d);
 
@@ -192,22 +260,22 @@ List<int> mapLibreLineBreaks(
   return out;
 }
 
-/// One line's [codes] in the order they are drawn, left to right: runs of
+/// Where in [codes], one line, each character drawn is, left to right: runs of
 /// right-to-left text reversed by the Unicode bidi algorithm, as MapLibre
 /// orders a line after breaking the text into lines. The characters that
 /// only steer the ordering are dropped, as no font draws them.
-List<int> _visualOrder(List<int> codes) {
+List<int> _visualIndices(List<int> codes) {
   if (!codes.any((c) => c >= 0x0590 && c <= 0x08FF || c >= 0xFB1D)) {
     return [
-      for (final c in codes)
-        if (!_bidiControl(c)) c,
+      for (var i = 0; i < codes.length; i++)
+        if (!_bidiControl(codes[i])) i,
     ];
   }
   final out = <int>[];
   for (final run in Bidi.resolve(codes).visualRuns) {
-    final part = codes.sublist(run.start, run.end);
-    for (final c in run.level.isOdd ? part.reversed : part) {
-      if (!_bidiControl(c)) out.add(c);
+    final order = [for (var i = run.start; i < run.end; i++) i];
+    for (final i in run.level.isOdd ? order.reversed : order) {
+      if (!_bidiControl(codes[i])) out.add(i);
     }
   }
   return out;

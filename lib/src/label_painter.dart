@@ -349,10 +349,12 @@ class LabelPainter {
         ? null
         : _faded(sprite.look.halo!, st.opacity);
     final g = shaped.glyphs;
+    final scales = shaped.scales, colors = shaped.colors;
     for (var i = 0; i < g.length; i += 5) {
       final cell = cells[i ~/ 5];
       if (cell == null) continue;
-      final k = em / ems[i ~/ 5];
+      final own = colors?[i ~/ 5] ?? 0;
+      final k = em / ems[i ~/ 5] * (scales?[i ~/ 5] ?? 1);
       final lx = left + g[i + 2] * em, ly = top + g[i + 3] * em;
       pages.add(
         cell,
@@ -360,7 +362,7 @@ class LabelPainter {
         oy + s * lx + c * ly,
         turn,
         k,
-        ink,
+        own == 0 ? ink : _faded(own, st.opacity),
         halo,
       );
     }
@@ -419,7 +421,14 @@ class LabelPainter {
       ),
     );
     final g = sprite.shaped.glyphs;
+    final scales = sprite.shaped.scales, colors = sprite.shaped.colors;
     for (var i = 0; i < g.length; i += 5) {
+      // A run of a formatted label: its own size and colour.
+      final scale = scales?[i ~/ 5] ?? 1;
+      final own = colors?[i ~/ 5] ?? 0;
+      final size = scale == 1
+          ? sixteenths
+          : (em * scale * devicePixelRatio * 16).round();
       final dx = (x + g[i + 2] * em) * devicePixelRatio - partX;
       final dy = (y + g[i + 3] * em) * devicePixelRatio - partY;
       var qx = ((dx - dx.floorToDouble()) * 8).round();
@@ -428,8 +437,19 @@ class LabelPainter {
       final oy = dy.floorToDouble() + (qy == 8 ? 1 : 0);
       qx %= 8;
       qy %= 8;
+      final key = keys[qx | qy << 3];
       final cell = pages.cell(
-        keys[qx | qy << 3],
+        size == sixteenths
+            ? key
+            : (
+                size: 0,
+                weight: 400,
+                italic: false,
+                halo: haloQuarters,
+                blur: blur,
+                sixteenths: size,
+                phase: key.phase,
+              ),
         g[i].toInt(),
         g[i + 1].toInt(),
       );
@@ -440,8 +460,8 @@ class LabelPainter {
         (ax + ux * cos - uy * sin) * k,
         (ay + ux * sin + uy * cos) * k,
         quarters * math.pi / 2,
-        k * sixteenths / 16 / pages.found.em,
-        ink,
+        k * size / 16 / pages.found.em,
+        own == 0 ? ink : _faded(own, st.opacity),
         halo,
       );
     }

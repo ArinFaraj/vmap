@@ -9,7 +9,8 @@ import 'package:vmap/src/icon_stretch.dart';
 import 'package:vmap/src/sprites.dart';
 
 /// A font whose every glyph is 10 units wide, as glyph ranges measure.
-PbfGlyph? tenWide(int c) => PbfGlyph(c, Uint8List(0), 8, 8, 1, -6, 10);
+PbfGlyph? tenWide(int face, int c) =>
+    PbfGlyph(c, Uint8List(0), 8, 8, 1, -6, 10);
 
 List<int> varint(int v) {
   final out = <int>[];

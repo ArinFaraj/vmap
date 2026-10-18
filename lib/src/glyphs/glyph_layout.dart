@@ -132,7 +132,19 @@ class GlyphFonts {
 /// Text shaped once: glyphs in visual order with their places in ems, the
 /// box's top left at 0, 0.
 class ShapedText {
-  ShapedText(this.glyphs, this.width, this.height, this.lines);
+  ShapedText(
+    this.glyphs,
+    this.width,
+    this.height,
+    this.lines, [
+    this.scales,
+    this.colors,
+  ]);
+
+  /// For a formatted label, each glyph's size against the label's, and its
+  /// colour, zero for the label's own. Null for plain text.
+  final Float32List? scales;
+  final Int32List? colors;
 
   /// Five numbers per glyph: font, glyph id, x and y of its origin on the
   /// baseline, and its advance, the last three in ems.

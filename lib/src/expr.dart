@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'color.dart';
+import 'format.dart';
 import 'place.dart';
 
 export 'color.dart';
@@ -110,7 +111,10 @@ Expr compileExpr(Object? json) {
 Expr compileText(Object? json) {
   if (json is! String || !json.contains('{')) {
     final inner = compileExpr(json);
-    return (c) => asText(inner(c)).trim();
+    return (c) {
+      final value = inner(c);
+      return value is FormattedText ? value : asText(value).trim();
+    };
   }
   final parts = <Object>[];
   final token = RegExp(r'\{([^}]*)\}');
@@ -577,7 +581,42 @@ Expr _op(String op, List<Object?> args) {
         }
         return null;
       };
-    case 'concat' || 'format':
+    case 'format':
+      final runs = <(Expr, Map<String, Expr>, bool)>[];
+      for (final a in args) {
+        if (a is Map) {
+          if (runs.isEmpty) continue;
+          final (text, _, image) = runs.removeLast();
+          runs.add((
+            text,
+            {
+              for (final MapEntry(:key, :value) in a.entries)
+                '$key': compileExpr(value),
+            },
+            image,
+          ));
+        } else {
+          runs.add((
+            compileExpr(a),
+            const <String, Expr>{},
+            a is List && a.isNotEmpty && a.first == 'image',
+          ));
+        }
+      }
+      return (c) => FormattedText([
+        for (final (text, options, image) in runs)
+          FormatSection(
+            image ? '' : asText(text(c)),
+            scale: (asNumber(options['font-scale']?.call(c)) ?? 1).toDouble(),
+            fonts: switch (options['text-font']?.call(c)) {
+              final List<Object?> names => [for (final n in names) '$n'],
+              _ => null,
+            },
+            color: Rgba.of(options['text-color']?.call(c)),
+            align: options['vertical-align']?.call(c) as String?,
+          ),
+      ]);
+    case 'concat':
       final parts = [
         for (final a in args)
           if (a is! Map) compileExpr(a),
