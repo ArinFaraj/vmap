@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'platform.dart';
 import 'style_model.dart';
-import 'tessellate.dart' show LineMesher;
+import 'tessellate.dart' show LineMesher, MeshChunk;
 import 'tile_builder.dart' show BuiltMesh;
 import 'typed_buffer.dart';
 
@@ -19,8 +19,8 @@ import 'typed_buffer.dart';
 ///   plus 2048, the second times 4096, zero for a fill;
 /// - an offset line's sideways vector, packed as the extrusion is;
 /// - the slot within its segment, plus 16384 times its kind, plus for a
-///   patterned line 131072 times where the vertex sits across it, in
-///   127ths from its left edge;
+///   line 131072 times where the vertex sits across it, in 127ths from its
+///   left edge, 64 for a vertex of a round cap or join;
 /// - the distance along the line in tile units, or for a gradient line its
 ///   share of the whole line times [progressSpan].
 class GpuStream {
@@ -77,6 +77,14 @@ class GpuStream {
     LineLayer(gradient: null) => patternedLine,
     LineLayer() => gradientLine,
     _ => -1,
+  };
+
+  /// Where a line vertex sits across its line in 127ths from its left
+  /// edge: 0 or 127 on an edge, 64 for a vertex of a round cap or join.
+  static int _edgeCode(Uint8List? edges, int v) => switch (edges?[v]) {
+    MeshChunk.edgeLeft => 0,
+    MeshChunk.edgeRight => 127,
+    _ => 64,
   };
 
   /// What a gradient line's distance along it is at its end.
@@ -152,7 +160,7 @@ class GpuStream {
         final ext = stroked ? chunk.extrusions : null;
         final off = stroked ? chunk.offsets : null;
         final along = stroked ? chunk.distances : null;
-        final across = kind == patternedLine ? along : null;
+        final edges = stroked ? chunk.edges : null;
         final n = pos.length ~/ 2;
         if (kind == circle) {
           // A circle is a square around its centre, each corner carrying
@@ -185,13 +193,7 @@ class GpuStream {
               off == null ? 0 : packPair(off[v * 2], off[v * 2 + 1]),
             )
             ..add2(
-              (slot +
-                      kind * 16384 +
-                      (across == null
-                          ? 0
-                          : (across[v * 2 + 1].clamp(0.0, 1.0) * 127).round() *
-                                131072))
-                  .toDouble(),
+              (slot + kind * 16384 + _edgeCode(edges, v) * 131072).toDouble(),
               along == null ? 0 : along[v * 2],
             );
         }

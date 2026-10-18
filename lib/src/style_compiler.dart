@@ -626,8 +626,13 @@ class StyleCompiler {
           vector,
           BucketKind.line,
           names,
-          caps:
-              dash == null && picture == null && layout['line-cap'] == 'round',
+          cap: dash != null || picture != null
+              ? LineCap.butt
+              : switch (layout['line-cap']) {
+                  'round' => LineCap.round,
+                  'square' => LineCap.square,
+                  _ => LineCap.butt,
+                },
           dashed: dash != null || picture != null || soft || ramp != null,
           edged: soft && dash == null,
           metered: ramp != null,
@@ -762,7 +767,7 @@ class StyleCompiler {
     _VectorLayer vector,
     BucketKind kind,
     Set<String> reads, {
-    bool caps = false,
+    LineCap cap = LineCap.butt,
     bool dashed = false,
     bool outline = false,
     bool offset = false,
@@ -777,7 +782,7 @@ class StyleCompiler {
       source,
       sourceLayer,
       filter,
-      caps,
+      cap.index,
       dashed,
       outline,
       offset,
@@ -793,7 +798,7 @@ class StyleCompiler {
           sourceLayer,
           compileFilter(filter),
           kind,
-          caps: caps,
+          cap: cap,
           dashed: dashed,
           outline: outline,
           offset: offset,

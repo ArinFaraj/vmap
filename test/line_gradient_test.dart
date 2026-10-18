@@ -38,7 +38,7 @@ void main() {
         0,
         3,
         0,
-        caps: false,
+        cap: LineCap.butt,
         shareBefore: 0.25,
         sharePer: 0.5 / 200,
       );

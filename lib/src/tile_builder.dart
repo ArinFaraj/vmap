@@ -547,7 +547,7 @@ class TileBuilder {
                 start,
                 end,
                 lineTolerance,
-                caps: bucket.caps,
+                cap: bucket.cap,
                 shareBefore: known
                     ? shares[r * 2]
                     : bucket.metered
@@ -570,7 +570,7 @@ class TileBuilder {
               0,
               count + 1,
               lineTolerance,
-              caps: false,
+              closed: true,
               join: bucket.outline ? LineJoin.none : null,
             );
           }

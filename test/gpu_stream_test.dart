@@ -55,7 +55,7 @@ void main() {
         0,
         3,
         0,
-        caps: false,
+        cap: LineCap.butt,
         shareBefore: bucket.metered ? 0 : null,
         sharePer: bucket.metered ? 1 / 300 : 0,
       );
@@ -99,13 +99,13 @@ void main() {
     });
   });
 
-  test('a patterned line carries where each vertex sits across it', () {
+  test('a line carries where each vertex sits across it', () {
     final stream = GpuStream.build(sheet, [mesh(1)])!;
     final across = vertices(stream, 1).map((v) => v.$2).toSet();
     expect(across, containsAll([0, 127]));
     expect(across.every((a) => a >= 0 && a <= 127), isTrue);
     final plain = GpuStream.build(sheet, [mesh(0)])!;
-    expect(vertices(plain, 0).map((v) => v.$2).toSet(), {0});
+    expect(vertices(plain, 0).map((v) => v.$2).toSet(), {0, 127});
   });
 
   test('the packed slot stays an exact float', () {

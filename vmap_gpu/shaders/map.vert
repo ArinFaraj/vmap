@@ -67,10 +67,12 @@ void main() {
     float outer = stroke.x + pixel * 0.5;
     line_pixel = pixel;
     pos = centre + ext * outer;
-    // A mitre corner reaches past the edge; faded by its own length, the
-    // segment after it would thin to a wedge. MapLibre fades by the side
-    // alone.
-    v_edge = vec3(ext / max(length(ext), 1.0), outer / pixel);
+    // As MapLibre: a vertex on an edge fades by how far across the line a
+    // pixel is, whatever its corner's shape; one of a round cap or join by
+    // its distance from the centre line point, which cuts the true arc.
+    bool round_vertex = abs(across - 64.0) < 0.5;
+    vec2 normal = round_vertex ? ext : vec2(0.0, across < 63.5 ? 1.0 : -1.0);
+    v_edge = vec3(normal, outer / pixel);
   }
   // A circle: p.x its radius and p.y its ring's width in tile units, p.z
   // its ring's colour packed as red plus 256 green plus 65536 blue, p.w the

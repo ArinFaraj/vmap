@@ -194,7 +194,7 @@ class Bucket {
     this.sourceLayer,
     this.filter,
     this.kind, {
-    this.caps = false,
+    this.cap = LineCap.butt,
     this.dashed = false,
     this.outline = false,
     this.offset = false,
@@ -213,7 +213,10 @@ class Bucket {
   final String sourceLayer;
   final bool Function(EvalContext) filter;
   final BucketKind kind;
-  final bool caps;
+
+  /// How its lines end. Dashed lines end as their dashes do instead.
+  final LineCap cap;
+  bool get caps => cap == LineCap.round;
 
   /// Keeps each vertex's distance along its line, which dashes are drawn by.
   final bool dashed;

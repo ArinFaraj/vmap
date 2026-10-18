@@ -6,10 +6,8 @@ import 'package:vmap/src/style_model.dart';
 import 'package:vmap/src/tessellate.dart';
 
 MeshChunk _corner(LineJoin join, {bool offsets = false}) {
-  final mesher = LineMesher(
-    join: join,
-    offsets: offsets,
-  )..addLine(Float64List.fromList([0, 0, 10, 0, 10, 10]), 0, 3, 0, caps: false);
+  final mesher = LineMesher(join: join, offsets: offsets)
+    ..addLine(Float64List.fromList([0, 0, 10, 0, 10, 10]), 0, 3, 0);
   return mesher.finish().single;
 }
 
@@ -45,16 +43,15 @@ void main() {
   });
 
   test('a bevel join closes the corner with one triangle', () {
-    expect(_corner(LineJoin.bevel).indices.length, 12 + 3);
+    expect(_corner(LineJoin.bevel).indices.length, 12 + 6);
     expect(_corner(LineJoin.round).indices.length, greaterThan(12 + 3));
     expect(_corner(LineJoin.none).indices.length, 12);
   });
 
   test('a mitre join gives way to a bevel on a hairpin', () {
-    final mesher = LineMesher(
-      join: LineJoin.miter,
-    )..addLine(Float64List.fromList([0, 0, 10, 0, 0, 1]), 0, 3, 0, caps: false);
-    expect(mesher.finish().single.indices.length, 12 + 3);
+    final mesher = LineMesher(join: LineJoin.miter)
+      ..addLine(Float64List.fromList([0, 0, 10, 0, 0, 1]), 0, 3, 0);
+    expect(mesher.finish().single.indices.length, 12 + 6);
   });
 
   test('offsets point to the right of the line and meet at the corner', () {
@@ -119,10 +116,16 @@ void main() {
   });
 
   test('the rim of a cap sits on the edge of a line that fades out', () {
-    MeshChunk capped({required bool edged}) => (LineMesher(
-      distances: true,
-      edged: edged,
-    )..addLine(Float64List.fromList([0, 0, 10, 0]), 0, 2, 0)).finish().single;
+    MeshChunk capped({required bool edged}) =>
+        (LineMesher(distances: true, edged: edged)..addLine(
+              Float64List.fromList([0, 0, 10, 0]),
+              0,
+              2,
+              0,
+              cap: LineCap.round,
+            ))
+            .finish()
+            .single;
     int onTheMiddle(MeshChunk chunk) => [
       for (var i = 1; i < chunk.distances!.length; i += 2)
         if (chunk.distances![i] == 0.5) i,

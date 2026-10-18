@@ -6,9 +6,15 @@ import 'package:vmap/src/tessellate.dart';
 void main() {
   test('a straight two-point line is one quad plus two round caps', () {
     final mesher = LineMesher()
-      ..addLine(Float64List.fromList([0, 0, 10, 0]), 0, 2, 0);
+      ..addLine(
+        Float64List.fromList([0, 0, 10, 0]),
+        0,
+        2,
+        0,
+        cap: LineCap.round,
+      );
     final chunk = mesher.finish().single;
-    expect(chunk.indices.length, 6 + 2 * 5 * 3);
+    expect(chunk.indices.length, 6 + 2 * 7 * 3);
     expect(
       chunk.positions.length.isEven && (chunk.positions.length ~/ 2).isEven,
       isTrue,
@@ -23,21 +29,21 @@ void main() {
         0,
         3,
         0,
-        caps: false,
+        cap: LineCap.butt,
       );
     final chunk = mesher.finish().single;
     expect(chunk.indices.length, 12);
     expect(chunk.positions.length ~/ 2, 6);
   });
 
-  test('a right-angle bend gets a round fan on the outside', () {
+  test('a right-angle bend gets a fan on the outside', () {
     final mesher = LineMesher()
       ..addLine(
         Float64List.fromList([0, 0, 10, 0, 10, 10]),
         0,
         3,
         0,
-        caps: false,
+        cap: LineCap.butt,
       );
     expect(mesher.finish().single.indices.length, greaterThan(12));
   });
