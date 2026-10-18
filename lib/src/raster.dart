@@ -571,9 +571,10 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
   /// The part of the deepest loaded tile above [z]/[x]/[y] that covers it,
   /// to draw while that tile loads or where it has none. With [ask], the
   /// nearest tile above that may come is asked for, as the tile itself will
-  /// not come.
+  /// not come. As MapLibre's `maxUnderzooming`, no more than ten zoom
+  /// levels up.
   (ui.Image, ui.Rect)? _standIn(int z, int x, int y, {required bool ask}) {
-    for (var dz = 1; dz <= z; dz++) {
+    for (var dz = 1; dz <= math.min(z, 10); dz++) {
       final pz = z - dz, px = x >> dz, py = y >> dz;
       final key = tileKey(pz, px, py);
       var above = _tiles[key];
