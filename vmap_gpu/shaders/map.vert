@@ -14,6 +14,8 @@ uniform FrameInfo {
   // The tile's corner in world pixels at the whole zoom, as MapLibre's
   // u_pixel_coord: x and y over 65536, then x and y less those.
   vec4 pattern_corner;
+  // x 1 while fills' outlines are drawn, as lines through their vertices.
+  vec4 outline_info;
 }
 frame_info;
 
@@ -38,6 +40,8 @@ out vec2 v_line;
 // Where the vertex lies in its tile, and 1 where the fragment shader cuts
 // what lies outside the tile, as the stencil does on the flat map.
 out vec3 v_clip;
+// x 1 for a fill's outline, and where the vertex lands in device pixels.
+out vec3 v_outline;
 
 const float PI = 3.141592653589793;
 
@@ -205,6 +209,23 @@ void main() {
   v_circle = vec4(corner, circle ? 1.0 + packed_data.y : 0.0, 1.0 / max(frame_info.fade.y, 1e-6));
   v_clip = vec3(pos, globe && !circle ? 1.0 : 0.0);
   gl_Position = project(pos);
+  v_outline = vec3(0.0);
+  if (frame_info.outline_info.x > 0.5) {
+    // A fill's outline: p.z its colour, packed as red plus 256 green plus
+    // 65536 blue, p.w its alpha.
+    float rgb = p.z;
+    float b = floor(rgb / 65536.0);
+    float g = floor((rgb - b * 65536.0) / 256.0);
+    float r = rgb - b * 65536.0 - g * 256.0;
+    v_color = vec4(vec3(r, g, b) / 255.0 * p.w, p.w);
+    v_uv = vec3(0.0);
+    vec2 ndc = gl_Position.xy / gl_Position.w;
+    float dpr = frame_info.fog_range.z;
+    v_outline = vec3(
+      1.0,
+      (ndc.x + 1.0) / frame_info.fade.z * dpr,
+      (1.0 - ndc.y) / frame_info.fade.w * dpr);
+  }
   if (on_screen) {
     vec2 off = corner * (p.x + p.y) * frame_info.fade.y * frame_info.fade.zw;
     gl_Position.xy += off * (fixed_size ? gl_Position.w : 1.0);

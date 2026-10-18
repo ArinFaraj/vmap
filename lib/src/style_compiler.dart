@@ -729,6 +729,15 @@ class StyleCompiler {
         opacity: compileExpr(opacity),
         pattern: image == null ? null : compileText(image),
         patternTint: image == null ? null : compileExpr(color),
+        // As MapLibre, an antialiased fill is outlined in its own colour
+        // when it names no outline colour: one pixel lines the GPU draws.
+        outline:
+            prefix == 'fill' &&
+                image == null &&
+                paint['fill-antialias'] != false &&
+                paint['fill-outline-color'] == null
+            ? compileExpr(color)
+            : null,
         perFeature: names.isNotEmpty,
         extruded: prefix == 'fill-extrusion',
       ),

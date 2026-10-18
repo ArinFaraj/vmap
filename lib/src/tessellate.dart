@@ -26,7 +26,13 @@ class MeshChunk {
     this.distances,
     this.offsets,
     this.edges,
+    this.outline,
   ]);
+
+  /// A fill's rings as pairs of vertex indices, one pair an edge, for the
+  /// outline drawn round it. Kept by the tile builder only, never sent
+  /// between isolates; null when no layer outlines the fill.
+  final Uint16List? outline;
 
   final Float32List positions;
 
@@ -80,6 +86,8 @@ class _Buffers {
   Float32List ext = Float32List(0);
   Uint8List edge = Uint8List(0);
   Uint16List idx = Uint16List(4096);
+  Uint16List lines = Uint16List(0);
+  int lineCount = 0;
   int vertexCount = 0;
   int indexCount = 0;
   final List<MeshChunk> chunks = [];
@@ -158,16 +166,27 @@ class _Buffers {
           withExtrusions
               ? Uint8List.fromList(Uint8List.sublistView(edge, 0, vertexCount))
               : null,
+          lines.isEmpty
+              ? null
+              : Uint16List.fromList(
+                  Uint16List.sublistView(lines, 0, lineCount),
+                ),
         ),
       );
     }
     vertexCount = 0;
     indexCount = 0;
+    lineCount = 0;
   }
 }
 
 class FillMesher {
+  FillMesher({this.outlines = false});
+
   final _Buffers _b = _Buffers(false);
+
+  /// Its rings are kept as edges too, for an outline.
+  final bool outlines;
 
   /// Adds one polygon: an outer ring followed by its holes, as flat x,y pairs
   /// in [coords] from point [start] to [end]. [holeStarts] are point indices
@@ -195,8 +214,28 @@ class FillMesher {
     for (var i = 0; i < triangles.length; i++) {
       idx[k++] = base + triangles[i];
     }
+    if (outlines) _ring(base, count, holeStarts);
     _b.vertexCount += count;
     _b.indexCount = k;
+  }
+
+  void _ring(int base, int count, List<int> holeStarts) {
+    if (_b.lines.length < _b.lineCount + count * 2) {
+      _b.lines = Uint16List(
+        math.max(_b.lineCount + count * 2, _b.lines.length * 2),
+      )..setRange(0, _b.lineCount, _b.lines);
+    }
+    final lines = _b.lines;
+    var k = _b.lineCount;
+    for (var r = 0; r <= holeStarts.length; r++) {
+      final from = r == 0 ? 0 : holeStarts[r - 1];
+      final to = r < holeStarts.length ? holeStarts[r] : count;
+      for (var i = from; i < to; i++) {
+        lines[k++] = base + i;
+        lines[k++] = base + (i + 1 < to ? i + 1 : from);
+      }
+    }
+    _b.lineCount = k;
   }
 
   List<MeshChunk> finish() {
@@ -708,6 +747,38 @@ class LineMesher {
     }
     _b.vertexCount = v + 1;
     return v;
+  }
+
+  /// A fill's outline round the ring of [coords] from [start] to [end]:
+  /// a quad on each edge and nothing at its corners, as MapLibre draws the
+  /// outline as one pixel lines that need no joins.
+  void addOutline(Float64List coords, int start, int end) {
+    if (end - start < 2) return;
+    _along = 0;
+    _ox = _oy = 0;
+    _shareBefore = null;
+    for (var i = start; i + 1 < end; i++) {
+      final x0 = coords[i * 2], y0 = coords[i * 2 + 1];
+      final x1 = coords[i * 2 + 2], y1 = coords[i * 2 + 3];
+      final dx = x1 - x0, dy = y1 - y0;
+      final length = math.sqrt(dx * dx + dy * dy);
+      if (length == 0) continue;
+      final nx = -dy / length, ny = dx / length;
+      _b.reserve(4, 6);
+      final a = _vertex(x0, y0, nx, ny, 0);
+      final b = _vertex(x0, y0, -nx, -ny, 1);
+      final c = _vertex(x1, y1, nx, ny, 0);
+      final d = _vertex(x1, y1, -nx, -ny, 1);
+      final idx = _b.idx;
+      var k = _b.indexCount;
+      idx[k++] = a;
+      idx[k++] = b;
+      idx[k++] = c;
+      idx[k++] = b;
+      idx[k++] = d;
+      idx[k++] = c;
+      _b.indexCount = k;
+    }
   }
 
   List<MeshChunk> finish() {

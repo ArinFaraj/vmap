@@ -6,6 +6,7 @@ in vec4 v_circle;
 in vec3 v_edge;
 in vec2 v_line;
 in vec3 v_clip;
+in vec3 v_outline;
 
 // The sprite sheet's width and height, then the gradient texture's.
 uniform FragInfo {
@@ -20,6 +21,12 @@ out vec4 frag_color;
 void main() {
   if (v_clip.z > 0.5 && (v_clip.x < 0.0 || v_clip.y < 0.0 || v_clip.x > 4096.0 || v_clip.y > 4096.0)) {
     discard;
+  }
+  if (v_outline.x > 0.5) {
+    // MapLibre's fill_outline: a one pixel line faded by how far the
+    // pixel's centre is from the line.
+    frag_color = v_color * (1.0 - smoothstep(0.0, 1.0, length(v_outline.yz - gl_FragCoord.xy)));
+    return;
   }
   vec4 color = v_color;
   if (v_circle.z > 0.5) {

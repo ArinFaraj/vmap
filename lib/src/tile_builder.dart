@@ -275,7 +275,15 @@ class TileBuilder {
       if (sheet.symbols[i].source != source) continue;
       (_symbols[sheet.symbols[i].sourceLayer] ??= []).add(i);
     }
+    if (gpu) {
+      for (final layer in sheet.layers) {
+        if (layer case FillLayer(outline: _?)) _outlined.add(layer.bucket);
+      }
+    }
   }
+
+  /// The fill buckets a layer outlines, whose rings are kept as edges.
+  final Set<int> _outlined = {};
 
   final StyleSheet sheet;
   final int source;
@@ -530,7 +538,11 @@ class TileBuilder {
             final group = groupFor(b, bucket);
             if (bucket.kind == BucketKind.fill) {
               geometry();
-              _addPolygons(group.fill ??= FillMesher(), pending, ringTolerance);
+              _addPolygons(
+                group.fill ??= FillMesher(outlines: _outlined.contains(b)),
+                pending,
+                ringTolerance,
+              );
               continue;
             }
             scaled();
@@ -600,14 +612,17 @@ class TileBuilder {
               _ring.setRange(0, count * 2, _sink.coords, start * 2);
               _ring[count * 2] = _ring[0];
               _ring[count * 2 + 1] = _ring[1];
-              mesher.addLine(
-                _ring,
-                0,
-                count + 1,
-                lineTolerance,
-                closed: true,
-                join: bucket.outline ? LineJoin.none : null,
-              );
+              if (bucket.outline) {
+                mesher.addOutline(_ring, 0, count + 1);
+              } else {
+                mesher.addLine(
+                  _ring,
+                  0,
+                  count + 1,
+                  lineTolerance,
+                  closed: true,
+                );
+              }
             }
           }
 

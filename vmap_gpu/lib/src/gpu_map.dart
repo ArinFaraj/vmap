@@ -1053,7 +1053,7 @@ class GpuMap implements MapRenderer {
 
   /// The frame info block map.vert reads: [_frameInfo]'s first 28 floats,
   /// then where it lays the tile on the globe, zero on the flat map.
-  final Float32List _mapInfo = Float32List(60);
+  final Float32List _mapInfo = Float32List(64);
   late final ByteData _mapBytes = ByteData.sublistView(_mapInfo);
 
   /// Fills [_mapInfo] for a tile [id], on [globe] when there is one.
@@ -1069,7 +1069,8 @@ class GpuMap implements MapRenderer {
       ..[56] = (cornerX >> 16).toDouble()
       ..[57] = (cornerY >> 16).toDouble()
       ..[58] = (cornerX & 0xFFFF).toDouble()
-      ..[59] = (cornerY & 0xFFFF).toDouble();
+      ..[59] = (cornerY & 0xFFFF).toDouble()
+      ..[60] = 0;
     if (globe == null) {
       out.fillRange(28, 56, 0);
       return _mapBytes;
@@ -1271,11 +1272,7 @@ class _MapPass {
         host.emplace(map._mapFrame(globe, d.tile.id, _styleZoom.floor())),
       );
     final segments = stream.segments;
-    for (var s = 0; s < segments.length; s += 3) {
-      final first = math.max(segments[s], from);
-      final count = math.min(segments[s] + segments[s + 1], to) - first;
-      if (count <= 0) continue;
-      final slotBase = segments[s + 2];
+    void bindSlots(int s) {
       final slotEnd = s + 5 < segments.length
           ? segments[s + 5]
           : stream.slots.length;
@@ -1283,25 +1280,62 @@ class _MapPass {
         _sheet,
         d,
         data,
-        slotBase,
+        segments[s + 2],
         slotEnd,
         scale,
         _context,
         _styleZoom,
         _view.bearing,
       );
-      _pass
-        ..bindUniform(map._flatSlots!, host.emplace(map._slotBytes))
-        ..bindIndexBuffer(
-          gpu.BufferView(
-            data.indexBuffer!,
-            offsetInBytes: data.indexOffset + first * 4,
-            lengthInBytes: count * 4,
-          ),
-          gpu.IndexType.int32,
-        )
-        ..drawIndexed(count);
+      _pass.bindUniform(map._flatSlots!, host.emplace(map._slotBytes));
     }
+
+    void drawIndices(int first, int count) => _pass
+      ..bindIndexBuffer(
+        gpu.BufferView(
+          data.indexBuffer!,
+          offsetInBytes: data.indexOffset + first * 4,
+          lengthInBytes: count * 4,
+        ),
+        gpu.IndexType.int32,
+      )
+      ..drawIndexed(count);
+
+    void drawRange(int from, int to) {
+      for (var s = 0; s < segments.length; s += 3) {
+        final first = math.max(segments[s], from);
+        final count = math.min(segments[s] + segments[s + 1], to) - first;
+        if (count <= 0) continue;
+        bindSlots(s);
+        drawIndices(first, count);
+      }
+    }
+
+    // As MapLibre, a fill's outline is drawn after the fill and before the
+    // next layer: lines through the fill's own vertices.
+    final outlines = stream.outlines;
+    var done = from;
+    for (var o = 0; o < outlines.length; o += 4) {
+      final layer = outlines[o];
+      if (layer < run.first || layer >= run.end) continue;
+      final end = stream.layerFirst[layer + 1];
+      if (end > done) {
+        drawRange(done, end);
+        done = end;
+      }
+      final frame = map._mapFrame(globe, d.tile.id, _styleZoom.floor());
+      map._mapInfo[60] = 1;
+      bindSlots(outlines[o + 1] * 3);
+      _pass
+        ..bindUniform(map._flatFrame!, host.emplace(frame))
+        ..setPrimitiveType(gpu.PrimitiveType.line);
+      drawIndices(outlines[o + 2], outlines[o + 3]);
+      map._mapInfo[60] = 0;
+      _pass
+        ..setPrimitiveType(gpu.PrimitiveType.triangle)
+        ..bindUniform(map._flatFrame!, host.emplace(map._mapBytes));
+    }
+    if (to > done) drawRange(done, to);
   }
 
   /// Buildings after the flat layers, with depth. The flat layers leave an

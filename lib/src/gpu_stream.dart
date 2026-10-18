@@ -32,8 +32,15 @@ class GpuStream {
     this.indices,
     this.slots,
     this.segments,
-    this.layerFirst,
-  );
+    this.layerFirst, [
+    Int32List? outlines,
+  ]) : outlines = outlines ?? Int32List(0);
+
+  /// The outlines of fills, drawn as one pixel lines through the fills'
+  /// own vertices, after the triangles in [indices]: per run of them, its
+  /// style layer, the segment whose slots it reads, its first index and
+  /// its index count, two indices a line.
+  final Int32List outlines;
 
   /// For each of the style's paint layers, the first index of its geometry,
   /// and one more entry for the end: a run of the style's layers is the
@@ -108,6 +115,7 @@ class GpuStream {
     ],
     segments,
     layerFirst,
+    outlines,
   ];
 
   static GpuStream fromMessage(List<Object?> m) {
@@ -125,6 +133,7 @@ class GpuStream {
       ],
       m[3]! as Int32List,
       m[4]! as Int32List,
+      m[5]! as Int32List,
     );
   }
 
@@ -151,6 +160,7 @@ class GpuStream {
     final segments = <int>[];
     var segmentStart = 0, segmentSlot = 0;
     final layerFirst = Int32List(sheet.layers.length + 1);
+    final edged = <(int, int, List<int>)>[];
 
     for (var p = 0; p < sheet.layers.length; p++) {
       layerFirst[p] = indices.length;
@@ -276,17 +286,39 @@ class GpuStream {
         for (final i in chunk.indices) {
           indices.add(base + i);
         }
+        final outline = chunk.outline;
+        if (kind == fill &&
+            outline != null &&
+            (layer as FillLayer).outline != null) {
+          final segment = segments.length ~/ 3;
+          final lines =
+              edged.isNotEmpty && edged.last.$1 == p && edged.last.$2 == segment
+              ? edged.last.$3
+              : (edged..add((p, segment, <int>[]))).last.$3;
+          for (final i in outline) {
+            lines.add(base + i);
+          }
+        }
       }
     }
     if (indices.isEmpty) return null;
     layerFirst[sheet.layers.length] = indices.length;
     segments.addAll([segmentStart, indices.length - segmentStart, segmentSlot]);
+    final outlines = <int>[];
+    for (final (layer, segment, lines) in edged) {
+      if (lines.isEmpty) continue;
+      outlines.addAll([layer, segment, indices.length, lines.length]);
+      for (final i in lines) {
+        indices.add(i);
+      }
+    }
     return GpuStream(
       vertices.toFloat32List(),
       indices.toList(),
       slots,
       Int32List.fromList(segments),
       layerFirst,
+      Int32List.fromList(outlines),
     );
   }
 }

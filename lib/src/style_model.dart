@@ -342,6 +342,7 @@ final class FillLayer extends MeshLayer implements PatternedLayer {
     this.pattern,
     this.extruded = false,
     this.patternTint,
+    this.outline,
   });
 
   @override
@@ -350,6 +351,10 @@ final class FillLayer extends MeshLayer implements PatternedLayer {
   /// `fill-color` of a patterned fill, which tints a pattern that is a
   /// distance field and is left out of any other.
   final Expr? patternTint;
+
+  /// The colour of the outline MapLibre draws round an antialiased fill
+  /// that names no `fill-outline-color`; null for none.
+  final Expr? outline;
 
   /// The flat stand-in of a `fill-extrusion` layer, left out where the
   /// buildings are drawn standing.

@@ -172,6 +172,15 @@ class LayerPaint {
       };
       final tint = switch (layer) {
         FillLayer(:final patternTint?) => Rgba.of(patternTint(context)),
+        FillLayer(:final outline?) => switch (Rgba.of(outline(context))) {
+          final c? => Rgba(
+            c.r,
+            c.g,
+            c.b,
+            (c.a * (asNumber(layer.opacity(context)) ?? 1)).clamp(0.0, 1.0),
+          ),
+          null => null,
+        },
         _ => null,
       };
       return LayerPaint(
@@ -296,7 +305,18 @@ class LayerPaint {
           source?.height ?? 1,
         );
       case GpuStream.fill:
-        put(r, g, b, a, tx / scale, ty / scale, 0, 0);
+        // p.zw: the outline's colour, packed as a ring's, and its alpha.
+        final tint = this.tint;
+        put(
+          r,
+          g,
+          b,
+          a,
+          tx / scale,
+          ty / scale,
+          tint == null ? 0 : _packed(tint),
+          tint?.a ?? 0,
+        );
       default:
         // A dashed line gives its dash row plus twice its cap's index and
         // the length of one repeat. Otherwise the repeat is zero, and a
