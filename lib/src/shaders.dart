@@ -17,7 +17,8 @@ double patternGrowth(double zoom) =>
 /// The repeating pictures layers are drawn through: dashes and patterns.
 class LayerShaders {
   final Map<String, _DashImage> _dashImages = {};
-  final Map<(PaintLayer, double, double, int), ui.ImageShader> _shaders = {};
+  final Map<(PaintLayer, double, double, int, Float64List?), ui.ImageShader>
+  _shaders = {};
   int _frame = 0;
   final Float64List _matrix = Float64List(16)
     ..[5] = 1
@@ -94,7 +95,7 @@ class LayerShaders {
     final line = layer is LineLayer ? layer : null;
     final blur = line?.blur;
     final gradient = line?.gradient;
-    final dash = line?.dash;
+    final dash = line?.dashAt(context.zoom);
     final pattern = switch (layer) {
       PatternedLayer(:final pattern) => pattern,
       _ => null,
@@ -103,7 +104,7 @@ class LayerShaders {
       return null;
     }
     final rgb = pattern != null || gradient != null ? 0 : color & 0xFFFFFF;
-    final key = (layer, width, scale, rgb);
+    final key = (layer, width, scale, rgb, dash);
     final made = _shaders[key];
     if (made != null) return made;
     final ui.Image image;

@@ -617,7 +617,10 @@ class StyleCompiler {
     ]);
     final beside = paint['line-offset'];
     final blur = paint['line-blur'];
-    final dash = _dash(paint['line-dasharray']);
+    final dashStops = _dashStops(paint['line-dasharray']);
+    final dash = dashStops.isEmpty
+        ? _dash(paint['line-dasharray'])
+        : dashStops.first.$2;
     final own = compileExpr(paint['line-width'] ?? 1);
     final gap = paint['line-gap-width'];
     Expr width = own;
@@ -670,6 +673,7 @@ class StyleCompiler {
         offset: _maybe(beside),
         blur: soft ? compileExpr(blur) : null,
         dash: picture == null ? dash : null,
+        dashStops: picture == null ? dashStops : const [],
         dashCap: switch (layout['line-cap']) {
           'round' => DashCap.round,
           'square' => DashCap.square,
@@ -994,6 +998,35 @@ class StyleCompiler {
         if (asNumber(v) case final n?) n.toDouble(),
     ];
     return out.isEmpty ? [fallback] : out;
+  }
+
+  /// A `line-dasharray` that changes with the zoom, as legacy stops or a
+  /// `step` on the zoom; empty for any other.
+  static List<(double, Float64List)> _dashStops(Object? json) {
+    final pairs = <(Object?, Object?)>[];
+    if (json case {'stops': final List<Object?> stops}
+        when json['property'] == null) {
+      for (final s in stops) {
+        if (s case [final zoom, final value]) pairs.add((zoom, value));
+      }
+    } else if (json case ['step', ['zoom'], final first, ...final rest]) {
+      pairs.add((double.negativeInfinity, first));
+      for (var i = 0; i + 1 < rest.length; i += 2) {
+        pairs.add((rest[i], rest[i + 1]));
+      }
+    } else {
+      return const [];
+    }
+    final out = <(double, Float64List)>[];
+    for (final (zoom, value) in pairs) {
+      final z = zoom is double && zoom.isInfinite
+          ? zoom
+          : asNumber(zoom)?.toDouble();
+      final d = _dash(value);
+      if (z == null || d == null) return const [];
+      out.add((z, d));
+    }
+    return out;
   }
 
   static Float64List? _dash(Object? json) {

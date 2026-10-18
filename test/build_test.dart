@@ -302,6 +302,54 @@ void main() {
       );
     });
 
+    test('dashes that change with the zoom hold from each stop', () {
+      final sheet = compile([
+        {
+          'type': 'line',
+          'source-layer': 'transportation',
+          'paint': {
+            'line-dasharray': {
+              'stops': [
+                [
+                  0,
+                  [1, 1],
+                ],
+                [
+                  2,
+                  [2, 2],
+                ],
+              ],
+            },
+          },
+        },
+        {
+          'type': 'line',
+          'source-layer': 'transportation',
+          'paint': {
+            'line-dasharray': [
+              'step',
+              ['zoom'],
+              [
+                'literal',
+                [3, 1],
+              ],
+              5,
+              [
+                'literal',
+                [1, 3],
+              ],
+            ],
+          },
+        },
+      ]);
+      final legacy = sheet.layers[0] as LineLayer;
+      expect(legacy.dashAt(1), [1, 1]);
+      expect(legacy.dashAt(2), [2, 2]);
+      final step = sheet.layers[1] as LineLayer;
+      expect(step.dashAt(4.9), [3, 1]);
+      expect(step.dashAt(5), [1, 3]);
+    });
+
     test('a symbol layer keeps its icon, anchor and offset', () {
       final sheet = compile([
         {

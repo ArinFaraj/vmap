@@ -362,6 +362,7 @@ final class LineLayer extends MeshLayer
     this.offset,
     this.blur,
     this.dash,
+    this.dashStops = const [],
     this.dashCap = DashCap.butt,
     this.pattern,
     this.gradient,
@@ -382,8 +383,23 @@ final class LineLayer extends MeshLayer
   /// How far in from its edges a line fades out, in logical pixels.
   final Expr? blur;
 
-  /// Lengths of dashes and gaps in turn, in line widths.
+  /// Lengths of dashes and gaps in turn, in line widths; the first of
+  /// [dashStops] when the dashes change with the zoom.
   final Float64List? dash;
+
+  /// The dashes from each zoom up, in order, when they change with it.
+  final List<(double, Float64List)> dashStops;
+
+  /// The dashes at [zoom]. As MapLibre's dash arrays, which do not
+  /// blend, each holds from its zoom to the next.
+  Float64List? dashAt(double zoom) {
+    var at = dash;
+    for (final (from, d) in dashStops) {
+      if (zoom < from) break;
+      at = d;
+    }
+    return at;
+  }
 
   /// A round or square cap makes every dash half a line width longer at
   /// each end.

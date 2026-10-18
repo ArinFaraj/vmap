@@ -105,7 +105,7 @@ class LayerPaint {
         if (gap > 0 && width > 0) gapShare = (gap / width).clamp(0.0, 1.0);
         if (layer.outline) gapShare = -outlineCode;
         offset = (asNumber(layer.offset?.call(context)) ?? 0).toDouble();
-        if (layer.dash case final dash?) {
+        if (layer.dashAt(styleZoom) case final dash?) {
           // As MapLibre's line-floorwidth: dashes are as long as the line
           // is wide at the zoom level's floor.
           final zoom = context.zoom;

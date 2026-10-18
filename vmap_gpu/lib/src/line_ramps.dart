@@ -16,7 +16,7 @@ class LineRamps {
 
   StyleSheet? _sheet;
   final Map<int, double> _gradients = {};
-  final Map<int, double> _dashes = {};
+  final Map<int, List<double>> _dashes = {};
 
   /// Null while the style has no gradient or dashed lines.
   gpu.Texture? texture;
@@ -25,9 +25,18 @@ class LineRamps {
   /// texture's top to 1 at its bottom; null for a layer without one.
   double? gradientOf(int layer) => _gradients[layer];
 
-  /// Where the dash row of style layer [layer] is, as [gradientOf]; null
-  /// for a layer without dashes.
-  double? dashOf(int layer) => _dashes[layer];
+  /// Where the dash row of style layer [layer] at style zoom [zoom] is, as
+  /// [gradientOf]; null for a layer without dashes.
+  double? dashOf(int layer, double zoom) {
+    final rows = _dashes[layer];
+    if (rows == null) return null;
+    final line = _sheet!.layers[layer] as LineLayer;
+    var at = 0;
+    for (var i = 0; i < line.dashStops.length; i++) {
+      if (zoom >= line.dashStops[i].$1) at = i;
+    }
+    return rows[math.min(at, rows.length - 1)];
+  }
 
   void update(StyleSheet sheet, EvalContext context) {
     if (identical(sheet, _sheet)) return;
@@ -46,7 +55,13 @@ class LineRamps {
         dashes.add((i, line));
       }
     }
-    final rows = ramps.length + dashes.length;
+    final patterns = [
+      for (final (_, line) in dashes)
+        line.dashStops.isEmpty
+            ? [line.dash!]
+            : [for (final (_, d) in line.dashStops) d],
+    ];
+    final rows = ramps.length + patterns.fold<int>(0, (n, p) => n + p.length);
     if (rows == 0) return;
     final bytes = Uint8List(width * rows * 4);
     int byte(double v) => (v.clamp(0.0, 1.0) * 255).round();
@@ -67,23 +82,27 @@ class LineRamps {
       }
     }
     context.progress = 0;
+    var row = ramps.length;
     for (var k = 0; k < dashes.length; k++) {
-      final row = ramps.length + k;
       final (layer, line) = dashes[k];
-      _dashes[layer] = (row + 0.5) / rows;
-      final distances = dashDistances(
-        line.dash!,
-        width,
-        dots: line.dashCap == DashCap.round,
-      );
-      for (var x = 0; x < width; x++) {
-        final v = byte(0.5 + distances[x] * 254 / 255);
-        final o = (row * width + x) * 4;
-        bytes
-          ..[o] = v
-          ..[o + 1] = v
-          ..[o + 2] = v
-          ..[o + 3] = v;
+      final at = _dashes[layer] = [];
+      for (final dash in patterns[k]) {
+        at.add((row + 0.5) / rows);
+        final distances = dashDistances(
+          dash,
+          width,
+          dots: line.dashCap == DashCap.round,
+        );
+        for (var x = 0; x < width; x++) {
+          final v = byte(0.5 + distances[x] * 254 / 255);
+          final o = (row * width + x) * 4;
+          bytes
+            ..[o] = v
+            ..[o + 1] = v
+            ..[o + 2] = v
+            ..[o + 3] = v;
+        }
+        row++;
       }
     }
     try {
