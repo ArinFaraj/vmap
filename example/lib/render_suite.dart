@@ -20,6 +20,10 @@ const _out = String.fromEnvironment(
   defaultValue: '/tmp/vmap_render_suite',
 );
 const _filter = String.fromEnvironment('FILTER');
+
+/// tool/render_suite_out_of_scope.tsv: tests of what a Flutter map has no
+/// part in, each id and why, left out of the score in scope.
+const _outOfScope = String.fromEnvironment('OUT_OF_SCOPE');
 const _port = int.fromEnvironment('PORT', defaultValue: 2900);
 const _gpu = bool.fromEnvironment('GPU');
 const _multisample = bool.fromEnvironment('MULTISAMPLE', defaultValue: true);
@@ -150,6 +154,17 @@ Future<void> _runAll() async {
     'render suite: $passed of ${all.length} passed, '
     '${all.length - passed - errored} failed, $errored errored',
   );
+  if (_outOfScope.isNotEmpty) {
+    final left = {
+      for (final line in File(_outOfScope).readAsLinesSync())
+        if (line.contains('\t')) line.split('\t').first,
+    };
+    final scoped = all.where((r) => !left.contains(r.id));
+    debugPrint(
+      'in scope: ${scoped.where((r) => r.ok).length} of ${scoped.length} '
+      'passed, ${all.length - scoped.length} out of scope',
+    );
+  }
 }
 
 Future<_Result> _runOne(String id, String dir) async {

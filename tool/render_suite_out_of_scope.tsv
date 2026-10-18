@@ -1,0 +1,97 @@
+canvas/default	an HTML canvas source
+canvas/power-of-two	an HTML canvas source
+canvas/update	an HTML canvas source
+circle-sort-key/data-driven	MapLibre's debug overlays
+custom-layer-js/depth	a custom layer drawn by JavaScript and WebGL
+custom-layer-js/null-island	a custom layer drawn by JavaScript and WebGL
+custom-layer-js/null-island-terrain	a custom layer drawn by JavaScript and WebGL
+custom-layer-js/tent-3d	a custom layer drawn by JavaScript and WebGL
+custom-layer-js/uniform-buffer-bindings	a custom layer drawn by JavaScript and WebGL
+debug/collision	MapLibre's debug overlays
+debug/collision-horizon-cutoff	MapLibre's debug overlays
+debug/collision-icon-text-line-translate	MapLibre's debug overlays
+debug/collision-icon-text-point-translate	MapLibre's debug overlays
+debug/collision-lines	MapLibre's debug overlays
+debug/collision-lines-large-font	MapLibre's debug overlays
+debug/collision-lines-notocjk	MapLibre's debug overlays
+debug/collision-lines-overscaled	MapLibre's debug overlays
+debug/collision-lines-pitched	MapLibre's debug overlays
+debug/collision-lines-pitched-2	MapLibre's debug overlays
+debug/collision-lines-simple-words	MapLibre's debug overlays
+debug/collision-lines-simple-words-pitched	MapLibre's debug overlays
+debug/collision-overscaled	MapLibre's debug overlays
+debug/collision-pitch-with-map-distant	MapLibre's debug overlays
+debug/collision-pitched	MapLibre's debug overlays
+debug/collision-pitched-wrapped	MapLibre's debug overlays
+debug/collision-text-translate/rotation-alignment-map/pitch-alignment-map/text-translate-anchor-map	MapLibre's debug overlays
+debug/collision-text-translate/rotation-alignment-map/pitch-alignment-map/text-translate-anchor-viewport	MapLibre's debug overlays
+debug/collision-text-translate/rotation-alignment-map/pitch-alignment-viewport/text-translate-anchor-map	MapLibre's debug overlays
+debug/collision-text-translate/rotation-alignment-map/pitch-alignment-viewport/text-translate-anchor-viewport	MapLibre's debug overlays
+debug/collision-text-translate/rotation-alignment-viewport/pitch-alignment-map/text-translate-anchor-map	MapLibre's debug overlays
+debug/collision-text-translate/rotation-alignment-viewport/pitch-alignment-map/text-translate-anchor-viewport	MapLibre's debug overlays
+debug/collision-text-translate/rotation-alignment-viewport/pitch-alignment-viewport/text-translate-anchor-map	MapLibre's debug overlays
+debug/collision-text-translate/rotation-alignment-viewport/pitch-alignment-viewport/text-translate-anchor-viewport	MapLibre's debug overlays
+debug/collision-variable-anchor/base	MapLibre's debug overlays
+debug/collision-variable-anchor/pitched	MapLibre's debug overlays
+debug/collision-variable-anchor/pitched-and-rotated	MapLibre's debug overlays
+debug/collision-variable-anchor/rotated	MapLibre's debug overlays
+debug/overdraw	MapLibre's debug overlays
+debug/padding/ease-to-btm-distort	MapLibre's debug overlays
+debug/padding/ease-to-left-distort	MapLibre's debug overlays
+debug/padding/ease-to-no-distort	MapLibre's debug overlays
+debug/padding/ease-to-right-distort	MapLibre's debug overlays
+debug/padding/ease-to-top-distort	MapLibre's debug overlays
+debug/padding/set-padding	MapLibre's debug overlays
+debug/raster	MapLibre's debug overlays
+debug/tile	MapLibre's debug overlays
+debug/tile-raster	MapLibre's debug overlays
+icon-padding/databind	MapLibre's debug overlays
+icon-padding/default	MapLibre's debug overlays
+icon-rotate/with-offset	MapLibre's debug overlays
+mlt/render-layers/render-building	MapLibre's debug overlays
+mlt/render-layers/render-housenr	MapLibre's debug overlays
+mlt/render-layers/render-labels	MapLibre's debug overlays
+mlt/render-layers/render-landcover	MapLibre's debug overlays
+mlt/render-layers/render-landcover-untessellated	MapLibre's debug overlays
+mlt/render-layers/render-roads	MapLibre's debug overlays
+mlt/render-layers/render-water	MapLibre's debug overlays
+projection/globe/collision-icon-text-translate-map	MapLibre's debug overlays
+projection/globe/collision-text-line-equator	MapLibre's debug overlays
+projection/globe/collision-text-line-pole-to-pole	MapLibre's debug overlays
+projection/globe/collision-text-pitched-rotated	MapLibre's debug overlays
+projection/globe/collision-text-point-pole-to-pole	MapLibre's debug overlays
+projection/globe/collision-text-variable-anchor/base	MapLibre's debug overlays
+projection/globe/collision-text-variable-anchor/pitched	MapLibre's debug overlays
+projection/globe/collision-text-variable-anchor/pitched-and-rotated	MapLibre's debug overlays
+projection/globe/collision-text-variable-anchor/rotated	MapLibre's debug overlays
+projection/globe/custom/tent-3d-globe	a custom layer drawn by JavaScript and WebGL
+projection/globe/custom/tent-3d-globe-occlusion	a custom layer drawn by JavaScript and WebGL
+projection/globe/custom/tent-3d-globe-zoomed	a custom layer drawn by JavaScript and WebGL
+projection/globe/terrain/collision-icon-text-translate-map	MapLibre's debug overlays
+projection/globe/terrain/collision-text-line-equator	MapLibre's debug overlays
+projection/globe/terrain/collision-text-line-pole-to-pole	MapLibre's debug overlays
+projection/globe/terrain/collision-text-pitched-rotated	MapLibre's debug overlays
+projection/globe/terrain/collision-text-point-pole-to-pole	MapLibre's debug overlays
+projection/globe/terrain/collision-text-variable-anchor/base	MapLibre's debug overlays
+projection/globe/terrain/collision-text-variable-anchor/pitched	MapLibre's debug overlays
+projection/globe/terrain/collision-text-variable-anchor/pitched-and-rotated	MapLibre's debug overlays
+projection/globe/terrain/collision-text-variable-anchor/rotated	MapLibre's debug overlays
+projection/globe/terrain/custom/tent-3d-globe	a custom layer drawn by JavaScript and WebGL
+projection/globe/terrain/custom/tent-3d-globe-occlusion	a custom layer drawn by JavaScript and WebGL
+raster-masking/overlapping-zoom	MapLibre's debug overlays
+regressions/mapbox-gl-js#4647	MapLibre's debug overlays
+regressions/mapbox-gl-js#5911	MapLibre's debug overlays
+regressions/mapbox-gl-js#5911a	MapLibre's debug overlays
+regressions/mapbox-gl-js#6919	MapLibre's debug overlays
+regressions/mapbox-gl-js#7708	a custom layer drawn by JavaScript and WebGL
+sky/roll/roll45-with-text	MapLibre's debug overlays
+symbol-height-offset/collision-with-grounded-symbol	MapLibre's debug overlays
+symbol-placement/line-center	MapLibre's debug overlays
+symbol-placement/line-overscaled-debug	MapLibre's debug overlays
+text-offset/line-collision	MapLibre's debug overlays
+text-pitch-alignment/map-text-rotation-alignment-viewport-debug	MapLibre's debug overlays
+text-rotate/with-offset	MapLibre's debug overlays
+text-variable-anchor-offset/icon-text-fit-collision-box	MapLibre's debug overlays
+text-variable-anchor/icon-text-fit-collision-box	MapLibre's debug overlays
+text-variable-anchor/pitched-rotated-debug	MapLibre's debug overlays
+video/default	an HTML video source

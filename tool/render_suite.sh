@@ -45,14 +45,16 @@ trap 'kill $server $mvt 2>/dev/null || true' EXIT
 
 mkdir -p "$out"
 printf '%s\n' "$filter" >"$out/filter"
+scope="$(cd "$(dirname "$0")" && pwd)/render_suite_out_of_scope.tsv"
 cd "$(dirname "$0")/../example"
 VMAP_BACKGROUND=1 flutter run -d macos --profile -t lib/render_suite.dart \
   --dart-define=SUITE="$suite" \
   --dart-define=OUT="$out" \
   --dart-define=FILTER="$filter" \
+  --dart-define=OUT_OF_SCOPE="$scope" \
   --dart-define=PORT="$port" \
   --dart-define=GPU="$gpu" \
   --dart-define=MULTISAMPLE="${MULTISAMPLE:-true}" \
   --dart-define=PARALLEL="${PARALLEL:-6}" >"$out/run.log" 2>&1 || true
-grep -E '^flutter: render suite:' "$out/run.log" || tail -20 "$out/run.log"
+grep -E '^flutter: (render suite|in scope):' "$out/run.log" || tail -20 "$out/run.log"
 echo "report: $out/index.html"
