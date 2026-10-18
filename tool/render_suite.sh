@@ -14,7 +14,7 @@ filter=${3:-}
 gpu=false
 if [ "${4:-}" = "--gpu" ]; then gpu=true; fi
 suite="$(cd "$checkout/test/integration" && pwd)"
-port=2900
+port=${PORT:-2900}
 
 # The stock server listens with a queue of 5, which drops connections
 # when several tests load at once.
