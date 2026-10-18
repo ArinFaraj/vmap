@@ -224,8 +224,8 @@ class VmapStyleEdit {
     return _resolveState({...document, 'layers': layers}, state);
   }
 
-  /// [document] with every `['global-state', name]` in its layers, sky and
-  /// terrain replaced by the value [state] gives that name, so the workers
+  /// [document] with every `['global-state', name]` in its layers, sky,
+  /// terrain and light replaced by the value [state] gives that name, so the workers
   /// that compile the layers need no state of their own.
   static Map<String, Object?> _resolveState(
     Map<String, Object?> document,
@@ -264,7 +264,7 @@ class VmapStyleEdit {
     }
 
     Map<String, Object?>? out;
-    for (final key in const ['layers', 'sky', 'terrain']) {
+    for (final key in const ['layers', 'sky', 'terrain', 'light']) {
       final part = document[key];
       final walked = walk(part);
       if (!identical(walked, part)) (out ??= {...document})[key] = walked;
