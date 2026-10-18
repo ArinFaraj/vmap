@@ -21,12 +21,12 @@ void main() {
       },
     });
     // At zoom 1 the line runs from the middle of the left tile to the
-    // middle of the right one. A tile keeps a little of what lies past its
-    // edge, so the right piece starts just short of half way.
+    // middle of the right one. A tile keeps a quarter tile of a line past
+    // its edge, so the right piece starts a quarter of the way along.
     final left = tiles.tile(1, 0, 1).single.features.single as MeasuredFeature;
     final right = tiles.tile(1, 1, 1).single.features.single as MeasuredFeature;
     expect(left.lineMetrics![0], 0);
-    expect(right.lineMetrics![0], closeTo(0.5, 0.04));
+    expect(right.lineMetrics![0], closeTo(0.25, 0.01));
     expect(left.lineMetrics![1], closeTo(1 / tileExtent, 1e-9));
     expect(right.lineMetrics![1], left.lineMetrics![1]);
   });

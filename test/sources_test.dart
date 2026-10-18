@@ -86,7 +86,7 @@ void main() {
     final sink = GeometrySink();
     features.single.readGeometry(sink);
     expect(sink.coords[0], closeTo(4096 * (170 / 180), 1));
-    expect(sink.coords[2], 4096 + 128);
+    expect(sink.coords[2], closeTo(4096 * (190 / 180), 1));
     expect(tiles.tile(2, 3, 3), isEmpty);
   });
 

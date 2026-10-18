@@ -35,8 +35,14 @@ class GeoJsonTiles {
   /// The clusters of the source's points, when it gathers them.
   PointClusters? get clusters => _clusters;
 
-  /// Kept around a tile so lines and outlines do not end at its edge.
+  /// Kept around a tile so outlines do not end at its edge.
   static const double _buffer = 128;
+
+  /// Kept around a tile for lines: MapLibre's GeoJSON buffer, 128 pixels of
+  /// a 512 pixel tile, which sets where a dashed line's dashes start in the
+  /// tile. Polygons keep [_buffer], as their walls along the cut would show
+  /// on buildings.
+  static const double _lineBuffer = tileExtent * 128 / 512;
 
   int get featureCount => _features.length;
 
@@ -178,14 +184,16 @@ class GeoJsonTiles {
   List<TileLayer> tile(int z, int x, int y) {
     final n = (1 << z).toDouble();
     final pad = _buffer / tileExtent / n;
+    final linePad = _lineBuffer / tileExtent / n;
     final left = x / n, top = y / n;
     final right = (x + 1) / n, bottom = (y + 1) / n;
     final out = <TileFeature>[];
     for (final f in _features) {
-      if (f.maxX < left - pad ||
-          f.minX > right + pad ||
-          f.maxY < top - pad ||
-          f.minY > bottom + pad) {
+      final reach = f.type == mvtLine ? linePad : pad;
+      if (f.maxX < left - reach ||
+          f.minX > right + reach ||
+          f.maxY < top - reach ||
+          f.minY > bottom + reach) {
         continue;
       }
       final rings = <Float64List>[];
@@ -236,6 +244,8 @@ class GeoJsonTiles {
 
   static const double _lo = -_buffer;
   static const double _hi = tileExtent + _buffer;
+  static const double _lineLo = -_lineBuffer;
+  static const double _lineHi = tileExtent + _lineBuffer;
 
   /// Cuts a line at the padded tile edge into the pieces inside it, notes
   /// in [starts] how far along the line each piece begins, and returns the
@@ -285,10 +295,10 @@ class GeoJsonTiles {
         }
       }
 
-      edge(-dx, x0 - _lo);
-      edge(dx, _hi - x0);
-      edge(-dy, y0 - _lo);
-      edge(dy, _hi - y0);
+      edge(-dx, x0 - _lineLo);
+      edge(dx, _lineHi - x0);
+      edge(-dy, y0 - _lineLo);
+      edge(dy, _lineHi - y0);
       if (!inside) {
         flush();
         continue;
