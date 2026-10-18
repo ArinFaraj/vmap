@@ -169,8 +169,11 @@ class LabelView {
     final by = translate(context);
     if (by is! List || by.length != 2) return (0, 0);
     final x = asNumber(by[0]) ?? 0, y = asNumber(by[1]) ?? 0;
-    return onScreen || rotation == 0
-        ? (x, y)
-        : (x * cos - y * sin, x * sin + y * cos);
+    // A projected frame is upright, its turn in the view's bearing.
+    final view = tilted;
+    final turn = view == null ? rotation : -view.bearing * math.pi / 180;
+    if (onScreen || turn == 0) return (x, y);
+    final c = math.cos(turn), s = math.sin(turn);
+    return (x * c - y * s, x * s + y * c);
   }
 }
