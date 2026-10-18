@@ -75,7 +75,8 @@ void main() {
     // A line drawn as two: -v_dash.y is the gap's share of the half width,
     // its inner edge faded the same way.
     if (v_dash.y < 0.0) {
-      color *= clamp(v_edge.z * (across + v_dash.y) + 0.5, 0.0, 1.0);
+      float inner = across * v_edge.z + v_dash.y * (v_edge.z - 0.5);
+      color *= clamp((inner - 0.5) * v_line.y + 1.0, 0.0, 1.0);
     }
   }
   frag_color = color;
