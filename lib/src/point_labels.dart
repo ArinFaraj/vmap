@@ -330,13 +330,17 @@ class PointLabels {
       if (k >= 0 && at == previous) continue;
       final (ax, ay) = anchorSides(sides[at]);
       final double fx, fy;
+      // As MapLibre's calculateVariableLayoutShift: by half the text's
+      // collision box, which its padding is part of.
+      final halfW = spot.textW / 2 + spot.textPad;
+      final halfH = spot.textH / 2 + spot.textPad;
       if (away != null) {
         final reach = ax != 0 && ay != 0 ? away / math.sqrt2 : away;
-        fx = moved.$1 + ax * (reach + spot.textW / 2);
-        fy = moved.$2 + ay * (reach + spot.textH / 2);
+        fx = moved.$1 + ax * (reach + halfW);
+        fy = moved.$2 + ay * (reach + halfH);
       } else {
-        fx = moved.$1 + ax * ((ems.$1 * fontSize).abs() + spot.textW / 2);
-        fy = moved.$2 + ay * ((ems.$2 * fontSize).abs() + spot.textH / 2);
+        fx = moved.$1 + ax * ((ems.$1 * fontSize).abs() + halfW);
+        fy = moved.$2 + ay * ((ems.$2 * fontSize).abs() + halfH);
       }
       if (!symbol.textOverlaps && _textHits(spot, fx, fy - ay * baseline)) {
         continue;
