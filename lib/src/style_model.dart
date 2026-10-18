@@ -706,6 +706,7 @@ class SymbolLayer {
     this.iconTextFitPadding = const [0, 0, 0, 0],
     this.anchors = const [],
     this.radialOffset,
+    this.anchorOffsets,
     this.iconAnchor = 'center',
     this.iconOffsetX = 0,
     this.iconOffsetBy,
@@ -822,6 +823,11 @@ class SymbolLayer {
   /// way it lies, in ems. Set, even to 0, it is used instead of
   /// `text-offset` with variable anchors.
   final double? radialOffset;
+
+  /// `text-variable-anchor-offset`: the text's offset in ems for each of
+  /// [anchors], as given, which wins over every other offset. Null when the
+  /// layer gives anchors alone.
+  final List<(double, double)>? anchorOffsets;
 
   /// Which part of the icon sits on the point.
   final String iconAnchor;

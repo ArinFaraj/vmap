@@ -436,7 +436,10 @@ class StyleCompiler {
     final textUpright = layout['text-rotation-alignment'] == 'viewport';
     final iconUpright = layout['icon-rotation-alignment'] == 'viewport';
     final anchor = layout['text-anchor'];
-    final anchors = layout['text-variable-anchor'];
+    final (anchors, anchorOffsets) = _anchorOffsets(
+      layout['text-variable-anchor-offset'],
+      layout['text-variable-anchor'],
+    );
     final iconAnchor = layout['icon-anchor'];
     final iconOffset = _pair(layout['icon-offset']);
     final paintKeys = <String>{};
@@ -533,9 +536,8 @@ class StyleCompiler {
           ],
           _ => const [0, 0, 0, 0],
         },
-        anchors: anchors is List
-            ? anchors.whereType<String>().toList()
-            : const [],
+        anchors: anchors,
+        anchorOffsets: anchorOffsets,
         radialOffset: asNumber(layout['text-radial-offset'])?.toDouble(),
         iconAnchor: iconAnchor is String ? iconAnchor : 'center',
         iconOffsetX: iconOffset.$1,
@@ -1027,6 +1029,31 @@ class StyleCompiler {
         final String mode => mode,
         _ => layout['$kind-allow-overlap'] == true ? 'always' : 'never',
       };
+
+  /// The anchors a symbol may take and, from `text-variable-anchor-offset`,
+  /// which wins over [anchors], the offset in ems of each.
+  static (List<String>, List<(double, double)>?) _anchorOffsets(
+    Object? withOffsets,
+    Object? anchors,
+  ) {
+    var list = withOffsets;
+    if (list case ['literal', final List<Object?> inner]) list = inner;
+    if (list is List && list.length >= 2) {
+      final names = <String>[];
+      final offsets = <(double, double)>[];
+      for (var i = 0; i + 1 < list.length; i += 2) {
+        if (list[i] case final String name) {
+          names.add(name);
+          offsets.add(_pair(list[i + 1]));
+        }
+      }
+      if (names.isNotEmpty) return (names, offsets);
+    }
+    return (
+      anchors is List ? anchors.whereType<String>().toList() : const [],
+      null,
+    );
+  }
 
   static bool _isPair(Object? json) =>
       json == null ||

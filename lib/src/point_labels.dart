@@ -334,6 +334,19 @@ class PointLabels {
       // collision box, which its padding is part of.
       final halfW = spot.textW / 2 + spot.textPad;
       final halfH = spot.textH / 2 + spot.textPad;
+      final given = symbol.anchorOffsets;
+      if (given != null) {
+        // As MapLibre's getTextVariableAnchorOffset: the offset as given,
+        // with the baseline shift of a text above or below its point.
+        fx = moved.$1 + ax * halfW + given[at].$1 * fontSize;
+        fy = moved.$2 + ay * halfH + given[at].$2 * fontSize - ay * baseline;
+        if (!symbol.textOverlaps && _textHits(spot, fx, fy)) continue;
+        st
+          ..side = at
+          ..dx = fx
+          ..dy = fy;
+        return true;
+      }
       if (away != null) {
         final reach = ax != 0 && ay != 0 ? away / math.sqrt2 : away;
         fx = moved.$1 + ax * (reach + halfW);
