@@ -59,6 +59,10 @@ abstract class MapRenderer {
   /// draws them. Set before each [paint].
   List<RasterPiece> rasters = const [];
 
+  /// The state the app gave single features, by their ids, indexed by the
+  /// style's sources, for `feature-state`. Set before each [paint].
+  List<Map<Object, Map<String, Object?>>?> states = const [];
+
   /// Lets go of the memory of tiles not drawn in the last frame.
   void trimMemory() {}
 
