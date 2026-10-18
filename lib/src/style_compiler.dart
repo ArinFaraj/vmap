@@ -460,7 +460,7 @@ class StyleCompiler {
       SymbolBuild.minZoomKey: layer.minZoom,
       SymbolBuild.maxZoomKey: layer.maxZoom,
       SymbolBuild.sortKeyKey: layout['symbol-sort-key'],
-      SymbolBuild.iconRotateKey: asNumber(layout['icon-rotate']) ?? 0,
+      SymbolBuild.iconRotateKey: layout['icon-rotate'] ?? 0,
       SymbolBuild.paintKeysKey: paintKeys.toList()..sort(),
     });
     _symbols.add(

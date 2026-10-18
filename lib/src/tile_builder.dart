@@ -638,6 +638,10 @@ class TileBuilder {
             final along = placement.startsWith('line');
             final base = (sheet.symbols.length - 1 - s) * 4096;
             final order = _order(symbol, context);
+            final spin =
+                (asNumber(symbol.build.iconRotate(context)) ?? 0) *
+                math.pi /
+                180;
             final carried = symbol.build.paintKeys.isEmpty
                 ? null
                 : {
@@ -660,6 +664,7 @@ class TileBuilder {
                   at.$2,
                   null,
                   icon: icon,
+                  angle: spin,
                   spaced: true,
                 )..props = carried,
               );
@@ -668,7 +673,7 @@ class TileBuilder {
             if (f.type == mvtPoint) {
               if (along) continue;
               scaled();
-              final label = _pointLabel(s, base + order, text, icon);
+              final label = _pointLabel(s, base + order, text, icon, spin);
               if (label != null) labels.add(label..props = carried);
               continue;
             }
@@ -731,7 +736,7 @@ class TileBuilder {
                     y,
                     null,
                     icon: icon,
-                    angle: symbol.build.iconRotate * math.pi / 180,
+                    angle: spin,
                   )..props = carried,
                 );
               }
@@ -753,9 +758,7 @@ class TileBuilder {
                   y,
                   null,
                   icon: icon,
-                  angle: turns
-                      ? angle + symbol.build.iconRotate * math.pi / 180
-                      : symbol.build.iconRotate * math.pi / 180,
+                  angle: turns ? angle + spin : spin,
                   spaced: true,
                   turns: turns,
                 )..props = carried,
@@ -1033,12 +1036,27 @@ class TileBuilder {
     return value is num ? value.round().clamp(0, 4095) : 50;
   }
 
-  BuiltLabel? _pointLabel(int layer, int priority, String text, String icon) {
+  BuiltLabel? _pointLabel(
+    int layer,
+    int priority,
+    String text,
+    String icon,
+    double angle,
+  ) {
     if (_sink.coordCount < 2) return null;
     final x = _sink.coords[0];
     final y = _sink.coords[1];
     if (x < 0 || y < 0 || x >= tileExtent || y >= tileExtent) return null;
-    return BuiltLabel(layer, priority, text, x, y, null, icon: icon);
+    return BuiltLabel(
+      layer,
+      priority,
+      text,
+      x,
+      y,
+      null,
+      icon: icon,
+      angle: angle,
+    );
   }
 
   /// How long [text] is in ems at [symbol]'s letter spacing, as MapLibre

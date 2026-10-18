@@ -621,7 +621,7 @@ class SymbolBuild {
         null => null,
         final key => compileExpr(key),
       },
-      iconRotate = (json[iconRotateKey]! as num).toDouble(),
+      iconRotate = compileExpr(json[iconRotateKey] ?? 0),
       paintKeys = (json[paintKeysKey]! as List).cast<String>();
 
   final String signature;
@@ -650,8 +650,8 @@ class SymbolBuild {
   /// the one with the lower number gets it.
   final Expr? sortKey;
 
-  /// In degrees.
-  final double iconRotate;
+  /// `icon-rotate`, by feature and zoom, in degrees.
+  final Expr iconRotate;
 
   /// The feature properties the layer's colours, opacities and sizes read.
   /// Each label carries its feature's values of them.
