@@ -895,76 +895,100 @@ class VmapEngine extends ChangeNotifier {
         ..save()
         ..clipRect(ui.Rect.fromLTRB(0, horizon, size.width, size.height));
     }
-    if (view != null) {
-      canvas
-        ..save()
-        ..transform(
-          view.matrix(originX: camera.origin.dx, originY: camera.origin.dy),
-        );
-    }
-    for (final run in sheet.runs) {
-      if (run.background >= 0) {
-        if (globe) continue;
-        _meshes.drawBackground(
-          canvas,
-          sheet.backgrounds[run.background],
-          camera,
-        );
-        continue;
-      }
-      if (run.raster >= 0) {
-        _rasters[run.raster].paint(
-          canvas,
-          _context,
-          camera.zoom,
-          camera.origin,
-          size,
-          view: view,
-          drape: drape,
-        );
-        continue;
-      }
-      if (onGpu) continue;
-      final whole = sheet.runOpacity(run, _context);
-      if (whole == 0) continue;
-      if (whole != null && whole < 1) {
-        canvas.saveLayer(
-          null,
-          _layerPaint..color = ui.Color.fromRGBO(0, 0, 0, whole),
-        );
-      }
-      final s = _sources[run.source];
-      draws += _meshes.drawRun(
+    // The GPU draws the vector layers into images first, which are laid in
+    // the style's order between the canvas's backgrounds and rasters.
+    if (view != null && onGpu) {
+      final gpuStarted = _clock.elapsedMicroseconds;
+      gpu.rasters = drape ? [for (final r in _rasters) ...r.drawn] : const [];
+      gpu.states = [for (final s in _sources) _states[s.def.name]];
+      final more = gpu.paint(
         canvas,
+        view,
+        camera.origin,
         sheet,
-        run,
-        s.fallback.followedBy(s.ideal),
-        _states[s.def.name],
-        size,
+        [for (final s in _sources) s.fallback],
+        [for (final s in _sources) s.ideal],
+        _context,
+        styleZoom,
+        camera.devicePixelRatio,
+        _resources.sprites,
       );
-      if (whole != null && whole < 1) canvas.restore();
+      _buildingMicros = _clock.elapsedMicroseconds - gpuStarted;
+      if (more) waiting = true;
+    }
+    final viewMatrix = view?.matrix(
+      originX: camera.origin.dx,
+      originY: camera.origin.dy,
+    );
+    // The runs from [from] to [to] in the style's order: the GPU's images
+    // of the vector layers laid between the canvas's backgrounds and
+    // rasters.
+    void drawRuns(int from, int to) {
+      if (viewMatrix != null) {
+        canvas
+          ..save()
+          ..transform(viewMatrix);
+      }
+      for (var index = from; index < to; index++) {
+        final run = sheet.runs[index];
+        if ((run.background >= 0 || run.raster >= 0) &&
+            onGpu &&
+            viewMatrix != null) {
+          canvas.restore();
+          gpu.presentUntil(canvas, index);
+          canvas
+            ..save()
+            ..transform(viewMatrix);
+        }
+        if (run.background >= 0) {
+          if (globe) continue;
+          _meshes.drawBackground(
+            canvas,
+            sheet.backgrounds[run.background],
+            camera,
+          );
+          continue;
+        }
+        if (run.raster >= 0) {
+          _rasters[run.raster].paint(
+            canvas,
+            _context,
+            camera.zoom,
+            camera.origin,
+            size,
+            view: view,
+            drape: drape,
+          );
+          continue;
+        }
+        if (onGpu) continue;
+        final whole = sheet.runOpacity(run, _context);
+        if (whole == 0) continue;
+        if (whole != null && whole < 1) {
+          canvas.saveLayer(
+            null,
+            _layerPaint..color = ui.Color.fromRGBO(0, 0, 0, whole),
+          );
+        }
+        final s = _sources[run.source];
+        draws += _meshes.drawRun(
+          canvas,
+          sheet,
+          run,
+          s.fallback.followedBy(s.ideal),
+          _states[s.def.name],
+          size,
+        );
+        if (whole != null && whole < 1) canvas.restore();
+      }
+      if (viewMatrix != null) canvas.restore();
     }
 
+    drawRuns(0, sheet.labelsRun);
+
     if (view != null) {
-      canvas.restore();
       if (onGpu) {
-        final gpuStarted = _clock.elapsedMicroseconds;
-        gpu.rasters = drape ? [for (final r in _rasters) ...r.drawn] : const [];
-        gpu.states = [for (final s in _sources) _states[s.def.name]];
-        final more = gpu.paint(
-          canvas,
-          view,
-          camera.origin,
-          sheet,
-          [for (final s in _sources) s.fallback],
-          [for (final s in _sources) s.ideal],
-          _context,
-          styleZoom,
-          camera.devicePixelRatio,
-          _resources.sprites,
-        );
-        _buildingMicros = _clock.elapsedMicroseconds - gpuStarted;
-        if (more) waiting = true;
+        gpu.presentUntil(canvas, sheet.labelsRun);
       } else if (sheet.extrusions.isNotEmpty) {
         final buildingsStarted = _clock.elapsedMicroseconds;
         final more = _buildings.paint(
@@ -1014,13 +1038,16 @@ class VmapEngine extends ChangeNotifier {
         ground: _groundOf(view),
       );
     }
-    if (view != null && onGpu) {
+    if (sheet.labelsRun < sheet.runs.length) {
+      // As MapLibre draws in the style's order: what the style puts after
+      // its last symbol layer goes over the labels.
       if (horizon > 0) {
         canvas
           ..save()
           ..clipRect(ui.Rect.fromLTRB(0, horizon, size.width, size.height));
       }
-      gpu.paintAboveLabels(canvas);
+      drawRuns(sheet.labelsRun, sheet.runs.length);
+      if (view != null && onGpu) gpu.presentUntil(canvas, sheet.runs.length);
       if (horizon > 0) canvas.restore();
     }
     final finished = _clock.elapsedMicroseconds;

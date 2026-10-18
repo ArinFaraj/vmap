@@ -125,7 +125,10 @@ class StyleCompiler {
       if (add != null) {
         final before = _layers.length;
         if (_vector(layer) case final vector?) add(vector);
-        if (layer.type == 'symbol') _aboveLabels = _layers.length;
+        if (layer.type == 'symbol') {
+          _aboveLabels = _layers.length;
+          _labelsAt = (_backgrounds.length, _rasters.length);
+        }
         final whole = layer.paint['${layer.type}-layer-opacity'];
         if (whole != null) {
           final opacity = compileExpr(whole);
@@ -141,6 +144,7 @@ class StyleCompiler {
         _addRaster(layer);
       }
     }
+    final runs = _runs();
     final sprite = json['sprite'];
     final footprints = _footprints();
     return StyleSheet(
@@ -155,7 +159,8 @@ class StyleCompiler {
       layers: _layers,
       symbols: _symbols,
       sources: _vectorSources,
-      runs: _runs(),
+      runs: runs,
+      labelsRun: _labelsRun(runs),
       zoomOffset: zoomOffset,
       shape: _shape.toString(),
       sprite: switch (sprite) {
@@ -905,6 +910,27 @@ class StyleCompiler {
 
   /// The first paint layer after the style's last symbol layer.
   int _aboveLabels = -1;
+
+  /// The backgrounds and rasters there were when the last symbol layer
+  /// came, those after it being drawn over the labels.
+  (int, int)? _labelsAt;
+
+  /// The first of [runs] drawn over the labels: the first after the
+  /// style's last symbol layer, or the run count when nothing is.
+  int _labelsRun(List<StyleRun> runs) {
+    final at = _labelsAt;
+    if (at == null) return runs.length;
+    final (backgrounds, rasters) = at;
+    for (var i = 0; i < runs.length; i++) {
+      final run = runs[i];
+      if ((run.source >= 0 && run.first >= _aboveLabels) ||
+          (run.background >= 0 && run.background >= backgrounds) ||
+          (run.raster >= 0 && run.raster >= rasters)) {
+        return i;
+      }
+    }
+    return runs.length;
+  }
 
   /// The root `terrain`: its `raster-dem` source and exaggeration.
   TerrainLayer? _terrain() {

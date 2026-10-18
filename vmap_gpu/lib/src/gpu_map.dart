@@ -472,7 +472,7 @@ class GpuMap implements MapRenderer {
     // again and the frame comes back once one finishes.
     final last = _last;
     if (_inFlight >= 2 && last != null) {
-      _present(canvas, last.take(_labelsAt), view);
+      _presented = 0;
       return true;
     }
     final frame = _ring[_next];
@@ -520,13 +520,16 @@ class GpuMap implements MapRenderer {
     // so the canvas lays them over each other in order.
     final shown = <(ui.Image, double)>[(frame.image, 1)];
     final textures = <gpu.Texture>[frame.map];
-    var labelsAt = -1;
+    final splits = <(int, int)>[];
     var overlays = 0;
     (gpu.Texture, ui.Image) next() => frame.overlay(overlays++, _target);
     final ground = terrain;
     final globe = _globe == null ? null : view.globe;
     final raised = (ground != null || globe != null) && _ground != null;
     if (raised) {
+      // The raised ground holds every vector layer, laid after the
+      // backgrounds and rasters under the labels.
+      splits.add((sheet.labelsRun - 1, 0));
       Timeline.timeSync(
         'vmap.gpu.drape',
         () => _drape.drawAtlas(
@@ -584,20 +587,25 @@ class GpuMap implements MapRenderer {
         }
         return;
       }
-      var overLabels = false;
-      for (final run in sheet.runs) {
-        if (!overLabels && sheet.overLabels(run)) {
-          // What the style draws after its last symbol layer goes in an
-          // image of its own, laid over the labels.
-          overLabels = true;
+      var drawnSinceSplit = false;
+      for (final (index, run) in sheet.runs.indexed) {
+        // A background or raster after vector layers is laid by the canvas
+        // between their images, and what comes after the style's last
+        // symbol layer over the labels, so the style's order holds.
+        if (drawnSinceSplit && (run.source < 0 || index == sheet.labelsRun)) {
           pass.drawRuns(below);
           below = [];
-          final (over, overImage) = next();
-          pass = passOn(over);
-          labelsAt = shown.length;
-          shown.add((overImage, 1));
-          textures.add(over);
+          final (after, afterImage) = next();
+          pass = passOn(after);
+          shown.add((afterImage, 1));
+          textures.add(after);
+          drawnSinceSplit = false;
         }
+        if (run.source < 0) continue;
+        if (!drawnSinceSplit) {
+          splits.add((index, splits.isEmpty ? 0 : shown.length - 1));
+        }
+        drawnSinceSplit = true;
         final building = sheet.extrusionAt(run);
         if (building != null) {
           if (!_reveal.shows(building)) continue;
@@ -626,8 +634,10 @@ class GpuMap implements MapRenderer {
       buffers.last.submit(completionCallback: (_) => _finished());
     });
     if (kIsWeb) _snapshot(shown, textures);
-    _labelsAt = labelsAt < 0 ? shown.length : labelsAt;
-    _present(canvas, (_last = shown).take(_labelsAt), view);
+    _last = shown;
+    _splits = splits;
+    _presented = 0;
+    _lastView = view;
     return _reveal.animating ||
         _presence.animating ||
         _spritesLoading ||
@@ -758,15 +768,28 @@ class GpuMap implements MapRenderer {
     }
   }
 
-  /// Where the images over the labels start in [_last].
-  int _labelsAt = 0;
   MapView? _lastView;
 
+  /// The parts of [_last] a background or raster run comes between: the
+  /// index in the style's runs of each part's first vector run and its
+  /// first image. Then how many of [_last]'s images are on the canvas.
+  List<(int, int)> _splits = const [];
+  int _presented = 0;
+
   @override
-  void paintAboveLabels(ui.Canvas canvas) {
+  void presentUntil(ui.Canvas canvas, int run) {
     final last = _last, view = _lastView;
-    if (last == null || view == null || _labelsAt >= last.length) return;
-    _present(canvas, last.skip(_labelsAt), view);
+    if (last == null || view == null) return;
+    var upTo = last.length;
+    for (final (at, image) in _splits) {
+      if (at >= run) {
+        upTo = math.min(upTo, image);
+        break;
+      }
+    }
+    if (upTo <= _presented) return;
+    _present(canvas, last.getRange(_presented, upTo), view);
+    _presented = upTo;
   }
 
   void _present(

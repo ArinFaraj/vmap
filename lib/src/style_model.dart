@@ -1202,6 +1202,7 @@ class StyleSheet {
     this.glyphs,
     this.layerOpacity = const {},
     this.aboveLabels = -1,
+    int? labelsRun,
     this.terrain,
     this.sky,
     this.projection = StyleProjection.mercator,
@@ -1210,7 +1211,8 @@ class StyleSheet {
     required this.attributions,
     this.extrusions = const [],
     this.footprints = const {},
-  }) : spriteSheets = spriteSheets ?? [if (sprite != null) ('', sprite)];
+  }) : labelsRun = labelsRun ?? runs.length,
+       spriteSheets = spriteSheets ?? [if (sprite != null) ('', sprite)];
 
   /// The style's `fill-extrusion` layers, in order.
   final List<ExtrusionLayer> extrusions;
@@ -1237,6 +1239,10 @@ class StyleSheet {
   /// MapLibre draws in the style's order, goes over the labels; -1 when the
   /// style has no symbol layer.
   final int aboveLabels;
+
+  /// The first of [runs] drawn over the labels, of any kind: the first after
+  /// the style's last symbol layer, or the run count.
+  final int labelsRun;
 
   /// Whether [run] is drawn over the labels.
   bool overLabels(StyleRun run) =>
