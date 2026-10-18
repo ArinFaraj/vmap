@@ -279,7 +279,9 @@ List<int> mapLibreLineBreaks(
     final c = codes[i];
     if (i > 0) {
       final previous = codes[i - 1];
+      // As MapLibre's determineLineBreaks, a line may break after an image.
       if (_breakAfter.contains(previous) ||
+          previous == formatImage ||
           (i + 1 < codes.length && c == 0x28)) {
         var penalty = 0.0;
         if (previous == 0x0a || previous == 0x0d) penalty -= 10000;
