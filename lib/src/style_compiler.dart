@@ -776,6 +776,7 @@ class StyleCompiler {
         opacity: compileExpr(opacity),
         width: (_) => 1,
         perFeature: edgeNames.isNotEmpty,
+        outline: true,
       ),
     );
   }
@@ -897,8 +898,9 @@ class StyleCompiler {
                   layers[i].spills != layers[runStart].spills ||
                   layers[i] is HeatmapLayer ||
                   layers[runStart] is HeatmapLayer ||
-                  _layerOpacity.containsKey(i) ||
-                  _layerOpacity.containsKey(runStart) ||
+                  ((_layerOpacity.containsKey(i) ||
+                          _layerOpacity.containsKey(runStart)) &&
+                      layers[i].id != layers[i - 1].id) ||
                   _standsAlone(layers[i]) ||
                   _standsAlone(layers[runStart])))) {
         closeRun(i);

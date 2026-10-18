@@ -71,6 +71,18 @@ void main() {
       discard;
     }
     float across = length(v_edge.xy);
+    if (v_dash.y > 5.5) {
+      // A fill's outline, as MapLibre's: a one pixel line, the pixel on
+      // either axis whose centre is nearest it, faded by that distance.
+      float d = v_edge.y * v_edge.z;
+      vec2 n = vec2(dFdx(d), dFdy(d));
+      float major = max(abs(n.x), abs(n.y)) / max(length(n), 1e-6);
+      if (d / major <= -0.5 || d / major > 0.5) {
+        discard;
+      }
+      frag_color = color * (1.0 - smoothstep(0.0, 1.0, abs(d)));
+      return;
+    }
     color *= clamp(v_edge.z * (1.0 - across) * v_line.y, 0.0, 1.0);
     // Dashes: the ramp row holds the signed distance to the nearest dash
     // end as a share of a repeat. A round cap makes each dash a capsule

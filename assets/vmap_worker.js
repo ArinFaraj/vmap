@@ -1,4 +1,4 @@
-// vmap web worker, built from lib 65cdbd5e
+// vmap web worker, built from lib b37fdd45
 (function dartProgram(){function copyProperties(a,b){var s=Object.keys(a)
 for(var r=0;r<s.length;r++){var q=s[r]
 b[q]=a[q]}}function mixinPropertiesHard(a,b){var s=Object.keys(a)
@@ -6770,7 +6770,7 @@ else if(A.N(q))p=q?1:0
 else p=null
 s.push(p==null?0:p)}}J.o(o.h(0,"anchor"),"map")
 return new A.iP(m)},
-pu(a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q){return new A.eb(m,g,h,b,j,i)},
+pu(a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r){return new A.eb(n,g,h,b,j,i)},
 ts(a,b,c){var s,r,q,p,o=a==null?B.cJ:a,n=t.n,m=A.b([],n)
 if(t.j.b(o)){s=J.u(o)
 s=s.gl(o)>4&&J.o(s.h(o,0),"interpolate")&&B.f.ad(s.h(o,1),null)==='["linear"]'&&B.f.ad(s.h(o,2),null)==='["heatmap-density"]'}else s=!1
@@ -14976,7 +14976,7 @@ C:{if("round"===f){e=B.ar
 break C}if("square"===f){e=B.as
 break C}e=B.W
 break C}o=o?d:A.fb(b0)
-B.a.k(this.x,A.pu(j,h,a5,g,e,a8,n,b.a,b.r,b.f,k,l,o,a1.a!==0,q,p,a9))},
+B.a.k(this.x,A.pu(j,h,a5,g,e,a8,n,b.a,b.r,b.f,k,l,!1,o,a1.a!==0,q,p,a9))},
 em(a5){var s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d=this,c=null,b="-translate-anchor",a="viewport",a0=a5.a,a1=a0.d,a2=A.U(a0.b),a3=a2+"-color",a4=a1.h(0,a3)
 if(a4==null)a4="#000000"
 s=a2+"-opacity"
@@ -15015,7 +15015,7 @@ if(f==null||!l||J.o(a1.h(0,"fill-antialias"),!1))return
 e=A.hm(a1,B.cG)
 o=a0.gaL()
 l=J.o(a1.h(0,a2+b),a)
-B.a.k(a3,A.pu(c,d.eE(a5,B.u,e,!0),A.n(f),c,B.W,c,c,s,m,n,c,A.n(r),c,e.a!==0,o,l,new A.k4()))},
+B.a.k(a3,A.pu(c,d.eE(a5,B.u,e,!0),A.n(f),c,B.W,c,c,s,m,n,c,A.n(r),!0,c,e.a!==0,o,l,new A.k4()))},
 bJ(a,b,c,d,e,f,g,a0,a1,a2){var s,r,q,p,o,n,m,l,k,j,i=this,h={}
 t.gi.a(c)
 h.a=h.b=h.c=null
@@ -15059,35 +15059,42 @@ A.eC(s)
 J.o(s.h(0,"encoding"),"terrarium")
 A.C(q.h(0,"exaggeration"))
 return new A.hr()},
-fC(){var s,r,q,p,o,n,m,l,k,j,i=this,h={},g=i.x,f=A.b([],t.in)
-h.a=0
-s=new A.ka(i,g)
-r=new A.k9(h,f,s)
-for(q=i.at,p=i.ay,o=0,n=0;n<=g.length;++n){for(;;){m=q.length
+fC(){var s,r,q,p,o,n,m,l,k,j,i,h=this,g={},f=h.x,e=A.b([],t.in)
+g.a=0
+s=new A.ka(h,f)
+r=new A.k9(g,e,s)
+for(q=h.at,p=h.ay,o=0,n=0;n<=f.length;++n){for(;;){m=q.length
 if(o<m){if(!(o>=0))return A.a(q,o)
 m=q[o].a===n}else m=!1
 if(!m)break
 r.$1(n)
 l=o+1
 if(!(o>=0&&o<q.length))return A.a(q,o)
-B.a.k(f,q[o].b)
+B.a.k(e,q[o].b)
 o=l}m=!0
-if(n!==g.length)if(n>h.a){if(J.o(s.$1(n),s.$1(h.a))){if(!(n<g.length))return A.a(g,n)
-k=g[n].gba()
-j=h.a
-if(!(j<g.length))return A.a(g,j)
-if(k===g[j].gba()){k=g.length
-if(!(n<k))return A.a(g,n)
-if(!(g[n] instanceof A.d4)){j=h.a
-if(!(j<k))return A.a(g,j)
-if(!(g[j] instanceof A.d4))if(!p.L(n))if(!p.L(h.a)){k=g.length
-if(!(n<k))return A.a(g,n)
-j=g[n]
-if(!(j instanceof A.bJ&&j.cy)){m=h.a
-if(!(m<k))return A.a(g,m)
-m=g[m]
-m=m instanceof A.bJ&&m.cy}}}}}}else m=!1
-if(m)r.$1(n)}return f}}
+if(n!==f.length)if(n>g.a){if(J.o(s.$1(n),s.$1(g.a))){if(!(n<f.length))return A.a(f,n)
+k=f[n].gba()
+j=g.a
+if(!(j<f.length))return A.a(f,j)
+if(k===f[j].gba()){k=f.length
+if(!(n<k))return A.a(f,n)
+if(!(f[n] instanceof A.d4)){j=g.a
+if(!(j<k))return A.a(f,j)
+if(!(f[j] instanceof A.d4)){if(p.L(n)||p.L(g.a)){k=f.length
+if(!(n<k))return A.a(f,n)
+j=f[n]
+i=n-1
+if(!(i<k))return A.a(f,i)
+i=j.a!==f[i].a
+k=i}else k=!1
+if(!k){k=f.length
+if(!(n<k))return A.a(f,n)
+j=f[n]
+if(!(j instanceof A.bJ&&j.cy)){m=g.a
+if(!(m<k))return A.a(f,m)
+m=f[m]
+m=m instanceof A.bJ&&m.cy}}}}}}}else m=!1
+if(m)r.$1(n)}return e}}
 A.kb.prototype={
 $0(){var s,r,q,p,o,n,m,l,k,j,i,h=null,g="promoteId",f="generateId",e=this.a,d=this.b,c=e.d.h(0,d)
 if(!t.f.b(c))return h

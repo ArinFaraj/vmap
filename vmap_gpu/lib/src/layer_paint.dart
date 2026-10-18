@@ -5,6 +5,9 @@ import 'package:vmap/renderer.dart';
 
 /// A fill or line layer's paint for one frame, in screen pixels.
 class LayerPaint {
+  /// What a fill outline's line gives in place of its gap.
+  static const outlineCode = 6.0;
+
   LayerPaint(
     this.r,
     this.g,
@@ -100,6 +103,7 @@ class LayerPaint {
         if (width <= 0) return clear;
         final gap = (asNumber(layer.gap?.call(context)) ?? 0).toDouble();
         if (gap > 0 && width > 0) gapShare = (gap / width).clamp(0.0, 1.0);
+        if (layer.outline) gapShare = -outlineCode;
         offset = (asNumber(layer.offset?.call(context)) ?? 0).toDouble();
         if (layer.dash case final dash?) {
           // As MapLibre's line-floorwidth: dashes are as long as the line
@@ -278,7 +282,7 @@ class LayerPaint {
         // A dashed line gives its dash row plus twice its cap's index and
         // the length of one repeat. Otherwise the repeat is zero, and a
         // line drawn as two gives its gap's share of the half width,
-        // negated.
+        // negated, and a fill's outline [outlineCode].
         final dashed = dashRow != null && dashPeriod > 0;
         put(
           r,

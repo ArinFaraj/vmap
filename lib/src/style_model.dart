@@ -366,6 +366,7 @@ final class LineLayer extends MeshLayer
     this.pattern,
     this.gradient,
     this.gap,
+    this.outline = false,
   });
 
   @override
@@ -395,6 +396,9 @@ final class LineLayer extends MeshLayer
   /// `line-gap-width`: the width of the gap down the middle of a line drawn
   /// as two, in logical pixels. [width] spans both sides and the gap.
   final Expr? gap;
+
+  /// A fill's antialiasing outline, drawn as MapLibre's one pixel lines.
+  final bool outline;
 }
 
 final class CircleLayer extends MeshLayer implements StrokedLayer {
