@@ -607,6 +607,7 @@ Expr _op(String op, List<Object?> args) {
         for (final (text, options, image) in runs)
           FormatSection(
             image ? '' : asText(text(c)),
+            image: image ? asText(text(c)) : null,
             scale: (asNumber(options['font-scale']?.call(c)) ?? 1).toDouble(),
             fonts: switch (options['text-font']?.call(c)) {
               final List<Object?> names => [for (final n in names) '$n'],

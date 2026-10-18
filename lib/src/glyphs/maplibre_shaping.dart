@@ -36,6 +36,8 @@ ShapedText? layoutRanges(
   int justify = 0,
   double maxWidth = double.infinity,
   List<RangeSection>? sections,
+  (double, double)? Function(int section)? imageSize,
+  double textSize = 16,
 }) {
   const em = GlyphPbf.em;
   const shapingOffset = -17.0;
@@ -60,12 +62,22 @@ ShapedText? layoutRanges(
       : sections[run];
   int faceOf(int run) => sectionOf(run)?.face ?? face;
   double scaleOf(int run) => sectionOf(run)?.scale ?? 1;
+  // As MapLibre, an image's size goes by its own pixels, not the text's:
+  // a shaping unit of an image is its section scale over the text size.
+  final perImagePixel = em / textSize;
+  (double, double)? imageAt(int i) =>
+      codes[i] == formatImage ? imageSize?.call(runOf[i]) : null;
+  double advanceAt(int i) {
+    if (imageAt(i) case (final w, _)) {
+      return w * scaleOf(runOf[i]) * perImagePixel;
+    }
+    final g = glyphOf(faceOf(runOf[i]), codes[i]);
+    return g == null ? 0 : g.advance * scaleOf(runOf[i]);
+  }
+
   final breaks = mapLibreLineBreaks(
     codes,
-    (i) {
-      final g = glyphOf(faceOf(runOf[i]), codes[i]);
-      return g == null ? 0 : g.advance * scaleOf(runOf[i]) + spacing;
-    },
+    (i) => advanceAt(i) + spacing,
     maxWidth * em,
     spacing: spacing,
   );
@@ -90,18 +102,47 @@ ShapedText? layoutRanges(
     for (var i = start; i < end; i++) {
       lineScale = math.max(lineScale, scaleOf(runOf[i]));
     }
-    if (lineScale != 1) scaled = true;
+    // MapLibre's calculateLineContentSize and image offset: a line is as
+    // tall as its largest run or image, and an image taller than an em of
+    // it pushes the next line down.
+    var tallestImage = 0.0, imageOffset = 0.0;
+    for (var i = start; i < end; i++) {
+      if (imageAt(i) case (_, final h)) {
+        tallestImage = math.max(tallestImage, h);
+        imageOffset = math.max(
+          imageOffset,
+          h * scaleOf(runOf[i]) * perImagePixel - em * lineScale,
+        );
+      }
+    }
+    final content = math.max(lineScale * em, tallestImage * perImagePixel);
+    if (lineScale != 1 || imageOffset > 0) scaled = true;
     final glyphs = <double>[];
     var x = 0.0;
     for (final k in _visualIndices(codes.sublist(start, end))) {
       final i = start + k;
       final c = codes[i];
       final r = runOf[i];
+      final section = sectionOf(r);
+      final align = section?.align ?? 1;
+      if (imageAt(i) case (final w, final h)) {
+        final s = scaleOf(r) * perImagePixel;
+        glyphs.addAll([
+          -1,
+          r.toDouble(),
+          x,
+          y + shapingOffset + (content - h * s) * align,
+          w * s,
+        ]);
+        scales.add(s);
+        colors.add(0);
+        x += w * s + spacing;
+        continue;
+      }
       final g = glyphOf(faceOf(r), c);
       if (g == null) continue;
       final scale = scaleOf(r);
-      final section = sectionOf(r);
-      final lift = (lineScale - scale) * em * (section?.align ?? 1);
+      final lift = (content - scale * em) * align;
       glyphs.addAll([
         faceOf(r).toDouble(),
         c.toDouble(),
@@ -122,7 +163,7 @@ ShapedText? layoutRanges(
       }
     }
     placed.add(glyphs);
-    y += lineStep * lineScale;
+    y += lineStep * lineScale + imageOffset;
   }
   if (placed.every((l) => l.isEmpty)) return null;
   final shiftX = (share - 0.5) * maxLength;

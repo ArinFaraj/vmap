@@ -41,7 +41,7 @@ class LabelEngine {
   /// The style's icons. Null until they have loaded.
   SpriteSheet? get sheet => _points.sheet;
   set sheet(SpriteSheet? value) {
-    _points.sheet = value;
+    _points.sheet = _sprites.images = _painter.images = value;
     for (final st in _allStates) {
       st.icon = null;
     }

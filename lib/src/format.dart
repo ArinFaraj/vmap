@@ -8,7 +8,11 @@ class FormatSection {
     this.fonts,
     this.color,
     this.align,
+    this.image,
   });
+
+  /// The sprite image the run shows in place of text, as `['image', name]`.
+  final String? image;
 
   final String text;
 
@@ -25,7 +29,11 @@ class FormatSection {
   final String? align;
 
   bool get plain =>
-      scale == 1 && fonts == null && color == null && align == null;
+      scale == 1 &&
+      fonts == null &&
+      color == null &&
+      align == null &&
+      image == null;
 }
 
 /// What a `format` expression gives: its runs in order.
@@ -43,6 +51,9 @@ class FormattedText {
 /// characters, which no font draws and case changes leave alone.
 const formatMark = 0xE000;
 const formatIndexBase = 0xE100;
+
+/// What an image run of a formatted label holds in place of text.
+const formatImage = 0xE0FF;
 
 /// The property a formatted label carries its sections under.
 const formatKey = r'$format';
@@ -62,13 +73,18 @@ const formatKey = r'$format';
     if (i == sections.length - 1) text = text.trimRight();
     out
       ..writeCharCode(formatMark)
-      ..writeCharCode(formatIndexBase + i)
-      ..write(text);
+      ..writeCharCode(formatIndexBase + i);
+    if (sections[i].image == null) {
+      out.write(text);
+    } else {
+      out.writeCharCode(formatImage);
+    }
   }
   return (
     out.toString(),
     [
-      for (final s in sections) [s.scale, s.fonts, s.color?.toArgb(), s.align],
+      for (final s in sections)
+        [s.scale, s.fonts, s.color?.toArgb(), s.align, s.image],
     ],
   );
 }
@@ -83,6 +99,7 @@ String plainText(String text) {
       i++;
       continue;
     }
+    if (runes[i] == formatImage) continue;
     out.writeCharCode(runes[i]);
   }
   return out.toString();

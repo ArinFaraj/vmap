@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'expr.dart';
 import 'glyphs/glyph_layout.dart';
 import 'glyphs/glyph_pages.dart';
+import 'glyphs/glyph_pbf.dart' show GlyphPbf;
 import 'glyphs/glyph_raster.dart' show PageKey;
 import 'icon_stretch.dart';
 import 'label_path.dart';
@@ -32,6 +33,9 @@ class LabelPainter {
 
   /// The map is zooming, when MapLibre samples icons smoothly.
   bool moving = false;
+
+  /// The style's sprite images, which formatted labels show inline.
+  SpriteSheet? images;
   final ui.Paint _imagePaint = ui.Paint()
     ..filterQuality = ui.FilterQuality.medium;
   final Map<VmapPin, ui.Image> _pinImages = {};
@@ -199,7 +203,7 @@ class LabelPainter {
       case GlyphSprite() when st.onGround && _view.tilted != null:
         _glyphsGround(st, sprite, devicePixelRatio);
       case RangeSprite() when st.curve == null && _turnOf(st) == 0:
-        _rangeGlyphs(st, sprite, devicePixelRatio);
+        _rangeGlyphs(st, sprite, devicePixelRatio, canvas: canvas);
       case RangeSprite() when st.curve == null && _quarters(_turnOf(st)) > 0:
         _rangeGlyphs(
           st,
@@ -382,6 +386,7 @@ class LabelPainter {
     RangeSprite sprite,
     double devicePixelRatio, {
     int quarters = 0,
+    ui.Canvas? canvas,
   }) {
     final pages = glyphs!;
     final look = sprite.look;
@@ -423,6 +428,12 @@ class LabelPainter {
     final g = sprite.shaped.glyphs;
     final scales = sprite.shaped.scales, colors = sprite.shaped.colors;
     for (var i = 0; i < g.length; i += 5) {
+      if (g[i] < 0) {
+        if (quarters == 0 && canvas != null) {
+          _inlineImage(canvas, sprite, g, i, scales![i ~/ 5], x, y, em, st);
+        }
+        continue;
+      }
       // A run of a formatted label: its own size and colour.
       final scale = scales?[i ~/ 5] ?? 1;
       final own = colors?[i ~/ 5] ?? 0;
@@ -465,6 +476,41 @@ class LabelPainter {
         halo,
       );
     }
+  }
+
+  /// The image run of a formatted label at glyph [i] of [g], from a label
+  /// whose box starts at [x], [y], [em] logical pixels an em: placed as
+  /// MapLibre's getGlyphQuads places an image, a pixel of it in from its
+  /// origin and three down, [perPixel] shaping units a pixel of it.
+  void _inlineImage(
+    ui.Canvas canvas,
+    RangeSprite sprite,
+    Float32List g,
+    int i,
+    double perPixel,
+    double x,
+    double y,
+    double em,
+    LabelState st,
+  ) {
+    final spec = sprite.look.format?[g[i + 1].toInt()];
+    final sheet = images;
+    if (spec is! List || spec[4] is! String || sheet == null) return;
+    final image = sheet.entries[spec[4]];
+    if (image == null) return;
+    final unit = em / GlyphPbf.em * perPixel;
+    _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
+    canvas.drawImageRect(
+      sheet.image,
+      image.source,
+      ui.Rect.fromLTWH(
+        x + g[i + 2] * em + unit,
+        y + g[i + 3] * em + 3 * unit,
+        image.width * unit,
+        image.height * unit,
+      ),
+      _imagePaint,
+    );
   }
 
   /// How many quarter turns [turn] is, 1 to 3, or 0 when it is none of

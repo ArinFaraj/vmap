@@ -14,8 +14,8 @@ void main() {
     final (text, sections) = labelText(field(EvalContext()));
     expect(plainText(text), 'Big small');
     expect(sections, hasLength(2));
-    expect(sections![0], [1.5, null, 0xFFFF0000, null]);
-    expect(sections[1], [1.0, null, null, null]);
+    expect(sections![0], [1.5, null, 0xFFFF0000, null, null]);
+    expect(sections[1], [1.0, null, null, null, null]);
 
     final plain = compileText(['format', 'Only', <String, Object?>{}]);
     expect(labelText(plain(EvalContext())), ('Only', null));

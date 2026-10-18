@@ -635,7 +635,11 @@ class TileBuilder {
             final icon = symbol.build.icon == null
                 ? ''
                 : symbol.build.icon!(context) as String;
-            if (plainText(text).isEmpty && icon.isEmpty) continue;
+            if (plainText(text).isEmpty &&
+                !text.contains(String.fromCharCode(formatImage)) &&
+                icon.isEmpty) {
+              continue;
+            }
             final placement = '${symbol.build.placement(context)}';
             final along = placement.startsWith('line');
             final base = (sheet.symbols.length - 1 - s) * 4096;

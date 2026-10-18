@@ -10,6 +10,7 @@ import 'glyphs/glyph_pbf.dart';
 import 'glyphs/glyph_ranges.dart';
 import 'glyphs/maplibre_shaping.dart';
 import 'platform.dart';
+import 'sprites.dart';
 import 'stats.dart';
 
 /// A label's text drawn once, to be placed every frame.
@@ -215,6 +216,9 @@ class LabelSprites {
   /// The style's glyph ranges, which labels are laid out and drawn with
   /// instead of [glyphFonts] when set.
   GlyphRanges? ranges;
+
+  /// The style's sprite images, which a formatted label shows inline.
+  SpriteSheet? images;
   final Stopwatch _clock = Stopwatch()..start();
 
   /// Kept when more are drawn than this, only those used in the last pass.
@@ -296,7 +300,13 @@ class LabelSprites {
       if (format != null) {
         sections = [
           for (final f in format)
-            if (f case [final num scale, final fonts, final color, final align])
+            if (f case [
+              final num scale,
+              final fonts,
+              final color,
+              final align,
+              _,
+            ])
               (
                 face: fonts is List ? store.face(fonts.cast<String>()) : face,
                 scale: scale.toDouble(),
@@ -321,6 +331,13 @@ class LabelSprites {
         face,
         text,
         sections: sections,
+        imageSize: (run) {
+          final spec = format?[run];
+          if (spec is! List || spec[4] is! String) return null;
+          final image = images?.entries[spec[4]];
+          return image == null ? null : (image.width, image.height);
+        },
+        textSize: look.fontSize,
         letterSpacing: look.letterSpacing,
         lineHeight: look.lineHeight,
         maxWidth: look.road
