@@ -7,8 +7,8 @@ final class WebGlRenderPipeline extends RenderPipeline {
     this._gpuContext,
     this.vertexShader,
     this.fragmentShader, {
-    VertexLayout? vertexLayout,
-  }) : _vertexLayout = vertexLayout {
+    this._vertexLayout,
+  }) {
     final gl = _gpuContext._gl;
     final program = gl.createProgram();
     if (program == null) {

@@ -756,8 +756,9 @@ class TileBuilder {
 
   /// The tile's GPU stream, cut finer for a style drawn on the globe.
   GpuStream? _stream(List<BuiltMesh> meshes, int z, double zoom) {
-    if (!sheet.projection.isGlobe)
+    if (!sheet.projection.isGlobe) {
       return GpuStream.build(sheet, meshes, zoom: zoom);
+    }
     return GpuStream.build(
       sheet,
       meshes,

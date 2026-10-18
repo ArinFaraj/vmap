@@ -133,7 +133,7 @@ class VmapOverlay {
       ...document,
       'sources': {...(document['sources'] as Map?) ?? const {}, ...sources},
       'layers': merged,
-      if (terrain case final terrain?) 'terrain': terrain,
+      'terrain': ?terrain,
     };
   }
 }

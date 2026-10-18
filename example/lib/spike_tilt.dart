@@ -1,3 +1,5 @@
+// ignore_for_file: implementation_imports
+
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -5,7 +7,6 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:vmap/src/mercator.dart';
-import 'package:vmap/src/view.dart';
 import 'package:vmap/vmap.dart';
 
 const _out = String.fromEnvironment('OUT', defaultValue: '/tmp/vmap_tilt');

@@ -102,16 +102,16 @@ class GpuHeap {
     used += size;
     if (size > _slabBytes) {
       _oversize += size;
-      return GpuRange(_create(size), 0, size, null);
+      return GpuRange._(_create(size), 0, size, null);
     }
     final slabs = indices ? _indexSlabs : _slabs;
     for (final slab in slabs) {
       final at = slab.take(size);
-      if (at >= 0) return GpuRange(slab.buffer, at, size, slab);
+      if (at >= 0) return GpuRange._(slab.buffer, at, size, slab);
     }
     final slab = _Slab(_create(_slabBytes), _slabBytes);
     slabs.add(slab);
-    return GpuRange(slab.buffer, slab.take(size), size, slab);
+    return GpuRange._(slab.buffer, slab.take(size), size, slab);
   }
 
   void give(GpuRange range) {
@@ -122,7 +122,7 @@ class GpuHeap {
   void _release() {
     while (_given.isNotEmpty && _given.first.$2 <= completed) {
       final range = _given.removeAt(0).$1;
-      final slab = range.slab;
+      final slab = range._slab;
       if (slab == null) {
         _oversize -= range.size;
       } else {
@@ -158,11 +158,11 @@ class GpuHeap {
 
 /// Part of a [GpuHeap] slab, or a buffer of its own when too big for one.
 class GpuRange {
-  GpuRange(this.buffer, this.offset, this.size, this.slab);
+  GpuRange._(this.buffer, this.offset, this.size, this._slab);
 
   final gpu.DeviceBuffer buffer;
   final int offset, size;
-  final _Slab? slab;
+  final _Slab? _slab;
 }
 
 /// One slab's free ranges, by offset, merged where they touch.

@@ -1,3 +1,5 @@
+// ignore_for_file: implementation_imports
+
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -11,7 +13,6 @@ import 'package:vmap/src/expr.dart';
 import 'package:vmap/src/extrusion.dart';
 import 'package:vmap/src/style_model.dart';
 import 'package:vmap/src/tiles.dart' show TileDraw;
-import 'package:vmap/src/view.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:vmap/vmap.dart';
 import 'package:vmap_gpu/vmap_gpu.dart';

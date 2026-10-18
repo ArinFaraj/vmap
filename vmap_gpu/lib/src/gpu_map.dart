@@ -1074,8 +1074,9 @@ class GpuMap implements MapRenderer {
   @override
   void dispose() {
     for (final data in _held) {
-      if (identical(data.tile.rendererData, data))
+      if (identical(data.tile.rendererData, data)) {
         data.tile.rendererData = null;
+      }
     }
     _held.clear();
     _heap.clear();

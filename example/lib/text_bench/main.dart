@@ -1,3 +1,5 @@
+// ignore_for_file: implementation_imports
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -11,7 +13,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:vmap/src/mercator.dart';
-import 'package:vmap/src/view.dart';
 import 'package:vmap/vmap.dart';
 
 import 'glyph_atlas.dart';

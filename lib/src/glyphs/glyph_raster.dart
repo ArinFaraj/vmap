@@ -603,8 +603,9 @@ class GlyphRasterWorker {
   bool _disposed = false;
 
   Future<GlyphRaster> draw(PageKey key, List<int> ids) {
-    if (_dead)
+    if (_dead) {
       return Future.error(StateError('vmap glyphs: the isolate is gone'));
+    }
     final id = _next++;
     final done = _waiting[id] = Completer<GlyphRaster>();
     _send(_Draw(id, key, Int32List.fromList(ids)));
