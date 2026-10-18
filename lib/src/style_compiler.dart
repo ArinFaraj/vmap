@@ -55,7 +55,11 @@ class _VectorLayer {
 class StyleCompiler {
   StyleCompiler(this.json, {this.nameKeys, this.zoomOffset = 0})
     : _sources = (json['sources'] as Map?) ?? const {},
-      _shape = StringBuffer('$zoomOffset');
+      _shape = StringBuffer(
+        StyleProjection.of(json['projection']).isGlobe
+            ? '$zoomOffset globe'
+            : '$zoomOffset',
+      );
 
   final Map<String, Object?> json;
   final List<String>? nameKeys;

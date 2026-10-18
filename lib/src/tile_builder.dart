@@ -12,6 +12,7 @@ import 'extrusion.dart';
 import 'mvt.dart';
 import 'platform.dart';
 import 'style_model.dart';
+import 'subdivide.dart';
 import 'tessellate.dart';
 import 'mercator.dart';
 
@@ -738,7 +739,18 @@ class TileBuilder {
     _shape(labels);
     return BuiltTile(meshes, labels, [
       for (final e in extruders.values) ?e.finish(),
-    ], gpu ? GpuStream.build(sheet, meshes) : null);
+    ], gpu ? _stream(meshes, z) : null);
+  }
+
+  /// The tile's GPU stream, cut finer for a style drawn on the globe.
+  GpuStream? _stream(List<BuiltMesh> meshes, int z) {
+    if (!sheet.projection.isGlobe) return GpuStream.build(sheet, meshes);
+    return GpuStream.build(
+      sheet,
+      meshes,
+      fillCells: fillCells(z),
+      lineCells: lineCells(z),
+    );
   }
 
   /// Calls [place] at the anchors MapLibre's `getAnchors` gives a symbol

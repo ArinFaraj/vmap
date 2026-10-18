@@ -189,6 +189,9 @@ class _Drape {
           d.left + d.size > left &&
           d.top < top + span &&
           d.top + d.size > top;
+      // On the globe without terrain the vector layers are laid on the
+      // sphere directly, as MapLibre draws them.
+      if (view.globe != null && _map.terrain == null) continue;
       // Stand-ins too, clipped as the flat map clips them, so a tile still
       // loading leaves no hole in the ground.
       _MapPass(
@@ -545,8 +548,9 @@ class _Drape {
         ),
       );
     final out = _globeInfo;
+    final unit = 1 / view.cameraToCenterDistance;
     for (var i = 0; i < 16; i++) {
-      out[i] = globe.matrix[i];
+      out[i] = globe.matrix[i] * unit;
     }
     for (var i = 0; i < 4; i++) {
       out[40 + i] = globe.plane[i];

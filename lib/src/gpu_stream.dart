@@ -2,8 +2,9 @@ import 'dart:typed_data';
 
 import 'platform.dart';
 import 'style_model.dart';
+import 'subdivide.dart';
 import 'tessellate.dart' show LineMesher;
-import 'tile_builder.dart' show BuiltMesh;
+import 'tile_builder.dart' show BuiltMesh, tileExtent;
 import 'typed_buffer.dart';
 
 /// One tile's fill and line layers as a single stream the GPU draws in one
@@ -114,7 +115,15 @@ class GpuStream {
 
   /// Builds the stream for [meshes] in [sheet]'s layer order, leaving out
   /// the layers the GPU does not draw: extrusions, heatmaps and symbols.
-  static GpuStream? build(StyleSheet sheet, List<BuiltMesh> meshes) {
+  ///
+  /// With [fillCells] or [lineCells], fills or lines are cut along a grid
+  /// of that many cells across the tile, for the globe to bend them.
+  static GpuStream? build(
+    StyleSheet sheet,
+    List<BuiltMesh> meshes, {
+    int fillCells = 0,
+    int lineCells = 0,
+  }) {
     final byBucket = <int, List<BuiltMesh>>{};
     for (final m in meshes) {
       (byBucket[m.bucket] ??= []).add(m);
@@ -173,6 +182,60 @@ class GpuStream {
             for (final i in const [0, 1, 2, 0, 2, 3]) {
               indices.add(at + i);
             }
+          }
+          continue;
+        }
+        final cells = isLine(kind) ? lineCells : fillCells;
+        if (cells > 0) {
+          final cut = Subdivider(8, tileExtent / cells);
+          final src = Float32List(n * 8);
+          for (var v = 0; v < n; v++) {
+            src
+              ..[v * 8] = pos[v * 2]
+              ..[v * 8 + 1] = pos[v * 2 + 1];
+            if (ext != null) {
+              src
+                ..[v * 8 + 2] = ext[v * 2]
+                ..[v * 8 + 3] = ext[v * 2 + 1];
+            }
+            if (off != null) {
+              src
+                ..[v * 8 + 4] = off[v * 2]
+                ..[v * 8 + 5] = off[v * 2 + 1];
+            }
+            if (along != null) {
+              src
+                ..[v * 8 + 6] = along[v * 2]
+                ..[v * 8 + 7] = along[v * 2 + 1];
+            }
+          }
+          final tri = chunk.indices;
+          for (var i = 0; i + 2 < tri.length; i += 3) {
+            cut.add(src, tri[i], tri[i + 1], tri[i + 2]);
+          }
+          final out = cut.vertices;
+          for (var v = 0; v < cut.vertexCount; v++) {
+            final o = v * 8;
+            vertices
+              ..add4(
+                out[o],
+                out[o + 1],
+                ext == null ? 0 : packPair(out[o + 2], out[o + 3]),
+                off == null ? 0 : packPair(out[o + 4], out[o + 5]),
+              )
+              ..add2(
+                (slot +
+                        kind * 16384 +
+                        (across == null
+                            ? 0
+                            : (out[o + 7].clamp(0.0, 1.0) * 127).round() *
+                                  131072))
+                    .toDouble(),
+                along == null ? 0 : out[o + 6],
+              );
+          }
+          for (final i in cut.indices) {
+            indices.add(base + i);
           }
           continue;
         }

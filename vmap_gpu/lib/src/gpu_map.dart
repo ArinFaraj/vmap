@@ -546,6 +546,13 @@ class GpuMap implements MapRenderer {
         // in the frame with depth.
         if (globe != null) {
           _drape.drawGlobe(pass._pass, globe, view, origin, clip);
+          // With terrain MapLibre draws the map into a texture laid over
+          // the ground, as the drape is; without, onto the sphere.
+          if (ground == null) {
+            pass
+              ..globe = globe
+              ..drawRuns(sheet.runs);
+          }
           return;
         }
         _drape.drawGround(pass._pass, ground!, view, origin, clip);
@@ -602,7 +609,7 @@ class GpuMap implements MapRenderer {
     final host = _host!;
     final zeros = gpu.gpuContext.createDeviceBufferWithCopy(ByteData(96));
     final vertices = gpu.BufferView(zeros, offsetInBytes: 0, lengthInBytes: 96);
-    final frame = host.emplace(ByteData(_frameBytes.lengthInBytes));
+    final frame = host.emplace(ByteData(_mapBytes.lengthInBytes));
     final equal = gpu.StencilConfig(compareFunction: gpu.CompareFunction.equal);
     final stencil = _stencil;
     if (stencil != null) {
@@ -907,6 +914,40 @@ class GpuMap implements MapRenderer {
     out[17] = scale;
   }
 
+  /// The frame info block map.vert reads: [_frameInfo]'s first 28 floats,
+  /// then where it lays the tile on the globe, zero on the flat map.
+  final Float32List _mapInfo = Float32List(56);
+  late final ByteData _mapBytes = ByteData.sublistView(_mapInfo);
+
+  /// Fills [_mapInfo] for a tile [id], on [globe] when there is one.
+  ByteData _mapFrame(Globe? globe, TileId id) {
+    final out = _mapInfo;
+    for (var i = 0; i < 28; i++) {
+      out[i] = _frameInfo[i];
+    }
+    if (globe == null) {
+      out.fillRange(28, 56, 0);
+      return _mapBytes;
+    }
+    final n = 1 << id.z;
+    out
+      ..[28] = (id.x % n) / n
+      ..[29] = id.y / n
+      ..[30] = 1 / n
+      ..[31] = globe.transition
+      ..[52] = math.cos(latitudeAt(globe.view.centerY) * math.pi / 180);
+    for (var i = 0; i < 4; i++) {
+      out[32 + i] = globe.plane[i];
+    }
+    // In clip space the flat map's w is 1 at the centre; the globe's is
+    // brought to the same scale so the two mix and widths agree.
+    final unit = 1 / globe.view.cameraToCenterDistance;
+    for (var i = 0; i < 16; i++) {
+      out[36 + i] = globe.matrix[i] * unit;
+    }
+    return _mapBytes;
+  }
+
   @override
   void dispose() {
     for (final data in _held) {
@@ -951,11 +992,15 @@ class _MapPass {
   /// wanted, both indexed by the style's sources.
   final List<List<TileDraw>> _fallback, _ideal;
 
+  /// The globe the tiles are laid on, or null on the flat map and in the
+  /// drape's slots.
+  Globe? globe;
+
   /// The source whose tiles' numbers are in the stencil, or -1.
   int _marked = -1;
 
   bool _clips(int source) =>
-      _map._stencil != null && _ideal[source].length < 255;
+      globe == null && _map._stencil != null && _ideal[source].length < 255;
 
   /// Each tile writes its number over its square, and draws only where its
   /// number is: a tile's data runs a little past its square, and a
@@ -1018,6 +1063,7 @@ class _MapPass {
       }
       if (!bound) {
         _pass
+          ..clearBindings()
           ..bindPipeline(_map._flat!)
           ..setDepthWriteEnable(false)
           ..setDepthCompareOperation(gpu.CompareFunction.always)
@@ -1061,7 +1107,10 @@ class _MapPass {
           lengthInBytes: stream.vertices.lengthInBytes,
         ),
       )
-      ..bindUniform(map._flatFrame!, host.emplace(map._frameBytes));
+      ..bindUniform(
+        map._flatFrame!,
+        host.emplace(map._mapFrame(globe, d.tile.id)),
+      );
     final segments = stream.segments;
     for (var s = 0; s < segments.length; s += 3) {
       final first = math.max(segments[s], from);

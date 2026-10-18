@@ -4,6 +4,7 @@ in vec4 v_pattern;
 in vec3 v_uv;
 in vec4 v_circle;
 in vec3 v_edge;
+in vec3 v_clip;
 
 // The sprite sheet's width and height, then the gradient texture's.
 uniform FragInfo {
@@ -16,6 +17,9 @@ uniform sampler2D gradient_ramp;
 out vec4 frag_color;
 
 void main() {
+  if (v_clip.z > 0.5 && (v_clip.x < 0.0 || v_clip.y < 0.0 || v_clip.x > 4096.0 || v_clip.y > 4096.0)) {
+    discard;
+  }
   vec4 color = v_color;
   if (v_circle.z > 0.5) {
     float radius = v_pattern.x;
