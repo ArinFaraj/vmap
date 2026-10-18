@@ -585,6 +585,7 @@ class StyleCompiler {
       'circle-stroke-color',
       'circle-stroke-width',
       'circle-stroke-opacity',
+      'circle-blur',
     ]);
     final radius = compileExpr(paint['circle-radius'] ?? 5);
     final ring = paint['circle-stroke-width'];
