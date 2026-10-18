@@ -11,6 +11,7 @@ import 'gpu_stream.dart';
 import 'extrusion.dart';
 import 'mvt.dart';
 import 'platform.dart';
+import 'round_corners.dart';
 import 'style_model.dart';
 import 'tessellate.dart';
 import 'mercator.dart';
@@ -490,6 +491,12 @@ class TileBuilder {
               height.toDouble(),
               base.toDouble(),
               color,
+              rounding: tileUnitsForMeters(
+                (asNumber(extrude.roundedCorners?.call(context)) ?? 0)
+                    .toDouble(),
+                z,
+                y,
+              ),
             );
             continue;
           }

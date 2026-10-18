@@ -19,6 +19,7 @@ class Extrude {
     this.base,
     this.color, {
     this.verticalGradient = true,
+    this.roundedCorners,
   });
 
   final Expr height;
@@ -27,6 +28,9 @@ class Extrude {
 
   /// `fill-extrusion-vertical-gradient`: walls darker towards their feet.
   final bool verticalGradient;
+
+  /// `fill-extrusion-rounded-corner-distance`, in metres.
+  final Expr? roundedCorners;
 }
 
 /// A style's root `light`, which shades buildings as MapLibre's

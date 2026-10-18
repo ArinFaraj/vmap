@@ -696,6 +696,7 @@ class StyleCompiler {
         paint['fill-extrusion-base'],
         color,
         paint['fill-extrusion-vertical-gradient'],
+        layer.layout['fill-extrusion-rounded-corner-distance'],
       ]);
       final index = _bucketIndex.putIfAbsent(key, () {
         _buckets.add(
@@ -710,6 +711,9 @@ class StyleCompiler {
               compileExpr(color),
               verticalGradient:
                   paint['fill-extrusion-vertical-gradient'] != false,
+              roundedCorners: compileExpr(
+                layer.layout['fill-extrusion-rounded-corner-distance'] ?? 0,
+              ),
             ),
           ),
         );
