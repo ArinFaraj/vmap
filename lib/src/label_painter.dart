@@ -29,6 +29,9 @@ class LabelPainter {
   GlyphPages? glyphs;
 
   LabelRules rules = LabelRules.vmap;
+
+  /// The map is zooming, when MapLibre samples icons smoothly.
+  bool moving = false;
   final ui.Paint _imagePaint = ui.Paint()
     ..filterQuality = ui.FilterQuality.medium;
   final Map<VmapPin, ui.Image> _pinImages = {};
@@ -118,9 +121,30 @@ class LabelPainter {
         pieces.length == 1 &&
         to0.width * devicePixelRatio == from0.width &&
         to0.height * devicePixelRatio == from0.height;
+    // As MapLibre, an icon at its own size and density, upright and not
+    // zooming, is sampled nearest, its pieces stretched or not.
+    final nearest =
+        !moving &&
+        turn == 0 &&
+        !icon.sdf &&
+        (_view.tilted?.pitch ?? 0) == 0 &&
+        st.iconScale == 1 &&
+        !(symbol?.iconSizeByFeature ?? false) &&
+        icon.pixelRatio == devicePixelRatio;
     for (final filter in [?rim, fill]) {
       _imagePaint.colorFilter = filter;
-      if (texelForPixel) {
+      if (nearest && !texelForPixel) {
+        _imagePaint.filterQuality = ui.FilterQuality.none;
+        for (final (from, to) in pieces) {
+          canvas.drawImageRect(
+            sheet.image,
+            from,
+            to.translate(ix, iy),
+            _imagePaint,
+          );
+        }
+        _imagePaint.filterQuality = ui.FilterQuality.medium;
+      } else if (texelForPixel) {
         // MapLibre samples an unscaled icon nearest, which puts its corner
         // on the device pixel at or below the half.
         final x = ((ix + to0.left) * devicePixelRatio - 0.5).ceilToDouble();

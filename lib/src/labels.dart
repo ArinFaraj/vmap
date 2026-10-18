@@ -394,7 +394,7 @@ class LabelEngine {
     _view.ground = ground;
     final tilt = view == null ? 0.0 : view.pitch * 1000 + view.bearing;
     if (_zooming && !zooming) _placeAgain = true;
-    _zooming = zooming;
+    _zooming = _painter.moving = zooming;
     final nowMs = _clock.elapsedMilliseconds;
     final moved =
         zoom != _placedZoom ||
