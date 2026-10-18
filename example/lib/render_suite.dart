@@ -221,6 +221,7 @@ class _Session {
   VmapEngine _make() => VmapEngine(
     style: VmapStyle.json(_localize(_document) as Map<String, Object?>),
     maxCachedTiles: 200,
+    source: TileSourceConfig(spritePixelRatio: ratio),
     styleGlyphs: true,
     renderer: _gpu ? GpuMap.create() : null,
   )..onError = onError;

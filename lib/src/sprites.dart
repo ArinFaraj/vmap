@@ -142,17 +142,24 @@ class SpriteSheet {
   }
 
   /// Loads the sheet at [url], the address without `.json` or `.png`. The
-  /// double density sheet is tried first. A copy in [cacheDirectory] is used
+  /// double density sheet is tried first when [pixelRatio], the screen's
+  /// when null, is above 1. A copy in [cacheDirectory] is used
   /// when there is one, and replaced for the next run.
   static Future<SpriteSheet?> load(
     String url, {
     String? cacheDirectory,
     String userAgent = 'vmap',
     Map<String, String> headers = const {},
+    double? pixelRatio,
   }) async {
+    final ratio =
+        pixelRatio ??
+        ui.PlatformDispatcher.instance.implicitView?.devicePixelRatio ??
+        2;
+    final densities = ratio > 1 ? const ['@2x', ''] : const ['', '@2x'];
     final base = cacheDirectory == null
         ? null
-        : '$cacheDirectory/sprite-${cacheKey(url)}';
+        : '$cacheDirectory/sprite-${cacheKey('$url${densities.first}')}';
     if (base != null) {
       try {
         if (fileExists('$base.json') && fileExists('$base.png')) {
@@ -160,12 +167,12 @@ class SpriteSheet {
             utf8.decode(await readFile('$base.json')),
             await readFile('$base.png'),
           );
-          _download(url, userAgent, headers, base).ignore();
+          _download(url, userAgent, headers, base, densities).ignore();
           return sheet;
         }
       } catch (_) {}
     }
-    final fetched = await _download(url, userAgent, headers, base);
+    final fetched = await _download(url, userAgent, headers, base, densities);
     return fetched == null ? null : _decode(fetched.$1, fetched.$2);
   }
 
@@ -174,13 +181,14 @@ class SpriteSheet {
     String userAgent,
     Map<String, String> headers,
     String? saveAs,
+    List<String> densities,
   ) async {
     final query = url.indexOf('?');
     final stem = query < 0 ? url : url.substring(0, query);
     final tail = query < 0 ? '' : url.substring(query);
     final client = Net(userAgent: userAgent);
     try {
-      for (final density in const ['@2x', '']) {
+      for (final density in densities) {
         try {
           final index = await _get(client, headers, '$stem$density.json$tail');
           final picture = await _get(client, headers, '$stem$density.png$tail');

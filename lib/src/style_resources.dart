@@ -140,6 +140,7 @@ class StyleResources {
         cacheDirectory: _config.cacheDirectory,
         userAgent: _config.userAgent,
         headers: _config.headers,
+        pixelRatio: _config.spritePixelRatio,
       );
     } catch (e) {
       onError(e);
