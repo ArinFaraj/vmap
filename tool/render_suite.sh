@@ -44,6 +44,7 @@ fi
 trap 'kill $server $mvt 2>/dev/null || true' EXIT
 
 mkdir -p "$out"
+printf '%s\n' "$filter" >"$out/filter"
 cd "$(dirname "$0")/../example"
 VMAP_BACKGROUND=1 flutter run -d macos --profile -t lib/render_suite.dart \
   --dart-define=SUITE="$suite" \
