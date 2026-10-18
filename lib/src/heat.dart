@@ -37,16 +37,16 @@ class HeatPainter {
     EvalContext context,
     HeatPaint heat,
     List<TileMesh> meshes,
-    double diameter,
+    double Function(EvalContext) diameter,
   ) {
     final glow = _glow ??= _glowImage();
     final intensity = asNumber(heat.intensity(context)) ?? 1;
-    final size = diameter * _reach;
-    final k = size / glow.width;
     for (final mesh in meshes) {
       final points = mesh.points;
       if (points == null || points.isEmpty) continue;
       context.props = mesh.props ?? const {};
+      final size = diameter(context) * _reach;
+      final k = size / glow.width;
       final strength = (asNumber(heat.weight(context)) ?? 1) * intensity;
       if (strength <= 0) continue;
       final n = points.length ~/ 2;

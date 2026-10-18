@@ -247,8 +247,14 @@ class MeshPainter {
       var width = _widths[p];
       final MeshLayer layer;
       switch (layers[p]) {
-        case HeatmapLayer(:final heat):
-          _heat.add(canvas, _context, heat, meshes, width / scale);
+        case HeatmapLayer(:final heat, width: final diameter):
+          _heat.add(
+            canvas,
+            _context,
+            heat,
+            meshes,
+            (c) => (asNumber(diameter(c)) ?? 0) / scale,
+          );
           draws++;
           continue;
         case final MeshLayer mesh:

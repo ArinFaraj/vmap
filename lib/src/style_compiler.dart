@@ -559,7 +559,7 @@ class StyleCompiler {
         bucket: _bucket(
           vector,
           BucketKind.circle,
-          _readsOf(paint, const ['heatmap-weight']),
+          _readsOf(paint, const ['heatmap-weight', 'heatmap-radius']),
         ),
         minZoom: layer.minZoom,
         maxZoom: layer.maxZoom,
