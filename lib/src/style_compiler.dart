@@ -962,6 +962,9 @@ class StyleCompiler {
       if (json.isNotEmpty && (json[0] == 'feature-state' || json[0] == 'id')) {
         into.add(r'$id');
       }
+      if (json.isNotEmpty && (json[0] == 'within' || json[0] == 'distance')) {
+        into.add(geometryKey(json));
+      }
       for (final e in json) {
         _reads(e, into);
       }

@@ -59,6 +59,26 @@ void main() {
     expect(Rgba.of(color(at(5)))!.toArgb(), 0xFF808080);
   });
 
+  test('a within in a paint reads the answer its tile kept for it', () {
+    final json = [
+      'within',
+      {
+        'type': 'Polygon',
+        'coordinates': [
+          [
+            [0, 0],
+            [1, 0],
+            [1, 1],
+            [0, 0],
+          ],
+        ],
+      },
+    ];
+    final inside = compileExpr(json);
+    expect(inside(at(1, {geometryKey(json): true})), isTrue);
+    expect(inside(at(1)), isNull);
+  });
+
   test('a legacy property function blends pairs of numbers', () {
     final offset = compileExpr({
       'property': 'rank',

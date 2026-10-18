@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'color.dart';
@@ -71,6 +72,21 @@ const _operators = {
 
 /// The variables `let` has bound around the expression being compiled.
 final List<Map<String, Expr>> _scopes = [];
+
+/// The property a `within` or `distance` [json] is kept under for its
+/// feature: worked out where the tile is built, beside the geometry, since
+/// a paint is evaluated without it.
+String geometryKey(Object? json) => '\$geometry:${jsonEncode(json)}';
+
+final Map<String, Expr> _geometryExprs = {};
+
+/// The expression [geometryKey] named, to work out from a feature's
+/// geometry.
+Expr? geometryExpr(String key) => _geometryExprs[key];
+
+/// [read], or without the geometry the value kept under its [key].
+Expr _byGeometry(String key, Expr read) =>
+    _geometryExprs[key] = (c) => c.lonLats == null ? c.props[key] : read(c);
 
 Expr _constant(Object? value) =>
     (_) => value;
@@ -288,21 +304,21 @@ Expr _op(String op, List<Object?> args) {
     case 'within':
       final place = Place.of(args.isEmpty ? null : args.first);
       if (place == null) return _constant(false);
-      return (c) {
+      return _byGeometry(geometryKey([op, ...args]), (c) {
         final points = c.lonLats?.call();
         return points != null &&
             c.geometryType != 'Polygon' &&
             place.holds(points);
-      };
+      });
     case 'distance':
       final place = Place.of(args.isEmpty ? null : args.first);
       if (place == null) return _constant(null);
-      return (c) {
+      return _byGeometry(geometryKey([op, ...args]), (c) {
         final points = c.lonLats?.call();
         return points == null
             ? null
             : place.distanceTo(points, joined: c.geometryType != 'Point');
-      };
+      });
     case 'typeof':
       final a = arg(0);
       return (c) => switch (a(c)) {

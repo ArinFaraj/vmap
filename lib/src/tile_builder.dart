@@ -387,7 +387,12 @@ class TileBuilder {
         if (group == null) groups.add(group = plain[b] = _Group(b, null));
         return group;
       }
-      final values = [for (final k in keys) context.props[k]];
+      final values = [
+        for (final k in keys)
+          k.startsWith(r'$geometry:')
+              ? geometryExpr(k)?.call(context)
+              : context.props[k],
+      ];
       final key = '$b|${values.join('\u0001')}';
       var group = varied[key];
       if (group != null) return group;
@@ -620,7 +625,12 @@ class TileBuilder {
             final order = _order(symbol, context);
             final carried = symbol.build.paintKeys.isEmpty
                 ? null
-                : {for (final k in symbol.build.paintKeys) k: context.props[k]};
+                : {
+                    for (final k in symbol.build.paintKeys)
+                      k: k.startsWith(r'$geometry:')
+                          ? geometryExpr(k)?.call(context)
+                          : context.props[k],
+                  };
             if (f.type == mvtPolygon) {
               if (along) continue;
               scaled();
