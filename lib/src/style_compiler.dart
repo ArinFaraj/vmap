@@ -627,7 +627,7 @@ class StyleCompiler {
           vector,
           BucketKind.line,
           names,
-          cap: dash != null || picture != null
+          cap: picture != null
               ? LineCap.butt
               : switch (layout['line-cap']) {
                   'round' => LineCap.round,

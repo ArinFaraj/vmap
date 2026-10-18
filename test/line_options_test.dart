@@ -97,7 +97,7 @@ void main() {
     expect((dashed.layers.single as LineLayer).dash, [2, 2]);
     expect((dashed.layers.single as LineLayer).blur, isNotNull);
     expect(dashed.buckets.single.edged, isFalse);
-    expect(dashed.buckets.single.caps, isFalse);
+    expect(dashed.buckets.single.caps, isTrue);
 
     final solid = _sheet(
       {'line-cap': 'round'},

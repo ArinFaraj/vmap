@@ -214,7 +214,7 @@ class Bucket {
   final bool Function(EvalContext) filter;
   final BucketKind kind;
 
-  /// How its lines end. Dashed lines end as their dashes do instead.
+  /// How its lines end.
   final LineCap cap;
   bool get caps => cap == LineCap.round;
 

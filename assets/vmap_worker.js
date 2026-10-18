@@ -1,4 +1,4 @@
-// vmap web worker, built from lib 9edddd59
+// vmap web worker, built from lib 4480a690
 (function dartProgram(){function copyProperties(a,b){var s=Object.keys(a)
 for(var r=0;r<s.length;r++){var q=s[r]
 b[q]=a[q]}}function mixinPropertiesHard(a,b){var s=Object.keys(a)
@@ -14541,36 +14541,36 @@ s=a5&&b0==null?a.h(0,"line-gradient"):d
 r=a3!=null&&b0==null&&s==null
 q=b.gaK()
 p=J.q(a.h(0,A.t(b.b)+"-translate-anchor"),"viewport")
-if(!a5||b0!=null)o=B.l
-else{n=a0.h(0,c)
-A:{if("round"===n){o=B.Z
-break A}if("square"===n){o=B.a_
-break A}o=B.l
-break A}}m=!a5||b0!=null||r||s!=null
+o=b0==null
+if(!o)n=B.l
+else{m=a0.h(0,c)
+A:{if("round"===m){n=B.Z
+break A}if("square"===m){n=B.a_
+break A}n=B.l
+break A}}l=!a5||!o||r||s!=null
 a5=r&&a5
-l=s==null
-k=a2==null
-j=a0.h(0,"line-join")
-B:{if("round"===j){i=B.aR
-break B}if("bevel"===j){i=B.a0
-break B}i=B.x
-break B}i=this.eA(b1,B.u,a1,o,m,a5,i,!l,!k)
-a5=b0==null
-if(a5&&l){o=a.h(0,"line-color")
-if(o==null)o="#000000"}else o="#ffffff"
-o=A.n(o)
-m=l?d:A.n(s)
+k=s==null
+j=a2==null
+i=a0.h(0,"line-join")
+B:{if("round"===i){h=B.aR
+break B}if("bevel"===i){h=B.a0
+break B}h=B.x
+break B}h=this.eA(b1,B.u,a1,n,l,a5,h,!k,!j)
+if(o&&k){a5=a.h(0,"line-color")
+if(a5==null)a5="#000000"}else a5="#ffffff"
+a5=A.n(a5)
+n=k?d:A.n(s)
 l=a.h(0,"line-opacity")
 l=A.n(l==null?1:l)
-k=k?d:A.n(a2)
-h=r?A.n(a3):d
-g=a5?a4:d
+k=j?d:A.n(a2)
+j=r?A.n(a3):d
+g=o?a4:d
 f=a0.h(0,c)
 C:{if("round"===f){e=B.ar
 break C}if("square"===f){e=B.as
 break C}e=B.W
-break C}a5=a5?d:A.i8(b0)
-B.a.l(this.x,A.pl(h,i,o,g,e,a8,m,b.a,b.r,b.f,k,l,a5,a1.a!==0,q,p,a9))},
+break C}o=o?d:A.i8(b0)
+B.a.l(this.x,A.pl(j,h,a5,g,e,a8,n,b.a,b.r,b.f,k,l,o,a1.a!==0,q,p,a9))},
 eh(a5){var s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d=this,c=null,b="-translate-anchor",a="viewport",a0=a5.a,a1=a0.d,a2=A.U(a0.b),a3=a2+"-color",a4=a1.h(0,a3)
 if(a4==null)a4="#000000"
 s=a2+"-opacity"
