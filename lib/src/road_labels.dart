@@ -209,15 +209,17 @@ class RoadLabels {
     return false;
   }
 
-  /// Whether a name the same as [st]'s is placed close by already.
-  bool nearSame(LabelState st) {
+  /// Whether a name the same as [st]'s is placed closer than [distance]
+  /// logical pixels already, or than vmap's own distance without one.
+  bool nearSame(LabelState st, [double? distance]) {
     final world = _view.world;
     final text = st.candidate.text;
+    final most = distance ?? _repeatDistance;
     for (final other in _placed) {
       if (other.candidate.text != text) continue;
       final dx = (other.worldX - st.worldX) * world;
       final dy = (other.worldY - st.worldY) * world;
-      if (dx * dx + dy * dy < _repeatDistance * _repeatDistance) {
+      if (dx * dx + dy * dy < most * most) {
         return true;
       }
     }

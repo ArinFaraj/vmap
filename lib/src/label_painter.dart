@@ -109,9 +109,34 @@ class LabelPainter {
     final pieces = fit
         ? stretchedIcon(icon, area, st.iconScale)
         : [(icon.source, area)];
+    final (from0, to0) = pieces.first;
+    final texelForPixel =
+        turn == 0 &&
+        !icon.sdf &&
+        (_view.tilted?.pitch ?? 0) == 0 &&
+        !(symbol?.iconSizeByFeature ?? false) &&
+        pieces.length == 1 &&
+        to0.width * devicePixelRatio == from0.width &&
+        to0.height * devicePixelRatio == from0.height;
     for (final filter in [?rim, fill]) {
       _imagePaint.colorFilter = filter;
-      if (turn == 0 && rules.snapIcons) {
+      if (texelForPixel) {
+        // MapLibre samples an unscaled icon nearest, which puts its corner
+        // on the device pixel at or below the half.
+        final x = ((ix + to0.left) * devicePixelRatio - 0.5).ceilToDouble();
+        final y = ((iy + to0.top) * devicePixelRatio - 0.5).ceilToDouble();
+        canvas.drawImageRect(
+          sheet.image,
+          from0,
+          ui.Rect.fromLTWH(
+            x / devicePixelRatio,
+            y / devicePixelRatio,
+            to0.width,
+            to0.height,
+          ),
+          _imagePaint,
+        );
+      } else if (turn == 0 && rules.snapIcons) {
         final dx = (ix * devicePixelRatio).roundToDouble() / devicePixelRatio;
         final dy = (iy * devicePixelRatio).roundToDouble() / devicePixelRatio;
         for (final (from, to) in pieces) {
@@ -311,7 +336,7 @@ class LabelPainter {
   }
 
   /// Glyph range text drawn upright from cells made at its exact size and
-  /// for the quarter pixel each glyph falls on, so every glyph is sampled
+  /// for the eighth pixel each glyph falls on, so every glyph is sampled
   /// once at the place MapLibre puts it.
   void _rangeGlyphs(
     LabelState st,
@@ -334,7 +359,7 @@ class LabelPainter {
         : (look.haloBlur * devicePixelRatio * 4).round();
     final k = 1 / devicePixelRatio;
     final keys = List<PageKey>.generate(
-      16,
+      64,
       (phase) => (
         size: 0,
         weight: 400,
@@ -349,22 +374,22 @@ class LabelPainter {
     for (var i = 0; i < g.length; i += 5) {
       final dx = (x + g[i + 2] * em) * devicePixelRatio;
       final dy = (y + g[i + 3] * em) * devicePixelRatio;
-      var qx = ((dx - dx.floorToDouble()) * 4).round();
-      var qy = ((dy - dy.floorToDouble()) * 4).round();
-      final ox = dx.floorToDouble() + (qx == 4 ? 1 : 0);
-      final oy = dy.floorToDouble() + (qy == 4 ? 1 : 0);
-      qx %= 4;
-      qy %= 4;
+      var qx = ((dx - dx.floorToDouble()) * 8).round();
+      var qy = ((dy - dy.floorToDouble()) * 8).round();
+      final ox = dx.floorToDouble() + (qx == 8 ? 1 : 0);
+      final oy = dy.floorToDouble() + (qy == 8 ? 1 : 0);
+      qx %= 8;
+      qy %= 8;
       final cell = pages.cell(
-        keys[qx | qy << 2],
+        keys[qx | qy << 3],
         g[i].toInt(),
         g[i + 1].toInt(),
       );
       if (cell == null) continue;
       pages.add(
         cell,
-        (ox + qx / 4) * k,
-        (oy + qy / 4) * k,
+        (ox + qx / 8) * k,
+        (oy + qy / 8) * k,
         0,
         k * sixteenths / 16 / pages.found.em,
         ink,

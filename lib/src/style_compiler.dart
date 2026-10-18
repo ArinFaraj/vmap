@@ -490,6 +490,8 @@ class StyleCompiler {
         iconOptional: layout['icon-optional'] == true,
         iconOverlaps: layout['icon-allow-overlap'] == true,
         textOverlaps: layout['text-allow-overlap'] == true,
+        drawnByScreenY: _drawnByScreenY(layout),
+        iconSizeByFeature: _readsAny(layout['icon-size']),
         textFit: (layout['icon-text-fit'] ?? 'none') != 'none',
         iconTextFit: switch (layout['icon-text-fit']) {
           final String fit => fit,
@@ -884,6 +886,12 @@ class StyleCompiler {
   }
 
   /// Collects the feature properties an expression reads.
+  static bool _readsAny(Object? json) {
+    final keys = <String>{};
+    _reads(json, keys);
+    return keys.isNotEmpty;
+  }
+
   static void _reads(Object? json, Set<String> into) {
     if (json is List) {
       if (json.length == 2 &&
@@ -918,6 +926,20 @@ class StyleCompiler {
   }
 
   static Expr? _maybe(Object? json) => json == null ? null : compileExpr(json);
+
+  static bool _drawnByScreenY(Map<Object?, Object?> layout) {
+    bool overlaps(String mode, String allow) => switch (layout[mode]) {
+      final String m => m != 'never',
+      _ => layout[allow] == true,
+    };
+    final order = layout['symbol-z-order'] ?? 'auto';
+    final byKey = order != 'viewport-y' && layout['symbol-sort-key'] != null;
+    return (order == 'viewport-y' || (order == 'auto' && !byKey)) &&
+        (overlaps('text-overlap', 'text-allow-overlap') ||
+            overlaps('icon-overlap', 'icon-allow-overlap') ||
+            layout['text-ignore-placement'] == true ||
+            layout['icon-ignore-placement'] == true);
+  }
 
   static (double, double) _pair(Object? json) {
     var list = json;

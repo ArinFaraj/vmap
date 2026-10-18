@@ -501,6 +501,16 @@ class LabelEngine {
       }
       _live[kept++] = st;
       if (st.opacity == 0) continue;
+      _drawn.add(st);
+    }
+    _live.length = kept;
+    _drawOrder(rotation);
+    final pages = _glyphPages;
+    var textLayer = -1 << 30;
+    for (final st in _drawn) {
+      final layer = _layerOf(st.candidate);
+      final sprite = st.sprite;
+      final wantsText = st.candidate.hasText && st.showText;
       final icon = st.icon;
       final sheet = _points.sheet;
       final pin = st.pin;
@@ -508,6 +518,7 @@ class LabelEngine {
       if (pin != null && pins != null && st.showIcon) {
         _painter.paintPin(canvas, st, pin, pins, devicePixelRatio);
       } else if (icon != null && st.showIcon && sheet != null) {
+        if (pages != null && textLayer != layer) pages.flush(canvas);
         final symbol = _symbolOf(st.candidate);
         _painter.paintIcon(
           canvas,
@@ -521,9 +532,9 @@ class LabelEngine {
       }
       if (sprite == null || !wantsText) continue;
       _painter.paintText(canvas, st, sprite, devicePixelRatio);
+      textLayer = layer;
     }
-    _live.length = kept;
-    final pages = _glyphPages;
+    _drawn.clear();
     if (pages != null) {
       pages.flush(canvas);
       if (pages.rasterizePending()) animating = true;
@@ -531,6 +542,34 @@ class LabelEngine {
     }
     if (rotation != 0) canvas.restore();
     return animating;
+  }
+
+  final List<LabelState> _drawn = [];
+
+  static int _layerOf(LabelCandidate c) => switch (c) {
+    TileLabel(:final tile) => tile.layer,
+    MarkerName() => 1 << 30,
+  };
+
+  /// Puts [_drawn] in MapLibre's drawing order: layer by layer, and within
+  /// a layer in placement order, or top to bottom on the screen for a
+  /// layer drawn by screen y, the later feature first on a tie.
+  void _drawOrder(double rotation) {
+    final s = -math.sin(rotation), c = math.cos(rotation);
+    for (final st in _drawn) {
+      if (_symbolOf(st.candidate)?.drawnByScreenY != true) continue;
+      _view.project(st.worldX, st.worldY);
+      st.drawY = (s * _view.x + c * _view.y).roundToDouble();
+    }
+    _drawn.sort((a, b) {
+      final byLayer = _layerOf(a.candidate) - _layerOf(b.candidate);
+      if (byLayer != 0) return byLayer;
+      if (_symbolOf(a.candidate)?.drawnByScreenY != true) {
+        return a.sortKey - b.sortKey;
+      }
+      final byY = a.drawY.compareTo(b.drawY);
+      return byY != 0 ? byY : b.sortKey - a.sortKey;
+    });
   }
 
   /// Labels a tilted map would shrink below this are left out, as MapLibre
@@ -715,8 +754,23 @@ class LabelEngine {
           maxBend: layer?.maxBend,
         );
     }
-    if (!st.roadFits || _roads.nearSame(st)) return;
-    final room = fontSize <= 12.5 ? _minorRoadRoom : _majorRoadRoom;
+    if (!st.roadFits) return;
+    final mapLibre = identical(_rules, LabelRules.mapLibre) && layer != null;
+    if (_roads.nearSame(
+      st,
+      mapLibre
+          ? layer.build.spacing / 2 * road.tileSpan * _view.world / 512
+          : null,
+    )) {
+      return;
+    }
+    final overlaps = mapLibre && layer.textOverlaps;
+    final ignored = mapLibre && layer.textIgnored;
+    final room = mapLibre
+        ? 0.0
+        : fontSize <= 12.5
+        ? _minorRoadRoom
+        : _majorRoadRoom;
     final (roadX, roadY) = layer == null
         ? (0.0, 0.0)
         : _view.moved(
@@ -739,22 +793,25 @@ class LabelEngine {
     st.screenAngle = turn;
     if (st.curve != null) {
       final reach = (textH + room) / 2 + textPad;
-      if (_roads.curveHits(st, textW, textH, reach, add: false)) {
+      if (!overlaps && _roads.curveHits(st, textW, textH, reach, add: false)) {
         return;
       }
-      _roads.curveHits(st, textW, textH, reach, add: true);
+      if (!ignored) _roads.curveHits(st, textW, textH, reach, add: true);
     } else {
-      if (_boxes.collides(
-        sx,
-        sy,
-        textW + room,
-        textH + room,
-        turn,
-        pad: textPad,
-      )) {
+      if (!overlaps &&
+          _boxes.collides(
+            sx,
+            sy,
+            textW + room,
+            textH + room,
+            turn,
+            pad: textPad,
+          )) {
         return;
       }
-      _boxes.take(sx, sy, textW + room, textH + room, turn, pad: textPad);
+      if (!ignored) {
+        _boxes.take(sx, sy, textW + room, textH + room, turn, pad: textPad);
+      }
     }
     st
       ..dx = roadX
