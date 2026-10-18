@@ -212,10 +212,15 @@ class Bucket {
     this.join = LineJoin.miter,
     this.variantKeys = const [],
     this.extrude,
+    this.sortKey,
   });
 
   /// Set for a bucket of buildings to stand up.
   final Extrude? extrude;
+
+  /// `fill-sort-key` and the like: the features are drawn by it, lowest
+  /// first.
+  final Expr? sortKey;
 
   /// Index into the style's sources.
   final int source;

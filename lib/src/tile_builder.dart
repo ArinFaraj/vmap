@@ -417,270 +417,309 @@ class TileBuilder {
       final idKey = from == null || from is GeoJsonSource
           ? null
           : from.idKey(layer.name);
-      for (final f in layer.features) {
-        final tags = f.allTags(layer);
-        if (idKey != null && tags[idKey] != null) tags[r'$id'] = tags[idKey];
-        context
-          ..props = tags
-          ..geometryType = switch (f.type) {
-            mvtPoint => 'Point',
-            mvtLine => 'LineString',
-            _ => 'Polygon',
-          };
-        var read = false;
-        var pending = scale;
-        final unit = scale;
-        void geometry() {
-          if (read) return;
-          read = true;
-          _sink.clear();
-          f.readGeometry(_sink);
-        }
-
-        void scaled() {
-          geometry();
-          if (pending != 1) {
-            _scaleSink(pending);
-            pending = 1;
+      // A bucket drawn by a sort key takes the features in its own order,
+      // apart from the rest, which keep the tile's.
+      final passes = <(List<TileFeature>, List<int>, List<int>)>[
+        (
+          layer.features,
+          [
+            for (final b in buckets)
+              if (sheet.buckets[b].sortKey == null) b,
+          ],
+          symbols,
+        ),
+        for (final b in buckets)
+          if (sheet.buckets[b].sortKey case final sortKey?)
+            (_bySortKey(layer, sortKey, idKey), [b], const <int>[]),
+      ];
+      for (final (features, buckets, symbols) in passes)
+        for (final f in features) {
+          final tags = f.allTags(layer);
+          if (idKey != null && tags[idKey] != null) tags[r'$id'] = tags[idKey];
+          context
+            ..props = tags
+            ..geometryType = switch (f.type) {
+              mvtPoint => 'Point',
+              mvtLine => 'LineString',
+              _ => 'Polygon',
+            };
+          var read = false;
+          var pending = scale;
+          final unit = scale;
+          void geometry() {
+            if (read) return;
+            read = true;
+            _sink.clear();
+            f.readGeometry(_sink);
           }
-        }
 
-        context.lonLats = () {
-          geometry();
-          final across = pending / tileExtent;
-          final tiles = 1 << z;
-          return [
-            for (var i = 0; i < _sink.coordCount; i += 2) ...[
-              longitudeAt((x + _sink.coords[i] * across) / tiles),
-              latitudeAt((y + _sink.coords[i + 1] * across) / tiles),
-            ],
-          ];
-        };
-
-        for (final b in buckets) {
-          final bucket = sheet.buckets[b];
-          final fits = switch (bucket.kind) {
-            BucketKind.fill || BucketKind.extrusion => f.type == mvtPolygon,
-            BucketKind.circle => true,
-            BucketKind.line =>
-              bucket.outline ? f.type == mvtPolygon : f.type != mvtPoint,
-          };
-          if (!fits || !bucket.filter(context)) continue;
-          if (bucket.extrude case final extrude?) {
-            scaled();
-            // As MapLibre, nothing stands below the ground.
-            final height = math.max(
-              0.0,
-              asNumber(extrude.height(context)) ?? 0,
-            );
-            final base = math.max(0.0, asNumber(extrude.base(context)) ?? 0);
-            final color = Rgba.of(extrude.color(context)) ?? Rgba.black;
-            _starts.clear();
-            _ends.clear();
-            for (var r = 0; r < _sink.ringCount; r++) {
-              _starts.add(_sink.ringStart(r));
-              _ends.add(_sink.ringEnd(r));
-            }
-            (extruders[b] ??= ExtrusionBuilder(
-              b,
-              light: sheet.light,
-              gradient: extrude.verticalGradient,
-              patternPerMetre: -(1 << z) / 8192,
-            )).add(
-              _sink.coords,
-              _starts,
-              _ends,
-              height.toDouble(),
-              base.toDouble(),
-              color,
-              rounding: tileUnitsForMeters(
-                (asNumber(extrude.roundedCorners?.call(context)) ?? 0)
-                    .toDouble(),
-                z,
-                y,
-              ),
-              pattern: switch (extrude.pattern?.call(context)) {
-                final String name when name.isNotEmpty => name,
-                _ => null,
-              },
-            );
-            continue;
-          }
-          final group = groupFor(b, bucket);
-          if (bucket.kind == BucketKind.fill) {
+          void scaled() {
             geometry();
-            _addPolygons(group.fill ??= FillMesher(), pending, ringTolerance);
-            continue;
-          }
-          scaled();
-          if (bucket.kind == BucketKind.circle) {
-            final points = group.points ??= [];
-            void add(int i) {
-              final x = _sink.coords[i];
-              final y = _sink.coords[i + 1];
-              if (x < 0 || y < 0 || x >= tileExtent || y >= tileExtent) return;
-              points
-                ..add(x)
-                ..add(y);
+            if (pending != 1) {
+              _scaleSink(pending);
+              pending = 1;
             }
+          }
 
-            // As MapLibre, a circle or a heatmap glow stands on every vertex
-            // of a line or a polygon too, and a ring's first vertex twice.
-            for (var r = 0; r < _sink.ringCount; r++) {
-              final start = _sink.ringStart(r) * 2;
-              final end = _sink.ringEnd(r) * 2;
-              for (var i = start; i < end; i += 2) {
-                add(i);
+          context.lonLats = () {
+            geometry();
+            final across = pending / tileExtent;
+            final tiles = 1 << z;
+            return [
+              for (var i = 0; i < _sink.coordCount; i += 2) ...[
+                longitudeAt((x + _sink.coords[i] * across) / tiles),
+                latitudeAt((y + _sink.coords[i + 1] * across) / tiles),
+              ],
+            ];
+          };
+
+          for (final b in buckets) {
+            final bucket = sheet.buckets[b];
+            final fits = switch (bucket.kind) {
+              BucketKind.fill || BucketKind.extrusion => f.type == mvtPolygon,
+              BucketKind.circle => true,
+              BucketKind.line =>
+                bucket.outline ? f.type == mvtPolygon : f.type != mvtPoint,
+            };
+            if (!fits || !bucket.filter(context)) continue;
+            if (bucket.extrude case final extrude?) {
+              scaled();
+              // As MapLibre, nothing stands below the ground.
+              final height = math.max(
+                0.0,
+                asNumber(extrude.height(context)) ?? 0,
+              );
+              final base = math.max(0.0, asNumber(extrude.base(context)) ?? 0);
+              final color = Rgba.of(extrude.color(context)) ?? Rgba.black;
+              _starts.clear();
+              _ends.clear();
+              for (var r = 0; r < _sink.ringCount; r++) {
+                _starts.add(_sink.ringStart(r));
+                _ends.add(_sink.ringEnd(r));
               }
-              if (f.type == mvtPolygon &&
-                  end - start >= 6 &&
-                  (_sink.coords[start] != _sink.coords[end - 2] ||
-                      _sink.coords[start + 1] != _sink.coords[end - 1])) {
-                add(start);
-              }
-            }
-            continue;
-          }
-          final mesher = group.line ??= LineMesher(
-            distances: bucket.dashed,
-            offsets: bucket.offset,
-            edged: bucket.edged,
-            join: bucket.join,
-          );
-          for (var r = 0; r < _sink.ringCount; r++) {
-            final start = _sink.ringStart(r);
-            final end = _sink.ringEnd(r);
-            if (f.type == mvtLine) {
-              final shares = bucket.metered && f is MeasuredFeature
-                  ? (f as MeasuredFeature).lineMetrics
-                  : null;
-              final known = shares != null && shares.length > r * 2 + 1;
-              mesher.addLine(
+              (extruders[b] ??= ExtrusionBuilder(
+                b,
+                light: sheet.light,
+                gradient: extrude.verticalGradient,
+                patternPerMetre: -(1 << z) / 8192,
+              )).add(
                 _sink.coords,
-                start,
-                end,
-                lineTolerance,
-                cap: bucket.cap,
-                shareBefore: known
-                    ? shares[r * 2]
-                    : bucket.metered
-                    ? 0
-                    : null,
-                sharePer: known ? shares[r * 2 + 1] / unit : 0,
+                _starts,
+                _ends,
+                height.toDouble(),
+                base.toDouble(),
+                color,
+                rounding: tileUnitsForMeters(
+                  (asNumber(extrude.roundedCorners?.call(context)) ?? 0)
+                      .toDouble(),
+                  z,
+                  y,
+                ),
+                pattern: switch (extrude.pattern?.call(context)) {
+                  final String name when name.isNotEmpty => name,
+                  _ => null,
+                },
               );
               continue;
             }
-            final count = end - start;
-            if (count < 3) continue;
-            if (_ring.length < (count + 1) * 2) {
-              _ring = Float64List((count + 1) * 4);
+            final group = groupFor(b, bucket);
+            if (bucket.kind == BucketKind.fill) {
+              geometry();
+              _addPolygons(group.fill ??= FillMesher(), pending, ringTolerance);
+              continue;
             }
-            _ring.setRange(0, count * 2, _sink.coords, start * 2);
-            _ring[count * 2] = _ring[0];
-            _ring[count * 2 + 1] = _ring[1];
-            mesher.addLine(
-              _ring,
-              0,
-              count + 1,
-              lineTolerance,
-              closed: true,
-              join: bucket.outline ? LineJoin.none : null,
-            );
-          }
-        }
+            scaled();
+            if (bucket.kind == BucketKind.circle) {
+              final points = group.points ??= [];
+              void add(int i) {
+                final x = _sink.coords[i];
+                final y = _sink.coords[i + 1];
+                if (x < 0 || y < 0 || x >= tileExtent || y >= tileExtent)
+                  return;
+                points
+                  ..add(x)
+                  ..add(y);
+              }
 
-        for (final s in symbols) {
-          final symbol = sheet.symbols[s];
-          if (!symbol.build.filter(context)) continue;
-          final text = symbol.build.text(context) as String;
-          final icon = symbol.build.icon == null
-              ? ''
-              : symbol.build.icon!(context) as String;
-          if (text.isEmpty && icon.isEmpty) continue;
-          final placement = '${symbol.build.placement(context)}';
-          final along = placement.startsWith('line');
-          final base = (sheet.symbols.length - 1 - s) * 4096;
-          final order = _order(symbol, context);
-          final carried = symbol.build.paintKeys.isEmpty
-              ? null
-              : {for (final k in symbol.build.paintKeys) k: context.props[k]};
-          if (f.type == mvtPolygon) {
-            if (along) continue;
-            scaled();
-            final at = _inside();
-            if (at == null) continue;
-            labels.add(
-              BuiltLabel(
-                s,
-                base + order,
-                text,
-                at.$1,
-                at.$2,
-                null,
-                icon: icon,
-                spaced: true,
-              )..props = carried,
-            );
-            continue;
-          }
-          if (f.type == mvtPoint) {
-            if (along) continue;
-            scaled();
-            final label = _pointLabel(s, base + order, text, icon);
-            if (label != null) labels.add(label..props = carried);
-            continue;
-          }
-          scaled();
-          final deeper = math.max(0, (symbol.minZoom - styleZoom).ceil());
-          // line-center names a line once, at its middle.
-          final spacing = placement == 'line-center'
-              ? double.infinity
-              : symbol.build.spacing * 8 / (1 << deeper);
-          final zoom = context.zoom;
-          context.zoom = styleZoom + 1;
-          final size = finiteOr(symbol.size(context), 16);
-          context.zoom = zoom;
-          final em = size * tileExtent / 512;
-          if (along && text.isNotEmpty && !symbol.build.textUpright) {
-            final rings = [
-              for (var r = 0; r < _sink.ringCount; r++)
-                Float32List.fromList(
-                  _sink.coords.sublist(
-                    _sink.ringStart(r) * 2,
-                    _sink.ringEnd(r) * 2,
-                  ),
-                ),
-            ];
-            final named = NamedLine(
-              priority: base + (symbol.build.sortKey == null ? 50 : order),
-              text: text,
-              spacing: spacing,
-              labelLength: _textEms(symbol, text) * em,
-              em: em,
-              maxBend: symbol.maxBend ?? math.pi / 4,
-              props: carried,
-              rings: rings,
-            );
-            if (placement == 'line' && rings.isNotEmpty) {
-              (namedLines[s] ??= []).add(named);
-            } else {
-              labels.addAll(
-                _lineLabels(s, named, center: placement == 'line-center'),
-              );
+              // As MapLibre, a circle or a heatmap glow stands on every vertex
+              // of a line or a polygon too, and a ring's first vertex twice.
+              for (var r = 0; r < _sink.ringCount; r++) {
+                final start = _sink.ringStart(r) * 2;
+                final end = _sink.ringEnd(r) * 2;
+                for (var i = start; i < end; i += 2) {
+                  add(i);
+                }
+                if (f.type == mvtPolygon &&
+                    end - start >= 6 &&
+                    (_sink.coords[start] != _sink.coords[end - 2] ||
+                        _sink.coords[start + 1] != _sink.coords[end - 1])) {
+                  add(start);
+                }
+              }
+              continue;
             }
-            continue;
-          }
-          if (!along) {
-            // As MapLibre: a point placed on a line stands at the line's
-            // first vertex, when that lies in this tile.
-            final c = _sink.coords;
+            final mesher = group.line ??= LineMesher(
+              distances: bucket.dashed,
+              offsets: bucket.offset,
+              edged: bucket.edged,
+              join: bucket.join,
+            );
             for (var r = 0; r < _sink.ringCount; r++) {
-              final at = _sink.ringStart(r) * 2;
-              final x = c[at], y = c[at + 1];
-              if (x < 0 || y < 0 || x >= tileExtent || y >= tileExtent) {
+              final start = _sink.ringStart(r);
+              final end = _sink.ringEnd(r);
+              if (f.type == mvtLine) {
+                final shares = bucket.metered && f is MeasuredFeature
+                    ? (f as MeasuredFeature).lineMetrics
+                    : null;
+                final known = shares != null && shares.length > r * 2 + 1;
+                mesher.addLine(
+                  _sink.coords,
+                  start,
+                  end,
+                  lineTolerance,
+                  cap: bucket.cap,
+                  shareBefore: known
+                      ? shares[r * 2]
+                      : bucket.metered
+                      ? 0
+                      : null,
+                  sharePer: known ? shares[r * 2 + 1] / unit : 0,
+                );
                 continue;
               }
+              final count = end - start;
+              if (count < 3) continue;
+              if (_ring.length < (count + 1) * 2) {
+                _ring = Float64List((count + 1) * 4);
+              }
+              _ring.setRange(0, count * 2, _sink.coords, start * 2);
+              _ring[count * 2] = _ring[0];
+              _ring[count * 2 + 1] = _ring[1];
+              mesher.addLine(
+                _ring,
+                0,
+                count + 1,
+                lineTolerance,
+                closed: true,
+                join: bucket.outline ? LineJoin.none : null,
+              );
+            }
+          }
+
+          for (final s in symbols) {
+            final symbol = sheet.symbols[s];
+            if (!symbol.build.filter(context)) continue;
+            final text = symbol.build.text(context) as String;
+            final icon = symbol.build.icon == null
+                ? ''
+                : symbol.build.icon!(context) as String;
+            if (text.isEmpty && icon.isEmpty) continue;
+            final placement = '${symbol.build.placement(context)}';
+            final along = placement.startsWith('line');
+            final base = (sheet.symbols.length - 1 - s) * 4096;
+            final order = _order(symbol, context);
+            final carried = symbol.build.paintKeys.isEmpty
+                ? null
+                : {for (final k in symbol.build.paintKeys) k: context.props[k]};
+            if (f.type == mvtPolygon) {
+              if (along) continue;
+              scaled();
+              final at = _inside();
+              if (at == null) continue;
               labels.add(
+                BuiltLabel(
+                  s,
+                  base + order,
+                  text,
+                  at.$1,
+                  at.$2,
+                  null,
+                  icon: icon,
+                  spaced: true,
+                )..props = carried,
+              );
+              continue;
+            }
+            if (f.type == mvtPoint) {
+              if (along) continue;
+              scaled();
+              final label = _pointLabel(s, base + order, text, icon);
+              if (label != null) labels.add(label..props = carried);
+              continue;
+            }
+            scaled();
+            final deeper = math.max(0, (symbol.minZoom - styleZoom).ceil());
+            // line-center names a line once, at its middle.
+            final spacing = placement == 'line-center'
+                ? double.infinity
+                : symbol.build.spacing * 8 / (1 << deeper);
+            final zoom = context.zoom;
+            context.zoom = styleZoom + 1;
+            final size = finiteOr(symbol.size(context), 16);
+            context.zoom = zoom;
+            final em = size * tileExtent / 512;
+            if (along && text.isNotEmpty && !symbol.build.textUpright) {
+              final rings = [
+                for (var r = 0; r < _sink.ringCount; r++)
+                  Float32List.fromList(
+                    _sink.coords.sublist(
+                      _sink.ringStart(r) * 2,
+                      _sink.ringEnd(r) * 2,
+                    ),
+                  ),
+              ];
+              final named = NamedLine(
+                priority: base + (symbol.build.sortKey == null ? 50 : order),
+                text: text,
+                spacing: spacing,
+                labelLength: _textEms(symbol, text) * em,
+                em: em,
+                maxBend: symbol.maxBend ?? math.pi / 4,
+                props: carried,
+                rings: rings,
+              );
+              if (placement == 'line' && rings.isNotEmpty) {
+                (namedLines[s] ??= []).add(named);
+              } else {
+                labels.addAll(
+                  _lineLabels(s, named, center: placement == 'line-center'),
+                );
+              }
+              continue;
+            }
+            if (!along) {
+              // As MapLibre: a point placed on a line stands at the line's
+              // first vertex, when that lies in this tile.
+              final c = _sink.coords;
+              for (var r = 0; r < _sink.ringCount; r++) {
+                final at = _sink.ringStart(r) * 2;
+                final x = c[at], y = c[at + 1];
+                if (x < 0 || y < 0 || x >= tileExtent || y >= tileExtent) {
+                  continue;
+                }
+                labels.add(
+                  BuiltLabel(
+                    s,
+                    base + (symbol.build.sortKey == null ? 50 : order),
+                    text,
+                    x,
+                    y,
+                    null,
+                    icon: icon,
+                    angle: symbol.build.iconRotate * math.pi / 180,
+                  )..props = carried,
+                );
+              }
+              continue;
+            }
+            final turns = text.isEmpty && !symbol.build.iconUpright;
+            _anchorsAlong(
+              spacing,
+              text.isEmpty ? 0 : _textEms(symbol, text) * em,
+              em,
+              symbol.maxBend ?? math.pi / 4,
+              placement == 'line-center',
+              (x, y, angle) => labels.add(
                 BuiltLabel(
                   s,
                   base + (symbol.build.sortKey == null ? 50 : order),
@@ -689,38 +728,16 @@ class TileBuilder {
                   y,
                   null,
                   icon: icon,
-                  angle: symbol.build.iconRotate * math.pi / 180,
+                  angle: turns
+                      ? angle + symbol.build.iconRotate * math.pi / 180
+                      : symbol.build.iconRotate * math.pi / 180,
+                  spaced: true,
+                  turns: turns,
                 )..props = carried,
-              );
-            }
-            continue;
+              ),
+            );
           }
-          final turns = text.isEmpty && !symbol.build.iconUpright;
-          _anchorsAlong(
-            spacing,
-            text.isEmpty ? 0 : _textEms(symbol, text) * em,
-            em,
-            symbol.maxBend ?? math.pi / 4,
-            placement == 'line-center',
-            (x, y, angle) => labels.add(
-              BuiltLabel(
-                s,
-                base + (symbol.build.sortKey == null ? 50 : order),
-                text,
-                x,
-                y,
-                null,
-                icon: icon,
-                angle: turns
-                    ? angle + symbol.build.iconRotate * math.pi / 180
-                    : symbol.build.iconRotate * math.pi / 180,
-                spaced: true,
-                turns: turns,
-              )..props = carried,
-            ),
-          );
         }
-      }
     }
 
     for (final MapEntry(key: layer, value: lines) in namedLines.entries) {
@@ -799,6 +816,25 @@ class TileBuilder {
         }
       }
     }
+  }
+
+  /// [layer]'s features by [sortKey], lowest first, ties in the tile's
+  /// order.
+  List<TileFeature> _bySortKey(TileLayer layer, Expr sortKey, String? idKey) {
+    final features = layer.features;
+    final keys = List<double>.generate(features.length, (i) {
+      final f = features[i];
+      final tags = f.allTags(layer);
+      if (idKey != null && tags[idKey] != null) tags[r'$id'] = tags[idKey];
+      _context.props = tags;
+      return (asNumber(sortKey(_context)) ?? 0).toDouble();
+    });
+    final order = List<int>.generate(features.length, (i) => i)
+      ..sort((a, b) {
+        final c = keys[a].compareTo(keys[b]);
+        return c != 0 ? c : a.compareTo(b);
+      });
+    return [for (final i in order) features[i]];
   }
 
   /// A point well inside the largest ring in the sink, for a polygon's label:

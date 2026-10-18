@@ -804,7 +804,9 @@ class StyleCompiler {
   }) {
     final _VectorLayer(:layer, :source, :sourceLayer, :filter) = vector;
     final keys = reads.toList()..sort();
+    final sortKey = layer.layout['${layer.type}-sort-key'];
     final key = jsonEncode([
+      sortKey,
       kind.index,
       source,
       sourceLayer,
@@ -833,6 +835,7 @@ class StyleCompiler {
           metered: metered,
           join: join,
           variantKeys: keys,
+          sortKey: sortKey == null ? null : compileExpr(sortKey),
         ),
       );
       return _buckets.length - 1;
