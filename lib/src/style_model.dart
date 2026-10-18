@@ -341,10 +341,15 @@ final class FillLayer extends MeshLayer implements PatternedLayer {
     super.perFeature,
     this.pattern,
     this.extruded = false,
+    this.patternTint,
   });
 
   @override
   final Expr? pattern;
+
+  /// `fill-color` of a patterned fill, which tints a pattern that is a
+  /// distance field and is left out of any other.
+  final Expr? patternTint;
 
   /// The flat stand-in of a `fill-extrusion` layer, left out where the
   /// buildings are drawn standing.

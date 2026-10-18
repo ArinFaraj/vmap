@@ -24,6 +24,7 @@ class LayerPaint {
     this.gapShare = 0,
     this.blur = 0,
     this.translateOnScreen = false,
+    this.tint,
   ]);
 
   /// A circle: [halfWidth] is its radius, [offset] its ring's width,
@@ -45,6 +46,10 @@ class LayerPaint {
 
   /// The translate is along the screen's sides, not the map's.
   final bool translateOnScreen;
+
+  /// A patterned fill's colour, premultiplied, for a pattern that is a
+  /// distance field.
+  final Rgba? tint;
 
   final double r, g, b, a;
   final double halfWidth, offset, translateX, translateY, dashOn, dashPeriod;
@@ -73,6 +78,7 @@ class LayerPaint {
           gapShare,
           blur,
           translateOnScreen,
+          tint,
         );
 
   static LayerPaint of(
@@ -164,6 +170,10 @@ class LayerPaint {
         PatternedLayer(:final pattern?) => pattern(context),
         _ => null,
       };
+      final tint = switch (layer) {
+        FillLayer(:final patternTint?) => Rgba.of(patternTint(context)),
+        _ => null,
+      };
       return LayerPaint(
         color.r * a,
         color.g * a,
@@ -180,6 +190,7 @@ class LayerPaint {
         gapShare,
         blur,
         layer.translateOnScreen,
+        tint,
       );
     } finally {
       if (props != null) context.props = const {};
@@ -269,11 +280,16 @@ class LayerPaint {
           source?.height ?? 1,
         );
       case GpuStream.patterned:
+        // A distance field pattern takes the fill's colour, packed as red
+        // plus 256 green plus 65536 blue, and q.w says so.
+        final tint = this.tint;
+        final sdf = entry != null && entry.sdf && tint != null;
+        if (sdf) out[o + 11] = 1;
         put(
           (entry?.pixelRatio ?? 1) / growth,
           entry?.pixelRatio ?? 1,
-          0,
-          entry == null ? 0 : a,
+          sdf ? _packed(tint) : 0,
+          entry == null ? 0 : (sdf ? a * tint.a : a),
           source?.left ?? 0,
           source?.top ?? 0,
           source?.width ?? 1,
@@ -298,5 +314,10 @@ class LayerPaint {
           dashed ? dashPeriod / scale : 0,
         );
     }
+  }
+
+  static double _packed(Rgba c) {
+    int byte(double v) => (v * 255).round().clamp(0, 255);
+    return (byte(c.r) + byte(c.g) * 256 + byte(c.b) * 65536).toDouble();
   }
 }

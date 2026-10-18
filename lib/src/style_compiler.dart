@@ -728,6 +728,7 @@ class StyleCompiler {
         color: compileExpr(image == null ? color : '#ffffff'),
         opacity: compileExpr(opacity),
         pattern: image == null ? null : compileText(image),
+        patternTint: image == null ? null : compileExpr(color),
         perFeature: names.isNotEmpty,
         extruded: prefix == 'fill-extrusion',
       ),

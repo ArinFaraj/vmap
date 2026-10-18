@@ -1,4 +1,4 @@
-// vmap web worker, built from lib edfca55b
+// vmap web worker, built from lib 39dfdc90
 (function dartProgram(){function copyProperties(a,b){var s=Object.keys(a)
 for(var r=0;r<s.length;r++){var q=s[r]
 b[q]=a[q]}}function mixinPropertiesHard(a,b){var s=Object.keys(a)
@@ -5736,10 +5736,10 @@ A:{s=a instanceof A.bJ
 r=null
 q=!1
 if(s){p=a.cx==null
-if(p){r=!a.cy
+if(p){r=!a.db
 q=r}o=p}else{p=null
 o=!1}if(q){q=0
-break A}if(s)q=o?r:!a.cy
+break A}if(s)q=o?r:!a.db
 else q=!1
 if(q){q=2
 break A}if(a instanceof A.cV){q=3
@@ -6964,7 +6964,7 @@ b6:function b6(){},
 h0:function h0(){},
 bJ:function bJ(a,b,c,d,e,f){var _=this
 _.cx=a
-_.cy=b
+_.db=b
 _.a=c
 _.b=d
 _.c=e
@@ -14662,7 +14662,7 @@ f_(){var s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d,c,b=A.B(t.S,t.nY)
 for(s=A.pr(this.x,0,t.kY),r=J.J(s.a),q=s.b,s=new A.bm(r,q,A.q(s).i("bm<1>")),p=this.Q,o=this.r;s.n();){n=s.c
 n=n>=0?new A.z(q+n,r.gq()):A.l(A.aD())
 m=n.b
-if(!(m instanceof A.bJ)||m.cy)continue
+if(!(m instanceof A.bJ)||m.db)continue
 l=m.b
 k=o.length
 if(!(l>=0&&l<k))return A.a(o,l)
@@ -15086,6 +15086,7 @@ l=o==null
 A.n(l?a4:"#ffffff")
 A.n(r)
 k=l?c:A.fc(o)
+if(!l)A.n(a4)
 j=a2==="fill-extrusion"
 B.a.k(q,new A.bJ(k,j,s,a3,n,m))
 if(j){i=B.f.ae(["extrusion",a5.b,a5.c,a5.d,a1.h(0,"fill-extrusion-height"),a1.h(0,"fill-extrusion-base"),a4,a1.h(0,"fill-extrusion-vertical-gradient"),a0.e.h(0,"fill-extrusion-rounded-corner-distance"),o],c)
@@ -15182,10 +15183,10 @@ k=i}else k=!1
 if(!k){k=f.length
 if(!(n<k))return A.a(f,n)
 j=f[n]
-if(!(j instanceof A.bJ&&j.cy)){m=g.a
+if(!(j instanceof A.bJ&&j.db)){m=g.a
 if(!(m<k))return A.a(f,m)
 m=f[m]
-m=m instanceof A.bJ&&m.cy}}}}}}}else m=!1
+m=m instanceof A.bJ&&m.db}}}}}}}else m=!1
 if(m)r.$1(n)}return e}}
 A.ke.prototype={
 $0(){var s,r,q,p,o,n,m,l,k,j,i,h=null,g="promoteId",f="generateId",e=this.a,d=this.b,c=e.d.h(0,d)

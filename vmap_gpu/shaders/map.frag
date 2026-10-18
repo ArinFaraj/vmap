@@ -62,7 +62,20 @@ void main() {
       f.y) * v_color.a;
   } else if (v_uv.z > 0.5) {
     vec2 at = v_pattern.xy + mod(v_uv.xy, v_pattern.zw);
-    color = texture(sprite_sheet, at / frag_info.sheet_size.xy) * v_color.a;
+    vec4 texel = texture(sprite_sheet, at / frag_info.sheet_size.xy);
+    if (v_uv.z > 1.1) {
+      // MapLibre's fill_pattern for a distance field: cut at 192 of 256,
+      // smoothed over half the field's change across a pixel.
+      float gamma = max(fwidth(texel.a) * 0.5, 1.0 / 255.0 / 16.0);
+      float inside = smoothstep(0.75 - gamma, 0.75 + gamma, texel.a);
+      float rgb = v_color.b;
+      float b = floor(rgb / 65536.0);
+      float g = floor((rgb - b * 65536.0) / 256.0);
+      float r = rgb - b * 65536.0 - g * 256.0;
+      color = vec4(vec3(r, g, b) / 255.0, 1.0) * inside * v_color.a;
+    } else {
+      color = texel * v_color.a;
+    }
   }
   // A line's outermost device pixel fades to its edge; v_edge.z is its
   // half width in device pixels, zero for anything not a line.

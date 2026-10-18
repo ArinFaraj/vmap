@@ -185,7 +185,8 @@ void main() {
       vec2 from = mod(mod(mod(corner.xy, size) * 256.0, size) * 256.0 + corner.zw, size);
       uv += from * color.g;
     }
-    v_uv = vec3(uv, patterned ? 1.0 : 0.0);
+    // 1.25 for a pattern that is a distance field, its colour in color.b.
+    v_uv = vec3(uv, patterned ? (q.w > 0.5 ? 1.25 : 1.0) : 0.0);
   }
   v_color = color;
   // A line: p.z its dash row plus twice its cap, p.w one repeat in tile
