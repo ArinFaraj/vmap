@@ -603,17 +603,21 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
   }
 
   /// How far to move the tiles so the world's pixels fall on the screen's,
-  /// as MapLibre aligns a map at rest: a tile at its own zoom is then drawn
-  /// pixel for pixel instead of blurred across two. None on a tilted or
-  /// turned map, where no pixel lines up.
+  /// as MapLibre's `alignedProjMatrix` aligns a map at rest: a tile at its
+  /// own zoom is then drawn pixel for pixel instead of blurred across two,
+  /// turned a quarter or a half included. The centre is rounded to a whole
+  /// world pixel, plus half of one turned with the map along a side of the
+  /// screen an odd number of pixels long.
   static (double, double) _snap(ui.Offset origin, MapView? view) {
     double nearest(double v) => v.roundToDouble() - v;
     if (view == null) return (nearest(-origin.dx), nearest(-origin.dy));
-    if (view.pitch != 0 || view.bearing % 360 != 0) return (0, 0);
-    return (
-      nearest(view.width / 2 - view.center.x),
-      nearest(view.height / 2 - view.center.y),
-    );
+    final b = -view.bearing * math.pi / 180;
+    final cos = math.cos(b), sin = math.sin(b);
+    final xShift = (view.width % 2) / 2, yShift = (view.height % 2) / 2;
+    final cx = view.center.x, cy = view.center.y;
+    final dx = cx - cx.roundToDouble() + cos * xShift + sin * yShift;
+    final dy = cy - cy.roundToDouble() + cos * yShift + sin * xShift;
+    return (dx > 0.5 ? dx - 1 : dx, dy > 0.5 ? dy - 1 : dy);
   }
 
   Future<void> _load(_RasterTile tile, int z, int x, int y) async {
