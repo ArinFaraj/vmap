@@ -286,6 +286,10 @@ class TileBuilder {
   /// The fill buckets a layer outlines, whose rings are kept as edges.
   final Set<int> _outlined = {};
 
+  /// The size of each sprite image in logical pixels, by name, once the
+  /// style's sprite indexes are read: icons along a line are spaced by it.
+  Map<String, (double, double)> iconSizes = const {};
+
   final StyleSheet sheet;
   final int source;
 
@@ -657,8 +661,9 @@ class TileBuilder {
                           : context.props[k],
                     if (format != null) formatKey: format,
                   };
-            if (f.type == mvtPolygon) {
-              if (along) continue;
+            // As MapLibre, a polygon placed along a line is placed along its
+            // rings.
+            if (f.type == mvtPolygon && !along) {
               scaled();
               final at = _inside();
               if (at == null) continue;
@@ -750,9 +755,20 @@ class TileBuilder {
               continue;
             }
             final turns = text.isEmpty && !symbol.build.iconUpright;
+            // As MapLibre's getShapedLabelLength: the text or the icon,
+            // whichever is longer, both by the text's box scale.
+            final iconWidth = icon.isEmpty
+                ? 0.0
+                : (iconSizes[icon]?.$1 ?? 0) *
+                      (asNumber(symbol.iconSize(context)) ?? 1) *
+                      em /
+                      GlyphPbf.em;
             _anchorsAlong(
               spacing,
-              text.isEmpty ? 0 : _textEms(symbol, text) * em,
+              math.max(
+                text.isEmpty ? 0.0 : _textEms(symbol, text) * em,
+                iconWidth,
+              ),
               em,
               symbol.maxBend ?? math.pi / 4,
               placement == 'line-center',

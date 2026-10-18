@@ -13,6 +13,7 @@ import 'source_config.dart';
 import 'tile_id.dart';
 import 'glyphs/glyph_ranges.dart';
 import 'glyphs/glyph_layout.dart';
+import 'sprite_sizes.dart';
 import 'style_model.dart';
 import 'tile_builder.dart';
 import 'tile_store.dart';
@@ -463,6 +464,15 @@ Future<void> tileWorkerMain(
     ranges: ranges,
   );
   void answer(WorkerReply reply) => send(reply.toWire());
+  // Icons along a line are spaced by their size, read once from the
+  // style's sprite indexes before the first tile is built.
+  final iconSizes = sheet.spriteSheets.isEmpty
+      ? null
+      : spriteSizes(
+          sheet.spriteSheets,
+          client,
+          setup.config.headers,
+        ).then((sizes) => builder.iconSizes = sizes);
 
   Future<GeoJsonTiles>? geoJson;
   TileStore? store;
@@ -542,6 +552,7 @@ Future<void> tileWorkerMain(
                 tile.y,
                 grid: geoJson == null ? 1024 : 1 << 24,
               );
+          if (iconSizes != null) await iconSizes;
           var built = layers.isEmpty ? BuiltTile(const [], const []) : build();
           if (layers.isNotEmpty && builder.missedGlyphs && ranges != null) {
             // The ranges a name was measured without are on their way: once
