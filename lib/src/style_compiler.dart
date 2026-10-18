@@ -628,6 +628,7 @@ class StyleCompiler {
       'line-gap-width',
       'line-offset',
       'line-blur',
+      'line-pattern',
     ]);
     final beside = paint['line-offset'];
     final blur = paint['line-blur'];
@@ -705,7 +706,11 @@ class StyleCompiler {
     final prefix = layer.type as String;
     final color = paint['$prefix-color'] ?? '#000000';
     final opacity = paint['$prefix-opacity'] ?? 1;
-    final names = _readsOf(paint, ['$prefix-color', '$prefix-opacity']);
+    final names = _readsOf(paint, [
+      '$prefix-color',
+      '$prefix-opacity',
+      '$prefix-pattern',
+    ]);
     final image = paint['$prefix-pattern'];
     _layers.add(
       FillLayer(
