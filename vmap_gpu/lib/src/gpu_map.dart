@@ -21,7 +21,7 @@ part 'terrain_drape.dart';
 const _bundle = 'packages/vmap_gpu/build/shaderbundles/vmap_gpu.shaderbundle';
 
 /// Draws vmap's fill and line layers and its buildings on the GPU: every
-/// tile in one call (or a few, past 120 style slots), lines widened in the
+/// tile in one call (or a few, past 80 style slots), lines widened in the
 /// shader, buildings with a depth buffer. Set it as the engine's renderer;
 /// where Flutter GPU is missing, [create] gives null and the canvas draws.
 class GpuMap implements MapRenderer {
@@ -774,7 +774,8 @@ class GpuMap implements MapRenderer {
   }
 
   /// Writes the slots [from] to [to] of [stream] into the slot table, in
-  /// tile units for a tile [scale] screen pixels to the unit.
+  /// tile units for a tile [scale] screen pixels to the unit on a map
+  /// turned [bearing] degrees.
   void _fillSlots(
     StyleSheet sheet,
     TileDraw d,
@@ -784,6 +785,7 @@ class GpuMap implements MapRenderer {
     double scale,
     EvalContext context,
     double styleZoom,
+    double bearing,
   ) {
     final out = _slots;
     final stream = data.stream!;
@@ -802,13 +804,14 @@ class GpuMap implements MapRenderer {
           : _paintOf(sheet, layerIndex, context, styleZoom, props, d, data);
       paint.writeSlot(
         out,
-        (i - from) * 8,
+        (i - from) * LayerPaint.slotFloats,
         GpuStream.kindOf(sheet.layers[layerIndex]),
         scale,
         _sheet,
         _ramps.gradientOf(layerIndex),
         _ramps.dashOf(layerIndex),
         growth: patternGrowth(styleZoom),
+        bearing: bearing,
       );
     }
   }
@@ -1050,6 +1053,7 @@ class _MapPass {
         scale,
         _context,
         _styleZoom,
+        _view.bearing,
       );
       _pass
         ..bindUniform(map._flatSlots!, host.emplace(map._slotBytes))

@@ -6,9 +6,10 @@ uniform FrameInfo {
 }
 frame_info;
 
-// Two vec4 per slot: the colour, premultiplied; and the half width, the
-// offset, the dash length and the dash period, all in tile units. 240 vec4
-// fit the 256 uniform vectors every OpenGL ES 3 vertex shader has.
+// Three vec4 per slot: the colour, premultiplied; the half width, the
+// offset, the dash length and the dash period; and a line's translate and
+// blur, all in tile units. 240 vec4 fit the 256 uniform vectors every
+// OpenGL ES 3 vertex shader has.
 uniform SlotInfo {
   vec4 slot[240];
 }
@@ -22,6 +23,7 @@ out vec4 v_pattern;
 out vec3 v_uv;
 out vec4 v_circle;
 out vec3 v_edge;
+out vec2 v_line;
 
 // Two 12 bit numbers packed in one float as the stream writes them.
 vec2 unpack_pair(float v) {
@@ -37,8 +39,9 @@ void main() {
   float slot_kind = packed_data.z - across * 131072.0;
   float kind = floor(slot_kind / 16384.0);
   int s = int(slot_kind - kind * 16384.0 + 0.5);
-  vec4 color = slot_info.slot[s * 2];
-  vec4 p = slot_info.slot[s * 2 + 1];
+  vec4 color = slot_info.slot[s * 3];
+  vec4 p = slot_info.slot[s * 3 + 1];
+  vec4 q = slot_info.slot[s * 3 + 2];
   bool is_line = abs(kind - 1.0) < 0.5 || kind > 3.5;
   bool patterned_line = abs(kind - 4.0) < 0.5;
   bool gradient_line = kind > 4.5;
@@ -53,24 +56,39 @@ void main() {
     // A fill: p.xy is how far it is moved, in tile units.
     pos += p.xy;
   }
+  v_line = vec2(0.0, 1.0);
+  float side_v = 0.5;
   if (is_line) {
     // A line is drawn half a device pixel wider and its outermost pixel
     // faded, as MapLibre does, so its edges are smooth without
+    // multisampling. A butt end reaches a pixel past the end, and the
+    // fragment shader cuts it at pixel centres as MapLibre's falls without
     // multisampling. fade.y is screen pixels per tile unit at the centre of
     // a flat view, w how much farther than the centre a point is, and
     // fog_range.z the device pixel ratio: one device pixel here is this
     // many tile units.
     vec2 ext = unpack_pair(packed_data.x);
-    vec2 centre = pos + unpack_pair(packed_data.y) * stroke.y;
+    vec2 centre = pos + q.xy + unpack_pair(packed_data.y) * stroke.y;
     float w = (frame_info.mvp * vec4(centre, 0.0, 1.0)).w;
     float pixel = w / max(frame_info.fade.y * frame_info.fog_range.z, 1e-6);
     float outer = stroke.x + pixel * 0.5;
     line_pixel = pixel;
-    pos = centre + ext * outer;
-    // A mitre corner reaches past the edge; faded by its own length, the
-    // segment after it would thin to a wedge. MapLibre fades by the side
-    // alone.
-    v_edge = vec3(ext / max(length(ext), 1.0), outer / pixel);
+    // As MapLibre: a vertex on an edge fades by how far across the line a
+    // pixel is, whatever its corner's shape; one of a round cap or join by
+    // its distance from the centre line point, which cuts the true arc.
+    bool round_vertex = abs(across - 64.0) < 0.5;
+    bool left = across < 63.5;
+    float past = abs(across - 1.0) < 0.5 || abs(across - 125.0) < 0.5 ? 1.0
+        : abs(across - 2.0) < 0.5 || abs(across - 126.0) < 0.5 ? -1.0
+        : 0.0;
+    vec2 n = left ? ext : -ext;
+    pos = centre + ext * outer + vec2(n.y, -n.x) * past * pixel;
+    // As MapLibre, line-blur fades the line over its blur and a pixel
+    // inside its edge, which v_line.y scales the pixel's fade to.
+    v_line = vec2(abs(past), pixel / (pixel + q.z));
+    side_v = round_vertex ? 0.5 : left ? 0.0 : 1.0;
+    vec2 normal = round_vertex ? ext : vec2(0.0, left ? 1.0 : -1.0);
+    v_edge = vec3(normal, outer / pixel);
   }
   // A circle: p.x its radius and p.y its ring's width in tile units, p.z
   // its ring's colour packed as red plus 256 green plus 65536 blue, p.w the
@@ -87,7 +105,7 @@ void main() {
   // texture and colour.y one over the distance along a whole line.
   v_pattern = p;
   if (patterned_line) {
-    v_uv = vec3(packed_data.w / color.z, across / 127.0, 2.0);
+    v_uv = vec3(packed_data.w / color.z, side_v, 2.0);
   } else if (gradient_line) {
     v_uv = vec3(packed_data.w * color.y, color.x, 3.0);
   } else {
