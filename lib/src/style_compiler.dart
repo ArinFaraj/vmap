@@ -120,6 +120,7 @@ class StyleCompiler {
       if (add != null) {
         final before = _layers.length;
         if (_vector(layer) case final vector?) add(vector);
+        if (layer.type == 'symbol') _aboveLabels = _layers.length;
         final whole = layer.paint['${layer.type}-layer-opacity'];
         if (whole != null) {
           final opacity = compileExpr(whole);
@@ -143,6 +144,7 @@ class StyleCompiler {
       projection: StyleProjection.of(json['projection']),
       light: ExtrusionLight.of(json['light']),
       layerOpacity: _layerOpacity,
+      aboveLabels: _aboveLabels,
       backgrounds: _backgrounds,
       buckets: _buckets,
       layers: _layers,
@@ -857,6 +859,9 @@ class StyleCompiler {
   /// around layers that spill past their tiles or glow.
   final Map<int, Expr> _layerOpacity = {};
 
+  /// The first paint layer after the style's last symbol layer.
+  int _aboveLabels = -1;
+
   /// The root `terrain`: its `raster-dem` source and exaggeration.
   TerrainLayer? _terrain() {
     final terrain = json['terrain'];
@@ -899,6 +904,7 @@ class StyleCompiler {
       if (i == layers.length ||
           (i > runStart &&
               (sourceAt(i) != sourceAt(runStart) ||
+                  i == _aboveLabels ||
                   layers[i].spills != layers[runStart].spills ||
                   layers[i] is HeatmapLayer ||
                   layers[runStart] is HeatmapLayer ||

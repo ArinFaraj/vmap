@@ -1136,6 +1136,7 @@ class StyleSheet {
     required this.sprite,
     this.glyphs,
     this.layerOpacity = const {},
+    this.aboveLabels = -1,
     this.terrain,
     this.sky,
     this.projection = StyleProjection.mercator,
@@ -1166,6 +1167,15 @@ class StyleSheet {
 
   /// The root `projection`.
   final StyleProjection projection;
+
+  /// The first of [layers] after the style's last symbol layer, which, as
+  /// MapLibre draws in the style's order, goes over the labels; -1 when the
+  /// style has no symbol layer.
+  final int aboveLabels;
+
+  /// Whether [run] is drawn over the labels.
+  bool overLabels(StyleRun run) =>
+      aboveLabels >= 0 && run.source >= 0 && run.first >= aboveLabels;
 
   /// The paint layers drawn as a whole at an opacity, `line-layer-opacity`
   /// and the like, by index: each is a run of its own, drawn apart and

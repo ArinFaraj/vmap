@@ -1014,6 +1014,15 @@ class VmapEngine extends ChangeNotifier {
         ground: _groundOf(view),
       );
     }
+    if (view != null && onGpu) {
+      if (horizon > 0) {
+        canvas
+          ..save()
+          ..clipRect(ui.Rect.fromLTRB(0, horizon, size.width, size.height));
+      }
+      gpu.paintAboveLabels(canvas);
+      if (horizon > 0) canvas.restore();
+    }
     final finished = _clock.elapsedMicroseconds;
     var ideal = 0, fallback = 0, cached = 0, loading = 0, unpack = 0;
     var holes = 0;

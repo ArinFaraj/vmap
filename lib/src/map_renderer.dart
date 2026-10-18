@@ -63,6 +63,10 @@ abstract class MapRenderer {
   /// style's sources, for `feature-state`. Set before each [paint].
   List<Map<Object, Map<String, Object?>>?> states = const [];
 
+  /// Draws what [paint] left for over the labels: the layers the style
+  /// puts after its last symbol layer.
+  void paintAboveLabels(ui.Canvas canvas) {}
+
   /// Lets go of the memory of tiles not drawn in the last frame.
   void trimMemory() {}
 

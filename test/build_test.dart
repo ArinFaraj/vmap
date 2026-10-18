@@ -302,6 +302,28 @@ void main() {
       );
     });
 
+    test('the layers after the last symbol layer are drawn over labels', () {
+      final sheet = compile([
+        {'type': 'fill', 'source-layer': 'water'},
+        {
+          'type': 'symbol',
+          'source-layer': 'place',
+          'layout': {'text-field': '{name}'},
+        },
+        {'type': 'circle', 'source-layer': 'poi'},
+      ]);
+      expect(sheet.aboveLabels, 1);
+      expect(sheet.runs.map(sheet.overLabels), [false, true]);
+    });
+
+    test('a style without symbols has nothing over labels', () {
+      final sheet = compile([
+        {'type': 'fill', 'source-layer': 'water'},
+      ]);
+      expect(sheet.aboveLabels, -1);
+      expect(sheet.runs.any(sheet.overLabels), isFalse);
+    });
+
     test('dashes that change with the zoom hold from each stop', () {
       final sheet = compile([
         {

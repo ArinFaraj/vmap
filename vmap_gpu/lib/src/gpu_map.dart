@@ -472,7 +472,7 @@ class GpuMap implements MapRenderer {
     // again and the frame comes back once one finishes.
     final last = _last;
     if (_inFlight >= 2 && last != null) {
-      _present(canvas, last, view);
+      _present(canvas, last.take(_labelsAt), view);
       return true;
     }
     final frame = _ring[_next];
@@ -520,6 +520,7 @@ class GpuMap implements MapRenderer {
     // so the canvas lays them over each other in order.
     final shown = <(ui.Image, double)>[(frame.image, 1)];
     final textures = <gpu.Texture>[frame.map];
+    var labelsAt = -1;
     var overlays = 0;
     (gpu.Texture, ui.Image) next() => frame.overlay(overlays++, _target);
     final ground = terrain;
@@ -583,7 +584,20 @@ class GpuMap implements MapRenderer {
         }
         return;
       }
+      var overLabels = false;
       for (final run in sheet.runs) {
+        if (!overLabels && sheet.overLabels(run)) {
+          // What the style draws after its last symbol layer goes in an
+          // image of its own, laid over the labels.
+          overLabels = true;
+          pass.drawRuns(below);
+          below = [];
+          final (over, overImage) = next();
+          pass = passOn(over);
+          labelsAt = shown.length;
+          shown.add((overImage, 1));
+          textures.add(over);
+        }
         final building = sheet.extrusionAt(run);
         if (building != null) {
           if (!_reveal.shows(building)) continue;
@@ -612,7 +626,8 @@ class GpuMap implements MapRenderer {
       buffers.last.submit(completionCallback: (_) => _finished());
     });
     if (kIsWeb) _snapshot(shown, textures);
-    _present(canvas, _last = shown, view);
+    _labelsAt = labelsAt < 0 ? shown.length : labelsAt;
+    _present(canvas, (_last = shown).take(_labelsAt), view);
     return _reveal.animating ||
         _presence.animating ||
         _spritesLoading ||
@@ -743,7 +758,23 @@ class GpuMap implements MapRenderer {
     }
   }
 
-  void _present(ui.Canvas canvas, _Shown shown, MapView view) {
+  /// Where the images over the labels start in [_last].
+  int _labelsAt = 0;
+  MapView? _lastView;
+
+  @override
+  void paintAboveLabels(ui.Canvas canvas) {
+    final last = _last, view = _lastView;
+    if (last == null || view == null || _labelsAt >= last.length) return;
+    _present(canvas, last.skip(_labelsAt), view);
+  }
+
+  void _present(
+    ui.Canvas canvas,
+    Iterable<(ui.Image, double)> shown,
+    MapView view,
+  ) {
+    _lastView = view;
     final from = ui.Rect.fromLTWH(0, 0, _width.toDouble(), _height.toDouble());
     final to = ui.Rect.fromLTWH(0, 0, view.width, view.height);
     for (final (image, opacity) in shown) {
