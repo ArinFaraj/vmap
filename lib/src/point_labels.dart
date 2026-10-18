@@ -82,7 +82,9 @@ class PointLabels {
       ..screenAngle = 0;
     final spaced = c is TileLabel && c.tile.spaced;
     if (spaced && c.hasText && _roads.nearSame(st)) return false;
-    final spin = (symbol?.textRotate ?? 0) * math.pi / 180;
+    final along = symbol?.textAlongMap ?? false;
+    final spin =
+        (symbol?.textRotate ?? 0) * math.pi / 180 + (along ? _view.mapTurn : 0);
     st.screenAngle = spin;
     _view.project(st.worldX, st.worldY);
     final spot = _Spot(

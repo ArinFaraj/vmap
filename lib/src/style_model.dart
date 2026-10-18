@@ -663,6 +663,7 @@ class SymbolLayer {
     this.justify = ui.TextAlign.center,
     this.justifyAuto = false,
     this.textPadding,
+    this.textAlongMap = false,
     this.iconPadding,
     this.textIgnored = false,
     this.keepUpright = true,
@@ -740,6 +741,9 @@ class SymbolLayer {
   /// weighed against each other, in logical pixels. Null for the package's
   /// own.
   final double? textPadding;
+
+  /// `text-rotation-alignment: map`: a point's text turns with the map.
+  final bool textAlongMap;
   final double? iconPadding;
 
   /// The text or icon takes no room from the labels placed after it.

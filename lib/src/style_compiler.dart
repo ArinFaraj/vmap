@@ -471,6 +471,7 @@ class StyleCompiler {
         },
         justifyAuto: layout['text-justify'] == 'auto',
         textPadding: asNumber(layout['text-padding']),
+        textAlongMap: layout['text-rotation-alignment'] == 'map',
         iconPadding: asNumber(layout['icon-padding']),
         textIgnored: layout['text-ignore-placement'] == true,
         textOnGround: switch (layout['text-pitch-alignment']) {

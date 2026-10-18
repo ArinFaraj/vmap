@@ -161,6 +161,13 @@ class LabelView {
     return (points, screenDistance(path, points, at));
   }
 
+  /// How far the map is turned on the upright screen: a projected frame
+  /// is upright, its turn in the view's bearing.
+  double get mapTurn {
+    final view = tilted;
+    return view == null ? rotation : -view.bearing * math.pi / 180;
+  }
+
   /// A style's translate read in [context], as the upright label frame
   /// sees it: a move along the map's sides turns with the map, one along
   /// the screen's sides when [onScreen] does not.
@@ -169,9 +176,7 @@ class LabelView {
     final by = translate(context);
     if (by is! List || by.length != 2) return (0, 0);
     final x = asNumber(by[0]) ?? 0, y = asNumber(by[1]) ?? 0;
-    // A projected frame is upright, its turn in the view's bearing.
-    final view = tilted;
-    final turn = view == null ? rotation : -view.bearing * math.pi / 180;
+    final turn = mapTurn;
     if (onScreen || turn == 0) return (x, y);
     final c = math.cos(turn), s = math.sin(turn);
     return (x * c - y * s, x * s + y * c);
