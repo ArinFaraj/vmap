@@ -85,7 +85,8 @@ void main() {
       float inside = cap > 1.5 ? sd + half_width
           : cap > 0.5 ? (sd >= 0.0 ? half_width : half_width - length(vec2(sd, off_middle)))
           : sd;
-      color *= clamp(inside + 0.5, 0.0, 1.0);
+      // As MapLibre's dash atlas: smoothed over a device pixel either side.
+      color *= smoothstep(-255.0 / 256.0, 255.0 / 256.0, inside);
     }
     // A line drawn as two: -v_dash.y is the gap's share of the half width,
     // its inner edge faded the same way.
