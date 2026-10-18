@@ -49,7 +49,7 @@ class GpuStream {
   final Int32List segments;
 
   /// Slots one draw can name, the size of the shader's slot table.
-  static const slotsPerDraw = 120;
+  static const slotsPerDraw = 80;
 
   /// The packed form of a 2D vector for the shader.
   static double packPair(double x, double y) {

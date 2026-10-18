@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:vmap/renderer.dart';
@@ -18,6 +19,8 @@ class LayerPaint {
     this.pattern,
     this.circle = false,
     this.gapShare = 0,
+    this.blur = 0,
+    this.translateOnScreen = false,
   ]);
 
   /// A circle: [halfWidth] is its radius, [offset] its ring's width,
@@ -34,10 +37,19 @@ class LayerPaint {
   /// middle takes.
   final double gapShare;
 
+  /// `line-blur`, in screen pixels.
+  final double blur;
+
+  /// The translate is along the screen's sides, not the map's.
+  final bool translateOnScreen;
+
   final double r, g, b, a;
   final double halfWidth, offset, translateX, translateY, dashOn, dashPeriod;
 
   static final clear = LayerPaint(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+  /// Floats a shader slot takes: three vec4.
+  static const slotFloats = 12;
 
   /// This paint with its colour, premultiplied, and a circle's ring, times [k].
   LayerPaint scaled(double k) => k >= 1
@@ -56,6 +68,8 @@ class LayerPaint {
           pattern,
           circle,
           gapShare,
+          blur,
+          translateOnScreen,
         );
 
   static LayerPaint of(
@@ -76,8 +90,12 @@ class LayerPaint {
         1.0,
       );
       var width = 0.0, offset = 0.0, dashOn = 0.0, dashPeriod = 0.0;
-      var gapShare = 0.0;
+      var gapShare = 0.0, blur = 0.0;
       if (layer is LineLayer) {
+        blur = math.max(
+          0,
+          (asNumber(layer.blur?.call(context)) ?? 0).toDouble(),
+        );
         width = (asNumber(layer.width(context)) ?? 0).toDouble();
         if (width <= 0) return clear;
         final gap = (asNumber(layer.gap?.call(context)) ?? 0).toDouble();
@@ -153,17 +171,20 @@ class LayerPaint {
         pattern is String && pattern.isNotEmpty ? pattern : null,
         false,
         gapShare,
+        blur,
+        layer.translateOnScreen,
       );
     } finally {
       if (props != null) context.props = const {};
     }
   }
 
-  /// Writes this paint into the two vec4 of a shader slot at [o], laid out
-  /// for [kind] as `map.vert` reads them; lengths in tile units for a tile
-  /// [scale] screen pixels to the unit. [sprites] places patterns,
-  /// [rampRow] is a gradient line's row in the line ramps and [dashRow] a
-  /// dashed line's. A patterned fill's pattern is [growth] times its size.
+  /// Writes this paint into the [slotFloats] of a shader slot at [o], laid
+  /// out for [kind] as `map.vert` reads them; lengths in tile units for a
+  /// tile [scale] screen pixels to the unit on a map turned [bearing]
+  /// degrees. [sprites] places patterns, [rampRow] is a gradient line's row
+  /// in the line ramps and [dashRow] a dashed line's. A patterned fill's
+  /// pattern is [growth] times its size.
   void writeSlot(
     Float32List out,
     int o,
@@ -173,7 +194,19 @@ class LayerPaint {
     double? rampRow,
     double? dashRow, {
     double growth = 1,
+    double bearing = 0,
   }) {
+    var tx = translateX, ty = translateY;
+    if (translateOnScreen && bearing != 0) {
+      final turn = bearing * math.pi / 180;
+      final c = math.cos(turn), s = math.sin(turn);
+      (tx, ty) = (tx * c - ty * s, tx * s + ty * c);
+    }
+    out
+      ..[o + 8] = tx / scale
+      ..[o + 9] = ty / scale
+      ..[o + 10] = blur / scale
+      ..[o + 11] = 0;
     void put(
       double a,
       double b,
@@ -240,7 +273,7 @@ class LayerPaint {
           source?.height ?? 1,
         );
       case GpuStream.fill:
-        put(r, g, b, a, translateX / scale, translateY / scale, 0, 0);
+        put(r, g, b, a, tx / scale, ty / scale, 0, 0);
       default:
         // A dashed line gives its dash row plus twice its cap's index and
         // the length of one repeat. Otherwise the repeat is zero, and a

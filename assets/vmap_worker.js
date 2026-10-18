@@ -1,4 +1,4 @@
-// vmap web worker, built from lib 51acb9e6
+// vmap web worker, built from lib a40fab5b
 (function dartProgram(){function copyProperties(a,b){var s=Object.keys(a)
 for(var r=0;r<s.length;r++){var q=s[r]
 b[q]=a[q]}}function mixinPropertiesHard(a,b){var s=Object.keys(a)
@@ -5795,7 +5795,7 @@ a4=p.b
 if(a1&&a4.c.length===0)continue
 if(a&&a4.a.length===0)continue
 a5=k.length
-if(a5-g>=120){B.a.F(j,A.b([h,l.b-h,g],s))
+if(a5-g>=80){B.a.F(j,A.b([h,l.b-h,g],s))
 h=l.b
 g=k.length
 a5=g}a6=a5-g
