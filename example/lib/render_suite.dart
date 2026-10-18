@@ -22,6 +22,7 @@ const _out = String.fromEnvironment(
 const _filter = String.fromEnvironment('FILTER');
 const _port = int.fromEnvironment('PORT', defaultValue: 2900);
 const _gpu = bool.fromEnvironment('GPU');
+const _multisample = bool.fromEnvironment('MULTISAMPLE', defaultValue: true);
 
 /// Tests run at once: each has its own engine and draws off screen.
 const _parallel = int.fromEnvironment('PARALLEL', defaultValue: 6);
@@ -223,7 +224,7 @@ class _Session {
     maxCachedTiles: 200,
     source: TileSourceConfig(spritePixelRatio: ratio),
     styleGlyphs: true,
-    renderer: _gpu ? GpuMap.create() : null,
+    renderer: _gpu ? GpuMap.create(multisample: _multisample) : null,
   )..onError = onError;
 
   Future<void> settle() => _settle(_engine, () => _paintNow(false));

@@ -25,15 +25,17 @@ const _bundle = 'packages/vmap_gpu/build/shaderbundles/vmap_gpu.shaderbundle';
 /// shader, buildings with a depth buffer. Set it as the engine's renderer;
 /// where Flutter GPU is missing, [create] gives null and the canvas draws.
 class GpuMap implements MapRenderer {
-  GpuMap._() {
+  GpuMap._(this._multisample) {
     _load();
   }
 
-  /// A renderer when this device runs Flutter GPU, otherwise null.
-  static GpuMap? create() {
+  /// A renderer when this device runs Flutter GPU, otherwise null. With
+  /// [multisample] false edges are cut at pixel centres, as MapLibre draws
+  /// without its `antialias` option; the web never multisamples.
+  static GpuMap? create({bool multisample = true}) {
     try {
       gpu.gpuContext;
-      return GpuMap._();
+      return GpuMap._(multisample);
     } catch (e) {
       debugPrint('vmap_gpu: no Flutter GPU, the canvas draws the map: $e');
       return null;
@@ -81,7 +83,9 @@ class GpuMap implements MapRenderer {
   gpu.Texture? _depth, _samples;
   int _next = 0, _width = 0, _height = 0, _frame = 0;
   bool _transient = true;
-  late final bool _msaa = !kIsWeb && gpu.gpuContext.doesSupportOffscreenMSAA;
+  final bool _multisample;
+  late final bool _msaa =
+      _multisample && !kIsWeb && gpu.gpuContext.doesSupportOffscreenMSAA;
   late final gpu.PixelFormat _color =
       gpu.gpuContext.defaultColorFormat == gpu.PixelFormat.unknown
       ? gpu.PixelFormat.r8g8b8a8UNormInt

@@ -51,6 +51,7 @@ VMAP_BACKGROUND=1 flutter run -d macos --profile -t lib/render_suite.dart \
   --dart-define=FILTER="$filter" \
   --dart-define=PORT="$port" \
   --dart-define=GPU="$gpu" \
+  --dart-define=MULTISAMPLE="${MULTISAMPLE:-true}" \
   --dart-define=PARALLEL="${PARALLEL:-6}" >"$out/run.log" 2>&1 || true
 grep -E '^flutter: render suite:' "$out/run.log" || tail -20 "$out/run.log"
 echo "report: $out/index.html"
