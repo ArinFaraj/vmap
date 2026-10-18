@@ -601,6 +601,7 @@ class StyleCompiler {
       'line-width',
       'line-gap-width',
       'line-offset',
+      'line-blur',
     ]);
     final beside = paint['line-offset'];
     final blur = paint['line-blur'];
