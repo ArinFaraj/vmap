@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'collision_boxes.dart';
 import 'expr.dart';
+import 'label_rules.dart';
 import 'label_state.dart';
 import 'label_view.dart';
 import 'pins.dart';
@@ -17,6 +18,7 @@ class PointLabels {
   final LabelView _view;
   final CollisionBoxes _boxes;
   final RoadLabels _roads;
+  LabelRules rules = LabelRules.vmap;
 
   /// The style's icons. Null until they have loaded.
   SpriteSheet? sheet;
@@ -81,7 +83,9 @@ class PointLabels {
       ..curve = null
       ..screenAngle = 0;
     final spaced = c is TileLabel && c.tile.spaced;
-    if (spaced && c.hasText && _roads.nearSame(st)) return false;
+    if (spaced && c.hasText && rules.spreadNames && _roads.nearSame(st)) {
+      return false;
+    }
     final along = symbol?.textAlongMap ?? false;
     final spin =
         (symbol?.textRotate ?? 0) * math.pi / 180 + (along ? _view.mapTurn : 0);

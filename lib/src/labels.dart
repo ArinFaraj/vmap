@@ -331,7 +331,7 @@ class LabelEngine {
               onArrived();
             },
           );
-    _painter.rules = _rules = url == null
+    _painter.rules = _points.rules = _rules = url == null
         ? LabelRules.vmap
         : LabelRules.mapLibre;
     clear();
