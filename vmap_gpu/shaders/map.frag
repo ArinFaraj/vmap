@@ -41,10 +41,20 @@ void main() {
     float u = (clamp(v_uv.x, 0.0, 1.0) * (ramp - 1.0) + 0.5) / ramp;
     color = texture(gradient_ramp, vec2(u, v_uv.y)) * v_color.a;
   } else if (v_uv.z > 1.5) {
-    // Inset half a texel so the neighbours in the sheet do not bleed in.
+    // As MapLibre's atlas, the pattern is padded by a texel of itself
+    // wrapped around, and the padded pattern spans the line.
+    vec2 size = v_pattern.zw;
     vec2 inside = vec2(fract(v_uv.x), clamp(v_uv.y, 0.0, 1.0));
-    vec2 at = v_pattern.xy + 0.5 + inside * (v_pattern.zw - 1.0);
-    color = texture(sprite_sheet, at / frag_info.sheet_size.xy) * v_color.a;
+    vec2 t = inside * (size + 2.0) - 1.5;
+    vec2 i0 = clamp(floor(t), vec2(-1.0), size);
+    vec2 i1 = clamp(i0 + 1.0, vec2(-1.0), size);
+    vec2 f = clamp(t - floor(t), 0.0, 1.0);
+    vec2 a = (v_pattern.xy + mod(i0, size) + 0.5) / frag_info.sheet_size.xy;
+    vec2 b = (v_pattern.xy + mod(i1, size) + 0.5) / frag_info.sheet_size.xy;
+    color = mix(
+      mix(texture(sprite_sheet, a), texture(sprite_sheet, vec2(b.x, a.y)), f.x),
+      mix(texture(sprite_sheet, vec2(a.x, b.y)), texture(sprite_sheet, b), f.x),
+      f.y) * v_color.a;
   } else if (v_uv.z > 0.5) {
     vec2 at = v_pattern.xy + mod(v_uv.xy, v_pattern.zw);
     color = texture(sprite_sheet, at / frag_info.sheet_size.xy) * v_color.a;
