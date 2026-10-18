@@ -19,9 +19,9 @@ import 'glyph_pbf.dart';
 /// sharp.
 ///
 /// A page of glyph range text is made at an exact size instead, in
-/// [sixteenths] of a device pixel to the em, and for one quarter pixel
-/// [phase] its glyphs' origins fall on: x in the low two bits, y in the
-/// next two. Font pages leave both 0.
+/// [sixteenths] of a device pixel to the em, and for one eighth pixel
+/// [phase] its glyphs' origins fall on: x in the low three bits, y in the
+/// next three. Font pages leave both 0.
 typedef PageKey = ({
   int size,
   int weight,
@@ -171,7 +171,7 @@ class GlyphRasterizer {
   /// drawn for the page's phase and placed so its corner lands on a whole
   /// device pixel, so it is sampled once, as MapLibre samples it.
   _Bitmap? _rangeGlyph(PageKey key, int face, int codePoint) {
-    final px = (key.phase & 3) / 4, py = (key.phase >> 2) / 4;
+    final px = (key.phase & 7) / 8, py = (key.phase >> 3) / 8;
     final g = ranges[face]?[codePoint];
     if (g == null || g.width == 0) return null;
     const border = GlyphPbf.border;

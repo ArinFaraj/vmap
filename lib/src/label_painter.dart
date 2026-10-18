@@ -311,7 +311,7 @@ class LabelPainter {
   }
 
   /// Glyph range text drawn upright from cells made at its exact size and
-  /// for the quarter pixel each glyph falls on, so every glyph is sampled
+  /// for the eighth pixel each glyph falls on, so every glyph is sampled
   /// once at the place MapLibre puts it.
   void _rangeGlyphs(
     LabelState st,
@@ -334,7 +334,7 @@ class LabelPainter {
         : (look.haloBlur * devicePixelRatio * 4).round();
     final k = 1 / devicePixelRatio;
     final keys = List<PageKey>.generate(
-      16,
+      64,
       (phase) => (
         size: 0,
         weight: 400,
@@ -349,22 +349,22 @@ class LabelPainter {
     for (var i = 0; i < g.length; i += 5) {
       final dx = (x + g[i + 2] * em) * devicePixelRatio;
       final dy = (y + g[i + 3] * em) * devicePixelRatio;
-      var qx = ((dx - dx.floorToDouble()) * 4).round();
-      var qy = ((dy - dy.floorToDouble()) * 4).round();
-      final ox = dx.floorToDouble() + (qx == 4 ? 1 : 0);
-      final oy = dy.floorToDouble() + (qy == 4 ? 1 : 0);
-      qx %= 4;
-      qy %= 4;
+      var qx = ((dx - dx.floorToDouble()) * 8).round();
+      var qy = ((dy - dy.floorToDouble()) * 8).round();
+      final ox = dx.floorToDouble() + (qx == 8 ? 1 : 0);
+      final oy = dy.floorToDouble() + (qy == 8 ? 1 : 0);
+      qx %= 8;
+      qy %= 8;
       final cell = pages.cell(
-        keys[qx | qy << 2],
+        keys[qx | qy << 3],
         g[i].toInt(),
         g[i + 1].toInt(),
       );
       if (cell == null) continue;
       pages.add(
         cell,
-        (ox + qx / 4) * k,
-        (oy + qy / 4) * k,
+        (ox + qx / 8) * k,
+        (oy + qy / 8) * k,
         0,
         k * sixteenths / 16 / pages.found.em,
         ink,
