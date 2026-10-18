@@ -589,6 +589,11 @@ class StyleCompiler {
                 opacity: compileExpr(paint['circle-stroke-opacity'] ?? 1),
               ),
         perFeature: names.isNotEmpty,
+        pitchWithMap: paint['circle-pitch-alignment'] == 'map',
+        scaleWithMap: paint['circle-pitch-scale'] != 'viewport',
+        blur: paint['circle-blur'] == null
+            ? null
+            : compileExpr(paint['circle-blur']),
       ),
     );
   }
@@ -704,6 +709,7 @@ class StyleCompiler {
         paint['fill-extrusion-base'],
         color,
         paint['fill-extrusion-vertical-gradient'],
+        layer.layout['fill-extrusion-rounded-corner-distance'],
       ]);
       final index = _bucketIndex.putIfAbsent(key, () {
         _buckets.add(
@@ -718,6 +724,9 @@ class StyleCompiler {
               compileExpr(color),
               verticalGradient:
                   paint['fill-extrusion-vertical-gradient'] != false,
+              roundedCorners: compileExpr(
+                layer.layout['fill-extrusion-rounded-corner-distance'] ?? 0,
+              ),
             ),
           ),
         );

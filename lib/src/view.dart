@@ -265,12 +265,14 @@ class MapView {
   /// z the height above the ground in world pixels, to clip space: x and y
   /// as the screen shows them, y up, and depth from 0 at [near] to 1 at
   /// [far], both as multiples of the camera's distance to the centre.
+  /// [near] defaults to MapLibre's, a fiftieth of the screen's height.
   Float64List clipMatrix({
     double originX = 0,
     double originY = 0,
-    double near = 0.05,
+    double? near,
     double far = 20,
   }) {
+    near ??= height / 50 / cameraToCenterDistance;
     final u0 = -(_cosB * _cx + _sinB * _cy) + _cosB * originX + _sinB * originY;
     final v0 = _sinB * _cx - _cosB * _cy - _sinB * originX + _cosB * originY;
     final w = width, h = height, d = cameraToCenterDistance;

@@ -11,6 +11,7 @@ import 'gpu_stream.dart';
 import 'extrusion.dart';
 import 'mvt.dart';
 import 'platform.dart';
+import 'round_corners.dart';
 import 'style_model.dart';
 import 'tessellate.dart';
 import 'mercator.dart';
@@ -490,6 +491,12 @@ class TileBuilder {
               height.toDouble(),
               base.toDouble(),
               color,
+              rounding: tileUnitsForMeters(
+                (asNumber(extrude.roundedCorners?.call(context)) ?? 0)
+                    .toDouble(),
+                z,
+                y,
+              ),
             );
             continue;
           }
@@ -738,7 +745,7 @@ class TileBuilder {
     _shape(labels);
     return BuiltTile(meshes, labels, [
       for (final e in extruders.values) ?e.finish(),
-    ], gpu ? GpuStream.build(sheet, meshes) : null);
+    ], gpu ? GpuStream.build(sheet, meshes, zoom: styleZoom) : null);
   }
 
   /// Calls [place] at the anchors MapLibre's `getAnchors` gives a symbol

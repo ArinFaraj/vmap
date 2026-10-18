@@ -933,6 +933,7 @@ class VmapEngine extends ChangeNotifier {
       if (onGpu) {
         final gpuStarted = _clock.elapsedMicroseconds;
         gpu.rasters = drape ? [for (final r in _rasters) ...r.drawn] : const [];
+        gpu.states = [for (final s in _sources) _states[s.def.name]];
         final more = gpu.paint(
           canvas,
           view,

@@ -98,6 +98,9 @@ class GpuMap implements MapRenderer {
   @override
   List<RasterPiece> rasters = const [];
 
+  @override
+  List<Map<Object, Map<String, Object?>>?> states = const [];
+
   /// Premultiplied source over, which also leaves the colour untouched
   /// where the stencil pass writes its transparent squares.
   static final _over = gpu.ColorBlendEquation(
@@ -440,6 +443,7 @@ class GpuMap implements MapRenderer {
     _frameInfo
       ..[26] = devicePixelRatio
       ..[27] = 1;
+    _clipPerPixel = (2 / view.width, 2 / view.height);
     _reveal.begin(sheet, styleZoom);
     _presence.begin(sheet, styleZoom, ideal);
     _layerPaint.clear();
@@ -747,6 +751,10 @@ class GpuMap implements MapRenderer {
     TileGpu data,
   ) {
     final layer = sheet.layers[layerIndex];
+    final source = sheet.buckets[layer.bucket].source;
+    context.state = props == null || source >= states.length
+        ? const {}
+        : states[source]?[props[r'$id']] ?? const {};
     final building = sheet.footprints[layerIndex];
     if (building == null) {
       final present = _presence.of(layerIndex);
@@ -859,6 +867,9 @@ class GpuMap implements MapRenderer {
       ..[38] = light.color.b;
   }
 
+  /// How far one screen pixel reaches across clip space, each way.
+  (double, double) _clipPerPixel = (0, 0);
+
   /// [clip] times a tile's placement into the frame info block: tile units
   /// scaled by [scale] and moved to [left], [top], heights by [perMetre].
   void _times(
@@ -878,6 +889,8 @@ class GpuMap implements MapRenderer {
     }
     out[16] = fade;
     out[17] = scale;
+    out[18] = _clipPerPixel.$1;
+    out[19] = _clipPerPixel.$2;
   }
 
   @override
@@ -1006,9 +1019,22 @@ class _MapPass {
           _drawFlat(d, run);
         }
       }
-      for (final (i, d) in _ideal[source].indexed) {
-        if (clipped) _stencilEquals(i + 1);
-        _drawFlat(d, run);
+      // As MapLibre, a circle is kept by the one tile its centre is in and
+      // drawn whole, past that tile's square.
+      var at = run.first;
+      while (at < run.end) {
+        final whole = _sheet.layers[at] is CircleLayer;
+        var end = at + 1;
+        while (end < run.end && (_sheet.layers[end] is CircleLayer) == whole) {
+          end++;
+        }
+        final part = StyleRun.vector(source, at, end);
+        if (whole) _pass.setStencilConfig(gpu.StencilConfig());
+        for (final (i, d) in _ideal[source].indexed) {
+          if (clipped && !whole) _stencilEquals(i + 1);
+          _drawFlat(d, part);
+        }
+        at = end;
       }
       _pass.setStencilConfig(gpu.StencilConfig());
     }

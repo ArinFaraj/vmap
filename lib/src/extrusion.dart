@@ -8,6 +8,7 @@ import 'building_index.dart';
 import 'expr.dart';
 import 'mercator.dart';
 import 'platform.dart';
+import 'round_corners.dart';
 import 'style_model.dart';
 import 'tile_builder.dart' show tileExtent;
 import 'tiles.dart' show TileDraw;
@@ -110,17 +111,20 @@ class ExtrusionBuilder {
   final _indices = DoubleBuffer();
   final _info = DoubleBuffer();
   final _ring = DoubleBuffer();
+  final _normals = DoubleBuffer();
 
   /// Adds one feature: rings of x, y pairs in tile units between the point
-  /// indices of [starts] and [ends].
+  /// indices of [starts] and [ends], its corners rounded [rounding] tile
+  /// units.
   void add(
     Float64List coords,
     List<int> starts,
     List<int> ends,
     double height,
     double base,
-    Rgba color,
-  ) {
+    Rgba color, {
+    double rounding = 0,
+  }) {
     // As MapLibre, a building no taller than its base still has its roof.
     if (height < base) return;
     var polygonStart = -1;
@@ -152,12 +156,15 @@ class ExtrusionBuilder {
           coords[start * 2 + 1] == coords[(end - 1) * 2 + 1]) {
         count--;
       }
+      var pts = Float64List.sublistView(coords, start * 2, (start + count) * 2);
+      if (rounding > 0) {
+        pts = roundRing(pts, rounding);
+        count = pts.length ~/ 2;
+      }
       var a = 0.0;
       for (var i = 0; i < count; i++) {
         final j = (i + 1) % count;
-        a +=
-            coords[(start + i) * 2] * coords[(start + j) * 2 + 1] -
-            coords[(start + j) * 2] * coords[(start + i) * 2 + 1];
+        a += pts[i * 2] * pts[j * 2 + 1] - pts[j * 2] * pts[i * 2 + 1];
       }
       if (a.abs() < 1) continue;
       final outer = a > 0;
@@ -166,19 +173,41 @@ class ExtrusionBuilder {
         polygonStart = 0;
         area += a;
         for (var i = 0; i < count; i++) {
-          sx += coords[(start + i) * 2] * a / count;
-          sy += coords[(start + i) * 2 + 1] * a / count;
+          sx += pts[i * 2] * a / count;
+          sy += pts[i * 2 + 1] * a / count;
         }
       } else if (polygonStart >= 0) {
         holes.add(ring.length ~/ 2);
       } else {
         continue;
       }
+      final perps = Float64List(count * 2);
       for (var i = 0; i < count; i++) {
-        final x = coords[(start + i) * 2], y = coords[(start + i) * 2 + 1];
+        final x = pts[i * 2], y = pts[i * 2 + 1];
         ring.add2(x, y);
         final j = (i + 1) % count;
-        _walls.add4(x, y, coords[(start + j) * 2], coords[(start + j) * 2 + 1]);
+        final x1 = pts[j * 2], y1 = pts[j * 2 + 1];
+        if (isBoundaryEdge(x, y, x1, y1)) continue;
+        perps[i * 2] = y1 - y;
+        perps[i * 2 + 1] = x - x1;
+      }
+      final normals = rounding > 0 ? smoothNormals(perps) : null;
+      for (var i = 0; i < count; i++) {
+        final nx = perps[i * 2], ny = perps[i * 2 + 1];
+        if (nx == 0 && ny == 0) continue;
+        final j = (i + 1) % count;
+        _walls.add4(pts[i * 2], pts[i * 2 + 1], pts[j * 2], pts[j * 2 + 1]);
+        if (normals != null) {
+          _normals.add4(
+            normals[i * 4],
+            normals[i * 4 + 1],
+            normals[i * 4 + 2],
+            normals[i * 4 + 3],
+          );
+        } else {
+          final l = math.sqrt(nx * nx + ny * ny);
+          _normals.add4(nx / l, ny / l, nx / l, ny / l);
+        }
       }
     }
     roof();
@@ -241,15 +270,15 @@ class ExtrusionBuilder {
       for (var j = firstWall; j < firstWall + walls; j++) {
         final x0 = _walls[j * 4], y0 = _walls[j * 4 + 1];
         final x1 = _walls[j * 4 + 2], y1 = _walls[j * 4 + 3];
-        final length = math.sqrt((y1 - y0) * (y1 - y0) + (x0 - x1) * (x0 - x1));
-        if (length == 0) continue;
-        final nx = (y1 - y0) / length, ny = (x0 - x1) / length;
-        vertex(x0, y0, bottom, nx, ny, 0);
-        vertex(x1, y1, bottom, nx, ny, 0);
-        vertex(x1, y1, top, nx, ny, 1);
-        vertex(x0, y0, bottom, nx, ny, 0);
-        vertex(x1, y1, top, nx, ny, 1);
-        vertex(x0, y0, top, nx, ny, 1);
+        if (x0 == x1 && y0 == y1) continue;
+        final nx0 = _normals[j * 4], ny0 = _normals[j * 4 + 1];
+        final nx1 = _normals[j * 4 + 2], ny1 = _normals[j * 4 + 3];
+        vertex(x0, y0, bottom, nx0, ny0, 0);
+        vertex(x1, y1, bottom, nx1, ny1, 0);
+        vertex(x1, y1, top, nx1, ny1, 1);
+        vertex(x0, y0, bottom, nx0, ny0, 0);
+        vertex(x1, y1, top, nx1, ny1, 1);
+        vertex(x0, y0, top, nx0, ny0, 1);
       }
       final firstRoof = _info[i + 6].toInt(), roofs = _info[i + 7].toInt();
       for (var j = firstRoof; j < firstRoof + roofs; j++) {

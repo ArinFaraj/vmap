@@ -93,9 +93,15 @@ void main() {
   // A circle: p.x its radius and p.y its ring's width in tile units, p.z
   // its ring's colour packed as red plus 256 green plus 65536 blue, p.w the
   // ring's alpha.
+  // packed_data.w: 1 when it faces the screen, plus 2 when it keeps its
+  // size however far it is. fade.zw turns screen pixels into clip space.
   vec2 corner = unpack_pair(packed_data.x);
-  if (circle) {
-    pos += corner * (p.x + p.y);
+  float facing = circle ? packed_data.w : 0.0;
+  bool on_screen = mod(facing, 2.0) > 0.5;
+  bool fixed_size = facing > 1.5;
+  if (circle && !on_screen) {
+    float grow = fixed_size ? (frame_info.mvp * vec4(pos, 0.0, 1.0)).w : 1.0;
+    pos += corner * (p.x + p.y) * grow;
   }
   // v_uv.z tells the fragment shader what to sample. 1, a patterned fill:
   // p is the pattern's place in the sprite sheet in its pixels, colour.r
@@ -121,6 +127,11 @@ void main() {
     dashed ? packed_data.w / p.w : 0.0,
     plain_line ? p.z : 0.0,
     dashed ? p.w / line_pixel : 0.0);
-  v_circle = vec4(corner, circle ? 1.0 : 0.0, 1.0 / max(frame_info.fade.y, 1e-6));
+  // v_circle.z: one for a circle, plus its blur, packed_data.y.
+  v_circle = vec4(corner, circle ? 1.0 + packed_data.y : 0.0, 1.0 / max(frame_info.fade.y, 1e-6));
   gl_Position = frame_info.mvp * vec4(pos, 0.0, 1.0);
+  if (on_screen) {
+    vec2 off = corner * (p.x + p.y) * frame_info.fade.y * frame_info.fade.zw;
+    gl_Position.xy += off * (fixed_size ? gl_Position.w : 1.0);
+  }
 }

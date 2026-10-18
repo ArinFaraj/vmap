@@ -1,4 +1,7 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
+
+import 'expr.dart';
 
 import 'platform.dart';
 import 'style_model.dart';
@@ -126,7 +129,12 @@ class GpuStream {
 
   /// Builds the stream for [meshes] in [sheet]'s layer order, leaving out
   /// the layers the GPU does not draw: extrusions, heatmaps and symbols.
-  static GpuStream? build(StyleSheet sheet, List<BuiltMesh> meshes) {
+  static GpuStream? build(
+    StyleSheet sheet,
+    List<BuiltMesh> meshes, {
+    double zoom = 0,
+  }) {
+    final context = EvalContext()..zoom = zoom;
     final byBucket = <int, List<BuiltMesh>>{};
     for (final m in meshes) {
       (byBucket[m.bucket] ??= []).add(m);
@@ -169,7 +177,17 @@ class GpuStream {
         if (kind == circle) {
           // A circle is a square around its centre, each corner carrying
           // where it lies in the square, which the shader scales by the
-          // radius and cuts round.
+          // radius and cuts round. The last float: 1 when it faces the
+          // screen, plus 2 when it keeps its size however far it is.
+          final circleLayer = layer as CircleLayer;
+          final facing =
+              (circleLayer.pitchWithMap ? 0 : 1) +
+              (circleLayer.scaleWithMap ? 0 : 2);
+          context.props = m.props ?? const {};
+          final blur = math.max(
+            0.0,
+            (asNumber(circleLayer.blur?.call(context)) ?? 0).toDouble(),
+          );
           for (var v = 0; v < n; v++) {
             final at = vertices.length ~/ floatsPerVertex;
             for (final (cx, cy) in const [
@@ -179,8 +197,8 @@ class GpuStream {
               (-1.0, 1.0),
             ]) {
               vertices
-                ..add4(pos[v * 2], pos[v * 2 + 1], packPair(cx, cy), 0)
-                ..add2((slot + kind * 16384).toDouble(), 0);
+                ..add4(pos[v * 2], pos[v * 2 + 1], packPair(cx, cy), blur)
+                ..add2((slot + kind * 16384).toDouble(), facing.toDouble());
             }
             for (final i in const [0, 1, 2, 0, 2, 3]) {
               indices.add(at + i);

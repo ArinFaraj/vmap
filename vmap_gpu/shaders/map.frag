@@ -23,8 +23,9 @@ void main() {
     float ring = v_pattern.y;
     float outer = radius + ring;
     float d = length(v_circle.xy) * outer;
-    float pixel = v_circle.w;
-    // As MapLibre: the edge fades over the device pixel inside it.
+    // As MapLibre: the edge fades over the device pixel inside it, or over
+    // circle-blur's share of the radius, v_circle.z less one, when wider.
+    float pixel = max(v_circle.w, (v_circle.z - 1.0) * outer);
     float shape = smoothstep(0.0, pixel, outer - d);
     if (shape <= 0.0) {
       discard;

@@ -46,12 +46,15 @@ class _Camera {
   /// Whether this test asks for the padding overlay (`showPadding`).
   bool showPadding = false;
 
+  /// The test's `maxPitch`, else MapLibre's default.
+  double maxPitch = 60;
+
   MapCameraPosition get position => MapCameraPosition(
     latitude: latitude,
     longitude: longitude,
     zoom: zoom,
     bearing: bearing,
-    pitch: pitch,
+    pitch: math.min(pitch, maxPitch),
     pad: pad,
     fov: fovDegrees * math.pi / 180,
   );
@@ -160,13 +163,16 @@ Future<_Result> _runOne(String id, String dir) async {
             ?.cast<String, Object?>() ??
         const {};
     result.allowed = (test['allowed'] as num? ?? 0.00025).toDouble();
-    session = _Session(
-      style,
-      width: (test['width'] as num? ?? 512).toInt(),
-      height: (test['height'] as num? ?? 512).toInt(),
-      ratio: (test['pixelRatio'] as num? ?? 1).toDouble(),
-      onError: (e) => result.note ??= 'engine: $e',
-    )..camera.showPadding = test['showPadding'] == true;
+    session =
+        _Session(
+            style,
+            width: (test['width'] as num? ?? 512).toInt(),
+            height: (test['height'] as num? ?? 512).toInt(),
+            ratio: (test['pixelRatio'] as num? ?? 1).toDouble(),
+            onError: (e) => result.note ??= 'engine: $e',
+          )
+          ..camera.showPadding = test['showPadding'] == true
+          ..camera.maxPitch = (test['maxPitch'] as num? ?? 60).toDouble();
     await session.settle();
     for (final op in (test['operations'] as List?) ?? const []) {
       await session.apply(op as List);

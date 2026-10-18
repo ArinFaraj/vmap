@@ -19,6 +19,7 @@ class Extrude {
     this.base,
     this.color, {
     this.verticalGradient = true,
+    this.roundedCorners,
   });
 
   final Expr height;
@@ -27,6 +28,9 @@ class Extrude {
 
   /// `fill-extrusion-vertical-gradient`: walls darker towards their feet.
   final bool verticalGradient;
+
+  /// `fill-extrusion-rounded-corner-distance`, in metres.
+  final Expr? roundedCorners;
 }
 
 /// A style's root `light`, which shades buildings as MapLibre's
@@ -401,6 +405,9 @@ final class CircleLayer extends MeshLayer implements StrokedLayer {
     super.translateOnScreen,
     super.perFeature,
     this.ring,
+    this.pitchWithMap = false,
+    this.scaleWithMap = true,
+    this.blur,
   });
 
   @override
@@ -408,6 +415,16 @@ final class CircleLayer extends MeshLayer implements StrokedLayer {
 
   /// The ring around each circle, when the style draws one.
   final CircleRing? ring;
+
+  /// `circle-pitch-alignment` is `map`: on a tilted map the circles lie on
+  /// the ground rather than face the screen.
+  final bool pitchWithMap;
+
+  /// `circle-pitch-scale` is `map`: farther circles are drawn smaller.
+  final bool scaleWithMap;
+
+  /// `circle-blur`, as a share of the radius, when the style sets it.
+  final Expr? blur;
 
   @override
   bool get spills => true;
