@@ -39,11 +39,20 @@ class RoadLabels {
     double textH,
     double unitPx, {
     double? maxBend,
+    bool mapLibre = false,
   }) {
     final line = road.tile.line!;
-    final need = textW * 1.15 / unitPx;
-    if (road.lineLength < need) return false;
     final half = textW / 2 / unitPx;
+    // As MapLibre's placeGlyphsAlongLine: centred on its anchor, and gone
+    // when it runs off either end of the line; its bends were held to the
+    // layer's max angle when the anchor was chosen.
+    if (mapLibre &&
+        (road.anchorAlong - half < 0 ||
+            road.anchorAlong + half > road.lineLength)) {
+      return false;
+    }
+    final need = mapLibre ? 2 * half : textW * 1.15 / unitPx;
+    if (road.lineLength < need) return false;
     // Centred on its anchor, moved along the road just enough to stay on it.
     final middle = road.anchorAlong.clamp(half, road.lineLength - half);
     final from = middle - half;
@@ -84,8 +93,17 @@ class RoadLabels {
     for (var i = first; i < last; i++) {
       final px = line[i * 2] - ax;
       final py = line[i * 2 + 1] - ay;
-      if ((px * cy - py * cx).abs() / chord > limit) {
-        return curved && _bend(st, road, from, to, textH, unitPx, maxBend);
+      if (mapLibre || (px * cy - py * cx).abs() / chord > limit) {
+        return curved &&
+            _bend(
+              st,
+              road,
+              from,
+              to,
+              textH,
+              unitPx,
+              mapLibre ? double.infinity : maxBend,
+            );
       }
     }
     st.curve = null;

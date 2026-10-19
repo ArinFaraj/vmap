@@ -810,8 +810,9 @@ class TileBuilder {
     }
 
     for (final MapEntry(key: layer, value: lines) in namedLines.entries) {
+      final seen = <String, List<(double, double)>>{};
       for (final named in mergeNamedLines(lines)) {
-        labels.addAll(_lineLabels(layer, named));
+        labels.addAll(_lineLabels(layer, named, seen: seen));
       }
     }
 
@@ -1146,11 +1147,27 @@ class TileBuilder {
   /// fits on the line and the line turns no more than its bend allows
   /// under it; at the middle when none does. With [center], once at the
   /// middle.
+  /// With [seen], the anchors of the layer's names so far by their text,
+  /// an anchor nearer one of the same name than half the spacing is passed
+  /// over, as MapLibre's `anchorIsTooClose`.
   List<BuiltLabel> _lineLabels(
     int layer,
     NamedLine named, {
     bool center = false,
+    Map<String, List<(double, double)>>? seen,
   }) {
+    final repeat = named.spacing / 2;
+    bool tooClose(double x, double y) {
+      if (seen == null) return false;
+      final others = seen[named.text] ??= [];
+      for (final (ox, oy) in others) {
+        final dx = ox - x, dy = oy - y;
+        if (dx * dx + dy * dy < repeat * repeat) return true;
+      }
+      others.add((x, y));
+      return false;
+    }
+
     final out = <BuiltLabel>[];
     final window = 3 / 5 * named.em;
     final extra = 2 * named.em;
@@ -1167,6 +1184,7 @@ class TileBuilder {
                     window,
                     named.maxBend,
                   )) {
+          if (tooClose(x, y)) continue;
           out.add(
             BuiltLabel(layer, named.priority, named.text, x, y, line)
               ..props = named.props,

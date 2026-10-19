@@ -921,9 +921,12 @@ class LabelEngine {
     double styleZoom,
     int fitKey,
   ) {
-    if (st.roadFitKey != fitKey) {
+    // A fit worked out on the text's estimated width is worked out again
+    // once its glyphs are laid out.
+    final key = sprite == null ? -1 - fitKey : fitKey;
+    if (st.roadFitKey != key) {
       st
-        ..roadFitKey = fitKey
+        ..roadFitKey = key
         ..roadFits = _roads.fit(
           st,
           road,
@@ -931,16 +934,12 @@ class LabelEngine {
           textH,
           road.tileSpan * _view.world / tileExtent,
           maxBend: layer?.maxBend,
+          mapLibre: identical(_rules, LabelRules.mapLibre),
         );
     }
     if (!st.roadFits) return;
     final mapLibre = identical(_rules, LabelRules.mapLibre) && layer != null;
-    if (_roads.nearSame(
-      st,
-      mapLibre
-          ? layer.build.spacing / 2 * road.tileSpan * _view.world / 512
-          : null,
-    )) {
+    if (_roads.nearSame(st, mapLibre ? 1 : null)) {
       return;
     }
     final overlaps = mapLibre && layer.textOverlaps;
