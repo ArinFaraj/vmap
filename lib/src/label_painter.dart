@@ -138,21 +138,22 @@ class LabelPainter {
     for (final filter in [?rim, fill]) {
       _imagePaint.colorFilter = filter;
       if (nearest && !texelForPixel) {
-        // GL fills the pixels whose centres a quad covers, edges unblended.
-        _imagePaint
-          ..filterQuality = ui.FilterQuality.none
-          ..isAntiAlias = false;
+        _imagePaint.filterQuality = ui.FilterQuality.none;
         for (final (from, to) in pieces) {
-          canvas.drawImageRect(
-            sheet.image,
+          final (snappedFrom, snappedTo) = _toPixelCentres(
             from,
             to.translate(ix, iy),
+            devicePixelRatio,
+          );
+          if (snappedTo.isEmpty) continue;
+          canvas.drawImageRect(
+            sheet.image,
+            snappedFrom,
+            snappedTo,
             _imagePaint,
           );
         }
-        _imagePaint
-          ..filterQuality = ui.FilterQuality.medium
-          ..isAntiAlias = true;
+        _imagePaint.filterQuality = ui.FilterQuality.medium;
       } else if (texelForPixel) {
         // MapLibre samples an unscaled icon nearest, which puts its corner
         // on the device pixel at or below the half.
@@ -192,6 +193,38 @@ class LabelPainter {
       }
     }
     _imagePaint.colorFilter = null;
+  }
+
+  /// [to] cut to the device pixels whose centres it covers, as GL fills a
+  /// quad, with [from] cut to match: sampled nearest, each pixel shows the
+  /// texel it would have, and no edge pixel is blended.
+  static (ui.Rect, ui.Rect) _toPixelCentres(
+    ui.Rect from,
+    ui.Rect to,
+    double devicePixelRatio,
+  ) {
+    final l = to.left * devicePixelRatio, r = to.right * devicePixelRatio;
+    final t = to.top * devicePixelRatio, b = to.bottom * devicePixelRatio;
+    final pl = (l - 0.5).ceilToDouble(), pr = (r - 0.5).ceilToDouble();
+    final pt = (t - 0.5).ceilToDouble(), pb = (b - 0.5).ceilToDouble();
+    if (pr <= pl || pb <= pt || r <= l || b <= t) {
+      return (from, ui.Rect.zero);
+    }
+    final kx = from.width / (r - l), ky = from.height / (b - t);
+    return (
+      ui.Rect.fromLTRB(
+        from.left + (pl - l) * kx,
+        from.top + (pt - t) * ky,
+        from.left + (pr - l) * kx,
+        from.top + (pb - t) * ky,
+      ),
+      ui.Rect.fromLTRB(
+        pl / devicePixelRatio,
+        pt / devicePixelRatio,
+        pr / devicePixelRatio,
+        pb / devicePixelRatio,
+      ),
+    );
   }
 
   /// Draws a label's text: an image cut into strips along a bent road, a

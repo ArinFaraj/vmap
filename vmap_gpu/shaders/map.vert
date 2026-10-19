@@ -44,6 +44,8 @@ out vec3 v_clip;
 out vec3 v_outline;
 
 const float PI = 3.141592653589793;
+const float HEAT_ZERO = 1.0 / 255.0 / 16.0;
+const float GAUSS_COEF = 0.3989422804014327;
 
 // MapLibre's projectToSphere, the latitude's sine and cosine from exp alone.
 vec3 to_sphere(vec2 p) {
@@ -62,12 +64,22 @@ float latitude_cos(vec2 p) {
   return 2.0 * t / (t * t + 1.0);
 }
 
-vec4 project(vec2 p) {
+// MapLibre's globeRotateVector: vec turned on the sphere by angles, east
+// and south.
+vec3 rotate_on_sphere(vec3 vec, vec2 angles) {
+  vec3 right = vec3(vec.z, 0.0, -vec.x);
+  vec3 up = normalize(cross(right, vec));
+  right = normalize(right);
+  vec2 t = tan(angles);
+  return normalize(vec + right * t.x + up * t.y);
+}
+
+// p on the flat map, s the same point on the unit sphere.
+vec4 project_to(vec2 p, vec3 s) {
   vec4 flat_pos = frame_info.mvp * vec4(p, 0.0, 1.0);
   if (frame_info.globe_tile.z <= 0.0) {
     return flat_pos;
   }
-  vec3 s = to_sphere(p);
   vec4 globe = frame_info.globe_mvp * vec4(s, 1.0);
   globe.z = (1.0 - (dot(s, frame_info.globe_plane.xyz) + frame_info.globe_plane.w)) * globe.w;
   float amount = frame_info.globe_tile.w;
@@ -80,6 +92,10 @@ vec4 project(vec2 p) {
   return result;
 }
 
+vec4 project(vec2 p) {
+  return project_to(p, frame_info.globe_tile.z > 0.0 ? to_sphere(p) : vec3(0.0));
+}
+
 // Two 12 bit numbers packed in one float as the stream writes them.
 vec2 unpack_pair(float v) {
   float high = floor(v / 4096.0);
@@ -89,7 +105,7 @@ vec2 unpack_pair(float v) {
 
 void main() {
   // Kinds: 0 a fill, 1 a line, 2 a patterned fill, 3 a circle, 4 a
-  // patterned line, 5 a gradient line.
+  // patterned line, 5 a gradient line, 6 a heatmap's point.
   float across = floor(packed_data.z / 131072.0);
   float slot_kind = packed_data.z - across * 131072.0;
   float kind = floor(slot_kind / 16384.0);
@@ -97,10 +113,11 @@ void main() {
   vec4 color = slot_info.slot[s * 3];
   vec4 p = slot_info.slot[s * 3 + 1];
   vec4 q = slot_info.slot[s * 3 + 2];
-  bool is_line = abs(kind - 1.0) < 0.5 || kind > 3.5;
+  bool is_line = abs(kind - 1.0) < 0.5 || (kind > 3.5 && kind < 5.5);
   bool patterned_line = abs(kind - 4.0) < 0.5;
-  bool gradient_line = kind > 4.5;
+  bool gradient_line = abs(kind - 5.0) < 0.5;
   bool circle = abs(kind - 3.0) < 0.5;
+  bool heat = kind > 5.5;
   // A patterned line keeps its pattern's place in the sprite sheet in p,
   // so its half width and offset are in the colour's place.
   vec2 stroke = patterned_line ? color.xy : p.xy;
@@ -170,6 +187,16 @@ void main() {
     grow *= fixed_size ? project(pos).w : 1.0;
     pos += corner * (p.x + p.y) * grow;
   }
+  // A heatmap's point, as MapLibre's: color.r its weight times the
+  // intensity, p.x its radius in tile units. Its square reaches where its
+  // kernel falls to HEAT_ZERO, heat_reach radii out.
+  float heat_reach = heat
+      ? sqrt(max(-2.0 * log(HEAT_ZERO / max(color.r, 1e-9) / GAUSS_COEF), 0.0)) / 3.0
+      : 0.0;
+  vec2 heat_centre = pos;
+  if (heat) {
+    pos += corner * heat_reach * p.x * grow;
+  }
   // v_uv.z tells the fragment shader what to sample. 1, a patterned fill:
   // p is the pattern's place in the sprite sheet in its pixels, colour.r
   // its pixel ratio, and fade.y the tile's screen pixels per tile unit.
@@ -207,8 +234,20 @@ void main() {
     dashed ? p.w / line_pixel : 0.0);
   // v_circle.z: one for a circle, plus its blur, packed_data.y.
   v_circle = vec4(corner, circle ? 1.0 + packed_data.y : 0.0, 1.0 / max(frame_info.fade.y, 1e-6));
-  v_clip = vec3(pos, globe && !circle ? 1.0 : 0.0);
+  v_clip = vec3(pos, globe && !circle && !heat ? 1.0 : 0.0);
+  if (heat) {
+    v_circle = vec4(corner * heat_reach, 0.0, 0.0);
+    v_uv = vec3(0.0, 0.0, 4.0);
+  }
   gl_Position = project(pos);
+  if (heat && globe) {
+    // On the sphere the square's corners are turned about its centre by
+    // its radius as an angle, as MapLibre's heatmap does: a tile unit is
+    // globe_tile.z / 4096 of a turn at the equator, globe_centre.x the
+    // scale at the centre's latitude.
+    vec2 angles = corner * heat_reach * p.x * (2.0 * PI * frame_info.globe_tile.z / 4096.0) * frame_info.globe_centre.x;
+    gl_Position = project_to(pos, rotate_on_sphere(to_sphere(heat_centre), angles));
+  }
   v_outline = vec3(0.0);
   if (frame_info.outline_info.x > 0.5) {
     // A fill's outline: p.z its colour, packed as red plus 256 green plus

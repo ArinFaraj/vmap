@@ -38,5 +38,13 @@
   "TerrainFragment": {
     "type": "fragment",
     "file": "shaders/terrain.frag"
+  },
+  "HeatVertex": {
+    "type": "vertex",
+    "file": "shaders/heat.vert"
+  },
+  "HeatFragment": {
+    "type": "fragment",
+    "file": "shaders/heat.frag"
   }
 }

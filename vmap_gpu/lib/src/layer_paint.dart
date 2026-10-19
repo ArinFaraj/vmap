@@ -130,6 +130,27 @@ class LayerPaint {
           ty = (asNumber(moved[1]) ?? 0).toDouble();
         }
       }
+      if (layer is HeatmapLayer) {
+        // Its opacity is laid on when the density is coloured.
+        final strength =
+            (asNumber(layer.heat.weight(context)) ?? 1) *
+            (asNumber(layer.heat.intensity(context)) ?? 1);
+        if (strength <= 0) return clear;
+        final diameter = (asNumber(layer.width(context)) ?? 0).toDouble();
+        if (diameter <= 0) return clear;
+        return LayerPaint(
+          strength.toDouble(),
+          0,
+          0,
+          1,
+          diameter / 2,
+          0,
+          0,
+          0,
+          0,
+          0,
+        );
+      }
       if (layer is CircleLayer) {
         final diameter = (asNumber(layer.width(context)) ?? 0).toDouble();
         final ring = layer.ring;
@@ -261,6 +282,10 @@ class LayerPaint {
       case GpuStream.circle:
         // dashOn and dashPeriod carry the ring's colour and alpha.
         put(r, g, b, a, halfWidth / scale, offset / scale, dashOn, dashPeriod);
+      case GpuStream.heat:
+        // A heatmap's point: its weight times the intensity, and its
+        // radius.
+        put(r, 0, 0, 1, halfWidth / scale, 0, 0, 0);
       case GpuStream.gradientLine:
         put(
           rampRow ?? 0,

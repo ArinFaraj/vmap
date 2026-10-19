@@ -73,7 +73,8 @@ class GpuStream {
       patterned = 2,
       circle = 3,
       patternedLine = 4,
-      gradientLine = 5;
+      gradientLine = 5,
+      heat = 6;
 
   static bool isLine(int kind) =>
       kind == line || kind == patternedLine || kind == gradientLine;
@@ -83,6 +84,7 @@ class GpuStream {
     FillLayer(pattern: null, extruded: false) => fill,
     FillLayer(extruded: false) => patterned,
     CircleLayer() => circle,
+    HeatmapLayer() => heat,
     LineLayer(pattern: null, gradient: null) => line,
     LineLayer(gradient: null) => patternedLine,
     LineLayer() => gradientLine,
@@ -138,7 +140,7 @@ class GpuStream {
   }
 
   /// Builds the stream for [meshes] in [sheet]'s layer order, leaving out
-  /// the layers the GPU does not draw: extrusions, heatmaps and symbols.
+  /// the layers the GPU does not draw: extrusions and symbols.
   ///
   /// With [fillCells] or [lineCells], fills or lines are cut along a grid
   /// of that many cells across the tile, for the globe to bend them.
@@ -169,8 +171,9 @@ class GpuStream {
       if (kind < 0) continue;
       for (final m in byBucket[layer.bucket] ?? const <BuiltMesh>[]) {
         final chunk = m.chunk;
-        if (kind != circle && chunk.indices.isEmpty) continue;
-        if (kind == circle && chunk.positions.isEmpty) continue;
+        final points = kind == circle || kind == heat;
+        if (!points && chunk.indices.isEmpty) continue;
+        if (points && chunk.positions.isEmpty) continue;
         if (slots.length - segmentSlot >= slotsPerDraw) {
           segments.addAll([
             segmentStart,
@@ -190,20 +193,24 @@ class GpuStream {
         final along = stroked ? chunk.distances : null;
         final edges = stroked ? chunk.edges : null;
         final n = pos.length ~/ 2;
-        if (kind == circle) {
+        if (points) {
           // A circle is a square around its centre, each corner carrying
           // where it lies in the square, which the shader scales by the
           // radius and cuts round. The last float: 1 when it faces the
-          // screen, plus 2 when it keeps its size however far it is.
-          final circleLayer = layer as CircleLayer;
-          final facing =
-              (circleLayer.pitchWithMap ? 0 : 1) +
-              (circleLayer.scaleWithMap ? 0 : 2);
-          context.props = m.props ?? const {};
-          final blur = math.max(
-            0.0,
-            (asNumber(circleLayer.blur?.call(context)) ?? 0).toDouble(),
-          );
+          // screen, plus 2 when it keeps its size however far it is. A
+          // heatmap's point is a square on the map the shader scales to
+          // where its kernel fades to nothing.
+          var facing = 0, blur = 0.0;
+          if (layer case final CircleLayer circleLayer) {
+            facing =
+                (circleLayer.pitchWithMap ? 0 : 1) +
+                (circleLayer.scaleWithMap ? 0 : 2);
+            context.props = m.props ?? const {};
+            blur = math.max(
+              0.0,
+              (asNumber(circleLayer.blur?.call(context)) ?? 0).toDouble(),
+            );
+          }
           for (var v = 0; v < n; v++) {
             final at = vertices.length ~/ floatsPerVertex;
             for (final (cx, cy) in const [

@@ -8,8 +8,9 @@ import 'package:vmap/renderer.dart';
 
 /// What lines read along their length, a row of [width] texels each in one
 /// texture, made again when the style changes: a gradient line layer's
-/// colours from its start to its end, and a dashed layer's pattern as the
-/// signed distance to the nearest dash end.
+/// colours from its start to its end, a heatmap layer's colours from no
+/// density to full, and a dashed layer's pattern as the signed distance to
+/// the nearest dash end.
 class LineRamps {
   static const width = 256;
 
@@ -20,8 +21,8 @@ class LineRamps {
   /// Null while the style has no gradient or dashed lines.
   gpu.Texture? texture;
 
-  /// Where the gradient row of style layer [layer] is, from 0 at the
-  /// texture's top to 1 at its bottom; null for a layer without one.
+  /// Where the gradient or heatmap row of style layer [layer] is, from 0 at
+  /// the texture's top to 1 at its bottom; null for a layer without one.
   double? gradientOf(int layer) => _gradients[layer];
 
   /// Where the dash row of style layer [layer] at style zoom [zoom] is, as
@@ -43,12 +44,14 @@ class LineRamps {
     _gradients.clear();
     _dashes.clear();
     texture = null;
-    final ramps = <(int, LineLayer)>[];
+    final ramps = <(int, Expr)>[];
     final dashes = <(int, LineLayer)>[];
     for (var i = 0; i < sheet.layers.length; i++) {
       if (sheet.layers[i] case final LineLayer line
           when line.gradient != null) {
-        ramps.add((i, line));
+        ramps.add((i, line.gradient!));
+      } else if (sheet.layers[i] case final HeatmapLayer heat) {
+        ramps.add((i, heat.heat.ramp));
       } else if (sheet.layers[i] case final LineLayer line
           when (line.dash?.fold(0.0, (a, b) => a + b) ?? 0) > 0) {
         dashes.add((i, line));
@@ -65,8 +68,7 @@ class LineRamps {
     final bytes = Uint8List(width * rows * 4);
     int byte(double v) => (v.clamp(0.0, 1.0) * 255).round();
     for (var row = 0; row < ramps.length; row++) {
-      final (layer, line) = ramps[row];
-      final gradient = line.gradient!;
+      final (layer, gradient) = ramps[row];
       _gradients[layer] = (row + 0.5) / rows;
       for (var x = 0; x < width; x++) {
         context.progress = x / (width - 1);

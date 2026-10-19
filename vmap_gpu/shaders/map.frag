@@ -28,6 +28,12 @@ void main() {
     frag_color = v_color * (1.0 - smoothstep(0.0, 1.0, length(v_outline.yz - gl_FragCoord.xy)));
     return;
   }
+  if (v_uv.z > 3.5) {
+    // A heatmap's kernel, as MapLibre's: added up into the density.
+    float d = -0.5 * 3.0 * 3.0 * dot(v_circle.xy, v_circle.xy);
+    frag_color = vec4(v_color.r * 0.3989422804014327 * exp(d), 1.0, 1.0, 1.0);
+    return;
+  }
   vec4 color = v_color;
   if (v_circle.z > 0.5) {
     float radius = v_pattern.x;

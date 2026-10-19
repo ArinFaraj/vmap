@@ -2,7 +2,7 @@
 /// a map vmap has loaded: the camera, the tiles in view, and the style.
 library;
 
-export 'src/expr.dart' show EvalContext, Rgba, asNumber;
+export 'src/expr.dart' show EvalContext, Expr, Rgba, asNumber;
 export 'src/extrusion.dart'
     show BuildingRenderer, BuiltExtrusion, ExtrusionPainter;
 export 'src/globe.dart' show Globe;

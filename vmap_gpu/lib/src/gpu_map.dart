@@ -71,6 +71,25 @@ class GpuMap implements MapRenderer {
 
   /// A tile's square in tile units, two triangles.
   gpu.DeviceBuffer? _quad;
+
+  /// The screen in clip space, two triangles, which a heatmap's density is
+  /// coloured over.
+  gpu.DeviceBuffer? _screen;
+  gpu.RenderPipeline? _heat;
+  gpu.UniformSlot? _heatInfo, _heatDensity, _heatRamp;
+
+  /// A heatmap layer's density, a quarter of the screen across as
+  /// MapLibre's, and the depth and stencil its pass is drawn with.
+  gpu.Texture? _density, _densityDepth;
+  final Float32List _heatValues = Float32List(4);
+  late final ByteData _heatBytes = ByteData.sublistView(_heatValues);
+
+  static final _add = gpu.ColorBlendEquation(
+    sourceColorBlendFactor: gpu.BlendFactor.one,
+    destinationColorBlendFactor: gpu.BlendFactor.one,
+    sourceAlphaBlendFactor: gpu.BlendFactor.one,
+    destinationAlphaBlendFactor: gpu.BlendFactor.one,
+  );
   UniformArena? _host;
   final _heap = GpuHeap();
   List<_FrameTarget> _ring = const [];
@@ -80,7 +99,13 @@ class GpuMap implements MapRenderer {
   final ui.Paint _overlayPaint = ui.Paint()
     ..filterQuality = ui.FilterQuality.low;
   int _inFlight = 0;
-  gpu.Texture? _depth, _samples;
+  gpu.Texture? _depth, _samples, _singleDepth;
+
+  /// Whether this frame is multisampled: only the globe, raised ground and
+  /// standing buildings are. A flat map's edges are cut at pixel centres,
+  /// as MapLibre draws without its `antialias` option, where its fills'
+  /// outlines and its lines' faded edges are what smooth them.
+  bool _sampled = false;
   int _next = 0, _width = 0, _height = 0, _frame = 0;
   bool _transient = true;
   final bool _multisample;
@@ -140,8 +165,11 @@ class GpuMap implements MapRenderer {
       }
       meshSeen = true;
     }
-    for (final layer in sheet.layers) {
-      if (layer is HeatmapLayer) return false;
+    // Heatmaps are not laid in the drape over raised ground yet.
+    if (terrain != null) {
+      for (final layer in sheet.layers) {
+        if (layer is HeatmapLayer) return false;
+      }
     }
     return _library != null && !_failed;
   }
@@ -319,6 +347,35 @@ class GpuMap implements MapRenderer {
         ),
       );
     }
+    final heatVertex = library['HeatVertex'];
+    final heatFragment = library['HeatFragment'];
+    if (heatVertex != null && heatFragment != null) {
+      _heat = gpu.gpuContext.createRenderPipeline(
+        heatVertex,
+        heatFragment,
+        vertexLayout: const gpu.VertexLayout(
+          buffers: [
+            gpu.VertexBuffer(
+              strideInBytes: 8,
+              attributes: [
+                gpu.VertexAttribute(
+                  name: 'position',
+                  format: gpu.VertexFormat.float32x2,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      _heatInfo = heatFragment.getUniformSlot('HeatInfo');
+      _heatDensity = heatFragment.getUniformSlot('density');
+      _heatRamp = heatFragment.getUniformSlot('ramp');
+      _screen = gpu.gpuContext.createDeviceBufferWithCopy(
+        ByteData.sublistView(
+          Float32List.fromList([-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1]),
+        ),
+      );
+    }
     _host = UniformArena();
     return true;
   }
@@ -332,6 +389,7 @@ class GpuMap implements MapRenderer {
     }
     _ring = [for (var i = 0; i < 3; i++) _FrameTarget(_target())];
     _last = null;
+    _density = _densityDepth = null;
     final samples = _msaa ? 4 : 1;
     _depth = _scratch(
       width,
@@ -340,6 +398,9 @@ class GpuMap implements MapRenderer {
       samples,
     );
     _samples = _msaa ? _scratch(width, height, _color, samples) : null;
+    _singleDepth = _msaa
+        ? _scratch(width, height, gpu.gpuContext.defaultDepthStencilFormat, 1)
+        : null;
   }
 
   /// A texture a frame draws into, the size of the screen.
@@ -466,6 +527,14 @@ class GpuMap implements MapRenderer {
     final height = (view.height * devicePixelRatio).round();
     if (width <= 0 || height <= 0) return false;
     _size(width, height);
+    _sampled =
+        _msaa &&
+        (view.globe != null ||
+            terrain != null ||
+            (view.pitch > 0 &&
+                sheet.extrusions.any(
+                  (e) => styleZoom >= e.minZoom && styleZoom < e.maxZoom,
+                )));
     if (!_warm) _warmUp();
     // A GPU that falls behind blocks the thread that queues more work for
     // it, so while two frames are still in flight the last image is shown
@@ -566,6 +635,32 @@ class GpuMap implements MapRenderer {
         ..add(above);
     }
 
+    // A heatmap adds its points up in a texture of its own, coloured into
+    // a new image laid over what is below it. True when it drew.
+    bool heated(StyleRun run) {
+      final heat = sheet.layers[run.first] as HeatmapLayer;
+      final row = _ramps.gradientOf(run.first);
+      final opacity = (asNumber(heat.opacity(context)) ?? 1).clamp(0.0, 1.0);
+      if (row == null || opacity <= 0 || _heat == null) return false;
+      final density = _drawDensity(
+        buffers,
+        run,
+        view,
+        clip,
+        sheet,
+        context,
+        styleZoom,
+        fallback,
+        ideal,
+      );
+      final (after, afterImage) = next();
+      pass = passOn(after);
+      shown.add((afterImage, 1));
+      textures.add(after);
+      pass.colorHeat(density, row, opacity);
+      return true;
+    }
+
     Timeline.timeSync('vmap.gpu.draw', () {
       if (raised) {
         // The flat layers are in the drape; the ground and buildings stand
@@ -575,9 +670,19 @@ class GpuMap implements MapRenderer {
           // With terrain MapLibre draws the map into a texture laid over
           // the ground, as the drape is; without, onto the sphere.
           if (ground == null) {
-            pass
-              ..globe = globe
-              ..drawRuns(sheet.runs);
+            pass.globe = globe;
+            var start = 0;
+            final runs = sheet.runs;
+            for (var i = 0; i < runs.length; i++) {
+              final run = runs[i];
+              if (run.source < 0 || sheet.layers[run.first] is! HeatmapLayer) {
+                continue;
+              }
+              pass.drawRuns(runs.sublist(start, i));
+              start = i + 1;
+              if (heated(run)) pass.globe = globe;
+            }
+            pass.drawRuns(runs.sublist(start));
           }
           return;
         }
@@ -614,6 +719,12 @@ class GpuMap implements MapRenderer {
             1.0,
           );
           apart(opacity, (into) => into.drawBuildings(building));
+          continue;
+        }
+        if (sheet.layers[run.first] is HeatmapLayer) {
+          pass.drawRuns(below);
+          below = [];
+          heated(run);
           continue;
         }
         final whole = sheet.runOpacity(run, context);
@@ -732,8 +843,68 @@ class GpuMap implements MapRenderer {
     _heap.completed++;
   }
 
+  /// Adds up the kernels of heatmap [run]'s points into the density
+  /// texture, in a command buffer of its own added to [buffers].
+  gpu.Texture _drawDensity(
+    List<gpu.CommandBuffer> buffers,
+    StyleRun run,
+    MapView view,
+    Float64List clip,
+    StyleSheet sheet,
+    EvalContext context,
+    double styleZoom,
+    List<List<TileDraw>> fallback,
+    List<List<TileDraw>> ideal,
+  ) {
+    final width = math.max(1, _width ~/ 4), height = math.max(1, _height ~/ 4);
+    final density = _density ??= gpu.gpuContext.createTexture(
+      gpu.StorageMode.devicePrivate,
+      width,
+      height,
+      format: _densityFormat,
+    );
+    final depth = _densityDepth ??= _scratch(
+      width,
+      height,
+      gpu.gpuContext.defaultDepthStencilFormat,
+      1,
+    );
+    final commands = gpu.gpuContext.createCommandBuffer();
+    buffers.add(commands);
+    final pass = commands.createRenderPass(
+      gpu.RenderTarget.singleColor(
+        gpu.ColorAttachment(texture: density, clearValue: Vector4.zero()),
+        depthStencilAttachment: gpu.DepthStencilAttachment(
+          texture: depth,
+          depthClearValue: 1,
+        ),
+      ),
+    );
+    _MapPass(this, pass, view, clip, sheet, context, styleZoom, fallback, ideal)
+      ..adding = true
+      ..globe = view.globe
+      ..drawRuns([run]);
+    return density;
+  }
+
+  /// Half floats where the GPU draws into them, as MapLibre's density is,
+  /// else bytes: the density then saturates at one.
+  late final gpu.PixelFormat _densityFormat = () {
+    try {
+      gpu.gpuContext.createTexture(
+        gpu.StorageMode.devicePrivate,
+        1,
+        1,
+        format: gpu.PixelFormat.r16g16b16a16Float,
+      );
+      return gpu.PixelFormat.r16g16b16a16Float;
+    } catch (_) {
+      return _color;
+    }
+  }();
+
   gpu.RenderPass _beginPass(gpu.CommandBuffer commands, gpu.Texture target) {
-    final samples = _samples;
+    final samples = _sampled ? _samples : null;
     return commands.createRenderPass(
       gpu.RenderTarget.singleColor(
         samples == null
@@ -745,7 +916,7 @@ class GpuMap implements MapRenderer {
                 clearValue: Vector4.zero(),
               ),
         depthStencilAttachment: gpu.DepthStencilAttachment(
-          texture: _depth!,
+          texture: samples == null && _msaa ? _singleDepth! : _depth!,
           depthClearValue: 1,
         ),
       ),
@@ -1133,6 +1304,7 @@ class GpuMap implements MapRenderer {
     _last = null;
     _depth = null;
     _samples = null;
+    _singleDepth = null;
   }
 }
 
@@ -1169,8 +1341,14 @@ class _MapPass {
   /// The source whose tiles' numbers are in the stencil, or -1.
   int _marked = -1;
 
+  /// Draws add up, as a heatmap's density does.
+  bool adding = false;
+
   bool _clips(int source) =>
-      globe == null && _map._stencil != null && _ideal[source].length < 255;
+      !adding &&
+      globe == null &&
+      _map._stencil != null &&
+      _ideal[source].length < 255;
 
   /// Each tile writes its number over its square, and draws only where its
   /// number is: a tile's data runs a little past its square, and a
@@ -1220,6 +1398,41 @@ class _MapPass {
       gpu.StencilConfig(compareFunction: gpu.CompareFunction.equal),
     );
 
+  /// Colours a heatmap's [density] through row [row] of the ramps, as
+  /// opaque as [opacity], over the whole screen.
+  void colorHeat(gpu.Texture density, double row, double opacity) {
+    final map = _map;
+    final ramp = map._ramps.texture;
+    if (ramp == null) return;
+    map._heatValues
+      ..[0] = row
+      ..[1] = opacity;
+    final linear = gpu.SamplerOptions(
+      minFilter: gpu.MinMagFilter.linear,
+      magFilter: gpu.MinMagFilter.linear,
+      widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+    );
+    _pass
+      ..clearBindings()
+      ..bindPipeline(map._heat!)
+      ..setCullMode(gpu.CullMode.none)
+      ..setDepthWriteEnable(false)
+      ..setDepthCompareOperation(gpu.CompareFunction.always)
+      ..setStencilConfig(gpu.StencilConfig())
+      ..setColorBlendEnable(true)
+      ..setColorBlendEquation(GpuMap._over)
+      ..bindVertexBuffer(
+        gpu.BufferView(map._screen!, offsetInBytes: 0, lengthInBytes: 48),
+      )
+      ..bindUniform(map._heatInfo!, map._host!.emplace(map._heatBytes))
+      ..bindTexture(map._heatDensity!, density, sampler: linear)
+      ..bindTexture(map._heatRamp!, ramp, sampler: linear)
+      ..draw(6)
+      ..clearBindings();
+    _marked = -1;
+  }
+
   /// Draws the paint layers of [runs] into this pass.
   void drawRuns(Iterable<StyleRun> runs) {
     var bound = false;
@@ -1239,7 +1452,7 @@ class _MapPass {
           ..setDepthCompareOperation(gpu.CompareFunction.always)
           ..setCullMode(gpu.CullMode.none)
           ..setColorBlendEnable(true)
-          ..setColorBlendEquation(GpuMap._over);
+          ..setColorBlendEquation(adding ? GpuMap._add : GpuMap._over);
         _map._bindSprites(_pass);
         bound = true;
       }
@@ -1253,14 +1466,18 @@ class _MapPass {
       // drawn whole, past that tile's square.
       var at = run.first;
       while (at < run.end) {
-        final whole = _sheet.layers[at] is CircleLayer;
+        bool drawnWhole(PaintLayer layer) =>
+            layer is CircleLayer || layer is HeatmapLayer;
+        final whole = drawnWhole(_sheet.layers[at]);
+        final skip = !adding && _sheet.layers[at] is HeatmapLayer;
         var end = at + 1;
-        while (end < run.end && (_sheet.layers[end] is CircleLayer) == whole) {
+        while (end < run.end && drawnWhole(_sheet.layers[end]) == whole) {
           end++;
         }
         final part = StyleRun.vector(source, at, end);
         if (whole) _pass.setStencilConfig(gpu.StencilConfig());
         for (final (i, d) in _ideal[source].indexed) {
+          if (skip) break;
           if (clipped && !whole) _stencilEquals(i + 1);
           _drawFlat(d, part);
         }
