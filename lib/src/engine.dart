@@ -1087,6 +1087,7 @@ class VmapEngine extends ChangeNotifier {
         zooming: _budget.zooming,
         view: view,
         ground: _groundOf(view),
+        sdf: onGpu ? gpu.sdfText : null,
       );
     }
     if (sheet.labelsRun < sheet.runs.length) {

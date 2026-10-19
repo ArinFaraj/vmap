@@ -21,6 +21,7 @@ import 'view.dart';
 import 'pins.dart';
 import 'point_labels.dart';
 import 'road_labels.dart';
+import 'sdf_text.dart';
 import 'source_config.dart';
 import 'sprites.dart';
 import 'stats.dart';
@@ -424,8 +425,15 @@ class LabelEngine {
     required bool zooming,
     MapView? view,
     double Function(double wx, double wy)? ground,
+    SdfText? sdf,
   }) {
     lastPlaceMicros = 0;
+    // Text from glyph ranges is drawn by the renderer as distance fields
+    // where it can, on the unturned screen of a projected view.
+    final ranges = _sprites.ranges;
+    final sdfText = view != null && ranges != null ? sdf : null;
+    sdfText?.begin(size, devicePixelRatio, ranges!.glyph);
+    _painter.sdfText = sdfText;
     if (view != null) rotation = 0;
     final world = 256.0 * math.pow(2, zoom);
     _view.frame(
@@ -582,6 +590,10 @@ class LabelEngine {
       textLayer = layer;
     }
     _drawn.clear();
+    if (sdfText != null) {
+      if (sdfText.end(canvas)) animating = true;
+      _painter.sdfText = null;
+    }
     if (pages != null) {
       pages.flush(canvas);
       if (pages.rasterizePending()) animating = true;

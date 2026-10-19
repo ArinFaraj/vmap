@@ -46,5 +46,13 @@
   "HeatFragment": {
     "type": "fragment",
     "file": "shaders/heat.frag"
+  },
+  "SdfVertex": {
+    "type": "vertex",
+    "file": "shaders/sdf.vert"
+  },
+  "SdfFragment": {
+    "type": "fragment",
+    "file": "shaders/sdf.frag"
   }
 }

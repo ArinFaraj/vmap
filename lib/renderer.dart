@@ -3,6 +3,8 @@
 library;
 
 export 'src/expr.dart' show EvalContext, Expr, Rgba, asNumber;
+export 'src/glyphs/glyph_pbf.dart' show GlyphPbf, PbfGlyph;
+export 'src/sdf_text.dart';
 export 'src/extrusion.dart'
     show BuildingRenderer, BuiltExtrusion, ExtrusionPainter;
 export 'src/globe.dart' show Globe;

@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'expr.dart';
+import 'sdf_text.dart';
 import 'sprites.dart';
 import 'style_model.dart';
 import 'terrain/terrain.dart';
@@ -70,6 +71,10 @@ abstract class MapRenderer {
 
   /// Lets go of the memory of tiles not drawn in the last frame.
   void trimMemory() {}
+
+  /// Draws text from a style's glyph ranges as distance fields, as MapLibre
+  /// does; null when this renderer cannot.
+  SdfText? get sdfText => null;
 
   void dispose();
 }

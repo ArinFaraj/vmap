@@ -16,6 +16,7 @@ import 'line_ramps.dart';
 import 'layer_paint.dart';
 import 'layer_presence.dart';
 
+part 'sdf_text_gpu.dart';
 part 'terrain_drape.dart';
 
 const _bundle = 'packages/vmap_gpu/build/shaderbundles/vmap_gpu.shaderbundle';
@@ -43,6 +44,11 @@ class GpuMap implements MapRenderer {
   }
 
   gpu.ShaderLibrary? _library;
+
+  late final _sdf = _SdfTextGpu(this);
+
+  @override
+  SdfText? get sdfText => !kIsWeb && _sdf.ready ? _sdf : null;
   gpu.RenderPipeline? _flat, _buildings, _stencil, _ground;
   gpu.UniformSlot? _groundFrame, _groundDrape, _groundDem, _groundHeights;
   gpu.RenderPipeline? _globe;

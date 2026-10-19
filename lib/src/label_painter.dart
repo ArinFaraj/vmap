@@ -15,6 +15,7 @@ import 'label_state.dart';
 import 'label_view.dart';
 import 'pins.dart';
 import 'road_labels.dart';
+import 'sdf_text.dart';
 import 'sprites.dart';
 import 'style_model.dart';
 import 'tile_builder.dart' show BuiltLabel;
@@ -28,6 +29,10 @@ class LabelPainter {
 
   /// Where glyph text is drawn from, once vmap's fonts are loaded.
   GlyphPages? glyphs;
+
+  /// Draws text from a style's glyph ranges as distance fields for the
+  /// frame being drawn, when the renderer can.
+  SdfText? sdfText;
 
   LabelRules rules = LabelRules.vmap;
 
@@ -237,6 +242,10 @@ class LabelPainter {
     double devicePixelRatio,
   ) {
     _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
+    if (sdfText case final sdf? when sprite is RangeSprite) {
+      _sdfText(sdf, st, sprite, canvas);
+      return;
+    }
     switch (sprite) {
       case GlyphSprite() when st.onGround && _view.tilted != null:
         _glyphsGround(st, sprite, devicePixelRatio);
@@ -693,6 +702,180 @@ class LabelPainter {
       _view.project(px + nx * cellUnit, py + ny * cellUnit);
       final bx = _view.x - ox, by = _view.y - oy;
       pages.addQuad(cell, ox + st.dx, oy + st.dy, ax, ay, bx, by, ink, halo);
+    }
+  }
+
+  /// Queues [st]'s glyphs as distance fields, each placed as MapLibre's
+  /// getGlyphQuads places it: upright or turned, along a bend, or laid on
+  /// the ground of a tilted map.
+  void _sdfText(
+    SdfText sdf,
+    LabelState st,
+    RangeSprite sprite,
+    ui.Canvas canvas,
+  ) {
+    final look = sprite.look;
+    final em = sprite.fontSize * st.scale;
+    final shaped = sprite.shaped;
+    final g = shaped.glyphs;
+    final scales = shaped.scales, turns = shaped.turns, colors = shaped.colors;
+    final layer = switch (st.candidate) {
+      TileLabel(:final tile) => tile.layer,
+      _ => -1,
+    };
+    final haloColor = look.halo;
+    final halo = haloColor == null || look.haloWidth <= 0
+        ? null
+        : SdfLook.rgba(haloColor, st.opacity);
+    final overlap = look.haloWidth > 1 || look.letterSpacing < 0;
+    final plain = SdfLook.rgba(look.color, st.opacity);
+    SdfLook lookOf(int i, double fontScale, double gammaScale) {
+      final own = colors?[i ~/ 5] ?? 0;
+      return SdfLook(
+        own == 0 ? plain : SdfLook.rgba(own, st.opacity),
+        halo,
+        look.haloWidth,
+        look.haloBlur,
+        fontScale,
+        gammaScale: gammaScale,
+        overlap: overlap,
+      );
+    }
+
+    if (st.onGround && _view.tilted != null) {
+      _view.project(st.worldX, st.worldY);
+      final depth = _view.depth;
+      final flip =
+          st.keepUpright &&
+          math.cos(_view.screenAngle(st.worldX, st.worldY, st.angle)) < 0;
+      final size = em / math.max(st.perspective, 1e-6) * (0.5 + 0.5 * depth);
+      final unit = size / _view.world;
+      final half = shaped.width * unit / 2;
+      final Float64List path;
+      final double middle;
+      if (st.curve case final curve?) {
+        path = curve;
+        middle = st.curveMid;
+      } else {
+        final dx = math.cos(st.angle) * half * 2;
+        final dy = math.sin(st.angle) * half * 2;
+        path = Float64List.fromList([
+          st.worldX - dx,
+          st.worldY - dy,
+          st.worldX + dx,
+          st.worldY + dy,
+        ]);
+        middle = half * 2;
+      }
+      final look0 = lookOf(0, size / GlyphPbf.em, depth);
+      for (var i = 0; i < g.length; i += 5) {
+        if (g[i] < 0) continue;
+        final advance = g[i + 4] * unit;
+        var along = g[i + 2] * unit + advance / 2 - half;
+        if (flip) along = -along;
+        pointAlong(path, middle + along, _along);
+        var angle = _along[2];
+        if (flip) angle += math.pi;
+        final tx = math.cos(angle), ty = math.sin(angle);
+        final nx = -ty, ny = tx;
+        final down = (g[i + 3] - shaped.height / 2) * unit;
+        final px = _along[0] - tx * advance / 2 + nx * down;
+        final py = _along[1] - ty * advance / 2 + ny * down;
+        final gu = unit * (scales?[i ~/ 5] ?? 1) / GlyphPbf.em;
+        _view.project(px, py);
+        final ox = _view.x, oy = _view.y;
+        _view.project(px + tx * gu, py + ty * gu);
+        final ax = _view.x - ox, ay = _view.y - oy;
+        _view.project(px + nx * gu, py + ny * gu);
+        final bx = _view.x - ox, by = _view.y - oy;
+        sdf.glyph(
+          g[i].toInt(),
+          g[i + 1].toInt(),
+          ox + st.dx,
+          oy + st.dy,
+          ax,
+          ay,
+          bx,
+          by,
+          colors == null ? look0 : lookOf(i, size / GlyphPbf.em, depth),
+          layer,
+        );
+      }
+      return;
+    }
+
+    final flat = lookOf(0, em / GlyphPbf.em, 1);
+    void put(int i, double ox, double oy, double c, double s) {
+      final u = em * (scales?[i ~/ 5] ?? 1) / GlyphPbf.em;
+      var ax = c * u, ay = s * u, bx = -s * u, by = c * u;
+      // A glyph lying on its side in vertical text turns a quarter more.
+      if ((turns?[i ~/ 5] ?? 0) == 1) (ax, ay, bx, by) = (bx, by, -ax, -ay);
+      sdf.glyph(
+        g[i].toInt(),
+        g[i + 1].toInt(),
+        ox,
+        oy,
+        ax,
+        ay,
+        bx,
+        by,
+        colors == null ? flat : lookOf(i, em / GlyphPbf.em, 1),
+        layer,
+      );
+    }
+
+    if (st.curve case final path?) {
+      final (onScreen, middle) = _view.onScreen(path, st.curveMid);
+      final flip =
+          st.keepUpright &&
+          math.cos(_view.screenAngle(st.worldX, st.worldY, st.angle)) < 0;
+      final half = shaped.width * em / 2;
+      final top = -shaped.height * em / 2;
+      for (var i = 0; i < g.length; i += 5) {
+        if (g[i] < 0) continue;
+        final advance = g[i + 4] * em;
+        var mid = g[i + 2] * em + advance / 2 - half;
+        if (flip) mid = -mid;
+        final reach = math.max(advance / 2, 1.0);
+        pointAlong(onScreen, middle + mid - reach, _along);
+        final x0 = _along[0], y0 = _along[1];
+        pointAlong(onScreen, middle + mid + reach, _along);
+        final x1 = _along[0], y1 = _along[1];
+        var angle = math.atan2(y1 - y0, x1 - x0);
+        if (flip) angle += math.pi;
+        final c = math.cos(angle), s = math.sin(angle);
+        final cx = (x0 + x1) / 2 + st.dx, cy = (y0 + y1) / 2 + st.dy;
+        final lx = -advance / 2, ly = top + g[i + 3] * em;
+        put(i, cx + c * lx - s * ly, cy + s * lx + c * ly, c, s);
+      }
+      return;
+    }
+
+    _view.project(st.worldX, st.worldY);
+    final mx = _view.x + st.dx, my = _view.y + st.dy;
+    final turn = _turnOf(st);
+    final c = math.cos(turn), s = math.sin(turn);
+    final left = -shaped.width * em / 2, top = -shaped.height * em / 2;
+    for (var i = 0; i < g.length; i += 5) {
+      if (g[i] < 0) {
+        // An image in a formatted label is drawn from the sprite sheet.
+        if (turn == 0) {
+          _inlineImage(
+            canvas,
+            sprite,
+            g,
+            i,
+            scales![i ~/ 5],
+            mx + left,
+            my + top,
+            em,
+            st,
+          );
+        }
+        continue;
+      }
+      final lx = left + g[i + 2] * em, ly = top + g[i + 3] * em;
+      put(i, mx + c * lx - s * ly, my + s * lx + c * ly, c, s);
     }
   }
 
