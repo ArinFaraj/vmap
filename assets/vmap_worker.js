@@ -1,4 +1,4 @@
-// vmap web worker, built from lib 817c84a0
+// vmap web worker, built from lib 675192d6
 (function dartProgram(){function copyProperties(a,b){var s=Object.keys(a)
 for(var r=0;r<s.length;r++){var q=s[r]
 b[q]=a[q]}}function mixinPropertiesHard(a,b){var s=Object.keys(a)
@@ -7315,34 +7315,37 @@ return q},
 r3(a,b,c,d){var s=A.oN(a)/2,r=A.oP(a,s,1/0,0,c,d),q=A.L(r),p=q.i("cF<1>")
 r=A.a3(new A.cF(r,q.i("B(1)").a(new A.nv(b,s)),p),p.i("f.E"))
 return r},
-oP(a2,a3,a4,a5,a6,a7){var s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d=a5/2,c=A.oN(a2),b=A.b([],t.eL),a=isFinite(a4),a0=a?a3-a4:a3,a1=a?a4:0
-a=!a
-s=a2.length
-r=0
-q=!1
-p=2
-for(;;){if(!(p<s&&!q))break
-o=p-2
-if(!(o<s))return A.a(a2,o)
-n=a2[o]
-o=p-1
-if(!(o<s))return A.a(a2,o)
-m=a2[o]
-if(!(p<s))return A.a(a2,p)
-l=a2[p]
-o=p+1
-if(!(o<s))return A.a(a2,o)
-k=l-n
-o=a2[o]-m
-j=Math.sqrt(k*k+o*o)
-for(i=r+j;h=a0+a1,h<i;a0=h){g=(h-r)/j
-f=B.c.a0(n+k*g)
-e=B.c.a0(m+o*g)
-if(f>=0&&f<4096&&e>=0&&e<4096&&h-d>=0&&h+d<=c&&A.vF(a2,B.b.O(p,2)-1,f,e,a5,a6,a7))B.a.k(b,new A.b3(f,e,Math.atan2(o,k)))
-if(a){a0=h
-q=!0
-break}}p+=2
-r=i}return b},
+oP(a4,a5,a6,a7,a8,a9){var s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d,c,b=a7/2,a=A.oN(a4),a0=A.b([],t.eL),a1=isFinite(a6),a2=a1?a5-a6:a5,a3=a1?a6:0
+a1=!a1
+s=a8!==0
+r=a4.length
+q=0
+p=!1
+o=2
+for(;;){if(!(o<r&&!p))break
+n=o-2
+if(!(n<r))return A.a(a4,n)
+m=a4[n]
+n=o-1
+if(!(n<r))return A.a(a4,n)
+l=a4[n]
+if(!(o<r))return A.a(a4,o)
+k=a4[o]
+n=o+1
+if(!(n<r))return A.a(a4,n)
+j=k-m
+n=a4[n]-l
+i=Math.sqrt(j*j+n*n)
+for(h=q+i;g=a2+a3,g<h;a2=g){f=(g-q)/i
+e=B.c.a0(m+j*f)
+d=B.c.a0(l+n*f)
+c=!1
+if(e>=0)if(e<4096)if(d>=0)if(d<4096)if(g-b>=0)if(g+b<=a)c=!s||A.vF(a4,B.b.O(o,2)-1,e,d,a7,a8,a9)
+if(c)B.a.k(a0,new A.b3(e,d,Math.atan2(n,j)))
+if(a1){a2=g
+p=!0
+break}}o+=2
+q=h}return a0},
 vF(a,a0,a1,a2,a3,a4,a5){var s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d,c,b
 if(a3===0)return!0
 s=new A.lK(a)
@@ -16588,7 +16591,7 @@ e2=e2.length===0?0:k0.dr(h3,e2)*i9
 e2=Math.max(e2,j5)
 f1=h3.dP
 if(f1==null)f1=0.7853981633974483
-k0.eB(i6,e2,i9,f1,e5,new A.kE(h2,j,e1,e8,h3,i0,h7,j4,i1,i2))}}}}for(s=new A.cr(i,i.$ti.i("cr<1,2>")).gt(0);s.n();){r=s.d
+k0.eB(i6,e2,i9,f1,e5,new A.kE(h2,j,e1,e8,h3,i0,h7,j4,i1,i2),h2.a.length!==0)}}}}for(s=new A.cr(i,i.$ti.i("cr<1,2>")).gt(0);s.n();){r=s.d
 j6=r.a
 for(r=A.xq(r.b),q=r.length,c2=0;c2<r.length;r.length===q||(0,A.i)(r),++c2)B.a.F(j,k0.ff(j6,r[c2]))}j7=A.b([],t.D)
 B.a.az(k,new A.kF())
@@ -16616,12 +16619,13 @@ s=this.c
 if(s.f.a.length===0)return A.pH(s,a,0,0,c)
 r=Math.min(b,30)
 return A.pH(s,a,Math.max(B.b.c_(128,r),2),B.b.c_(512,r),c)},
-eB(a,b,c,d,e,f){var s,r,q,p,o,n,m,l,k,j,i,h,g
+eB(a,b,c,d,e,f,a0){var s,r,q,p,o,n,m,l,k,j,i,h,g
 t.hi.a(f)
-for(s=this.Q,r=s.c,q=2*c,p=0.6*c,o=0;o<r.length-1;){n=s.a
-m=r[o]*2;++o
-for(n=A.r4(new Float32Array(A.a1(new Float64Array(n.subarray(m,A.bi(m,r[o]*2,n.length)))))),m=n.length,l=0;l<n.length;n.length===m||(0,A.i)(n),++l){k=n[l]
-j=e?A.r3(k,b,p,d):A.rb(k,a,b,q,p,d)
+s=a0?0.6*c:0
+for(r=this.Q,q=r.c,p=2*c,o=0;o<q.length-1;){n=r.a
+m=q[o]*2;++o
+for(n=A.r4(new Float32Array(A.a1(new Float64Array(n.subarray(m,A.bi(m,q[o]*2,n.length)))))),m=n.length,l=0;l<n.length;n.length===m||(0,A.i)(n),++l){k=n[l]
+j=e?A.r3(k,b,s,d):A.rb(k,a,b,p,s,d)
 for(i=j.length,h=0;h<j.length;j.length===i||(0,A.i)(j),++h){g=j[h]
 f.$3(g.a,g.b,g.c)}}}},
 eL(a,b,c){var s,r,q,p,o,n,m,l

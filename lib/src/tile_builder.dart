@@ -786,6 +786,7 @@ class TileBuilder {
                   turns: turns,
                 )..props = carried,
               ),
+              text: text.isNotEmpty,
             );
           }
         }
@@ -839,29 +840,26 @@ class TileBuilder {
   /// Calls [place] at the anchors MapLibre's `getAnchors` gives a symbol
   /// [labelLength] tile units long, an [em] tall, on each line of the sink
   /// cut to the tile, [spacing] apart; with [center], at each line's middle.
+  /// A symbol without [text] is not held to the line's bends, as
+  /// MapLibre's angle window is none without text.
   void _anchorsAlong(
     double spacing,
     double labelLength,
     double em,
     double maxBend,
     bool center,
-    void Function(double x, double y, double angle) place,
-  ) {
+    void Function(double x, double y, double angle) place, {
+    bool text = true,
+  }) {
+    final window = text ? 3 / 5 * em : 0.0;
     for (var r = 0; r < _sink.ringCount; r++) {
       final ring = Float32List.fromList(
         _sink.coords.sublist(_sink.ringStart(r) * 2, _sink.ringEnd(r) * 2),
       );
       for (final line in clipLineToTile(ring)) {
         final anchors = center
-            ? centerAnchor(line, labelLength, 3 / 5 * em, maxBend)
-            : lineAnchors(
-                line,
-                spacing,
-                labelLength,
-                2 * em,
-                3 / 5 * em,
-                maxBend,
-              );
+            ? centerAnchor(line, labelLength, window, maxBend)
+            : lineAnchors(line, spacing, labelLength, 2 * em, window, maxBend);
         for (final (x, y, angle) in anchors) {
           place(x, y, angle);
         }
@@ -1395,7 +1393,16 @@ List<(double, double, double)> _resample(
           y < tileExtent &&
           marked - half >= 0 &&
           marked + half <= length &&
-          _bendsLittle(line, i ~/ 2 - 1, x, y, labelLength, window, maxBend)) {
+          (window == 0 ||
+              _bendsLittle(
+                line,
+                i ~/ 2 - 1,
+                x,
+                y,
+                labelLength,
+                window,
+                maxBend,
+              ))) {
         out.add((x, y, math.atan2(by - ay, bx - ax)));
       }
       if (!spacing.isFinite) {
