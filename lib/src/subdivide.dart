@@ -50,6 +50,10 @@ class Subdivider {
 
   void _rows(List<List<double>> polygon) {
     if (polygon.length < 3) return;
+    if (polygon.any(_atPole)) {
+      _emit(polygon);
+      return;
+    }
     var minY = double.infinity, maxY = -double.infinity;
     for (final v in polygon) {
       minY = math.min(minY, v[1]);
@@ -76,9 +80,15 @@ class Subdivider {
     final n = polygon.length;
     for (var i = 0; i < n; i++) {
       final p = polygon[i], q = polygon[(i + 1) % n];
+      if (_atPole(p)) {
+        low.add(p);
+        high.add(p);
+        continue;
+      }
       final pv = p[axis], qv = q[axis];
       if (pv <= at) low.add(p);
       if (pv >= at) high.add(p);
+      if (_atPole(q)) continue;
       if ((pv < at && qv > at) || (pv > at && qv < at)) {
         final cut = _cross(p, q, axis, at);
         low.add(cut);
@@ -98,6 +108,10 @@ class Subdivider {
       for (var k = 0; k < width; k++) k == axis ? at : a[k] + (b[k] - a[k]) * t,
     ];
   }
+
+  /// A fill's vertex at a pole, which a line of longitude cannot cross:
+  /// MapLibre's pole vertices.
+  static bool _atPole(List<double> v) => v[1] < -32767.5 || v[1] > 32766.5;
 
   void _emit(List<List<double>> polygon) {
     if (polygon.length < 3) return;

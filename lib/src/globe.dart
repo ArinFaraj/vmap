@@ -219,23 +219,30 @@ class Globe {
       var nearest = double.infinity;
       var minX = double.infinity, maxX = -double.infinity;
       var minY = double.infinity, maxY = -double.infinity;
+      void sample(double px, double py, double pz) {
+        final dx = px - cx, dy = py - cy, dz = pz - cz;
+        nearest = math.min(nearest, math.sqrt(dx * dx + dy * dy + dz * dz));
+        if (!faces(px, py, pz)) return;
+        projectSphere(px, py, pz);
+        visible = true;
+        minX = math.min(minX, outX);
+        maxX = math.max(maxX, outX);
+        minY = math.min(minY, outY);
+        maxY = math.max(maxY, outY);
+      }
+
       for (var j = 0; j <= samples; j++) {
         for (var i = 0; i <= samples; i++) {
           final (px, py, pz) = surface(
             (x + i / samples) / n,
             (y + j / samples) / n,
           );
-          final dx = px - cx, dy = py - cy, dz = pz - cz;
-          nearest = math.min(nearest, math.sqrt(dx * dx + dy * dy + dz * dz));
-          if (!faces(px, py, pz)) continue;
-          projectSphere(px, py, pz);
-          visible = true;
-          minX = math.min(minX, outX);
-          maxX = math.max(maxX, outX);
-          minY = math.min(minY, outY);
-          maxY = math.max(maxY, outY);
+          sample(px, py, pz);
         }
       }
+      // As MapLibre's: a tile at the world's edge reaches on to its pole.
+      if (y == 0) sample(0, 1, 0);
+      if (y == n - 1) sample(0, -1, 0);
       if (z > 2) {
         if (!visible) return;
         if (maxX < 0 || minX > view.width || maxY < 0 || minY > view.height) {

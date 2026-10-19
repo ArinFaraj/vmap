@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:dart_earcut/dart_earcut.dart';
 
+import 'tile_builder.dart' show tileExtent;
+
 /// Indices are 16 bit, so a mesh is cut into chunks below this many vertices.
 const int _maxVertices = 65000;
 
@@ -181,12 +183,22 @@ class _Buffers {
 }
 
 class FillMesher {
-  FillMesher({this.outlines = false});
+  FillMesher({this.outlines = false, this.north = false, this.south = false});
 
   final _Buffers _b = _Buffers(false);
 
   /// Its rings are kept as edges too, for an outline.
   final bool outlines;
+
+  /// The tile is at the top or the bottom of the world: what reaches its
+  /// edge there is cut at it and drawn on to the pole, as MapLibre's
+  /// `_fillPoles` does, with vertices at [northPole] or [southPole].
+  final bool north, south;
+
+  /// The y of a vertex the globe puts at the north pole, and the flat map
+  /// leaves out.
+  static const double northPole = -32768;
+  static const double southPole = 32767;
 
   /// Adds one polygon: an outer ring followed by its holes, as flat x,y pairs
   /// in [coords] from point [start] to [end]. [holeStarts] are point indices
@@ -197,12 +209,20 @@ class FillMesher {
     int end,
     List<int> holeStarts,
   ) {
-    final count = end - start;
+    var count = end - start;
     if (count < 3 || count > _maxVertices) return;
-    final flat = Float64List.sublistView(coords, start * 2, end * 2);
+    var flat = Float64List.sublistView(coords, start * 2, end * 2);
+    if (north || south) {
+      (flat, holeStarts) = _cutAtPoles(flat, holeStarts);
+      count = flat.length ~/ 2;
+      if (count < 3 || count > _maxVertices) return;
+    }
     final triangles = Earcut.triangulateRaw(flat, holeIndices: holeStarts);
     if (triangles.isEmpty) return;
-    _b.reserve(count, triangles.length);
+    final poles = north || south
+        ? _poleEdges(flat, triangles)
+        : const <(int, int, double)>[];
+    _b.reserve(count + poles.length, triangles.length + poles.length * 3);
     final base = _b.vertexCount;
     final pos = _b.pos;
     var o = base * 2;
@@ -216,6 +236,81 @@ class FillMesher {
     }
     if (outlines) _ring(base, count, holeStarts);
     _b.vertexCount += count;
+    _b.indexCount = k;
+    if (poles.isNotEmpty) _fillPoles(base, flat, poles);
+  }
+
+  /// [flat]'s rings, from [holeStarts], cut to the tile's edge at the top
+  /// of the world when [north] and at its bottom when [south].
+  (Float64List, List<int>) _cutAtPoles(Float64List flat, List<int> holeStarts) {
+    final out = <double>[];
+    final starts = <int>[];
+    final points = flat.length ~/ 2;
+    for (var r = 0; r <= holeStarts.length; r++) {
+      final from = r == 0 ? 0 : holeStarts[r - 1];
+      final to = r < holeStarts.length ? holeStarts[r] : points;
+      var ring = [for (var i = from * 2; i < to * 2; i++) flat[i]];
+      if (north) ring = _cut(ring, 0, true);
+      if (south) ring = _cut(ring, tileExtent.toDouble(), false);
+      if (ring.length < 6) {
+        if (r == 0) return (Float64List(0), const []);
+        continue;
+      }
+      if (r > 0) starts.add(out.length ~/ 2);
+      out.addAll(ring);
+    }
+    return (Float64List.fromList(out), starts);
+  }
+
+  /// [ring] cut to y at least [edge] when [below], else at most.
+  static List<double> _cut(List<double> ring, double edge, bool below) {
+    bool inside(double y) => below ? y >= edge : y <= edge;
+    final out = <double>[];
+    final n = ring.length ~/ 2;
+    for (var i = 0; i < n; i++) {
+      final ax = ring[i * 2], ay = ring[i * 2 + 1];
+      final j = (i + 1) % n;
+      final bx = ring[j * 2], by = ring[j * 2 + 1];
+      if (inside(ay)) out.addAll([ax, ay]);
+      if (inside(ay) != inside(by)) {
+        final t = (edge - ay) / (by - ay);
+        out.addAll([ax + (bx - ax) * t, edge]);
+      }
+    }
+    return out;
+  }
+
+  /// The edges of [triangles] over the points of [flat] on the world's top
+  /// or bottom edge, each with the y of its pole.
+  List<(int, int, double)> _poleEdges(Float64List flat, List<int> triangles) {
+    final edges = <(int, int, double)>[];
+    for (var t = 0; t + 2 < triangles.length; t += 3) {
+      for (var e = 0; e < 3; e++) {
+        final i0 = triangles[t + e], i1 = triangles[t + (e + 1) % 3];
+        final y0 = flat[i0 * 2 + 1], y1 = flat[i1 * 2 + 1];
+        if (y0 != y1) continue;
+        if (north && y0 == 0) edges.add((i0, i1, northPole));
+        if (south && y0 == tileExtent) edges.add((i0, i1, southPole));
+      }
+    }
+    return edges;
+  }
+
+  /// A triangle from each of [edges], from [base] over the points of
+  /// [flat], to its pole.
+  void _fillPoles(int base, Float64List flat, List<(int, int, double)> edges) {
+    final pos = _b.pos, idx = _b.idx;
+    var v = _b.vertexCount, k = _b.indexCount;
+    for (final (i0, i1, pole) in edges) {
+      pos[v * 2] = (flat[i0 * 2] + flat[i1 * 2]) / 2;
+      pos[v * 2 + 1] = pole;
+      idx
+        ..[k++] = base + i0
+        ..[k++] = base + i1
+        ..[k++] = v;
+      v++;
+    }
+    _b.vertexCount = v;
     _b.indexCount = k;
   }
 

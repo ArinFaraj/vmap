@@ -92,7 +92,24 @@ vec4 project_to(vec2 p, vec3 s) {
   return result;
 }
 
+// A fill's vertex at a pole, MapLibre's NORTH_POLE_Y or SOUTH_POLE_Y: on
+// the globe the pole, hidden as the globe turns to the flat map, where it
+// is put past the near plane with every triangle it is in.
+bool at_pole(vec2 p) {
+  return p.y < -32767.5 || p.y > 32766.5;
+}
+
 vec4 project(vec2 p) {
+  if (at_pole(p)) {
+    if (frame_info.globe_tile.z <= 0.0) {
+      return vec4(0.0, 0.0, -10000000.0, 1.0);
+    }
+    vec3 s = vec3(0.0, p.y < 0.0 ? 1.0 : -1.0, 0.0);
+    vec4 globe = frame_info.globe_mvp * vec4(s, 1.0);
+    globe.z = (1.0 - (dot(s, frame_info.globe_plane.xyz) + frame_info.globe_plane.w)) * globe.w;
+    globe.z = mix(globe.z, 100.0, pow(max((1.0 - frame_info.globe_tile.w) / 0.02, 0.0), 8.0));
+    return globe;
+  }
   return project_to(p, frame_info.globe_tile.z > 0.0 ? to_sphere(p) : vec3(0.0));
 }
 
@@ -235,7 +252,7 @@ void main() {
     dashed ? p.w / line_pixel : 0.0);
   // v_circle.z: one for a circle, plus its blur, packed_data.y.
   v_circle = vec4(corner, circle ? 1.0 + packed_data.y : 0.0, 1.0 / max(frame_info.fade.y, 1e-6));
-  v_clip = vec3(pos, globe && !circle && !heat ? 1.0 : 0.0);
+  v_clip = vec3(pos.x, at_pole(pos) ? clamp(pos.y, 0.0, 4096.0) : pos.y, globe && !circle && !heat ? 1.0 : 0.0);
   if (heat) {
     v_circle = vec4(corner * heat_reach, 0.0, 0.0);
     v_uv = vec3(0.0, 0.0, 4.0);

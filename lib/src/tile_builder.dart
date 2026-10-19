@@ -545,7 +545,11 @@ class TileBuilder {
             if (bucket.kind == BucketKind.fill) {
               geometry();
               _addPolygons(
-                group.fill ??= FillMesher(outlines: _outlined.contains(b)),
+                group.fill ??= FillMesher(
+                  outlines: _outlined.contains(b),
+                  north: y == 0,
+                  south: y == (1 << z) - 1,
+                ),
                 pending,
                 ringTolerance,
               );
