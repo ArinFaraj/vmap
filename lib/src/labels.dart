@@ -650,6 +650,29 @@ class LabelEngine {
     });
   }
 
+  /// MapLibre's placement order: by priority, then a layer's tiles deepest
+  /// first, each copy of the world, column and row in turn (the order
+  /// `Style._updatePlacement` sorts them in), then the order the tile lists
+  /// its symbols in.
+  static int _placementOrder(LabelState a, LabelState b) {
+    final byRank = (a.sortKey >> 16) - (b.sortKey >> 16);
+    if (byRank != 0) return byRank;
+    final ca = a.candidate, cb = b.candidate;
+    if (ca is TileLabel && cb is TileLabel) {
+      if (ca.tileSpan != cb.tileSpan) return ca.tileSpan.compareTo(cb.tileSpan);
+      final ax = (ca.tileX / ca.tileSpan).round();
+      final bx = (cb.tileX / cb.tileSpan).round();
+      final n = (1 / ca.tileSpan).round();
+      final aw = (ax / n).floor(), bw = (bx / n).floor();
+      if (aw != bw) return aw - bw;
+      if (ax != bx) return ax - bx;
+      final ay = (ca.tileY / ca.tileSpan).round();
+      final by = (cb.tileY / cb.tileSpan).round();
+      if (ay != by) return ay - by;
+    }
+    return a.sortKey - b.sortKey;
+  }
+
   /// The tile units MapLibre sorts symbols in, `EXTENT`.
   static const _sortExtent = 8192.0;
 
@@ -730,7 +753,11 @@ class LabelEngine {
         states.add(st);
       }
     }
-    states.sort((a, b) => a.sortKey - b.sortKey);
+    if (identical(_rules, LabelRules.mapLibre)) {
+      states.sort(_placementOrder);
+    } else {
+      states.sort((a, b) => a.sortKey - b.sortKey);
+    }
 
     _boxes.clear();
     _points.debugBoxes?.clear();
