@@ -700,6 +700,7 @@ class SymbolLayer {
     this.iconCooperative = false,
     this.textCooperative = false,
     this.drawnByScreenY = false,
+    this.drawnByKey = false,
     this.iconSizeByFeature = false,
     required this.textFit,
     this.iconTextFit = 'none',
@@ -883,6 +884,10 @@ class SymbolLayer {
   /// cover higher ones: `symbol-z-order` viewport-y, or auto without a
   /// sort key, when they may overlap.
   final bool drawnByScreenY;
+
+  /// Whether the layer has a `symbol-sort-key`, which MapLibre draws by
+  /// across tiles rather than tile by tile.
+  final bool drawnByKey;
 
   /// `icon-size` is read from each feature, which MapLibre draws filtered
   /// even where it comes out at 1.

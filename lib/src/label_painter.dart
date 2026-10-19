@@ -138,7 +138,10 @@ class LabelPainter {
     for (final filter in [?rim, fill]) {
       _imagePaint.colorFilter = filter;
       if (nearest && !texelForPixel) {
-        _imagePaint.filterQuality = ui.FilterQuality.none;
+        // GL fills the pixels whose centres a quad covers, edges unblended.
+        _imagePaint
+          ..filterQuality = ui.FilterQuality.none
+          ..isAntiAlias = false;
         for (final (from, to) in pieces) {
           canvas.drawImageRect(
             sheet.image,
@@ -147,7 +150,9 @@ class LabelPainter {
             _imagePaint,
           );
         }
-        _imagePaint.filterQuality = ui.FilterQuality.medium;
+        _imagePaint
+          ..filterQuality = ui.FilterQuality.medium
+          ..isAntiAlias = true;
       } else if (texelForPixel) {
         // MapLibre samples an unscaled icon nearest, which puts its corner
         // on the device pixel at or below the half.
@@ -789,5 +794,36 @@ class LabelPainter {
       0, 0, 0, 0, tint.b * 255,
       0, 0, 0, gain * tint.a, (0.5 - edge * gain) * 255 * tint.a,
     ]);
+  }
+
+  /// Draws [boxes] as [PointLabels.debugBoxes] holds them, one device pixel
+  /// wide as MapLibre's GL lines, blue where placed and red where not.
+  void paintCollisionBoxes(
+    ui.Canvas canvas,
+    List<double> boxes,
+    double devicePixelRatio,
+  ) {
+    final placed = ui.Paint()
+      ..isAntiAlias = false
+      ..color = const ui.Color(0x400000FF);
+    final hit = ui.Paint()
+      ..isAntiAlias = false
+      ..color = const ui.Color(0x80FF0000);
+    canvas
+      ..save()
+      ..scale(1 / devicePixelRatio);
+    for (var i = 0; i + 4 < boxes.length; i += 5) {
+      final paint = boxes[i + 4] > 0 ? placed : hit;
+      final l = ((boxes[i] + 0.5) * devicePixelRatio).floorToDouble();
+      final t = ((boxes[i + 1] + 0.5) * devicePixelRatio).floorToDouble();
+      final r = ((boxes[i + 2] + 0.5) * devicePixelRatio).floorToDouble();
+      final b = ((boxes[i + 3] + 0.5) * devicePixelRatio).floorToDouble();
+      canvas
+        ..drawRect(ui.Rect.fromLTRB(l, t, r, t + 1), paint)
+        ..drawRect(ui.Rect.fromLTRB(r, t, r + 1, b), paint)
+        ..drawRect(ui.Rect.fromLTRB(l + 1, b, r + 1, b + 1), paint)
+        ..drawRect(ui.Rect.fromLTRB(l, t + 1, l + 1, b + 1), paint);
+    }
+    canvas.restore();
   }
 }

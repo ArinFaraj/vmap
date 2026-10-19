@@ -526,6 +526,7 @@ class StyleCompiler {
         iconCooperative: _overlap(layout, 'icon') == 'cooperative',
         textCooperative: _overlap(layout, 'text') == 'cooperative',
         drawnByScreenY: _drawnByScreenY(layout),
+        drawnByKey: layout['symbol-sort-key'] != null,
         iconSizeByFeature: _readsAny(layout['icon-size']),
         textFit: (layout['icon-text-fit'] ?? 'none') != 'none',
         iconTextFit: switch (layout['icon-text-fit']) {

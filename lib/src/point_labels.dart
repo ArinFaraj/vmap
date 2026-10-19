@@ -26,6 +26,10 @@ class PointLabels {
   /// Pins drawn in place of the style's icons. Null draws the style's own.
   VmapPins? pins;
 
+  /// With collision boxes shown, each weighed box as left, top, right,
+  /// bottom and whether it was placed (1 or 0).
+  List<double>? debugBoxes;
+
   /// Space between a pin and its name.
   static const double _pinGap = 3;
 
@@ -154,6 +158,33 @@ class PointLabels {
       showText = textFits;
       showIcon = iconFits;
     }
+    final debug = debugBoxes;
+    if (debug != null) {
+      if (c.hasText) {
+        _debugBox(
+          debug,
+          spot.x + st.dx,
+          spot.y + st.dy,
+          textW,
+          textH,
+          spin,
+          textPad,
+          showText,
+        );
+      }
+      if (hasIcon) {
+        _debugBox(
+          debug,
+          spot.x + st.iconDx,
+          spot.y + st.iconDy,
+          st.iconW,
+          st.iconH,
+          0,
+          iconPad,
+          showIcon,
+        );
+      }
+    }
     if (!showText && !showIcon) return false;
     if (showText && !(symbol?.textIgnored ?? false)) {
       _boxes.take(
@@ -186,6 +217,22 @@ class PointLabels {
       ..showIcon = showIcon;
     if (spaced && c.hasText) _roads.placed(st);
     return true;
+  }
+
+  static void _debugBox(
+    List<double> out,
+    double x,
+    double y,
+    double w,
+    double h,
+    double angle,
+    double pad,
+    bool placed,
+  ) {
+    final c = math.cos(angle).abs(), s = math.sin(angle).abs();
+    final hw = (w * c + h * s) / 2 + pad;
+    final hh = (w * s + h * c) / 2 + pad;
+    out.addAll([x - hw, y - hh, x + hw, y + hh, placed ? 1 : 0]);
   }
 
   /// Where the text's middle sits from its point: the layer's anchor and

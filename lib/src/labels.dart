@@ -355,6 +355,13 @@ class LabelEngine {
   /// Lets go of the label images not drawn in the last pass.
   void trimMemory() => _sprites.drop(_pass);
 
+  /// Records each weighed label's boxes and draws them over the labels.
+  bool get showCollisionBoxes => _points.debugBoxes != null;
+  set showCollisionBoxes(bool value) {
+    _points.debugBoxes = value ? [] : null;
+    _placeAgain = true;
+  }
+
   void clear() {
     _sprites.clear();
     _painter.dropPins();
@@ -541,6 +548,10 @@ class LabelEngine {
       if (pages.rasterizePending()) animating = true;
       pages.endFrame();
     }
+    final debugBoxes = _points.debugBoxes;
+    if (debugBoxes != null) {
+      _painter.paintCollisionBoxes(canvas, debugBoxes, devicePixelRatio);
+    }
     if (rotation != 0) canvas.restore();
     return animating;
   }
@@ -556,21 +567,58 @@ class LabelEngine {
   /// a layer in placement order, or top to bottom on the screen for a
   /// layer drawn by screen y, the later feature first on a tie.
   void _drawOrder(double rotation) {
+    final bearing = _view.tilted != null ? -_view.mapTurn : rotation;
+    final ts = math.sin(bearing), tc = math.cos(bearing);
     final s = -math.sin(rotation), c = math.cos(rotation);
     for (final st in _drawn) {
-      if (_symbolOf(st.candidate)?.drawnByScreenY != true) continue;
+      final candidate = st.candidate;
+      if (_symbolOf(candidate)?.drawnByScreenY != true) continue;
+      if (candidate is TileLabel) {
+        // As MapLibre's getSortedSymbolIndexes: the anchor's turned y in
+        // whole tile units.
+        final x = (st.worldX - candidate.tileX) / candidate.tileSpan;
+        final y = (st.worldY - candidate.tileY) / candidate.tileSpan;
+        st.drawY = ((-ts * x + tc * y) * _sortExtent).roundToDouble();
+        continue;
+      }
       _view.project(st.worldX, st.worldY);
       st.drawY = (s * _view.x + c * _view.y).roundToDouble();
     }
     _drawn.sort((a, b) {
       final byLayer = _layerOf(a.candidate) - _layerOf(b.candidate);
       if (byLayer != 0) return byLayer;
+      if (_symbolOf(a.candidate)?.drawnByKey != true) {
+        final byTile = _tileOrder(a.candidate, b.candidate, ts, tc);
+        if (byTile != 0) return byTile;
+      }
       if (_symbolOf(a.candidate)?.drawnByScreenY != true) {
         return a.sortKey - b.sortKey;
       }
       final byY = a.drawY.compareTo(b.drawY);
       return byY != 0 ? byY : b.sortKey - a.sortKey;
     });
+  }
+
+  /// The tile units MapLibre sorts symbols in, `EXTENT`.
+  static const _sortExtent = 8192.0;
+
+  /// MapLibre draws a layer's symbols tile by tile: deepest zoom first,
+  /// then in rows down the turned screen, each row from left to right
+  /// (`getRenderableIds` for symbol layers, reversed by the painter).
+  static int _tileOrder(
+    LabelCandidate a,
+    LabelCandidate b,
+    double s,
+    double c,
+  ) {
+    if (a is! TileLabel || b is! TileLabel) return 0;
+    if (a.tileSpan != b.tileSpan) return a.tileSpan.compareTo(b.tileSpan);
+    if (a.tileX == b.tileX && a.tileY == b.tileY) return 0;
+    final ax = a.tileX / a.tileSpan, ay = a.tileY / a.tileSpan;
+    final bx = b.tileX / b.tileSpan, by = b.tileY / b.tileSpan;
+    final byRow = (-s * ax + c * ay).compareTo(-s * bx + c * by);
+    if (byRow != 0) return byRow;
+    return (c * ax + s * ay).compareTo(c * bx + s * by);
   }
 
   /// Labels a tilted map would shrink below this are left out, as MapLibre
@@ -629,6 +677,7 @@ class LabelEngine {
     states.sort((a, b) => a.sortKey - b.sortKey);
 
     _boxes.clear();
+    _points.debugBoxes?.clear();
     _roads.startPass();
     _points.startPass();
     final fitKey = (zoom * 3).round();
