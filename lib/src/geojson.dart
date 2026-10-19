@@ -201,8 +201,8 @@ class GeoJsonTiles {
       for (final ring in f.rings) {
         final local = Float64List(ring.length);
         for (var i = 0; i < ring.length; i += 2) {
-          local[i] = (ring[i] * n - x) * tileExtent;
-          local[i + 1] = (ring[i + 1] * n - y) * tileExtent;
+          local[i] = _onGrid(ring[i] * n - x);
+          local[i + 1] = _onGrid(ring[i + 1] * n - y);
         }
         switch (f.type) {
           case mvtPoint:
@@ -234,13 +234,17 @@ class GeoJsonTiles {
       out.add(
         _Clipped(mvtPoint, p.props, [
           Float64List(2)
-            ..[0] = (p.x * n - x) * tileExtent
-            ..[1] = (p.y * n - y) * tileExtent,
+            ..[0] = _onGrid(p.x * n - x)
+            ..[1] = _onGrid(p.y * n - y),
         ]),
       );
     }
     return out.isEmpty ? const [] : [_Layer(out)];
   }
+
+  /// [v], a share of the tile, in tile units rounded as geojson-vt rounds
+  /// them on MapLibre's 8192 unit grid, half of one of ours.
+  static double _onGrid(double v) => (v * tileExtent * 2).roundToDouble() / 2;
 
   static const double _lo = -_buffer;
   static const double _hi = tileExtent + _buffer;

@@ -22,12 +22,6 @@ void main() {
   if (v_clip.z > 0.5 && (v_clip.x < 0.0 || v_clip.y < 0.0 || v_clip.x > 4096.0 || v_clip.y > 4096.0)) {
     discard;
   }
-  if (v_outline.x > 0.5) {
-    // MapLibre's fill_outline: a one pixel line faded by how far the
-    // pixel's centre is from the line.
-    frag_color = v_color * (1.0 - smoothstep(0.0, 1.0, length(v_outline.yz - gl_FragCoord.xy)));
-    return;
-  }
   if (v_uv.z > 3.5) {
     // A heatmap's kernel, as MapLibre's: added up into the density.
     float d = -0.5 * 3.0 * 3.0 * dot(v_circle.xy, v_circle.xy);
@@ -89,6 +83,12 @@ void main() {
     } else {
       color = texel * v_color.a;
     }
+  }
+  if (v_outline.x > 0.5) {
+    // MapLibre's fill_outline and fill_outline_pattern: a one pixel line
+    // faded by how far the pixel's centre is from the line.
+    frag_color = color * (1.0 - smoothstep(0.0, 1.0, length(v_outline.yz - gl_FragCoord.xy)));
+    return;
   }
   // A line's outermost device pixel fades to its edge; v_edge.z is its
   // half width in device pixels, zero for anything not a line.

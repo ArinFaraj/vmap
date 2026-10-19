@@ -251,13 +251,15 @@ void main() {
   v_outline = vec3(0.0);
   if (frame_info.outline_info.x > 0.5) {
     // A fill's outline: p.z its colour, packed as red plus 256 green plus
-    // 65536 blue, p.w its alpha.
-    float rgb = p.z;
-    float b = floor(rgb / 65536.0);
-    float g = floor((rgb - b * 65536.0) / 256.0);
-    float r = rgb - b * 65536.0 - g * 256.0;
-    v_color = vec4(vec3(r, g, b) / 255.0 * p.w, p.w);
-    v_uv = vec3(0.0);
+    // 65536 blue, p.w its alpha. A patterned fill's is its pattern.
+    if (kind < 0.5) {
+      float rgb = p.z;
+      float b = floor(rgb / 65536.0);
+      float g = floor((rgb - b * 65536.0) / 256.0);
+      float r = rgb - b * 65536.0 - g * 256.0;
+      v_color = vec4(vec3(r, g, b) / 255.0 * p.w, p.w);
+      v_uv = vec3(0.0);
+    }
     vec2 ndc = gl_Position.xy / gl_Position.w;
     float dpr = frame_info.fog_range.z;
     v_outline = vec3(

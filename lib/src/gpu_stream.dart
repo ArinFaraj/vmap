@@ -294,7 +294,7 @@ class GpuStream {
           indices.add(base + i);
         }
         final outline = chunk.outline;
-        if (kind == fill &&
+        if ((kind == fill || kind == patterned) &&
             outline != null &&
             (layer as FillLayer).outline != null) {
           final segment = segments.length ~/ 3;
