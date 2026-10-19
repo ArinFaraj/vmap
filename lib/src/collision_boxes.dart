@@ -12,9 +12,14 @@ class CollisionBoxes {
 
   /// The boxes in each [_cell] pixel square of the screen, so a test looks
   /// only at the boxes near it, as MapLibre's grid index does: a dense
-  /// tilted view weighs hundreds of labels against hundreds of boxes.
-  final Map<int, List<int>> _grid = {};
+  /// tilted view weighs hundreds of labels against hundreds of boxes. The
+  /// grid spans [_side] squares each way from [_origin]; a box past it is
+  /// kept in the squares at its edge.
+  final List<List<int>> _grid = List.generate(_side * _side, (_) => []);
+  final List<int> _used = [];
   static const double _cell = 64;
+  static const int _side = 64;
+  static const double _origin = -1024;
 
   /// For each box, the last query that tested it, so one in several cells
   /// is tested once.
@@ -27,12 +32,14 @@ class CollisionBoxes {
 
   void clear() {
     _count = 0;
-    _grid.clear();
+    for (final i in _used) {
+      _grid[i].clear();
+    }
+    _used.clear();
   }
 
-  static int _key(int cx, int cy) => (cx + 32768) << 16 | (cy + 32768);
-
-  static int _at(double v) => (v / _cell).floor().clamp(-32000, 32000);
+  static int _at(double v) =>
+      ((v - _origin) / _cell).floor().clamp(0, _side - 1);
 
   /// Takes the box from [l], [t] to [r], [b] as it is, and returns its
   /// number.
@@ -54,7 +61,9 @@ class CollisionBoxes {
     final x1 = _at(r), y1 = _at(b);
     for (var cy = _at(t); cy <= y1; cy++) {
       for (var cx = _at(l); cx <= x1; cx++) {
-        (_grid[_key(cx, cy)] ??= []).add(number);
+        final cell = _grid[cy * _side + cx];
+        if (cell.isEmpty) _used.add(cy * _side + cx);
+        cell.add(number);
       }
     }
     return number;
@@ -77,8 +86,7 @@ class CollisionBoxes {
     final x1 = _at(r), y1 = _at(b);
     for (var cy = _at(t); cy <= y1; cy++) {
       for (var cx = _at(l); cx <= x1; cx++) {
-        final cell = _grid[_key(cx, cy)];
-        if (cell == null) continue;
+        final cell = _grid[cy * _side + cx];
         for (final number in cell) {
           if (number == except || _seen[number] == query) continue;
           _seen[number] = query;
