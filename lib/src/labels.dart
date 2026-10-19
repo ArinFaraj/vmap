@@ -132,7 +132,7 @@ class LabelEngine {
     );
     final double haloWidth = (asNumber(symbol.haloWidth(_context)) ?? 0).clamp(
       0,
-      2,
+      8,
     );
     return (
       color,
@@ -1038,7 +1038,7 @@ class LabelEngine {
         haloWidth: haloWidth,
         haloBlur: symbol == null
             ? 0.0
-            : (asNumber(symbol.haloBlur(_context)) ?? 0).clamp(0.0, haloWidth),
+            : math.max(0.0, asNumber(symbol.haloBlur(_context)) ?? 0),
         weight: weight,
         italic: symbol?.italic ?? false,
         letterSpacing: letterSpacing,
