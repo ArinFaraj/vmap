@@ -715,6 +715,7 @@ class SymbolLayer {
     this.textPadding,
     this.textAlongMap = false,
     this.iconPadding,
+    this.iconPaddings,
     this.textIgnored = false,
     this.keepUpright = true,
     this.textOnGround = false,
@@ -852,6 +853,10 @@ class SymbolLayer {
   /// `text-rotation-alignment: map`: a point's text turns with the map.
   final bool textAlongMap;
   final double? iconPadding;
+
+  /// `icon-padding` given for each side, top, right, bottom and left;
+  /// null when it is one number.
+  final List<double>? iconPaddings;
 
   /// The text or icon takes no room from the labels placed after it.
   final bool textIgnored;

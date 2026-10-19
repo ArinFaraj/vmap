@@ -540,6 +540,7 @@ class StyleCompiler {
         textPadding: asNumber(layout['text-padding']),
         textAlongMap: layout['text-rotation-alignment'] == 'map',
         iconPadding: asNumber(layout['icon-padding']),
+        iconPaddings: _sides(layout['icon-padding']),
         textIgnored: layout['text-ignore-placement'] == true,
         textOnGround: switch (layout['text-pitch-alignment']) {
           'map' => true,
@@ -1095,6 +1096,25 @@ class StyleCompiler {
       out[i * 2 + 1] = worldY(lat.toDouble());
     }
     return out;
+  }
+
+  /// A padding given as one to four numbers, as CSS gives them, for each
+  /// side: top, right, bottom, left. Null for any other.
+  static List<double>? _sides(Object? json) {
+    var list = json;
+    if (list is List && list.length == 2 && list[0] == 'literal') {
+      list = list[1];
+    }
+    if (list is! List || list.isEmpty || list.length > 4) return null;
+    final v = [for (final n in list) asNumber(n)?.toDouble()];
+    if (v.contains(null)) return null;
+    final [t, ...] = v;
+    return switch (v.length) {
+      1 => [t!, t, t, t],
+      2 => [t!, v[1]!, t, v[1]!],
+      3 => [t!, v[1]!, v[2]!, v[1]!],
+      _ => [t!, v[1]!, v[2]!, v[3]!],
+    };
   }
 
   /// A property read from [json], or [fallback] when it is unset or comes

@@ -159,17 +159,22 @@ class PointLabels {
         ..iconDx += st.dx * st.iconScale
         ..iconDy += st.dy * st.iconScale;
     }
+    // icon-padding may differ on each side: top, right, bottom, left.
+    final pads = symbol?.iconPaddings;
+    final ix = spot.x + st.iconDx, iy = spot.y + st.iconDy;
+    final il = ix - st.iconW / 2 - (pads?[3] ?? iconPad);
+    final it = iy - st.iconH / 2 - (pads?[0] ?? iconPad);
+    final ir = ix + st.iconW / 2 + (pads?[1] ?? iconPad);
+    final ib = iy + st.iconH / 2 + (pads?[2] ?? iconPad);
     final iconFits =
         hasIcon &&
         ((symbol?.iconOverlaps ?? false) ||
             fitted ||
-            !_boxes.collides(
-              spot.x + st.iconDx,
-              spot.y + st.iconDy,
-              st.iconW,
-              st.iconH,
-              0,
-              pad: iconPad,
+            !_boxes.hits(
+              il,
+              it,
+              ir,
+              ib,
               cooperative: symbol?.iconCooperative ?? false,
             ));
     final bool showText;
@@ -195,18 +200,7 @@ class PointLabels {
           showText,
         );
       }
-      if (hasIcon) {
-        _debugBox(
-          debug,
-          spot.x + st.iconDx,
-          spot.y + st.iconDy,
-          st.iconW,
-          st.iconH,
-          0,
-          iconPad,
-          showIcon,
-        );
-      }
+      if (hasIcon) debug.addAll([il, it, ir, ib, showIcon ? 1 : 0]);
     }
     if (!showText && !showIcon) return false;
     if (showText && !(symbol?.textIgnored ?? false)) {
@@ -223,13 +217,11 @@ class PointLabels {
       );
     }
     if (showIcon && !fitted && !(symbol?.iconIgnored ?? false)) {
-      _boxes.take(
-        spot.x + st.iconDx,
-        spot.y + st.iconDy,
-        st.iconW,
-        st.iconH,
-        0,
-        pad: iconPad,
+      _boxes.add(
+        il,
+        it,
+        ir,
+        ib,
         never:
             !(symbol?.iconOverlaps ?? false) &&
             !(symbol?.iconCooperative ?? false),
