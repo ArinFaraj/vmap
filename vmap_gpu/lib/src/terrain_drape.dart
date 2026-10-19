@@ -179,10 +179,21 @@ class _Drape {
         ..[13] = 1 + 2 * top / span
         ..[14] = 0.5
         ..[15] = 1;
-      if (view.globe != null) {
-        _drawBackgrounds(pass, clip, left, top, span, sheet, context);
+      for (final run in sheet.runs) {
+        if (run.background >= 0 && view.globe != null) {
+          _drawBackground(
+            pass,
+            clip,
+            left,
+            top,
+            span,
+            sheet.backgrounds[run.background],
+            context,
+          );
+        } else if (run.raster >= 0 && run.raster < _map.rasters.length) {
+          _drawPictures(pass, _map.rasters[run.raster], clip, left, top, span);
+        }
       }
-      _drawPictures(pass, clip, left, top, span);
       _map._frameInfo[26] = size / span;
       bool inSlot(TileDraw d) =>
           d.left < left + span &&
@@ -214,6 +225,7 @@ class _Drape {
   /// flat ground with the ground's pipeline.
   void _drawPictures(
     gpu.RenderPass pass,
+    List<RasterPiece> pieces,
     Float64List clip,
     double left,
     double top,
@@ -221,7 +233,7 @@ class _Drape {
   ) {
     final map = _map;
     var bound = false;
-    for (final piece in map.rasters) {
+    for (final piece in pieces) {
       final target = piece.target;
       if (target.left >= left + span ||
           target.right <= left ||
@@ -314,62 +326,56 @@ class _Drape {
   final Map<int, gpu.Texture> _colours = {};
 
   /// Fills the slot whose clip matrix is [clip] and whose tile spans [span]
-  /// from [left], [top] with [sheet]'s background colours, as the canvas
+  /// from [left], [top] with background [layer]'s colour, as the canvas
   /// fills the flat map's.
-  void _drawBackgrounds(
+  void _drawBackground(
     gpu.RenderPass pass,
     Float64List clip,
     double left,
     double top,
     double span,
-    StyleSheet sheet,
+    BackgroundLayer layer,
     EvalContext context,
   ) {
     final map = _map;
-    var bound = false;
-    for (final layer in sheet.backgrounds) {
-      final color = layer.colorAt(context);
-      if (color == null || color.a <= 0) continue;
-      final argb = color.toArgb();
-      final texture = _colours[argb] ??= () {
-        final a = color.a.clamp(0.0, 1.0);
-        int byte(double v) => (v.clamp(0.0, 1.0) * a * 255).round();
-        final pixel = ByteData(4)
-          ..setUint8(0, byte(color.r))
-          ..setUint8(1, byte(color.g))
-          ..setUint8(2, byte(color.b))
-          ..setUint8(3, (a * 255).round());
-        return gpu.gpuContext.createTexture(
-          gpu.StorageMode.hostVisible,
-          1,
-          1,
-          format: gpu.PixelFormat.r8g8b8a8UNormInt,
-        )..overwrite(pixel);
-      }();
-      if (!bound) {
-        _bindFlatGround(pass);
-        bound = true;
-      }
-      map._times(clip, span / tileExtent, 0, left, top, 0);
-      map._frameInfo
-        ..[16] = 0.5
-        ..[17] = 0.5
-        ..[18] = 0
-        ..[19] = 0
-        ..[27] = 1;
-      pass
-        ..bindTexture(
-          map._groundDrape!,
-          texture,
-          sampler: gpu.SamplerOptions(
-            minFilter: gpu.MinMagFilter.nearest,
-            magFilter: gpu.MinMagFilter.nearest,
-          ),
-        )
-        ..bindUniform(map._groundFrame!, map._host!.emplace(map._frameBytes))
-        ..bindUniform(map._groundDem!, map._host!.emplace(_demBytes))
-        ..drawIndexed(_indexCount);
-    }
+    final color = layer.colorAt(context);
+    if (color == null || color.a <= 0) return;
+    final argb = color.toArgb();
+    final texture = _colours[argb] ??= () {
+      final a = color.a.clamp(0.0, 1.0);
+      int byte(double v) => (v.clamp(0.0, 1.0) * a * 255).round();
+      final pixel = ByteData(4)
+        ..setUint8(0, byte(color.r))
+        ..setUint8(1, byte(color.g))
+        ..setUint8(2, byte(color.b))
+        ..setUint8(3, (a * 255).round());
+      return gpu.gpuContext.createTexture(
+        gpu.StorageMode.hostVisible,
+        1,
+        1,
+        format: gpu.PixelFormat.r8g8b8a8UNormInt,
+      )..overwrite(pixel);
+    }();
+    _bindFlatGround(pass);
+    map._times(clip, span / tileExtent, 0, left, top, 0);
+    map._frameInfo
+      ..[16] = 0.5
+      ..[17] = 0.5
+      ..[18] = 0
+      ..[19] = 0
+      ..[27] = 1;
+    pass
+      ..bindTexture(
+        map._groundDrape!,
+        texture,
+        sampler: gpu.SamplerOptions(
+          minFilter: gpu.MinMagFilter.nearest,
+          magFilter: gpu.MinMagFilter.nearest,
+        ),
+      )
+      ..bindUniform(map._groundFrame!, map._host!.emplace(map._frameBytes))
+      ..bindUniform(map._groundDem!, map._host!.emplace(_demBytes))
+      ..drawIndexed(_indexCount);
   }
 
   /// [piece]'s picture on the GPU, sent there when it is not yet; until it

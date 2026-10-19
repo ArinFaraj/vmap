@@ -975,7 +975,7 @@ class VmapEngine extends ChangeNotifier {
     // the style's order between the canvas's backgrounds and rasters.
     if (view != null && onGpu) {
       final gpuStarted = _clock.elapsedMicroseconds;
-      gpu.rasters = drape ? [for (final r in _rasters) ...r.drawn] : const [];
+      gpu.rasters = drape ? [for (final r in _rasters) r.drawn] : const [];
       gpu.states = [for (final s in _sources) _states[s.def.name]];
       final more = gpu.paint(
         canvas,

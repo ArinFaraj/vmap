@@ -139,7 +139,7 @@ class GpuMap implements MapRenderer {
   Terrain? terrain;
 
   @override
-  List<RasterPiece> rasters = const [];
+  List<List<RasterPiece>> rasters = const [];
 
   @override
   List<Map<Object, Map<String, Object?>>?> states = const [];

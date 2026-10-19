@@ -55,10 +55,10 @@ abstract class MapRenderer {
   /// Set before each [paint].
   Terrain? terrain;
 
-  /// The tiled raster layers' tiles, in the style's order, to lay over the
-  /// raised ground with the map's other flat layers; empty when the canvas
-  /// draws them. Set before each [paint].
-  List<RasterPiece> rasters = const [];
+  /// Each raster layer's tiles, by its place in the style's rasters, to lay
+  /// over the raised ground with the map's other flat layers; empty when
+  /// the canvas draws them. Set before each [paint].
+  List<List<RasterPiece>> rasters = const [];
 
   /// The state the app gave single features, by their ids, indexed by the
   /// style's sources, for `feature-state`. Set before each [paint].
