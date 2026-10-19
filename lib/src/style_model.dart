@@ -378,6 +378,8 @@ final class LineLayer extends MeshLayer
     this.blur,
     this.dash,
     this.dashStops = const [],
+    this.dashChoices = const [],
+    this.dashPick,
     this.dashCap = DashCap.butt,
     this.pattern,
     this.gradient,
@@ -404,6 +406,37 @@ final class LineLayer extends MeshLayer
 
   /// The dashes from each zoom up, in order, when they change with it.
   final List<(double, Float64List)> dashStops;
+
+  /// The dash arrays a dasharray read from each feature can take, and the
+  /// expression that reads it; empty and null otherwise.
+  final List<Float64List> dashChoices;
+  final Expr? dashPick;
+
+  /// Which of [dashChoices] the feature [context] is bound to takes, or
+  /// null for a dasharray not read from features or none it names.
+  int? dashChoiceAt(EvalContext context) {
+    final pick = dashPick;
+    if (pick == null) return null;
+    final value = pick(context);
+    if (value is! List) return null;
+    for (var i = 0; i < dashChoices.length; i++) {
+      final d = dashChoices[i];
+      if (d.length != value.length) continue;
+      var same = true;
+      for (var k = 0; k < d.length && same; k++) {
+        same = asNumber(value[k]) == d[k];
+      }
+      if (same) return i;
+    }
+    return null;
+  }
+
+  /// The dashes for the feature [context] is bound to at [zoom].
+  Float64List? dashFor(EvalContext context, double zoom) {
+    if (dashPick == null) return dashAt(zoom);
+    final i = dashChoiceAt(context);
+    return i == null ? null : dashChoices[i];
+  }
 
   /// The dashes at [zoom]. As MapLibre's dash arrays, which do not
   /// blend, each holds from its zoom to the next.

@@ -25,7 +25,12 @@ class LayerPaint {
     this.blur = 0,
     this.translateOnScreen = false,
     this.tint,
+    this.dashChoice,
   ]);
+
+  /// For a dasharray read from each feature, which of its layer's arrays
+  /// this paint's feature takes.
+  final int? dashChoice;
 
   /// A circle: [halfWidth] is its radius, [offset] its ring's width,
   /// [dashOn] its ring's colour packed as red plus 256 green plus 65536
@@ -79,6 +84,7 @@ class LayerPaint {
           blur,
           translateOnScreen,
           tint,
+          dashChoice,
         );
 
   static LayerPaint of(
@@ -100,6 +106,7 @@ class LayerPaint {
       );
       var width = 0.0, offset = 0.0, dashOn = 0.0, dashPeriod = 0.0;
       var gapShare = 0.0, blur = 0.0;
+      int? dashChoice;
       if (layer is LineLayer) {
         blur = math.max(
           0,
@@ -111,7 +118,8 @@ class LayerPaint {
         if (gap > 0 && width > 0) gapShare = (gap / width).clamp(0.0, 1.0);
         if (layer.outline) gapShare = -outlineCode;
         offset = (asNumber(layer.offset?.call(context)) ?? 0).toDouble();
-        if (layer.dashAt(styleZoom) case final dash?) {
+        dashChoice = layer.dashChoiceAt(context);
+        if (layer.dashFor(context, styleZoom) case final dash?) {
           // As MapLibre's line-floorwidth: dashes are as long as the line
           // is wide at the zoom level's floor.
           final zoom = context.zoom;
@@ -221,6 +229,7 @@ class LayerPaint {
         blur,
         layer.translateOnScreen,
         tint,
+        dashChoice,
       );
     } finally {
       if (props != null) context.props = const {};

@@ -345,6 +345,14 @@ class _Session {
           'layers': _layers..removeWhere((l) => (l as Map)['id'] == o[1]),
         };
         _restyle();
+      case 'setLight':
+        _document = {..._document}..remove('light');
+        if (o.length > 1 && o[1] != null) _document['light'] = o[1];
+        _restyle();
+      case 'setSky':
+        _document = {..._document}..remove('sky');
+        if (o.length > 1 && o[1] != null) _document['sky'] = o[1];
+        _restyle();
       case 'setTerrain':
         _document = {..._document}..remove('terrain');
         if (o.length > 1 && o[1] != null) _document['terrain'] = o[1];

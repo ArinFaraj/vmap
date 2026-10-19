@@ -95,7 +95,7 @@ class LayerShaders {
     final line = layer is LineLayer ? layer : null;
     final blur = line?.blur;
     final gradient = line?.gradient;
-    final dash = line?.dashAt(context.zoom);
+    final dash = line?.dashFor(context, context.zoom);
     final pattern = switch (layer) {
       PatternedLayer(:final pattern) => pattern,
       _ => null,

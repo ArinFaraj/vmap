@@ -27,9 +27,11 @@ class LineRamps {
 
   /// Where the dash row of style layer [layer] at style zoom [zoom] is, as
   /// [gradientOf]; null for a layer without dashes.
-  double? dashOf(int layer, double zoom) {
+  /// A dasharray read from each feature gives the row of its [choice].
+  double? dashOf(int layer, double zoom, {int? choice}) {
     final rows = _dashes[layer];
     if (rows == null) return null;
+    if (choice != null) return choice < rows.length ? rows[choice] : null;
     final line = _sheet!.layers[layer] as LineLayer;
     var at = 0;
     for (var i = 0; i < line.dashStops.length; i++) {
@@ -59,7 +61,9 @@ class LineRamps {
     }
     final patterns = [
       for (final (_, line) in dashes)
-        line.dashStops.isEmpty
+        line.dashChoices.isNotEmpty
+            ? line.dashChoices
+            : line.dashStops.isEmpty
             ? [line.dash!]
             : [for (final (_, d) in line.dashStops) d],
     ];

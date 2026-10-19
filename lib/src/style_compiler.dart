@@ -658,13 +658,22 @@ class StyleCompiler {
       'line-offset',
       'line-blur',
       'line-pattern',
+      'line-dasharray',
     ]);
     final beside = paint['line-offset'];
     final blur = paint['line-blur'];
     final dashStops = _dashStops(paint['line-dasharray']);
-    final dash = dashStops.isEmpty
-        ? _dash(paint['line-dasharray'])
-        : dashStops.first.$2;
+    // A dasharray read from each feature is one of the arrays written in
+    // its expression.
+    final dashChoices =
+        dashStops.isEmpty && _dash(paint['line-dasharray']) == null
+        ? _dashLiterals(paint['line-dasharray'])
+        : const <Float64List>[];
+    final dash = dashStops.isNotEmpty
+        ? dashStops.first.$2
+        : dashChoices.isNotEmpty
+        ? dashChoices.first
+        : _dash(paint['line-dasharray']);
     final own = _withDefault(paint['line-width'], 1);
     final gap = paint['line-gap-width'];
     Expr width = own;
@@ -716,6 +725,10 @@ class StyleCompiler {
         blur: soft ? compileExpr(blur) : null,
         dash: picture == null ? dash : null,
         dashStops: picture == null ? dashStops : const [],
+        dashChoices: picture == null ? dashChoices : const [],
+        dashPick: picture == null && dashChoices.isNotEmpty
+            ? compileExpr(paint['line-dasharray'])
+            : null,
         dashCap: switch (layout['line-cap']) {
           'round' => DashCap.round,
           'square' => DashCap.square,
@@ -1166,6 +1179,33 @@ class StyleCompiler {
       out.add((z, d));
     }
     return out;
+  }
+
+  /// The dash arrays written as literals in a dasharray [json], each once.
+  static List<Float64List> _dashLiterals(Object? json) {
+    final out = <Float64List>[];
+    void visit(Object? node) {
+      if (node is! List) return;
+      if (node.length == 2 && node[0] == 'literal') {
+        final d = _dash(node);
+        if (d != null && !out.any((o) => _same(o, d))) out.add(d);
+        return;
+      }
+      for (final child in node) {
+        visit(child);
+      }
+    }
+
+    visit(json);
+    return out;
+  }
+
+  static bool _same(Float64List a, Float64List b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   static Float64List? _dash(Object? json) {

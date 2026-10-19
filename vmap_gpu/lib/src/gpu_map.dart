@@ -1169,7 +1169,7 @@ class GpuMap implements MapRenderer {
         scale,
         _sheet,
         _ramps.gradientOf(layerIndex),
-        _ramps.dashOf(layerIndex, styleZoom),
+        _ramps.dashOf(layerIndex, styleZoom, choice: paint.dashChoice),
         growth: patternGrowth(styleZoom),
         bearing: bearing,
       );
