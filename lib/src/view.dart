@@ -62,7 +62,10 @@ class EdgeInsets2 {
 
 /// A tile picked by [MapView.cover], with the zoom its distance from the
 /// camera asks for.
-typedef CoverTile = ({int z, int x, int y, double distance});
+/// A tile in view, [over] the zoom its distance asks for, which is deeper
+/// than [z] where the source has no deeper tiles: MapLibre's overscaled
+/// zoom.
+typedef CoverTile = ({int z, int x, int y, double distance, int over});
 
 /// Where the camera is and what it sees, in MapLibre's conventions: tiles
 /// are 512 pixels at zoom 0, the camera stands
@@ -543,11 +546,18 @@ class MapView {
       final ddx = nx - camX, ddy = ny - camY;
       final flat = math.sqrt(ddx * ddx + ddy * ddy);
       final distance = math.sqrt(flat * flat + camH * camH);
-      final wanted = tileZoom == null
-          ? top
+      final asked = tileZoom == null
+          ? (zoom + hold).floor()
           : tileZoom.at(zoom + hold, flat, camH).floor();
+      final wanted = tileZoom == null ? top : asked;
       if (z >= top || (z >= minZoom && z >= wanted)) {
-        out.add((z: z, x: x, y: y, distance: distance));
+        out.add((
+          z: z,
+          x: x,
+          y: y,
+          distance: distance,
+          over: math.max(z, asked),
+        ));
         return;
       }
       for (var j = 0; j < 2; j++) {

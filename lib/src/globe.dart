@@ -283,7 +283,13 @@ class Globe {
       );
       if (z >= maxZoom || z >= math.min(wanted, maxZoom) && z >= minZoom) {
         if (z <= 2 && !visible && !_meets(z, x, y)) return;
-        out.add((z: z, x: x, y: y, distance: nearest * radius));
+        out.add((
+          z: z,
+          x: x,
+          y: y,
+          distance: nearest * radius,
+          over: math.max(z, wanted),
+        ));
         return;
       }
       for (var j = 0; j < 2; j++) {

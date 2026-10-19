@@ -343,7 +343,6 @@ class TileSource {
       return _coverView(
         view,
         camera,
-        over: dataZoom.floor(),
         frame: frame,
         nowMs: nowMs,
         prepare: prepare,
@@ -403,7 +402,6 @@ class TileSource {
   bool _coverView(
     MapView view,
     VmapCamera camera, {
-    required int over,
     required int frame,
     required int nowMs,
     required void Function(LoadedTile tile, double scale) prepare,
@@ -427,7 +425,12 @@ class TileSource {
     for (final (rank, t) in picked.indexed) {
       final n = 1 << t.z;
       if (t.y < 0 || t.y >= n) continue;
-      final id = TileId(t.z, t.x % n, t.y, over: t.z >= maxDataZoom ? over : 0);
+      final id = TileId(
+        t.z,
+        t.x % n,
+        t.y,
+        over: t.z >= maxDataZoom ? t.over : 0,
+      );
       final span = view.worldSize / n;
       final left = t.x * span - origin.dx;
       final top = t.y * span - origin.dy;
@@ -462,7 +465,7 @@ class TileSource {
       }
       wanted.add(id);
     }
-    _wantAhead(camera.ahead, frame, nowMs, prepare, variableZoom, over);
+    _wantAhead(camera.ahead, frame, nowMs, prepare, variableZoom);
     for (final t in picked) {
       if (t.z == 0) continue;
       final parent = tiles[TileId(t.z - 1, (t.x % (1 << t.z)) >> 1, t.y >> 1)];
@@ -483,7 +486,6 @@ class TileSource {
     int nowMs,
     void Function(LoadedTile tile, double scale) prepare,
     bool variableZoom,
-    int over,
   ) {
     if (ahead == null) return;
     for (final t in ahead.cover(
@@ -492,7 +494,12 @@ class TileSource {
     )) {
       final n = 1 << t.z;
       if (t.y < 0 || t.y >= n) continue;
-      final id = TileId(t.z, t.x % n, t.y, over: t.z >= maxDataZoom ? over : 0);
+      final id = TileId(
+        t.z,
+        t.x % n,
+        t.y,
+        over: t.z >= maxDataZoom ? t.over : 0,
+      );
       final have = tiles[id];
       if (have != null) {
         have.usedFrame = frame;
