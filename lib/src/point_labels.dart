@@ -300,7 +300,7 @@ class PointLabels {
     final (offsetX, offsetY) = symbol.iconOffset(context);
     st.iconScale = by;
     if (!symbol.textFit) {
-      final (ax, ay) = anchorSides(symbol.iconAnchor);
+      final (ax, ay) = anchorSides(symbol.iconAnchorAt(context));
       st
         ..iconDx = offsetX * by + ax * icon.width * by / 2
         ..iconDy = offsetY * by + ay * icon.height * by / 2;

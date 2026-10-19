@@ -600,7 +600,12 @@ class TileBuilder {
                   start,
                   end,
                   lineTolerance,
-                  cap: bucket.cap,
+                  cap: switch (bucket.capBy?.call(context)) {
+                    'round' => LineCap.round,
+                    'square' => LineCap.square,
+                    'butt' => LineCap.butt,
+                    _ => bucket.cap,
+                  },
                   join: switch (bucket.joinBy?.call(context)) {
                     'round' => LineJoin.round,
                     'bevel' => LineJoin.bevel,

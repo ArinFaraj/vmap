@@ -422,6 +422,7 @@ class StyleCompiler {
     'text-anchor',
     'text-rotate',
     'text-font',
+    'icon-anchor',
   ];
 
   static const _symbolPaintReads = [
@@ -432,6 +433,9 @@ class StyleCompiler {
     'text-halo-blur',
     'icon-color',
     'icon-opacity',
+    'icon-halo-color',
+    'icon-halo-width',
+    'icon-halo-blur',
   ];
 
   void _addSymbol(_VectorLayer vector) {
@@ -592,6 +596,9 @@ class StyleCompiler {
         anchorOffsets: anchorOffsets,
         radialOffset: asNumber(layout['text-radial-offset'])?.toDouble(),
         iconAnchor: iconAnchor is String ? iconAnchor : 'center',
+        iconAnchorBy: iconAnchor is List || iconAnchor is Map
+            ? compileExpr(iconAnchor)
+            : null,
         iconOffsetX: iconOffset.$1,
         iconOffsetBy: _isPair(layout['icon-offset'])
             ? null
@@ -917,6 +924,8 @@ class StyleCompiler {
     // How a line's corners are drawn, read from each feature where the
     // style gives an expression.
     final lineJoin = kind == BucketKind.line ? layer.layout['line-join'] : null;
+    final lineCap = kind == BucketKind.line ? layer.layout['line-cap'] : null;
+    final capBy = lineCap is List || lineCap is Map ? lineCap : null;
     final miter = kind == BucketKind.line
         ? layer.layout['line-miter-limit']
         : null;
@@ -940,6 +949,7 @@ class StyleCompiler {
       join.index,
       keys,
       if (lineJoin is List || lineJoin is Map) lineJoin,
+      ?capBy,
       ?miter,
       ?round,
     ]);
@@ -961,6 +971,7 @@ class StyleCompiler {
               ? compileExpr(lineJoin)
               : null,
           miterLimit: miter == null ? null : compileExpr(miter),
+          capBy: capBy == null ? null : compileExpr(capBy),
           roundLimit: round == null ? null : compileExpr(round),
           variantKeys: keys,
           sortKey: sortKey == null ? null : compileExpr(sortKey),

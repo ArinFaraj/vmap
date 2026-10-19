@@ -766,7 +766,11 @@ class LabelEngine {
           c is TileLabel &&
           c.tile.props != null &&
           c.hasText) {
-        final ink = Object.hash(_ink(layer), '${c.tile.props?[formatKey]}');
+        final ink = Object.hash(
+          _ink(layer),
+          asNumber(layer.haloBlur(_context)),
+          '${c.tile.props?[formatKey]}',
+        );
         if (ink != c.ink) {
           c
             ..ink = ink

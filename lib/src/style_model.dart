@@ -211,6 +211,7 @@ class Bucket {
     this.metered = false,
     this.join = LineJoin.miter,
     this.joinBy,
+    this.capBy,
     this.miterLimit,
     this.roundLimit,
     this.variantKeys = const [],
@@ -257,6 +258,9 @@ class Bucket {
   /// feature; null where the style gives the join as a constant or leaves
   /// a limit at its default.
   final Expr? joinBy, miterLimit, roundLimit;
+
+  /// `line-cap` read from each feature; null for a constant.
+  final Expr? capBy;
 
   /// The feature properties the paint of its layers reads. Features are
   /// split into one mesh per combination of their values.
@@ -753,6 +757,7 @@ class SymbolLayer {
     this.radialOffset,
     this.anchorOffsets,
     this.iconAnchor = 'center',
+    this.iconAnchorBy,
     this.iconOffsetX = 0,
     this.iconOffsetBy,
     this.iconOffsetY = 0,
@@ -931,6 +936,14 @@ class SymbolLayer {
 
   /// Which part of the icon sits on the point.
   final String iconAnchor;
+
+  /// `icon-anchor` read from each feature; null for a constant.
+  final Expr? iconAnchorBy;
+
+  String iconAnchorAt(EvalContext c) => switch (iconAnchorBy?.call(c)) {
+    final String a => a,
+    _ => iconAnchor,
+  };
 
   /// How far the icon is moved, in pixels at an icon size of 1.
   final double iconOffsetX;
