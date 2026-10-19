@@ -28,6 +28,17 @@ uniform SlotInfo {
 }
 slot_info;
 
+// The raised ground under the tile, laid out as terrain.vert's DemInfo:
+// circles and heatmap points stand on it, as MapLibre draws them over
+// terrain. Flat at sea level off raised ground.
+uniform DemInfo {
+  vec4 place;
+  vec4 scale;
+}
+dem_info;
+
+uniform sampler2D heights;
+
 in vec2 position;
 in vec4 packed_data;
 out vec4 v_color;
@@ -46,6 +57,23 @@ out vec3 v_outline;
 const float PI = 3.141592653589793;
 const float HEAT_ZERO = 1.0 / 255.0 / 16.0;
 const float GAUSS_COEF = 0.3989422804014327;
+
+// How far above the map's middle the ground stands at tile point p, in
+// metres.
+float lift = 0.0;
+
+float ground_at(vec2 p) {
+  float size = dem_info.place.w;
+  vec2 at = dem_info.place.xy + p / 4096.0 * dem_info.place.z;
+  vec2 f = clamp(at - 0.5, vec2(0.0), vec2(size - 1.001));
+  vec2 i = floor(f);
+  vec2 t = f - i;
+  float a = texture(heights, (i + vec2(0.5, 0.5)) / size).r;
+  float b = texture(heights, (i + vec2(1.5, 0.5)) / size).r;
+  float c = texture(heights, (i + vec2(0.5, 1.5)) / size).r;
+  float d = texture(heights, (i + vec2(1.5, 1.5)) / size).r;
+  return mix(mix(a, b, t.x), mix(c, d, t.x), t.y) * dem_info.scale.x - dem_info.scale.z;
+}
 
 // MapLibre's projectToSphere, the latitude's sine and cosine from exp alone.
 vec3 to_sphere(vec2 p) {
@@ -76,11 +104,11 @@ vec3 rotate_on_sphere(vec3 vec, vec2 angles) {
 
 // p on the flat map, s the same point on the unit sphere.
 vec4 project_to(vec2 p, vec3 s) {
-  vec4 flat_pos = frame_info.mvp * vec4(p, 0.0, 1.0);
+  vec4 flat_pos = frame_info.mvp * vec4(p, lift, 1.0);
   if (frame_info.globe_tile.z <= 0.0) {
     return flat_pos;
   }
-  vec4 globe = frame_info.globe_mvp * vec4(s, 1.0);
+  vec4 globe = frame_info.globe_mvp * vec4(s * (1.0 + lift / 6371008.8), 1.0);
   globe.z = (1.0 - (dot(s, frame_info.globe_plane.xyz) + frame_info.globe_plane.w)) * globe.w;
   float amount = frame_info.globe_tile.w;
   if (amount >= 0.999) {
@@ -199,6 +227,9 @@ void main() {
   bool fixed_size = facing > 1.5;
   if (circle) {
     pos += q.xy;
+  }
+  if ((circle || heat) && dem_info.scale.x > 0.0) {
+    lift = ground_at(pos);
   }
   if (circle && !on_screen) {
     grow *= fixed_size ? project(pos).w : 1.0;

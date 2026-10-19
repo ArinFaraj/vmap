@@ -55,6 +55,7 @@ class GpuMap implements MapRenderer {
   gpu.UniformSlot? _globeFrame, _globeDrape;
   late final _drape = _Drape(this);
   gpu.UniformSlot? _flatFrame, _flatSlots, _buildingFrame, _stencilFrame;
+  gpu.UniformSlot? _flatDem, _flatHeightsSlot;
   gpu.UniformSlot? _buildingDem, _buildingHeights, _buildingGlobe;
   gpu.UniformSlot? _buildingPatterns, _buildingSheet, _buildingSprites;
 
@@ -171,12 +172,6 @@ class GpuMap implements MapRenderer {
       }
       meshSeen = true;
     }
-    // Heatmaps are not laid in the drape over raised ground yet.
-    if (terrain != null) {
-      for (final layer in sheet.layers) {
-        if (layer is HeatmapLayer) return false;
-      }
-    }
     return _library != null && !_failed;
   }
 
@@ -236,6 +231,8 @@ class GpuMap implements MapRenderer {
     );
     _flatFrame = mapVertex.getUniformSlot('FrameInfo');
     _flatSlots = mapVertex.getUniformSlot('SlotInfo');
+    _flatDem = mapVertex.getUniformSlot('DemInfo');
+    _flatHeightsSlot = mapVertex.getUniformSlot('heights');
     _flatFrag = mapFragment.getUniformSlot('FragInfo');
     _flatSprites = mapFragment.getUniformSlot('sprite_sheet');
     _flatRamp = mapFragment.getUniformSlot('gradient_ramp');
@@ -668,6 +665,28 @@ class GpuMap implements MapRenderer {
       return true;
     }
 
+    // Circles and heatmaps stand on raised ground, each heatmap coloured
+    // into an image of its own.
+    void drawStanding() {
+      void ready() => pass
+        ..raise = true
+        ..standing = true
+        ..globe = globe;
+      ready();
+      var start = 0;
+      final runs = sheet.runs;
+      for (var i = 0; i < runs.length; i++) {
+        final run = runs[i];
+        if (run.source < 0 || sheet.layers[run.first] is! HeatmapLayer) {
+          continue;
+        }
+        pass.drawRuns(runs.sublist(start, i));
+        start = i + 1;
+        if (heated(run)) ready();
+      }
+      pass.drawRuns(runs.sublist(start));
+    }
+
     Timeline.timeSync('vmap.gpu.draw', () {
       if (raised) {
         // The flat layers are in the drape; the ground and buildings stand
@@ -690,6 +709,8 @@ class GpuMap implements MapRenderer {
               if (heated(run)) pass.globe = globe;
             }
             pass.drawRuns(runs.sublist(start));
+          } else {
+            drawStanding();
           }
           for (final building in sheet.extrusions) {
             if (_reveal.shows(building)) pass.drawBuildings(building);
@@ -697,6 +718,7 @@ class GpuMap implements MapRenderer {
           return;
         }
         _drape.drawGround(pass._pass, ground!, view, origin, clip);
+        drawStanding();
         for (final building in sheet.extrusions) {
           if (_reveal.shows(building)) pass.drawBuildings(building);
         }
@@ -892,6 +914,7 @@ class GpuMap implements MapRenderer {
     );
     _MapPass(this, pass, view, clip, sheet, context, styleZoom, fallback, ideal)
       ..adding = true
+      ..raise = terrain != null
       ..globe = view.globe
       ..drawRuns([run]);
     return density;
@@ -1412,6 +1435,19 @@ class _MapPass {
   /// Draws add up, as a heatmap's density does.
   bool adding = false;
 
+  /// Circles and heatmap points stand on the raised ground, depth tested
+  /// against it, as MapLibre draws them over terrain instead of into the
+  /// texture laid on it.
+  bool raise = false;
+
+  /// With true only the layers that stand on raised ground are drawn,
+  /// circles and heatmaps; with false every layer but those.
+  bool? standing;
+
+  late final double _perMetre =
+      _view.worldSize /
+      (40075016.686 * math.cos(latitudeAt(_view.centerY) * math.pi / 180));
+
   bool _clips(int source) =>
       !adding &&
       globe == null &&
@@ -1517,27 +1553,42 @@ class _MapPass {
           ..clearBindings()
           ..bindPipeline(_map._flat!)
           ..setDepthWriteEnable(false)
-          ..setDepthCompareOperation(gpu.CompareFunction.always)
+          ..setDepthCompareOperation(
+            raise && !adding
+                ? gpu.CompareFunction.lessEqual
+                : gpu.CompareFunction.always,
+          )
           ..setCullMode(gpu.CullMode.none)
           ..setColorBlendEnable(true)
           ..setColorBlendEquation(adding ? GpuMap._add : GpuMap._over);
         _map._bindSprites(_pass);
         bound = true;
       }
-      if (clipped) {
+      // As MapLibre, a circle is kept by the one tile its centre is in and
+      // drawn whole, past that tile's square.
+      bool drawnWhole(PaintLayer layer) =>
+          layer is CircleLayer || layer is HeatmapLayer;
+      final want = standing;
+      if (clipped && want == null) {
         _stencilEquals(0);
         for (final d in _fallback[source]) {
           _drawFlat(d, run);
         }
+      } else if (clipped) {
+        _stencilEquals(0);
+        for (var at = run.first; at < run.end; at++) {
+          if (drawnWhole(_sheet.layers[at]) != want) continue;
+          for (final d in _fallback[source]) {
+            _drawFlat(d, StyleRun.vector(source, at, at + 1));
+          }
+        }
       }
-      // As MapLibre, a circle is kept by the one tile its centre is in and
-      // drawn whole, past that tile's square.
       var at = run.first;
       while (at < run.end) {
-        bool drawnWhole(PaintLayer layer) =>
-            layer is CircleLayer || layer is HeatmapLayer;
         final whole = drawnWhole(_sheet.layers[at]);
-        final skip = !adding && _sheet.layers[at] is HeatmapLayer;
+        final skip =
+            (!adding && _sheet.layers[at] is HeatmapLayer) ||
+            (want != null && whole != want);
         var end = at + 1;
         while (end < run.end && drawnWhole(_sheet.layers[end]) == whole) {
           end++;
@@ -1566,7 +1617,13 @@ class _MapPass {
     final map = _map;
     final host = map._host!;
     final scale = d.size / tileExtent;
-    map._times(_clip, scale, 1, d.left, d.top, 1);
+    map._times(_clip, scale, raise ? _perMetre : 1, d.left, d.top, 1);
+    map._drape.bindGround(
+      _pass,
+      raise ? map.terrain : null,
+      d.tile.id,
+      flat: true,
+    );
     _pass
       ..bindVertexBuffer(
         gpu.BufferView(

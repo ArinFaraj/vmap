@@ -195,31 +195,29 @@ class _Drape {
         }
       }
       _map._frameInfo[26] = size / span;
-      // Neighbours too: each tile's flat layers are clipped to its own
-      // square, and a circle near its edge, drawn whole as MapLibre draws
-      // it, reaches into this slot.
-      final margin = span / 4;
       bool inSlot(TileDraw d) =>
-          d.left < left + span + margin &&
-          d.left + d.size > left - margin &&
-          d.top < top + span + margin &&
-          d.top + d.size > top - margin;
+          d.left < left + span &&
+          d.left + d.size > left &&
+          d.top < top + span &&
+          d.top + d.size > top;
       // On the globe without terrain the vector layers are laid on the
       // sphere directly, as MapLibre draws them.
       if (view.globe != null && _map.terrain == null) continue;
       // Stand-ins too, clipped as the flat map clips them, so a tile still
       // loading leaves no hole in the ground.
       _MapPass(
-        _map,
-        pass,
-        view,
-        clip,
-        sheet,
-        context,
-        styleZoom,
-        [for (final tiles in fallback) tiles.where(inSlot).toList()],
-        [for (final tiles in ideal) tiles.where(inSlot).toList()],
-      ).drawRuns(sheet.runs);
+          _map,
+          pass,
+          view,
+          clip,
+          sheet,
+          context,
+          styleZoom,
+          [for (final tiles in fallback) tiles.where(inSlot).toList()],
+          [for (final tiles in ideal) tiles.where(inSlot).toList()],
+        )
+        ..standing = false
+        ..drawRuns(sheet.runs);
     }
     _map._frameInfo[26] = dpr;
   }
@@ -660,23 +658,31 @@ class _Drape {
     return gpu.gpuContext.createDeviceBufferWithCopy(ByteData.sublistView(out));
   }
 
-  /// Binds the ground under building tile [id] to the building pipeline:
-  /// flat at sea level without [terrain].
-  void bindGround(gpu.RenderPass pass, Terrain? terrain, TileId? id) {
+  /// Binds the ground under building tile [id] to the building pipeline,
+  /// or with [flat] the map's: flat at sea level without [terrain].
+  void bindGround(
+    gpu.RenderPass pass,
+    Terrain? terrain,
+    TileId? id, {
+    bool flat = false,
+  }) {
     final map = _map;
     final heights = terrain == null || id == null
         ? _flatHeights(0, 0)
         : _heightsFor(id.z, id.x, id.y, terrain, 2);
     pass
       ..bindTexture(
-        map._buildingHeights!,
+        flat ? map._flatHeightsSlot! : map._buildingHeights!,
         heights,
         sampler: gpu.SamplerOptions(
           minFilter: gpu.MinMagFilter.nearest,
           magFilter: gpu.MinMagFilter.nearest,
         ),
       )
-      ..bindUniform(map._buildingDem!, map._host!.emplace(_demBytes));
+      ..bindUniform(
+        flat ? map._flatDem! : map._buildingDem!,
+        map._host!.emplace(_demBytes),
+      );
   }
 
   gpu.Texture _flatHeights(double centre, double sink) {
