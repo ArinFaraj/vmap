@@ -721,7 +721,11 @@ class LabelEngine {
           // Ties keep the order the tiles list them in, as MapLibre
           // places features.
           ..sortKey =
-              (c.rank - (st.placed ? 45 : 0)) * 65536 +
+              (c.rank -
+                      (st.placed && !identical(_rules, LabelRules.mapLibre)
+                          ? 45
+                          : 0)) *
+                  65536 +
               math.min(states.length, 65535);
         states.add(st);
       }
