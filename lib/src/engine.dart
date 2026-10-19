@@ -497,7 +497,9 @@ class VmapEngine extends ChangeNotifier {
       belowEye + 50 - eye.height / perMetre,
     );
     // Eased, so an arriving tile of heights does not make the map jump.
-    final centre = _groundCentre += (under - _groundCentre) * 0.15;
+    final centre = centerElevation != null
+        ? _groundCentre = centerElevation!
+        : _groundCentre += (under - _groundCentre) * 0.15;
     final easing = (under - centre).abs() > 0.5;
     if (easing) _requestFrame();
     gpu.terrain = Terrain(
@@ -510,6 +512,17 @@ class VmapEngine extends ChangeNotifier {
   }
 
   double _groundCentre = 0;
+
+  /// Over raised ground, the height in metres the map's middle stands at,
+  /// as MapLibre's center elevation with centerClampedToGround off; null
+  /// keeps it on the ground under it.
+  double? get centerElevation => _centerElevation;
+  double? _centerElevation;
+  set centerElevation(double? value) {
+    if (value == _centerElevation) return;
+    _centerElevation = value;
+    _requestFrame();
+  }
 
   /// Markers the app draws above the map with a `MarkerLayer`. Map labels
   /// keep clear of each one, and a [NamedMarker]'s name is placed beside it

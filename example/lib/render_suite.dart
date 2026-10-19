@@ -244,6 +244,7 @@ class _Session {
   final _states = <(String, Object?), Map<String, Object?>>{};
   final _images = <String, VmapImage>{};
   late VmapEngine _engine;
+  bool _clampedToGround = true;
 
   VmapEngine _make() =>
       VmapEngine(
@@ -423,6 +424,13 @@ class _Session {
         _camera.pad = _padOf(o[1]);
       case 'setVerticalFieldOfView':
         _camera.fovDegrees = (o[1] as num).toDouble();
+      case 'setCenterClampedToGround':
+        _clampedToGround = o[1] as bool;
+        if (_clampedToGround) _engine.centerElevation = null;
+      case 'setCenterElevation':
+        if (!_clampedToGround) {
+          _engine.centerElevation = (o[1] as num).toDouble();
+        }
       case 'pauseTiles':
         // Tiles are asked for on demand, so there is nothing to pause; a
         // test that pauses them keeps whatever has loaded.
