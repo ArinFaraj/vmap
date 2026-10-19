@@ -12,7 +12,7 @@ class _Drape {
   /// The atlas's width and tallest height, the sizes a slot may take in
   /// device pixels, largest first, and grid cells on a side of the ground
   /// every tile shares.
-  static const _width = 4096, _maxHeight = 4096, _grid = 32;
+  static const _width = 4096, _maxHeight = 4096, _grid = 128;
   static const _sizes = [1024, 512, 256];
 
   gpu.Texture? _atlas, _atlasDepth;
