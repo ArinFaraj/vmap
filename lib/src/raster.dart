@@ -528,6 +528,8 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
       final key = tileKey(z, x % n, y);
       final tile = _tiles[key] ??= _RasterTile();
       tile.usedFrame = _frame;
+      // A tile shaded again once its neighbours land is still on its way.
+      if (tile.shading) waiting++;
       final target = ui.Rect.fromLTRB(
         x * span - origin.dx + snapX,
         y * span - origin.dy + snapY,
