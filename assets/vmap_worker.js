@@ -1,4 +1,4 @@
-// vmap web worker, built from lib 5aa748d3
+// vmap web worker, built from lib 505a4b85
 (function dartProgram(){function copyProperties(a,b){var s=Object.keys(a)
 for(var r=0;r<s.length;r++){var q=s[r]
 b[q]=a[q]}}function mixinPropertiesHard(a,b){var s=Object.keys(a)
@@ -7606,7 +7606,7 @@ _.d=d},
 kD:function kD(a,b,c){this.a=a
 this.b=b
 this.c=c},
-dj:function dj(a,b,c,d,e,f,g,h){var _=this
+dj:function dj(a,b,c,d,e,f,g,h,i){var _=this
 _.a=a
 _.b=b
 _.c=c
@@ -7614,7 +7614,8 @@ _.d=d
 _.e=e
 _.f=f
 _.r=g
-_.w=h},
+_.w=h
+_.x=i},
 nW:function nW(){},
 nA:function nA(a,b){this.a=a
 this.b=b},
@@ -16847,7 +16848,7 @@ f6=i3.a
 f7=l2.ds(i4,f6)
 f8=i4.dR
 if(f8==null)f8=0.7853981633974483
-k1=new A.dj(f2+e6,f6,j7,f7*k0,k0,f8,j3,f5)
+k1=new A.dj(f2+e6,f6,j7,f7*k0,k0,f8,j3,f5,i8)
 if(i9==="line"&&f5.length!==0){e6=i.h(0,e5)
 if(e6==null){e6=A.b([],a7)
 i.m(0,e5,e6)
@@ -17073,25 +17074,25 @@ if(q==null){q=new A.kE(i,b,g,a).$0()
 r.m(0,b,q)
 r=q}else r=q
 return r},
-d4(a6,a7,a8,a9){var s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d,c,b,a,a0=a7.c,a1=new A.kD(t.jT.a(a9),a7,a0/2),a2=A.b([],t.D),a3=a7.e,a4=0.6*a3,a5=2*a3
-for(a3=a7.w,s=a3.length,r=a7.a,q=a7.b,p=a7.r,o=a7.d,n=a7.f,m=t.Y,l=0;l<a3.length;a3.length===s||(0,A.i)(a3),++l){k=a3[l]
-j=a8?A.b([k],m):A.r7(k)
-i=j.length
-h=0
-for(;h<j.length;j.length===i||(0,A.i)(j),++h){g=j[h]
-f=a8?A.nr(g,A.mi(g)/2,1/0,o,a4,n):A.re(g,a0,o,a5,a4,n,this.ch)
-e=f.length
-d=0
-for(;d<f.length;f.length===e||(0,A.i)(f),++d){c=f[d]
-b=c.a
-a=c.b
-if(a8)c=!(b>=0&&b<4096&&a>=0&&a<4096)
-else c=!1
-if(c)continue
-if(a1.$2(b,a))continue
-c=new A.bm(a6,r,q,b,a,g,"",0,!1,!1)
-c.saf(p)
-B.a.j(a2,c)}}}return a2},
+d4(a7,a8,a9,b0){var s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d,c,b,a,a0,a1=a8.c,a2=new A.kD(t.jT.a(b0),a8,a1/2),a3=A.b([],t.D),a4=a8.e,a5=0.6*a4,a6=2*a4
+for(a4=a8.w,s=a4.length,r=a8.a,q=a8.b,p=a8.x,o=a8.r,n=a8.d,m=a8.f,l=t.Y,k=0;k<a4.length;a4.length===s||(0,A.i)(a4),++k){j=a4[k]
+i=a9?A.b([j],l):A.r7(j)
+h=i.length
+g=0
+for(;g<i.length;i.length===h||(0,A.i)(i),++g){f=i[g]
+e=a9?A.nr(f,A.mi(f)/2,1/0,n,a5,m):A.re(f,a1,n,a6,a5,m,this.ch)
+d=e.length
+c=0
+for(;c<e.length;e.length===d||(0,A.i)(e),++c){b=e[c]
+a=b.a
+a0=b.b
+if(a9)b=!(a>=0&&a<4096&&a0>=0&&a0<4096)
+else b=!1
+if(b)continue
+if(a2.$2(a,a0))continue
+b=new A.bm(a7,r,q,a,a0,f,p,0,!1,!1)
+b.saf(o)
+B.a.j(a3,b)}}}return a3},
 fk(a,b,c){return this.d4(a,b,c,null)},
 fl(a,b,c){return this.d4(a,b,!1,c)},
 shJ(a){this.b=t.a.a(a)}}

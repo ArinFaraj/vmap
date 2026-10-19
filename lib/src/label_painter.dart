@@ -108,6 +108,12 @@ class LabelPainter {
     final ix = _view.x + st.iconDx;
     final iy = _view.y + st.iconDy;
     final turn = switch (st.candidate) {
+      // An icon on a name along a line lies along the line at its anchor.
+      TileLabel(tile: BuiltLabel(line: _?)) => _view.screenAngle(
+        st.worldX,
+        st.worldY,
+        st.angle,
+      ),
       TileLabel(tile: BuiltLabel(:final angle, :final turns)) =>
         turns ? _view.screenAngle(st.worldX, st.worldY, angle) : angle,
       MarkerName() => 0.0,

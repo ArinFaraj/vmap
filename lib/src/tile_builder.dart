@@ -743,6 +743,7 @@ class TileBuilder {
                 maxBend: symbol.maxBend ?? math.pi / 4,
                 props: carried,
                 rings: rings,
+                icon: icon,
               );
               if (placement == 'line' && rings.isNotEmpty) {
                 (namedLines[s] ??= []).add(named);
@@ -1207,8 +1208,15 @@ class TileBuilder {
           if (center && !_inTile(x, y)) continue;
           if (tooClose(x, y)) continue;
           out.add(
-            BuiltLabel(layer, named.priority, named.text, x, y, line)
-              ..props = named.props,
+            BuiltLabel(
+              layer,
+              named.priority,
+              named.text,
+              x,
+              y,
+              line,
+              icon: named.icon,
+            )..props = named.props,
           );
         }
       }
@@ -1229,6 +1237,7 @@ class NamedLine {
     required this.maxBend,
     required this.props,
     required this.rings,
+    this.icon = '',
   });
 
   final int priority;
@@ -1236,6 +1245,9 @@ class NamedLine {
   final double spacing, labelLength, em, maxBend;
   final Map<String, Object?>? props;
   List<Float32List> rings;
+
+  /// The sprite image drawn at each anchor, empty for none.
+  final String icon;
 }
 
 /// [lines] with the first line of each joined to the first lines of the

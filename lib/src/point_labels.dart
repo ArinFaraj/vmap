@@ -305,6 +305,21 @@ class PointLabels {
 
   /// Finds the style's icon for [st] and sets where and how large it is
   /// drawn. Null when the label has no icon.
+  /// Sizes the icon of [st], a name along a line [textW] by [textH], as a
+  /// point label's icon about its text; null when it has none.
+  SpriteImage? sizeLineIcon(
+    LabelState st,
+    SymbolLayer symbol,
+    double textW,
+    double textH,
+    EvalContext context,
+  ) => _sizeIcon(
+    st,
+    symbol,
+    _Spot(0, 0, textW, textH, 0, textPad: 0, iconPad: 0),
+    context,
+  );
+
   SpriteImage? _sizeIcon(
     LabelState st,
     SymbolLayer? symbol,

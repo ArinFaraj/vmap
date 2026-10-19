@@ -994,6 +994,17 @@ class LabelEngine {
     st
       ..dx = roadX
       ..dy = roadY;
+    if (mapLibre) {
+      st.showIcon =
+          _points.sizeLineIcon(
+            st,
+            layer,
+            textW,
+            textH,
+            _context..zoom = styleZoom,
+          ) !=
+          null;
+    }
     _showPlaced(st, sprite);
     _roads.placed(st);
   }
