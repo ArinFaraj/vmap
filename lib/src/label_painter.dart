@@ -140,6 +140,21 @@ class LabelPainter {
         st.iconScale == 1 &&
         !(symbol?.iconSizeByFeature ?? false) &&
         icon.pixelRatio == devicePixelRatio;
+    if (sdfText case final gpu?
+        when _gpuIcon(
+          gpu,
+          st,
+          icon,
+          symbol,
+          tint,
+          pieces,
+          ix,
+          iy,
+          turn,
+          linear: !(nearest || texelForPixel),
+        )) {
+      return;
+    }
     for (final filter in [?rim, fill]) {
       _imagePaint.colorFilter = filter;
       if (nearest && !texelForPixel) {
@@ -198,6 +213,85 @@ class LabelPainter {
       }
     }
     _imagePaint.colorFilter = null;
+  }
+
+  /// Queues [st]'s icon for the GPU, each of its [pieces] a quad about
+  /// [ix], [iy] turned by [turn], a single piece padded by a clear texel
+  /// as MapLibre pads its icons. False when the GPU cannot draw it yet.
+  bool _gpuIcon(
+    SdfText gpu,
+    LabelState st,
+    SpriteImage icon,
+    SymbolLayer? symbol,
+    EvalContext? tint,
+    List<(ui.Rect, ui.Rect)> pieces,
+    double ix,
+    double iy,
+    double turn, {
+    required bool linear,
+  }) {
+    final c = math.cos(turn), s = math.sin(turn);
+    final opacity = st.opacity * st.iconOpacity;
+    final layer = switch (st.candidate) {
+      TileLabel(:final tile) => tile.layer,
+      _ => -1,
+    };
+    final SdfLook look;
+    if (icon.sdf && symbol != null && tint != null) {
+      final haloWidth = (asNumber(symbol.iconHaloWidth?.call(tint)) ?? 0)
+          .toDouble();
+      final haloColor = Rgba.of(symbol.iconHaloColor?.call(tint));
+      final color = Rgba.of(symbol.iconColor(tint)) ?? Rgba.black;
+      look = SdfLook(
+        SdfLook.rgba(color.toArgb(), opacity),
+        haloWidth > 0 && haloColor != null
+            ? SdfLook.rgba(haloColor.toArgb(), opacity)
+            : null,
+        haloWidth,
+        (asNumber(symbol.iconHaloBlur?.call(tint)) ?? 0).toDouble(),
+        st.iconScale,
+        overlap: haloWidth > 1,
+      );
+    } else {
+      look = SdfLook(
+        Float32List.fromList([opacity, opacity, opacity, opacity]),
+        null,
+        0,
+        0,
+        1,
+      );
+    }
+    final single = pieces.length == 1;
+    for (final (from, to) in pieces) {
+      if (from.width <= 0 || from.height <= 0) continue;
+      final kx = to.width / from.width, ky = to.height / from.height;
+      var source = from;
+      var ox = ix + c * to.left - s * to.top,
+          oy = iy + s * to.left + c * to.top;
+      final ax = c * kx, ay = s * kx, bx = -s * ky, by = c * ky;
+      if (single) {
+        source = from.inflate(1);
+        ox -= ax + bx;
+        oy -= ay + by;
+      }
+      if (!gpu.icon(
+        source,
+        icon.source,
+        ox,
+        oy,
+        ax,
+        ay,
+        bx,
+        by,
+        sdf: icon.sdf,
+        linear: icon.sdf || linear,
+        look: look,
+        layer: layer,
+      )) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /// [to] cut to the device pixels whose centres it covers, as GL fills a

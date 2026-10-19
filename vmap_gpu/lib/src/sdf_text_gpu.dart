@@ -9,7 +9,7 @@ class _SdfTextGpu implements SdfText {
 
   final GpuMap _map;
   gpu.RenderPipeline? _pipeline;
-  gpu.UniformSlot? _frameSlot, _fragmentFrameSlot, _glyphSlot;
+  gpu.UniformSlot? _frameSlot, _fragmentFrameSlot, _glyphSlot, _spriteSlot;
   bool _failed = false;
 
   /// The atlas: one byte a texel, glyphs packed on shelves, each with a
@@ -30,16 +30,18 @@ class _SdfTextGpu implements SdfText {
   ui.Size _size = ui.Size.zero;
   double _dpr = 1;
 
-  /// Six vertices a glyph, 16 floats a vertex.
-  static const _floats = 16;
-  Float32List _vertices = Float32List(6 * _floats * 256);
+  /// Six vertices a quad, 24 floats a vertex.
+  static const _floats = 24;
+  static const _quadFloats = 6 * _floats;
+  Float32List _vertices = Float32List(_quadFloats * 256);
+  Float32List _ordered = Float32List(_quadFloats * 256);
   int _count = 0;
 
-  /// Where each run of glyphs drawn alike starts: its first glyph, and
-  /// whether its halos are drawn apart from its glyphs.
-  final List<(int, bool)> _runs = [];
-  int _runLayer = -2;
-  bool _runOverlap = false;
+  /// Each quad's style layer, whether it is an icon, and whether its halo
+  /// is drawn apart from its fill.
+  Int32List _layers = Int32List(256);
+  Uint8List _icons = Uint8List(256);
+  Uint8List _overlaps = Uint8List(256);
 
   final List<(gpu.Texture, ui.Image)> _targets = [];
   int _next = 0;
@@ -89,12 +91,23 @@ class _SdfTextGpu implements SdfText {
                   format: gpu.VertexFormat.float32x4,
                   offsetInBytes: 48,
                 ),
+                gpu.VertexAttribute(
+                  name: 'clip',
+                  format: gpu.VertexFormat.float32x4,
+                  offsetInBytes: 64,
+                ),
+                gpu.VertexAttribute(
+                  name: 'kind',
+                  format: gpu.VertexFormat.float32x4,
+                  offsetInBytes: 80,
+                ),
               ],
             ),
           ],
         ),
       );
       _frameSlot = vertex.getUniformSlot('SdfFrame');
+      _spriteSlot = fragment.getUniformSlot('sprites');
       _fragmentFrameSlot = fragment.getUniformSlot('SdfFrame');
       _glyphSlot = fragment.getUniformSlot('glyphs');
       _atlas = gpu.gpuContext.createTexture(
@@ -122,8 +135,6 @@ class _SdfTextGpu implements SdfText {
     _dpr = devicePixelRatio;
     _lookup = glyph;
     _count = 0;
-    _runs.clear();
-    _runLayer = -2;
   }
 
   /// The atlas corner of [codePoint] of [face] as x plus y times the
@@ -174,31 +185,105 @@ class _SdfTextGpu implements SdfText {
     if (g == null) return;
     final corner = _corner(face, codePoint, g);
     if (corner < 0) return;
-    if (layer != _runLayer || look.overlap != _runOverlap) {
-      _runs.add((_count, look.overlap));
-      _runLayer = layer;
-      _runOverlap = look.overlap;
-    }
     // As MapLibre's getGlyphQuads: the quad covers the glyph's field and
     // its padding, from its left bearing less the border and the padding.
     const pad = GlyphPbf.border + 1;
     final u0 = g.left - pad.toDouble(), v0 = -g.top - pad.toDouble();
-    final u1 = u0 + g.width + 2 * pad, v1 = v0 + g.height + 2 * pad;
-    final tx = (corner % _side).toDouble(), ty = (corner ~/ _side).toDouble();
     final tw = g.width + 2 * pad.toDouble(), th = g.height + 2 * pad.toDouble();
-    if ((_count + 1) * 6 * _floats > _vertices.length) {
+    final tx = (corner % _side).toDouble(), ty = (corner ~/ _side).toDouble();
+    _quad(
+      ox + u0 * ax + v0 * bx,
+      oy + u0 * ay + v0 * by,
+      ax,
+      ay,
+      bx,
+      by,
+      tx,
+      ty,
+      tw,
+      th,
+      look,
+      layer,
+      kind: 0,
+    );
+  }
+
+  @override
+  bool icon(
+    ui.Rect source,
+    ui.Rect clip,
+    double ox,
+    double oy,
+    double ax,
+    double ay,
+    double bx,
+    double by, {
+    required bool sdf,
+    required bool linear,
+    required SdfLook look,
+    required int layer,
+  }) {
+    if (_map._sheetTexture == null || _map._sheetImage == null) return false;
+    _quad(
+      ox,
+      oy,
+      ax,
+      ay,
+      bx,
+      by,
+      source.left,
+      source.top,
+      source.width,
+      source.height,
+      look,
+      layer,
+      kind: sdf ? 1 : 2,
+      linear: linear,
+      clip: clip,
+    );
+    return true;
+  }
+
+  /// Queues a quad from [ox], [oy] spanning [tw] texels by [ax], [ay] and
+  /// [th] texels by [bx], [by], sampling from texel [tx], [ty].
+  void _quad(
+    double ox,
+    double oy,
+    double ax,
+    double ay,
+    double bx,
+    double by,
+    double tx,
+    double ty,
+    double tw,
+    double th,
+    SdfLook look,
+    int layer, {
+    required int kind,
+    bool linear = true,
+    ui.Rect clip = ui.Rect.zero,
+  }) {
+    if ((_count + 1) * _quadFloats > _vertices.length) {
       _vertices = Float32List(_vertices.length * 2)
-        ..setRange(0, _count * 6 * _floats, _vertices);
+        ..setRange(0, _count * _quadFloats, _vertices);
+      _ordered = Float32List(_vertices.length);
+      _layers = Int32List(_layers.length * 2)..setRange(0, _count, _layers);
+      _icons = Uint8List(_icons.length * 2)..setRange(0, _count, _icons);
+      _overlaps = Uint8List(_overlaps.length * 2)
+        ..setRange(0, _count, _overlaps);
     }
-    var o = _count * 6 * _floats;
+    _layers[_count] = layer;
+    _icons[_count] = kind > 0 ? 1 : 0;
+    _overlaps[_count] = look.overlap ? 1 : 0;
+    var o = _count * _quadFloats;
     final ink = look.ink, halo = look.halo;
-    void put(double u, double v, double s, double t) {
+    void put(double u, double v) {
       final out = _vertices;
       out
-        ..[o] = ox + u * ax + v * bx
-        ..[o + 1] = oy + u * ay + v * by
-        ..[o + 2] = tx + s
-        ..[o + 3] = ty + t
+        ..[o] = ox + u * tw * ax + v * th * bx
+        ..[o + 1] = oy + u * tw * ay + v * th * by
+        ..[o + 2] = tx + u * tw
+        ..[o + 3] = ty + v * th
         ..[o + 4] = ink[0]
         ..[o + 5] = ink[1]
         ..[o + 6] = ink[2]
@@ -210,16 +295,24 @@ class _SdfTextGpu implements SdfText {
         ..[o + 12] = look.haloWidth
         ..[o + 13] = look.haloBlur
         ..[o + 14] = look.fontScale
-        ..[o + 15] = look.gammaScale;
+        ..[o + 15] = look.gammaScale
+        ..[o + 16] = clip.left
+        ..[o + 17] = clip.top
+        ..[o + 18] = clip.right
+        ..[o + 19] = clip.bottom
+        ..[o + 20] = kind.toDouble()
+        ..[o + 21] = linear ? 1 : 0
+        ..[o + 22] = 0
+        ..[o + 23] = 0;
       o += _floats;
     }
 
-    put(u0, v0, 0, 0);
-    put(u1, v0, tw, 0);
-    put(u1, v1, tw, th);
-    put(u0, v0, 0, 0);
-    put(u1, v1, tw, th);
-    put(u0, v1, 0, th);
+    put(0, 0);
+    put(1, 0);
+    put(1, 1);
+    put(0, 0);
+    put(1, 1);
+    put(0, 1);
     _count++;
   }
 
@@ -252,9 +345,42 @@ class _SdfTextGpu implements SdfText {
       _atlas!.overwrite(ByteData.sublistView(_texels));
       _dirty = false;
     }
+    // Each run of one layer's quads: its icons, then its text, as
+    // MapLibre draws a symbol layer, each part split where halos are
+    // drawn apart from fills.
+    final draws = <(int, int, bool)>[];
+    var at = 0;
+    for (var from = 0; from < _count;) {
+      var to = from + 1;
+      while (to < _count && _layers[to] == _layers[from]) {
+        to++;
+      }
+      for (final icons in const [1, 0]) {
+        var start = at;
+        var overlap = false;
+        for (var q = from; q < to; q++) {
+          if (_icons[q] != icons) continue;
+          final apart = _overlaps[q] == 1;
+          if (at > start && apart != overlap) {
+            draws.add((start, at, overlap));
+            start = at;
+          }
+          overlap = apart;
+          _ordered.setRange(
+            at * _quadFloats,
+            (at + 1) * _quadFloats,
+            _vertices,
+            q * _quadFloats,
+          );
+          at++;
+        }
+        if (at > start) draws.add((start, at, overlap));
+      }
+      from = to;
+    }
     final host = _map._host!;
     final buffer = gpu.gpuContext.createDeviceBufferWithCopy(
-      ByteData.sublistView(_vertices, 0, _count * 6 * _floats),
+      ByteData.sublistView(_ordered, 0, _count * _quadFloats),
     );
     final commands = gpu.gpuContext.createCommandBuffer();
     final pass = commands.createRenderPass(
@@ -262,18 +388,13 @@ class _SdfTextGpu implements SdfText {
         gpu.ColorAttachment(texture: target, clearValue: Vector4.zero()),
       ),
     );
+    final sheet = _map._sheetTexture ?? _map._blank;
+    final sheetImage = _map._sheetImage;
     pass
       ..bindPipeline(_pipeline!)
       ..setCullMode(gpu.CullMode.none)
       ..setColorBlendEnable(true)
       ..setColorBlendEquation(GpuMap._over)
-      ..bindVertexBuffer(
-        gpu.BufferView(
-          buffer,
-          offsetInBytes: 0,
-          lengthInBytes: _count * 6 * _floats * 4,
-        ),
-      )
       ..bindTexture(
         _glyphSlot!,
         _atlas!,
@@ -283,13 +404,25 @@ class _SdfTextGpu implements SdfText {
           widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
           heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
         ),
+      )
+      ..bindTexture(
+        _spriteSlot!,
+        sheet,
+        sampler: gpu.SamplerOptions(
+          minFilter: gpu.MinMagFilter.nearest,
+          magFilter: gpu.MinMagFilter.nearest,
+          widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+          heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+        ),
       );
     _frameInfo
       ..[0] = _size.width
       ..[1] = _size.height
       ..[2] = _dpr
       ..[4] = _side.toDouble()
-      ..[5] = _side.toDouble();
+      ..[5] = _side.toDouble()
+      ..[6] = (sheetImage?.width ?? 1).toDouble()
+      ..[7] = (sheetImage?.height ?? 1).toDouble();
     void draw(int from, int to, double mode) {
       _frameInfo[3] = mode;
       final frame = host.emplace(_frameBytes);
@@ -299,18 +432,16 @@ class _SdfTextGpu implements SdfText {
         ..bindVertexBuffer(
           gpu.BufferView(
             buffer,
-            offsetInBytes: from * 6 * _floats * 4,
-            lengthInBytes: (to - from) * 6 * _floats * 4,
+            offsetInBytes: from * _quadFloats * 4,
+            lengthInBytes: (to - from) * _quadFloats * 4,
           ),
         )
         ..draw((to - from) * 6);
     }
 
-    // As MapLibre draws a layer's text: halo and glyph at once, or every
-    // halo before every glyph when halos are wide or letters overlap.
-    for (var r = 0; r < _runs.length; r++) {
-      final (from, overlap) = _runs[r];
-      final to = r + 1 < _runs.length ? _runs[r + 1].$1 : _count;
+    // As MapLibre draws a symbol layer: halo and fill at once, or every
+    // halo before every fill when halos are wide or letters overlap.
+    for (final (from, to, overlap) in draws) {
       if (overlap) {
         draw(from, to, 1);
         draw(from, to, 2);

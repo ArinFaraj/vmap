@@ -34,7 +34,30 @@ abstract class SdfText {
     int layer,
   );
 
-  /// Lays the glyphs queued since [begin] on [canvas]. True while a glyph
+  /// Queues an icon from the style's sprite sheet: the sheet's texels in
+  /// [source] drawn on the quad from [ox], [oy], one texel across it [ax],
+  /// [ay] and one down it [bx], [by], in logical pixels. Past [clip], the
+  /// icon's own place in the sheet, it is clear, as MapLibre pads its
+  /// icons. A distance field icon takes [look]'s colours; any other is
+  /// drawn faded by [look]'s ink alpha. [linear] samples between texels.
+  /// False when the sheet is not on the GPU yet, and the caller draws it.
+  bool icon(
+    ui.Rect source,
+    ui.Rect clip,
+    double ox,
+    double oy,
+    double ax,
+    double ay,
+    double bx,
+    double by, {
+    required bool sdf,
+    required bool linear,
+    required SdfLook look,
+    required int layer,
+  });
+
+  /// Lays what was queued since [begin] on [canvas]: each layer's icons,
+  /// then its text, as MapLibre draws a symbol layer. True while a glyph
   /// is still on its way to the GPU.
   bool end(ui.Canvas canvas);
 }
