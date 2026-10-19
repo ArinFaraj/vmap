@@ -145,11 +145,8 @@ Expr _filter(Object? json) {
   if (json is! List || json.isEmpty) return _constant(json != false);
   final op = json.first;
   final args = json.sublist(1);
-  Object? key(EvalContext c, Object? name) => name == r'$type'
-      ? c.geometryType
-      : name == r'$id'
-      ? null
-      : c.props[name];
+  Object? key(EvalContext c, Object? name) =>
+      name == r'$type' ? c.geometryType : c.props[name];
   final legacy =
       args.isNotEmpty &&
       args.first is String &&

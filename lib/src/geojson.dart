@@ -63,6 +63,9 @@ class GeoJsonTiles {
             : promoteId != null
             ? props[promoteId]
             : json['id'];
+        // The feature's id is kept under this name, so a property of that
+        // name is left out rather than taken for an id.
+        props.remove(r'$id');
         if (id != null) props[r'$id'] = id;
         _geometry(json['geometry'], props);
       default:

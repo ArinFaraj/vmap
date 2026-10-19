@@ -258,8 +258,8 @@ class StyleCompiler {
       BackgroundLayer(
         minZoom: layer.minZoom,
         maxZoom: layer.maxZoom,
-        color: compileExpr(paint['background-color'] ?? '#000000'),
-        opacity: compileExpr(paint['background-opacity'] ?? 1),
+        color: _withDefault(paint['background-color'], '#000000'),
+        opacity: _withDefault(paint['background-opacity'], 1),
         pattern: picture == null ? null : compileText(picture),
       ),
     );
@@ -280,14 +280,14 @@ class StyleCompiler {
     final adjust = !paint.keys.any(_adjustKeys.contains)
         ? null
         : RasterAdjust(
-            hueRotate: compileExpr(paint['raster-hue-rotate'] ?? 0),
-            saturation: compileExpr(paint['raster-saturation'] ?? 0),
-            contrast: compileExpr(paint['raster-contrast'] ?? 0),
-            brightnessMin: compileExpr(paint['raster-brightness-min'] ?? 0),
-            brightnessMax: compileExpr(paint['raster-brightness-max'] ?? 1),
+            hueRotate: _withDefault(paint['raster-hue-rotate'], 0),
+            saturation: _withDefault(paint['raster-saturation'], 0),
+            contrast: _withDefault(paint['raster-contrast'], 0),
+            brightnessMin: _withDefault(paint['raster-brightness-min'], 0),
+            brightnessMax: _withDefault(paint['raster-brightness-max'], 1),
           );
     final nearest = paint['raster-resampling'] == 'nearest';
-    final opacity = compileExpr(paint['raster-opacity'] ?? 1);
+    final opacity = _withDefault(paint['raster-opacity'], 1);
     final tileJsonUrl = from['url'] as String?;
     final tiles = tileTemplate(from['tiles']);
     final tileSize = asNumber(from['tileSize']) ?? 512;
@@ -328,7 +328,7 @@ class StyleCompiler {
         cover: TileCover.of(from),
         relief: ReliefPaint(
           terrarium: from['encoding'] == 'terrarium',
-          exaggeration: compileExpr(paint['hillshade-exaggeration'] ?? 0.5),
+          exaggeration: _withDefault(paint['hillshade-exaggeration'], 0.5),
           shadow: compileExpr('#000000'),
           highlight: compileExpr('#ffffff'),
           direction: 335,
@@ -395,7 +395,7 @@ class StyleCompiler {
     return ColorReliefLayer(
       minZoom: layer.minZoom,
       maxZoom: layer.maxZoom,
-      opacity: compileExpr(paint['color-relief-opacity'] ?? 1),
+      opacity: _withDefault(paint['color-relief-opacity'], 1),
       tileJsonUrl: tileJsonUrl,
       tiles: tiles,
       tileSize: tileSize.toDouble(),
@@ -404,7 +404,7 @@ class StyleCompiler {
       encoding: DemEncoding.of(from),
       elevations: Float64List.fromList(elevations),
       colors: Float64List.fromList(colors),
-      resampling: compileExpr(paint['resampling'] ?? 'linear'),
+      resampling: _withDefault(paint['resampling'], 'linear'),
     );
   }
 
@@ -475,11 +475,11 @@ class StyleCompiler {
       SymbolLayer(
         id: layer.id,
         build: build,
-        size: compileExpr(layout['text-size'] ?? 16),
-        color: compileExpr(paint['text-color'] ?? '#000000'),
-        opacity: compileExpr(paint['text-opacity'] ?? 1),
+        size: _withDefault(layout['text-size'], 16),
+        color: _withDefault(paint['text-color'], '#000000'),
+        opacity: _withDefault(paint['text-opacity'], 1),
         haloColor: compileExpr(paint['text-halo-color']),
-        haloWidth: compileExpr(paint['text-halo-width'] ?? 0),
+        haloWidth: _withDefault(paint['text-halo-width'], 0),
         weight: _weight(font),
         italic: font.contains('italic') || font.contains('oblique'),
         fontStack: _fontStack(layout['text-font']),
@@ -516,11 +516,11 @@ class StyleCompiler {
         },
         keepUpright: layout['text-keep-upright'] != false,
         iconIgnored: layout['icon-ignore-placement'] == true,
-        haloBlur: compileExpr(paint['text-halo-blur'] ?? 0),
+        haloBlur: _withDefault(paint['text-halo-blur'], 0),
         maxWidth: asNumber(layout['text-max-width']) ?? 10,
-        iconSize: compileExpr(layout['icon-size'] ?? 1),
-        iconOpacity: compileExpr(paint['icon-opacity'] ?? 1),
-        iconColor: compileExpr(paint['icon-color'] ?? '#000000'),
+        iconSize: _withDefault(layout['icon-size'], 1),
+        iconOpacity: _withDefault(paint['icon-opacity'], 1),
+        iconColor: _withDefault(paint['icon-color'], '#000000'),
         textRotate: asNumber(layout['text-rotate']) ?? 0,
         anchor: anchor is String ? anchor : 'center',
         offsetX: offset.$1,
@@ -579,7 +579,7 @@ class StyleCompiler {
   void _addHeatmap(_VectorLayer vector) {
     final layer = vector.layer;
     final paint = layer.paint;
-    final radius = compileExpr(paint['heatmap-radius'] ?? 30);
+    final radius = _withDefault(paint['heatmap-radius'], 30);
     _layers.add(
       HeatmapLayer(
         id: layer.id,
@@ -593,11 +593,11 @@ class StyleCompiler {
         minZoom: layer.minZoom,
         maxZoom: layer.maxZoom,
         color: compileExpr('#ffffff'),
-        opacity: compileExpr(paint['heatmap-opacity'] ?? 1),
+        opacity: _withDefault(paint['heatmap-opacity'], 1),
         width: (c) => (asNumber(radius(c)) ?? 30) * 2,
         heat: HeatPaint.of(
-          weight: compileExpr(paint['heatmap-weight'] ?? 1),
-          intensity: compileExpr(paint['heatmap-intensity'] ?? 1),
+          weight: _withDefault(paint['heatmap-weight'], 1),
+          intensity: _withDefault(paint['heatmap-intensity'], 1),
           color: paint['heatmap-color'],
         ),
       ),
@@ -616,7 +616,7 @@ class StyleCompiler {
       'circle-stroke-opacity',
       'circle-blur',
     ]);
-    final radius = compileExpr(paint['circle-radius'] ?? 5);
+    final radius = _withDefault(paint['circle-radius'], 5);
     final ring = paint['circle-stroke-width'];
     _layers.add(
       CircleLayer(
@@ -626,15 +626,15 @@ class StyleCompiler {
         bucket: _bucket(vector, BucketKind.circle, names),
         minZoom: layer.minZoom,
         maxZoom: layer.maxZoom,
-        color: compileExpr(paint['circle-color'] ?? '#000000'),
-        opacity: compileExpr(paint['circle-opacity'] ?? 1),
+        color: _withDefault(paint['circle-color'], '#000000'),
+        opacity: _withDefault(paint['circle-opacity'], 1),
         width: (c) => (asNumber(radius(c)) ?? 5) * 2,
         ring: ring == null
             ? null
             : CircleRing(
-                color: compileExpr(paint['circle-stroke-color'] ?? '#000000'),
+                color: _withDefault(paint['circle-stroke-color'], '#000000'),
                 width: compileExpr(ring),
-                opacity: compileExpr(paint['circle-stroke-opacity'] ?? 1),
+                opacity: _withDefault(paint['circle-stroke-opacity'], 1),
               ),
         perFeature: names.isNotEmpty,
         pitchWithMap: paint['circle-pitch-alignment'] == 'map',
@@ -665,7 +665,7 @@ class StyleCompiler {
     final dash = dashStops.isEmpty
         ? _dash(paint['line-dasharray'])
         : dashStops.first.$2;
-    final own = compileExpr(paint['line-width'] ?? 1);
+    final own = _withDefault(paint['line-width'], 1);
     final gap = paint['line-gap-width'];
     Expr width = own;
     final between = gap == null ? null : compileExpr(gap);
@@ -705,14 +705,12 @@ class StyleCompiler {
         ),
         minZoom: layer.minZoom,
         maxZoom: layer.maxZoom,
-        color: compileExpr(
-          picture == null && ramp == null
-              ? paint['line-color'] ?? '#000000'
-              : '#ffffff',
-        ),
+        color: picture == null && ramp == null
+            ? _withDefault(paint['line-color'], '#000000')
+            : compileExpr('#ffffff'),
         gradient: _maybe(ramp),
         gap: between,
-        opacity: compileExpr(paint['line-opacity'] ?? 1),
+        opacity: _withDefault(paint['line-opacity'], 1),
         width: width,
         offset: _maybe(beside),
         blur: soft ? compileExpr(blur) : null,
@@ -749,10 +747,12 @@ class StyleCompiler {
         bucket: _bucket(vector, BucketKind.fill, names),
         minZoom: layer.minZoom,
         maxZoom: layer.maxZoom,
-        color: compileExpr(image == null ? color : '#ffffff'),
+        color: (image == null
+            ? _withDefault(color, '#000000')
+            : compileExpr('#ffffff')),
         opacity: compileExpr(opacity),
         pattern: image == null ? null : compileText(image),
-        patternTint: image == null ? null : compileExpr(color),
+        patternTint: image == null ? null : _withDefault(color, '#000000'),
         // As MapLibre, an antialiased fill is outlined in its own colour
         // when it names no outline colour, and a patterned one in its
         // pattern: one pixel lines the GPU draws.
@@ -760,7 +760,9 @@ class StyleCompiler {
             prefix == 'fill' &&
                 paint['fill-antialias'] != false &&
                 (image != null || paint['fill-outline-color'] == null)
-            ? compileExpr(image == null ? color : '#ffffff')
+            ? (image == null
+                  ? _withDefault(color, '#000000')
+                  : compileExpr('#ffffff'))
             : null,
         perFeature: names.isNotEmpty,
         extruded: prefix == 'fill-extrusion',
@@ -787,9 +789,11 @@ class StyleCompiler {
             compileFilter(vector.filter),
             BucketKind.extrusion,
             extrude: Extrude(
-              compileExpr(paint['fill-extrusion-height'] ?? 0),
-              compileExpr(paint['fill-extrusion-base'] ?? 0),
-              compileExpr(image == null ? color : '#ffffff'),
+              _withDefault(paint['fill-extrusion-height'], 0),
+              _withDefault(paint['fill-extrusion-base'], 0),
+              (image == null
+                  ? _withDefault(color, '#000000')
+                  : compileExpr('#ffffff')),
               verticalGradient:
                   paint['fill-extrusion-vertical-gradient'] != false,
               roundedCorners: compileExpr(
@@ -1040,6 +1044,15 @@ class StyleCompiler {
       out[i * 2 + 1] = worldY(lat.toDouble());
     }
     return out;
+  }
+
+  /// A property read from [json], or [fallback] when it is unset or comes
+  /// out null, as MapLibre falls back to a property's default.
+  static Expr _withDefault(Object? json, Object fallback) {
+    final otherwise = compileExpr(fallback);
+    if (json == null) return otherwise;
+    final expr = compileExpr(json);
+    return (c) => expr(c) ?? otherwise(c);
   }
 
   static Expr? _maybe(Object? json) => json == null ? null : compileExpr(json);
