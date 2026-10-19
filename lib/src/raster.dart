@@ -241,7 +241,7 @@ final class PictureDrawing extends RasterDrawing<ImageLayer> {
           ),
           opacity: _paint.color.a,
           filter: _paint.colorFilter,
-          smooth: !layer.nearest,
+          smooth: !layer.nearestAt(context),
         ));
       }
       return;
@@ -687,7 +687,7 @@ final class PictureTiles extends TileDrawing<PictureTileLayer> {
   /// tiles of a pitched map average out instead of shimmering.
   @override
   void _setUpPaint(EvalContext context) => _paint
-    ..filterQuality = layer.nearest
+    ..filterQuality = layer.nearestAt(context)
         ? ui.FilterQuality.none
         : ui.FilterQuality.medium
     ..isAntiAlias = false
@@ -730,7 +730,9 @@ final class ShadedTiles extends TileDrawing<HillshadeLayer> {
 
   @override
   void _setUpPaint(EvalContext context) => _paint
-    ..filterQuality = ui.FilterQuality.low
+    ..filterQuality = layer.nearestAt(context)
+        ? ui.FilterQuality.none
+        : ui.FilterQuality.low
     ..isAntiAlias = false
     ..colorFilter = null;
 

@@ -287,6 +287,7 @@ class StyleCompiler {
             brightnessMax: _withDefault(paint['raster-brightness-max'], 1),
           );
     final nearest = paint['raster-resampling'] == 'nearest';
+    final resampling = _maybe(paint['resampling']);
     final opacity = _withDefault(paint['raster-opacity'], 1);
     final tileJsonUrl = from['url'] as String?;
     final tiles = tileTemplate(from['tiles']);
@@ -302,6 +303,7 @@ class StyleCompiler {
           corners: corners,
           nearest: nearest,
           adjust: adjust,
+          resampling: resampling,
         ),
         _ => null,
       },
@@ -316,6 +318,7 @@ class StyleCompiler {
         cover: TileCover.of(from),
         nearest: nearest,
         adjust: adjust,
+        resampling: resampling,
       ),
       ('hillshade', 'raster-dem') => HillshadeLayer(
         minZoom: layer.minZoom,
@@ -326,6 +329,7 @@ class StyleCompiler {
         tileSize: tileSize,
         sourceMaxZoom: sourceMaxZoom,
         cover: TileCover.of(from),
+        resampling: resampling,
         relief: ReliefPaint(
           terrarium: from['encoding'] == 'terrarium',
           exaggeration: _withDefault(paint['hillshade-exaggeration'], 0.5),

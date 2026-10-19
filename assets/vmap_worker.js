@@ -1,4 +1,4 @@
-// vmap web worker, built from lib 55744687
+// vmap web worker, built from lib 9e6891dc
 (function dartProgram(){function copyProperties(a,b){var s=Object.keys(a)
 for(var r=0;r<s.length;r++){var q=s[r]
 b[q]=a[q]}}function mixinPropertiesHard(a,b){var s=Object.keys(a)
@@ -15055,40 +15055,42 @@ A.J(d.h(0,"raster-saturation"),0)
 A.J(d.h(0,"raster-contrast"),0)
 A.J(d.h(0,"raster-brightness-min"),0)
 A.J(d.h(0,"raster-brightness-max"),1)}J.m(d.h(0,"raster-resampling"),"nearest")
+s=d.h(0,"resampling")
+if(s!=null)A.w(s)
 A.J(d.h(0,"raster-opacity"),1)
-s=A.bh(c.h(0,"url"))
-r=A.p7(c.h(0,"tiles"))
-q=A.D(c.h(0,"tileSize"))
-if(q==null)q=512
-p=A.D(c.h(0,"maxzoom"))
-o=p==null?e:B.c.N(p)
+r=A.bh(c.h(0,"url"))
+q=A.p7(c.h(0,"tiles"))
+p=A.D(c.h(0,"tileSize"))
+if(p==null)p=512
+s=A.D(c.h(0,"maxzoom"))
+o=s==null?e:B.c.N(s)
 n=a.b
 m=c.h(0,"type")
 A:{l="raster"===n
-p=l
-if(p){p="image"===m
+s=l
+if(s){s="image"===m
 k=m
 j=!0}else{k=e
 j=!1
-p=!1}i=e
-if(p){B:{if(A.uL(c.h(0,"coordinates"))!=null)p=s!=null
-else p=!1
-if(p){p=new A.fQ()
-break B}p=i
-break B}break A}if(l){if(j)p=k
-else{p=m
-k=p
-j=!0}p="raster"===p}else p=!1
-if(p){A.eG(c)
-p=new A.h9()
+s=!1}i=e
+if(s){B:{if(A.uL(c.h(0,"coordinates"))!=null)s=r!=null
+else s=!1
+if(s){s=new A.fQ()
+break B}s=i
+break B}break A}if(l){if(j)s=k
+else{s=m
+k=s
+j=!0}s="raster"===s}else s=!1
+if(s){A.eG(c)
+s=new A.h9()
 break A}h="hillshade"===n
 g=e
-if(h){if(j)p=k
-else{p=m
-k=p
-j=!0}g="raster-dem"===p
-p=g}else p=!1
-if(p){A.w(1)
+if(h){if(j)s=k
+else{s=m
+k=s
+j=!0}g="raster-dem"===s
+s=g}else s=!1
+if(s){A.w(1)
 A.eG(c)
 J.m(c.h(0,"encoding"),"terrarium")
 A.J(d.h(0,"hillshade-exaggeration"),0.5)
@@ -15096,22 +15098,22 @@ A.w("#000000")
 A.w("#ffffff")
 A.qf(d.h(0,"hillshade-shadow-color"),"#000000")
 A.qf(d.h(0,"hillshade-highlight-color"),"#ffffff")
-p=d.h(0,"hillshade-accent-color")
-if(p!=null)A.w(p)
-p=d.h(0,"hillshade-method")
-A.t(p==null?"standard":p)
+s=d.h(0,"hillshade-accent-color")
+if(s!=null)A.w(s)
+s=d.h(0,"hillshade-method")
+A.t(s==null?"standard":s)
 A.qh(d.h(0,"hillshade-illumination-direction"),335)
 A.qh(d.h(0,"hillshade-illumination-altitude"),45)
-p=new A.fP()
-break A}if("color-relief"===n)if(h)p=g
+s=new A.fP()
+break A}if("color-relief"===n)if(h)s=g
 else{g="raster-dem"===(j?k:m)
-p=g}else p=!1
-if(p){p=f.eM(a,c,o,s,q,r)
-break A}p=i
-break A}if(p==null)return
+s=g}else s=!1
+if(s){s=f.eM(a,c,o,r,p,q)
+break A}s=i
+break A}if(s==null)return
 i=f.z
 B.a.k(f.at,new A.z(f.x.length,new A.c2(i.length,-1,-1,0)))
-B.a.k(i,p)},
+B.a.k(i,s)},
 eM(a,b,c,d,e,a0){var s,r,q,p,o,n,m,l=a.d,k=t.n,j=A.b([],k),i=A.b([],k),h=l.h(0,"color-relief-color"),g=t.j,f=!1
 if(g.b(h)){s=J.q(h)
 if(s.gl(h)>=3)if("interpolate"===s.h(h,0)){r=s.h(h,2)

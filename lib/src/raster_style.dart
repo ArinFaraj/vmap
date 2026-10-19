@@ -159,6 +159,14 @@ sealed class RasterLayer {
   final double maxZoom;
   final Expr opacity;
 
+  /// The layer's `resampling`, which may change with the zoom: `nearest`
+  /// draws a picture larger than it is with its pixels as squares. Null
+  /// for linear.
+  Expr? get resampling => null;
+
+  /// Whether pictures are sampled nearest at the zoom in [context].
+  bool nearestAt(EvalContext context) => resampling?.call(context) == 'nearest';
+
   /// Equal for two layers drawn from the same pictures the same way.
   String get signature;
 }
@@ -172,7 +180,14 @@ final class ImageLayer extends RasterLayer {
     required this.corners,
     this.nearest = false,
     this.adjust,
+    this.resampling,
   });
+
+  @override
+  final Expr? resampling;
+
+  @override
+  bool nearestAt(EvalContext context) => nearest || super.nearestAt(context);
 
   /// The address of the picture.
   final String picture;
@@ -229,7 +244,14 @@ final class PictureTileLayer extends TiledRasterLayer {
     super.cover,
     this.nearest = false,
     this.adjust,
+    this.resampling,
   });
+
+  @override
+  final Expr? resampling;
+
+  @override
+  bool nearestAt(EvalContext context) => nearest || super.nearestAt(context);
 
   /// `raster-resampling` nearest: tiles drawn larger than they are show
   /// their pixels as squares instead of being smoothed.
@@ -254,9 +276,13 @@ final class HillshadeLayer extends TiledRasterLayer {
     required super.sourceMaxZoom,
     required this.relief,
     super.cover,
+    this.resampling,
   });
 
   final ReliefPaint relief;
+
+  @override
+  final Expr? resampling;
 
   @override
   String get signature => 'hillshade|$_source';
@@ -315,6 +341,7 @@ final class ColorReliefLayer extends TiledRasterLayer {
   final Float64List colors;
 
   /// `resampling`: `nearest` shows each height as a square.
+  @override
   final Expr resampling;
 
   @override
