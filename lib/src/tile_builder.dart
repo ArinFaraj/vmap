@@ -370,12 +370,17 @@ class TileBuilder {
     maxZoom: maxZoom,
   );
 
+  /// [over], when deeper than [z], is the zoom the tile is laid out for,
+  /// as MapLibre lays out an overscaled tile.
+  double _overscale = 1;
+
   BuiltTile buildLayers(
     Iterable<TileLayer> tileLayers,
     int z, {
     int x = 0,
     int y = 0,
     int maxZoom = 14,
+    int? over,
   }) {
     final plain = List<_Group?>.filled(sheet.buckets.length, null);
     final varied = <String, _Group>{};
@@ -388,7 +393,9 @@ class TileBuilder {
     final deepest = z >= maxZoom;
     final lineTolerance = deepest ? 0.75 : 2.0;
     final ringTolerance = deepest ? 0.0 : 2.0;
-    final styleZoom = z + sheet.zoomOffset;
+    final laidOut = over != null && over > z ? over : z;
+    final overscale = _overscale = (1 << (laidOut - z)).toDouble();
+    final styleZoom = laidOut + sheet.zoomOffset;
     missedGlyphs = false;
     bool drawnAt(double minZoom, double maxZoom) =>
         maxZoom > styleZoom && (deepest || minZoom < styleZoom + 1);
@@ -711,12 +718,12 @@ class TileBuilder {
             // line-center names a line once, at its middle.
             final spacing = placement == 'line-center'
                 ? double.infinity
-                : symbol.build.spacing * 8 / (1 << deeper);
+                : symbol.build.spacing * 8 / (1 << deeper) / overscale;
             final zoom = context.zoom;
             context.zoom = styleZoom + 1;
             final size = finiteOr(symbol.size(context), 16);
             context.zoom = zoom;
-            final em = size * tileExtent / 512;
+            final em = size * tileExtent / 512 / overscale;
             if (along && text.isNotEmpty && !symbol.build.textUpright) {
               final rings = [
                 for (var r = 0; r < _sink.ringCount; r++)
@@ -874,11 +881,20 @@ class TileBuilder {
       final ring = Float32List.fromList(
         _sink.coords.sublist(_sink.ringStart(r) * 2, _sink.ringEnd(r) * 2),
       );
-      for (final line in clipLineToTile(ring)) {
+      for (final line in center ? [ring] : clipLineToTile(ring)) {
         final anchors = center
             ? centerAnchor(line, labelLength, window, maxBend)
-            : lineAnchors(line, spacing, labelLength, 2 * em, window, maxBend);
+            : lineAnchors(
+                line,
+                spacing,
+                labelLength,
+                2 * em,
+                window,
+                maxBend,
+                overscale: _overscale,
+              );
         for (final (x, y, angle) in anchors) {
+          if (center && !_inTile(x, y)) continue;
           place(x, y, angle);
         }
       }
@@ -1172,7 +1188,9 @@ class TileBuilder {
     final window = 3 / 5 * named.em;
     final extra = 2 * named.em;
     for (final ring in named.rings) {
-      for (final line in clipLineToTile(ring)) {
+      // As MapLibre: line-center takes the middle of the whole line as the
+      // tile holds it, kept by the tile it falls in.
+      for (final line in center ? [ring] : clipLineToTile(ring)) {
         for (final (x, y, _)
             in center
                 ? centerAnchor(line, named.labelLength, window, named.maxBend)
@@ -1183,7 +1201,9 @@ class TileBuilder {
                     extra,
                     window,
                     named.maxBend,
+                    overscale: _overscale,
                   )) {
+          if (center && !_inTile(x, y)) continue;
           if (tooClose(x, y)) continue;
           out.add(
             BuiltLabel(layer, named.priority, named.text, x, y, line)
@@ -1338,16 +1358,21 @@ double _lineLength(Float32List line) {
   return length;
 }
 
+bool _inTile(double x, double y) =>
+    x >= 0 && x < tileExtent && y >= 0 && y < tileExtent;
+
 /// The anchors MapLibre's `getAnchors` gives a name [labelLength] long on
-/// [line], cut to the tile.
+/// [line], cut to the tile, in a tile laid out [overscale] times deeper
+/// than its data.
 List<(double, double, double)> lineAnchors(
   Float32List line,
   double spacing,
   double labelLength,
   double extra,
   double window,
-  double maxBend,
-) {
+  double maxBend, {
+  double overscale = 1,
+}) {
   final continued =
       line[0] == 0 ||
       line[0] == tileExtent ||
@@ -1357,8 +1382,8 @@ List<(double, double, double)> lineAnchors(
     spacing = labelLength + spacing / 4;
   }
   final offset = continued
-      ? (spacing / 2) % spacing
-      : (labelLength / 2 + extra) % spacing;
+      ? (spacing / 2 * overscale) % spacing
+      : ((labelLength / 2 + extra) * overscale) % spacing;
   final anchors = _resample(
     line,
     offset,
@@ -1387,15 +1412,14 @@ List<(double, double, double)> centerAnchor(
   double window,
   double maxBend,
 ) {
-  final middle = _lineLength(line) / 2;
   return _resample(
     line,
-    middle,
+    _lineLength(line) / 2,
     double.infinity,
-    0,
+    labelLength,
     window,
     maxBend,
-  ).where((_) => labelLength <= middle * 2).toList();
+  );
 }
 
 List<(double, double, double)> _resample(

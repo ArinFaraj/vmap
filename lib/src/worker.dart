@@ -546,6 +546,7 @@ Future<void> tileWorkerMain(
                 x: tile.x,
                 y: tile.y,
                 maxZoom: maxZoom,
+                over: tile.over,
               )..keyLabels(
                 tile.z,
                 tile.x,

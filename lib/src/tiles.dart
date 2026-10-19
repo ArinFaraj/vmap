@@ -343,6 +343,7 @@ class TileSource {
       return _coverView(
         view,
         camera,
+        over: dataZoom.floor(),
         frame: frame,
         nowMs: nowMs,
         prepare: prepare,
@@ -351,6 +352,7 @@ class TileSource {
       );
     }
     final tz = dataZoom.floor().clamp(0, maxDataZoom);
+    final over = dataZoom.floor();
     final tileSize = 256.0 * math.pow(2, camera.zoom - tz);
     final TileRange(:n, :x0, :x1, :y0, :y1) = _inView(camera, tz, tileSize);
     final centerX = (camera.origin.dx + size.width / 2) / tileSize - 0.5;
@@ -365,7 +367,7 @@ class TileSource {
     var covered = true;
     for (var y = y0; y <= y1; y++) {
       for (var x = x0; x <= x1; x++) {
-        final id = TileId(tz, x % n, y);
+        final id = TileId(tz, x % n, y, over: over);
         final left = x * tileSize - camera.origin.dx;
         final top = y * tileSize - camera.origin.dy;
         final tile = tiles[id];
@@ -401,6 +403,7 @@ class TileSource {
   bool _coverView(
     MapView view,
     VmapCamera camera, {
+    required int over,
     required int frame,
     required int nowMs,
     required void Function(LoadedTile tile, double scale) prepare,
@@ -424,7 +427,7 @@ class TileSource {
     for (final (rank, t) in picked.indexed) {
       final n = 1 << t.z;
       if (t.y < 0 || t.y >= n) continue;
-      final id = TileId(t.z, t.x % n, t.y);
+      final id = TileId(t.z, t.x % n, t.y, over: t.z >= maxDataZoom ? over : 0);
       final span = view.worldSize / n;
       final left = t.x * span - origin.dx;
       final top = t.y * span - origin.dy;
@@ -459,7 +462,7 @@ class TileSource {
       }
       wanted.add(id);
     }
-    _wantAhead(camera.ahead, frame, nowMs, prepare, variableZoom);
+    _wantAhead(camera.ahead, frame, nowMs, prepare, variableZoom, over);
     for (final t in picked) {
       if (t.z == 0) continue;
       final parent = tiles[TileId(t.z - 1, (t.x % (1 << t.z)) >> 1, t.y >> 1)];
@@ -480,6 +483,7 @@ class TileSource {
     int nowMs,
     void Function(LoadedTile tile, double scale) prepare,
     bool variableZoom,
+    int over,
   ) {
     if (ahead == null) return;
     for (final t in ahead.cover(
@@ -488,7 +492,7 @@ class TileSource {
     )) {
       final n = 1 << t.z;
       if (t.y < 0 || t.y >= n) continue;
-      final id = TileId(t.z, t.x % n, t.y);
+      final id = TileId(t.z, t.x % n, t.y, over: t.z >= maxDataZoom ? over : 0);
       final have = tiles[id];
       if (have != null) {
         have.usedFrame = frame;
@@ -513,6 +517,18 @@ class TileSource {
     double tileSize,
     ui.Offset origin,
   ) {
+    // The same tile laid out for a nearby zoom stands in while it is laid
+    // out again.
+    for (var d = 1; d <= 4; d++) {
+      for (final o in [id.over - d, id.over + d]) {
+        if (o < id.z) continue;
+        final other = tiles[id.at(o)];
+        if (other == null || !other.prepared) continue;
+        other.usedFrame = frame;
+        fallback.add(TileDraw(other, left, top, tileSize));
+        return;
+      }
+    }
     var ancestor = id;
     for (var dz = 1; dz <= 6 && ancestor.z > 0; dz++) {
       ancestor = ancestor.parent;

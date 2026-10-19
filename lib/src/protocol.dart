@@ -85,7 +85,11 @@ sealed class WorkerRequest {
     TileId tile() => TileId(wire[2]! as int, wire[3]! as int, wire[4]! as int);
     double number(int i) => (wire[i]! as num).toDouble();
     return switch (wire[1]) {
-      'build' => BuildTile(job, tile(), maxZoom: wire[5]! as int),
+      'build' => BuildTile(
+        job,
+        tile().at(wire[6]! as int),
+        maxZoom: wire[5]! as int,
+      ),
       'find' => FindInTile(
         job,
         tile(),
@@ -122,7 +126,15 @@ final class BuildTile extends WorkerRequest {
   final int maxZoom;
 
   @override
-  List<Object?> toWire() => [job, 'build', tile.z, tile.x, tile.y, maxZoom];
+  List<Object?> toWire() => [
+    job,
+    'build',
+    tile.z,
+    tile.x,
+    tile.y,
+    maxZoom,
+    tile.over,
+  ];
 }
 
 /// The features a style draws near a point of a tile, or touching a box
