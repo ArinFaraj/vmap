@@ -971,10 +971,16 @@ class LabelEngine {
     st.screenAngle = turn;
     if (st.curve != null) {
       final reach = (textH + room) / 2 + textPad;
-      if (!overlaps && _roads.curveHits(st, textW, textH, reach, add: false)) {
+      if (_roads.curveHits(
+        st,
+        textW,
+        textH,
+        reach,
+        check: !overlaps,
+        add: !ignored,
+      )) {
         return;
       }
-      if (!ignored) _roads.curveHits(st, textW, textH, reach, add: true);
     } else {
       if (!overlaps &&
           _boxes.collides(

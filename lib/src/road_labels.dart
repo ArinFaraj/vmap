@@ -19,13 +19,18 @@ class RoadLabels {
   /// straight enough to carry it.
   bool curved = true;
 
-  final List<LabelState> _placed = [];
+  final Map<String, List<LabelState>> _placed = {};
 
   /// Forgets the names placed in the last pass.
-  void startPass() => _placed.clear();
+  void startPass() {
+    _placed.removeWhere((_, same) => same.isEmpty);
+    for (final same in _placed.values) {
+      same.clear();
+    }
+  }
 
   /// Remembers [st] as placed, so the same name keeps away from it.
-  void placed(LabelState st) => _placed.add(st);
+  void placed(LabelState st) => (_placed[st.candidate.text] ??= []).add(st);
 
   /// How close two of the same name may be, in logical pixels.
   static const double _repeatDistance = 260;
@@ -203,29 +208,41 @@ class RoadLabels {
   static int stripCount(double textW, double textH) =>
       math.max(2, (textW / (textH * 0.7)).ceil());
 
-  /// Whether a bent name runs into something already placed, and with [add]
-  /// the space it takes itself.
+  /// Whether, with [check], a bent name runs into something already
+  /// placed; when it does not, with [add], it takes its space.
   bool curveHits(
     LabelState st,
     double textW,
     double textH,
     double reach, {
+    required bool check,
     required bool add,
   }) {
+    if (!check && !add) return false;
     final count = stripCount(textW, textH);
     final (onScreen, middle) = _view.onScreen(st.curve!, st.curveMid);
     final step = textW / count;
+    if (_slices.length < count * 2) _slices = Float64List(count * 4);
     for (var j = 0; j < count; j++) {
       pointAlong(onScreen, middle + (j + 0.5 - count / 2) * step, _at);
       final x = _at[0], y = _at[1];
-      if (add) {
-        _boxes.add(x - reach, y - reach, x + reach, y + reach);
-      } else if (_boxes.hits(x - reach, y - reach, x + reach, y + reach)) {
+      if (check && _boxes.hits(x - reach, y - reach, x + reach, y + reach)) {
         return true;
+      }
+      _slices
+        ..[j * 2] = x
+        ..[j * 2 + 1] = y;
+    }
+    if (add) {
+      for (var j = 0; j < count; j++) {
+        final x = _slices[j * 2], y = _slices[j * 2 + 1];
+        _boxes.add(x - reach, y - reach, x + reach, y + reach);
       }
     }
     return false;
   }
+
+  Float64List _slices = Float64List(64);
 
   /// Whether a name the same as [st]'s is placed closer than [distance]
   /// logical pixels already, or than vmap's own distance without one.
@@ -233,8 +250,7 @@ class RoadLabels {
     final world = _view.world;
     final text = st.candidate.text;
     final most = distance ?? _repeatDistance;
-    for (final other in _placed) {
-      if (other.candidate.text != text) continue;
+    for (final other in _placed[text] ?? const <LabelState>[]) {
       final dx = (other.worldX - st.worldX) * world;
       final dy = (other.worldY - st.worldY) * world;
       if (dx * dx + dy * dy < most * most) {
