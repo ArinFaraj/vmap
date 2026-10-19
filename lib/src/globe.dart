@@ -213,6 +213,13 @@ class Globe {
     final centreDistance = view.cameraToCenterDistance / radius;
     final spread = math.max(0.5, math.cos(view.fov / 2));
     const samples = 4;
+    // Where the screen meets the sphere: a tile far larger than the part
+    // of it in view can have none of its samples there.
+    final seen = [
+      for (var j = 0; j <= samples; j++)
+        for (var i = 0; i <= samples; i++)
+          ?unproject(view.width * i / samples, view.height * j / samples),
+    ];
     void visit(int z, int x, int y) {
       final n = 1 << z;
       var visible = false;
@@ -243,6 +250,24 @@ class Globe {
       // As MapLibre's: a tile at the world's edge reaches on to its pole.
       if (y == 0) sample(0, 1, 0);
       if (y == n - 1) sample(0, -1, 0);
+      final onScreen =
+          visible &&
+          maxX >= 0 &&
+          minX <= view.width &&
+          maxY >= 0 &&
+          minY <= view.height;
+      if (!onScreen) {
+        for (final p in seen) {
+          final tx = p.x * n - x, ty = p.y * n - y;
+          if (tx >= 0 && tx <= 1 && ty >= 0 && ty <= 1) {
+            visible = true;
+            minX = minY = 0;
+            maxX = view.width;
+            maxY = view.height;
+            break;
+          }
+        }
+      }
       if (z > 2) {
         if (!visible) return;
         if (maxX < 0 || minX > view.width || maxY < 0 || minY > view.height) {
