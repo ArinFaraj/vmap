@@ -1017,7 +1017,7 @@ class VmapEngine extends ChangeNotifier {
             ..transform(viewMatrix);
         }
         if (run.background >= 0) {
-          if (globe) continue;
+          if (drape) continue;
           _meshes.drawBackground(
             canvas,
             sheet.backgrounds[run.background],

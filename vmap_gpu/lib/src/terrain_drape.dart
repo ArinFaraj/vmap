@@ -180,7 +180,7 @@ class _Drape {
         ..[14] = 0.5
         ..[15] = 1;
       for (final run in sheet.runs) {
-        if (run.background >= 0 && view.globe != null) {
+        if (run.background >= 0) {
           _drawBackground(
             pass,
             clip,
