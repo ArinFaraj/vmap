@@ -119,7 +119,12 @@ class LabelPainter {
       st.iconH,
     );
     final pieces = fit
-        ? stretchedIcon(icon, area, st.iconScale)
+        ? stretchedIcon(
+            icon,
+            area,
+            st.iconScale,
+            anchor: ui.Offset(-st.iconDx, -st.iconDy),
+          )
         : [(icon.source, area)];
     final (from0, to0) = pieces.first;
     final texelForPixel =

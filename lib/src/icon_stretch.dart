@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'sprites.dart';
@@ -6,12 +7,15 @@ import 'sprites.dart';
 /// the sprite sheet and where it goes, as MapLibre's `getIconQuads` cuts a
 /// fitted icon: the parts outside its stretch spans keep their size, times
 /// [scale], the stretch spans share the rest, and the icon's content area,
-/// when it has one, is what lands on [box].
+/// when it has one, is what lands on [box]. A box too short for the fixed
+/// parts grows about [anchor] until they fit, as MapLibre's
+/// `minFontScale` grows it.
 List<(ui.Rect, ui.Rect)> stretchedIcon(
   SpriteImage icon,
   ui.Rect box,
-  double scale,
-) {
+  double scale, {
+  ui.Offset anchor = ui.Offset.zero,
+}) {
   final source = icon.source;
   final ratio = icon.pixelRatio;
   final xs = _Axis.of(
@@ -45,10 +49,10 @@ List<(ui.Rect, ui.Rect)> stretchedIcon(
           source.top + y2,
         ),
         ui.Rect.fromLTRB(
-          xs.at(l, box.left, box.width, ratio, scale),
-          ys.at(t, box.top, box.height, ratio, scale),
-          xs.at(r, box.left, box.width, ratio, scale),
-          ys.at(b, box.top, box.height, ratio, scale),
+          xs.at(l, box.left, box.width, ratio, scale, anchor.dx),
+          ys.at(t, box.top, box.height, ratio, scale, anchor.dy),
+          xs.at(r, box.left, box.width, ratio, scale, anchor.dx),
+          ys.at(b, box.top, box.height, ratio, scale, anchor.dy),
         ),
       ));
     }
@@ -132,21 +136,26 @@ class _Axis {
 
   /// Where cut [c] lands along a box starting at [start], [length] long,
   /// for an icon of pixel ratio [ratio] drawn [scale] times its size: the
-  /// stretch part spread over the box, the fixed part kept to size.
+  /// stretch part spread over the box, the fixed part kept to size, the
+  /// box grown about [anchor] when the fixed part is longer.
   double at(
     (double, double) c,
     double start,
     double length,
     double ratio,
     double scale,
+    double anchor,
   ) {
     final (fixed, stretched) = c;
+    final grow = length <= 0
+        ? 1.0
+        : math.max(1.0, fixedContent / ratio * scale / length);
     final em = stretchContent == 0
         ? start
         : (stretched - stretchBefore) / stretchContent * length + start;
     final px = stretch == 0
         ? fixed - fixedBefore
         : fixed - fixedBefore - fixedContent * stretched / stretch;
-    return em + px / ratio * scale;
+    return anchor + (em - anchor) * grow + px / ratio * scale;
   }
 }
