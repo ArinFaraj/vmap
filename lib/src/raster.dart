@@ -247,6 +247,13 @@ final class PictureDrawing extends RasterDrawing<ImageLayer> {
       return;
     }
     _paint.shader = _shader;
+    // Impeller leaves a colour filter on drawn vertices out, so the
+    // picture's adjustments are laid on through a layer instead.
+    final filter = _paint.colorFilter;
+    if (filter != null) {
+      canvas.saveLayer(ui.Offset.zero & size, ui.Paint()..colorFilter = filter);
+      _paint.colorFilter = null;
+    }
     for (var copy = first; copy <= last; copy++) {
       final at = Float64List(8);
       var left = double.infinity, right = -double.infinity;
@@ -261,6 +268,10 @@ final class PictureDrawing extends RasterDrawing<ImageLayer> {
       final quad = warpedQuad(at, w, h);
       canvas.drawVertices(quad, ui.BlendMode.srcOver, _paint);
       quad.dispose();
+    }
+    if (filter != null) {
+      canvas.restore();
+      _paint.colorFilter = filter;
     }
     _paint.shader = null;
   }
