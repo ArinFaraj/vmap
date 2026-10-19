@@ -400,7 +400,9 @@ class LabelEngine {
       tilted: view,
     );
     _view.ground = ground;
-    final tilt = view == null ? 0.0 : view.pitch * 1000 + view.bearing;
+    final tilt = view == null
+        ? 0.0
+        : Object.hash(view.pitch, view.bearing, view.roll).toDouble();
     if (_zooming && !zooming) _placeAgain = true;
     _zooming = _painter.moving = zooming;
     final nowMs = _clock.elapsedMilliseconds;

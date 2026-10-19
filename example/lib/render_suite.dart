@@ -39,6 +39,7 @@ void main() {
 
 class _Camera {
   double longitude = 0, latitude = 0, zoom = 0, bearing = 0, pitch = 0;
+  double roll = 0;
 
   /// Space kept free around the drawn area, in pixels, as the style's
   /// operations ask for it.
@@ -60,6 +61,7 @@ class _Camera {
     zoom: zoom,
     bearing: bearing,
     pitch: math.min(pitch, maxPitch),
+    roll: roll,
     pad: pad,
     fov: fovDegrees * math.pi / 180,
   );
@@ -185,6 +187,7 @@ Future<_Result> _runOne(String id, String dir) async {
             width: (test['width'] as num? ?? 512).toInt(),
             height: (test['height'] as num? ?? 512).toInt(),
             ratio: (test['pixelRatio'] as num? ?? 1).toDouble(),
+            collisionBoxes: test['collisionDebug'] == true,
             onError: (e) => result.note ??= 'engine: $e',
           )
           ..camera.showPadding = test['showPadding'] == true
@@ -217,6 +220,7 @@ class _Session {
     required this.width,
     required this.height,
     required this.ratio,
+    required this.collisionBoxes,
     required this.onError,
   }) {
     _readCamera(_document, _camera);
@@ -225,6 +229,7 @@ class _Session {
 
   final int width, height;
   final double ratio;
+  final bool collisionBoxes;
   final void Function(Object error) onError;
   final _camera = _Camera();
   _Camera get camera => _camera;
@@ -234,13 +239,16 @@ class _Session {
   final _images = <String, VmapImage>{};
   late VmapEngine _engine;
 
-  VmapEngine _make() => VmapEngine(
-    style: VmapStyle.json(_localize(_document) as Map<String, Object?>),
-    maxCachedTiles: 200,
-    source: TileSourceConfig(spritePixelRatio: ratio),
-    styleGlyphs: true,
-    renderer: _gpu ? GpuMap.create(multisample: _multisample) : null,
-  )..onError = onError;
+  VmapEngine _make() =>
+      VmapEngine(
+          style: VmapStyle.json(_localize(_document) as Map<String, Object?>),
+          maxCachedTiles: 200,
+          source: TileSourceConfig(spritePixelRatio: ratio),
+          styleGlyphs: true,
+          renderer: _gpu ? GpuMap.create(multisample: _multisample) : null,
+        )
+        ..onError = onError
+        ..showCollisionBoxes = collisionBoxes;
 
   Future<void> settle() => _settle(_engine, () => _paintNow(false));
 
@@ -379,7 +387,8 @@ class _Session {
         _camera
           ..zoom = (to['zoom'] as num? ?? _camera.zoom).toDouble()
           ..bearing = (to['bearing'] as num? ?? _camera.bearing).toDouble()
-          ..pitch = (to['pitch'] as num? ?? _camera.pitch).toDouble();
+          ..pitch = (to['pitch'] as num? ?? _camera.pitch).toDouble()
+          ..roll = (to['roll'] as num? ?? _camera.roll).toDouble();
         // An `easeTo` sets the padding it was given, replacing the map's
         // (`camera.ts`: `options.padding ?? tr.padding`).
         if (to['padding'] != null) _camera.pad = _padOf(to['padding']);
@@ -394,6 +403,8 @@ class _Session {
         _camera.bearing = (o[1] as num).toDouble();
       case 'setPitch':
         _camera.pitch = (o[1] as num).toDouble();
+      case 'setRoll':
+        _camera.roll = (o[1] as num).toDouble();
       case 'setPadding':
         _camera.pad = _padOf(o[1]);
       case 'setVerticalFieldOfView':
@@ -468,7 +479,8 @@ void _readCamera(Map<String, Object?> style, _Camera camera) {
   camera
     ..zoom = (style['zoom'] as num? ?? 0).toDouble()
     ..bearing = (style['bearing'] as num? ?? 0).toDouble()
-    ..pitch = (style['pitch'] as num? ?? 0).toDouble();
+    ..pitch = (style['pitch'] as num? ?? 0).toDouble()
+    ..roll = (style['roll'] as num? ?? 0).toDouble();
 }
 
 /// Points every `local://` address in [value] at the asset server.

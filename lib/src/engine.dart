@@ -574,6 +574,47 @@ class VmapEngine extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Saves [canvas] and turns it so the unrolled picture of [view] lands
+  /// where its [MapView.roll] puts it.
+  static void _unroll(ui.Canvas canvas, MapView view) {
+    canvas.save();
+    if (view.roll == 0) return;
+    final (:x, :y) = view.screenCenter;
+    canvas
+      ..translate(x, y)
+      ..rotate(-view.roll * math.pi / 180)
+      ..translate(-x, -y);
+  }
+
+  /// Clips [canvas] to the ground below [horizon] in the unrolled picture.
+  static void _clipGround(ui.Canvas canvas, MapView view, double horizon) {
+    final b = view.unrolledBounds;
+    if (view.roll == 0) {
+      canvas.clipRect(ui.Rect.fromLTRB(b.left, horizon, b.right, b.bottom));
+      return;
+    }
+    final corners = [
+      view.rolled(b.left, horizon),
+      view.rolled(b.right, horizon),
+      view.rolled(b.right, b.bottom),
+      view.rolled(b.left, b.bottom),
+    ];
+    canvas.clipPath(
+      ui.Path()
+        ..addPolygon([for (final c in corners) ui.Offset(c.x, c.y)], true),
+    );
+  }
+
+  /// Draws the collision box of every label weighed for placement, as
+  /// MapLibre's `showCollisionBoxes`: blue where it was placed, red where
+  /// it ran into another.
+  bool get showCollisionBoxes => _labels.showCollisionBoxes;
+  set showCollisionBoxes(bool value) {
+    if (value == _labels.showCollisionBoxes) return;
+    _labels.showCollisionBoxes = value;
+    notifyListeners();
+  }
+
   /// Lets go of what is not on screen: tiles out of view, label images not
   /// drawn, and the renderer's memory for them. Call it when the system is
   /// short of memory; what comes back into view is loaded again.
@@ -887,13 +928,23 @@ class VmapEngine extends ChangeNotifier {
     // Raised ground is cut by the renderer's far plane instead, as hills
     // nearer than it rise above the flat ground's far edge.
     final horizon = drape ? 0.0 : view?.groundTopY ?? 0;
-    if (view != null && !globe && view.horizonY > 0 && sheet.sky != null) {
-      _meshes.drawSky(canvas, sheet.sky!, size, view.horizonY);
+    if (view != null &&
+        !globe &&
+        view.horizonY > view.unrolledBounds.top &&
+        sheet.sky != null) {
+      _unroll(canvas, view);
+      final b = view.unrolledBounds;
+      _meshes.drawSky(
+        canvas,
+        sheet.sky!,
+        size,
+        ui.Rect.fromLTRB(b.left, b.top, b.right, view.horizonY),
+      );
+      canvas.restore();
     }
     if (horizon > 0) {
-      canvas
-        ..save()
-        ..clipRect(ui.Rect.fromLTRB(0, horizon, size.width, size.height));
+      canvas.save();
+      _clipGround(canvas, view!, horizon);
     }
     // The GPU draws the vector layers into images first, which are laid in
     // the style's order between the canvas's backgrounds and rasters.
@@ -1042,9 +1093,8 @@ class VmapEngine extends ChangeNotifier {
       // As MapLibre draws in the style's order: what the style puts after
       // its last symbol layer goes over the labels.
       if (horizon > 0) {
-        canvas
-          ..save()
-          ..clipRect(ui.Rect.fromLTRB(0, horizon, size.width, size.height));
+        canvas.save();
+        _clipGround(canvas, view!, horizon);
       }
       drawRuns(sheet.labelsRun, sheet.runs.length);
       if (view != null && onGpu) gpu.presentUntil(canvas, sheet.runs.length);

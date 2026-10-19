@@ -2,16 +2,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/mercator.dart';
 import 'package:vmap/src/view.dart' show EdgeInsets2, MapView;
 
-MapView _view({double pitch = 0, double bearing = 0, double zoom = 15.5}) =>
-    MapView(
-      centerX: worldX(44.0092),
-      centerY: worldY(36.1912),
-      zoom: zoom,
-      width: 1080,
-      height: 2200,
-      pitch: pitch,
-      bearing: bearing,
-    );
+MapView _view({
+  double pitch = 0,
+  double bearing = 0,
+  double roll = 0,
+  double zoom = 15.5,
+}) => MapView(
+  centerX: worldX(44.0092),
+  centerY: worldY(36.1912),
+  zoom: zoom,
+  width: 1080,
+  height: 2200,
+  pitch: pitch,
+  bearing: bearing,
+  roll: roll,
+);
 
 ({double x, double y}) _apply(List<double> m, double x, double y) {
   final w = m[3] * x + m[7] * y + m[15];
@@ -220,6 +225,35 @@ void main() {
           }
         }
       }
+    }
+  });
+
+  test('a roll turns the picture counterclockwise about the centre', () {
+    final flat = _view(pitch: 40, bearing: 20);
+    final rolled = _view(pitch: 40, bearing: 20, roll: 90);
+    final g = flat.unproject(740, 1100)!;
+    final p = rolled.project(g.x, g.y);
+    expect(p.x, closeTo(540, 1e-6));
+    expect(p.y, closeTo(900, 1e-6));
+  });
+
+  test('a rolled view unprojects, projects and draws its points alike', () {
+    final v = _view(pitch: 55, bearing: 130, roll: 35);
+    final clip = v.clipMatrix();
+    for (final (sx, sy) in screens) {
+      final g = v.unproject(sx, sy);
+      if (g == null) continue;
+      final p = v.project(g.x, g.y);
+      expect(p.x, closeTo(sx, 1e-6));
+      expect(p.y, closeTo(sy, 1e-6));
+      final m = _apply(v.matrix(), g.x, g.y);
+      expect(m.x, closeTo(sx, 1e-6));
+      expect(m.y, closeTo(sy, 1e-6));
+      final w = clip[3] * g.x + clip[7] * g.y + clip[15];
+      final cx = (clip[0] * g.x + clip[4] * g.y + clip[12]) / w;
+      final cy = (clip[1] * g.x + clip[5] * g.y + clip[13]) / w;
+      expect((cx + 1) * v.width / 2, closeTo(sx, 1e-3));
+      expect((1 - cy) * v.height / 2, closeTo(sy, 1e-3));
     }
   });
 }

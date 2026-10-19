@@ -13,6 +13,7 @@ class MapCameraPosition {
     required this.zoom,
     this.bearing = 0,
     this.pitch = 0,
+    this.roll = 0,
     this.pad = EdgeInsets2.zero,
     double? fov,
   }) : fov = fov ?? MapView.defaultFov;
@@ -24,6 +25,7 @@ class MapCameraPosition {
     required this.zoom,
     this.bearing = 0,
     this.pitch = 0,
+    this.roll = 0,
     this.pad = EdgeInsets2.zero,
     double? fov,
   }) : latitude = mercator.latitudeAt(y.clamp(0, 1)),
@@ -35,6 +37,9 @@ class MapCameraPosition {
   final double zoom;
   final double bearing;
   final double pitch;
+
+  /// Degrees the camera turns about its line of sight, as MapLibre's roll.
+  final double roll;
 
   /// Space kept free around the drawn area, in pixels: the camera looks at
   /// the middle of what it leaves.
@@ -55,6 +60,7 @@ class MapCameraPosition {
     height: height,
     bearing: bearing,
     pitch: pitch,
+    roll: roll,
     pad: pad,
     fov: fov,
   );
@@ -65,6 +71,7 @@ class MapCameraPosition {
     double? zoom,
     double? bearing,
     double? pitch,
+    double? roll,
     EdgeInsets2? pad,
     double? fov,
   }) => MapCameraPosition(
@@ -73,6 +80,7 @@ class MapCameraPosition {
     zoom: zoom ?? this.zoom,
     bearing: bearing ?? this.bearing,
     pitch: pitch ?? this.pitch,
+    roll: roll ?? this.roll,
     pad: pad ?? this.pad,
     fov: fov ?? this.fov,
   );
@@ -96,6 +104,7 @@ class MapCameraPosition {
       zoom: zoom,
       bearing: bearing,
       pitch: pitch,
+      roll: roll,
       pad: pad,
       fov: fov,
     );
@@ -126,6 +135,7 @@ class MapCameraPosition {
       zoom: next.zoom,
       bearing: next.bearing,
       pitch: pitch,
+      roll: roll,
       pad: pad,
       fov: fov,
     );
@@ -144,12 +154,13 @@ class MapCameraPosition {
       other.zoom == zoom &&
       other.bearing == bearing &&
       other.pitch == pitch &&
+      other.roll == roll &&
       other.pad == pad &&
       other.fov == fov;
 
   @override
   int get hashCode =>
-      Object.hash(latitude, longitude, zoom, bearing, pitch, pad, fov);
+      Object.hash(latitude, longitude, zoom, bearing, pitch, roll, pad, fov);
 
   @override
   String toString() =>

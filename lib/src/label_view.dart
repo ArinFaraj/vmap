@@ -165,7 +165,9 @@ class LabelView {
   /// is upright, its turn in the view's bearing.
   double get mapTurn {
     final view = tilted;
-    return view == null ? rotation : -view.bearing * math.pi / 180;
+    return view == null
+        ? rotation
+        : -(view.bearing + view.roll) * math.pi / 180;
   }
 
   /// A style's translate read in [context], as the upright label frame

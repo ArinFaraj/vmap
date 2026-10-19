@@ -77,11 +77,15 @@ class MapView {
     required this.height,
     this.bearing = 0,
     double pitch = 0,
+    this.roll = 0,
     this.fov = defaultFov,
     this.pad = EdgeInsets2.zero,
     this.globeness = 0,
   }) : pitch = pitch.clamp(0, maxPitch) {
     final b = bearing * math.pi / 180;
+    final r = roll * math.pi / 180;
+    _cosR = math.cos(r);
+    _sinR = math.sin(r);
     final p = this.pitch * math.pi / 180;
     _cosB = math.cos(b);
     _sinB = math.sin(b);
@@ -128,6 +132,10 @@ class MapView {
   /// Degrees from looking straight down.
   final double pitch;
 
+  /// Degrees the camera turns about its line of sight, as MapLibre's
+  /// `roll`: the picture turns counterclockwise about the screen's centre.
+  final double roll;
+
   /// Vertical field of view in radians.
   final double fov;
   final double width, height;
@@ -156,6 +164,7 @@ class MapView {
     height: height,
     bearing: bearing,
     pitch: pitch,
+    roll: roll,
     fov: fov,
     pad: pad,
     globeness: amount,
@@ -164,6 +173,42 @@ class MapView {
   late final double worldSize;
   late final double cameraToCenterDistance;
   late final double _cosB, _sinB, _cosP, _sinP, _k, _cx, _cy, _sx, _sy;
+  late final double _cosR, _sinR;
+
+  /// Where a point of the unrolled picture, in logical pixels, lands on
+  /// the screen once the camera's [roll] turns it.
+  ({double x, double y}) rolled(double x, double y) {
+    if (roll == 0) return (x: x, y: y);
+    final dx = x - _sx, dy = y - _sy;
+    return (
+      x: dx * _cosR + dy * _sinR + _sx,
+      y: -dx * _sinR + dy * _cosR + _sy,
+    );
+  }
+
+  /// The screen's bounds in the unrolled picture: the whole screen when the
+  /// camera does not roll, else the box its turned corners reach.
+  late final ({double left, double top, double right, double bottom})
+  unrolledBounds = () {
+    if (roll == 0) return (left: 0.0, top: 0.0, right: width, bottom: height);
+    var l = double.infinity, t = double.infinity;
+    var r = -double.infinity, b = -double.infinity;
+    for (final (x, y) in [
+      (0.0, 0.0),
+      (width, 0.0),
+      (width, height),
+      (0.0, height),
+    ]) {
+      final dx = x - _sx, dy = y - _sy;
+      final ux = dx * _cosR - dy * _sinR + _sx;
+      final uy = dx * _sinR + dy * _cosR + _sy;
+      l = math.min(l, ux);
+      t = math.min(t, uy);
+      r = math.max(r, ux);
+      b = math.max(b, uy);
+    }
+    return (left: l, top: t, right: r, bottom: b);
+  }();
 
   WorldPoint get center => (x: _cx, y: _cy);
 
@@ -176,6 +221,7 @@ class MapView {
     height: height,
     bearing: bearing,
     pitch: pitch,
+    roll: roll,
     fov: fov,
     pad: pad,
     globeness: globeness,
@@ -236,6 +282,11 @@ class MapView {
       sy = outY + (sy - outY) * amount;
       depth = outDepth + (depth - outDepth) * amount;
     }
+    if (roll != 0 && sx > -1e5) {
+      final dx = sx - _sx, dy = sy - _sy;
+      sx = dx * _cosR + dy * _sinR + _sx;
+      sy = -dx * _sinR + dy * _cosR + _sy;
+    }
     outX = sx;
     outY = sy;
     outDepth = depth;
@@ -246,8 +297,9 @@ class MapView {
     final u = _cosB * dx + _sinB * dy;
     final v = -_sinB * dx + _cosB * dy;
     final w = 1 - _k * v - h * _cosP / cameraToCenterDistance;
-    outX = u / w + _sx;
-    outY = (_cosP * v - _sinP * h) / w + _sy;
+    final ox = u / w, oy = (_cosP * v - _sinP * h) / w;
+    outX = ox * _cosR + oy * _sinR + _sx;
+    outY = -ox * _sinR + oy * _cosR + _sy;
     outDepth = w;
   }
 
@@ -255,7 +307,11 @@ class MapView {
   ({double x, double y}) project(double x, double y) {
     final (u, v) = _uv(x, y);
     final w = 1 - _k * v;
-    return (x: u / w + _sx, y: _cosP * v / w + _sy);
+    final ox = u / w, oy = _cosP * v / w;
+    return (
+      x: ox * _cosR + oy * _sinR + _sx,
+      y: -ox * _sinR + oy * _cosR + _sy,
+    );
   }
 
   /// Where the camera stands on the ground, in world pixels.
@@ -274,7 +330,11 @@ class MapView {
   ({double x, double y}) project3(double x, double y, double z) {
     final (u, v) = _uv(x, y);
     final w = 1 - _k * v - z * _cosP / cameraToCenterDistance;
-    return (x: u / w + _sx, y: (_cosP * v - _sinP * z) / w + _sy);
+    final ox = u / w, oy = (_cosP * v - _sinP * z) / w;
+    return (
+      x: ox * _cosR + oy * _sinR + _sx,
+      y: -ox * _sinR + oy * _cosR + _sy,
+    );
   }
 
   /// MapLibre's scale for labels at a ground point
@@ -283,7 +343,13 @@ class MapView {
 
   /// The ground point under a screen point, or null above the horizon.
   WorldPoint? unproject(double sx, double sy) {
-    final rx = sx - _sx, ry = sy - _sy;
+    final dx = sx - _sx, dy = sy - _sy;
+    return _unprojectUnrolled(dx * _cosR - dy * _sinR, dx * _sinR + dy * _cosR);
+  }
+
+  /// [unproject] for an offset from the screen's centre in the unrolled
+  /// picture.
+  WorldPoint? _unprojectUnrolled(double rx, double ry) {
     final denominator = _cosP + ry * _k;
     if (denominator <= 1e-9) return null;
     final v = ry / denominator;
@@ -306,7 +372,7 @@ class MapView {
     final tx = u0 - hw * _k * v0 + hw;
     final ty = m * v0 + hh;
     final tw = 1 - _k * v0;
-    return Float64List.fromList([
+    final m4 = Float64List.fromList([
       a, c, 0, e, //
       b, d, 0, f, //
       0, 0, 1, 0, //
@@ -315,6 +381,15 @@ class MapView {
       0,
       tw + e * originX + f * originY,
     ]);
+    if (roll != 0) {
+      for (var col = 0; col < 16; col += 4) {
+        final x = m4[col] - _sx * m4[col + 3];
+        final y = m4[col + 1] - _sy * m4[col + 3];
+        m4[col] = x * _cosR + y * _sinR + _sx * m4[col + 3];
+        m4[col + 1] = -x * _sinR + y * _cosR + _sy * m4[col + 3];
+      }
+    }
+    return m4;
   }
 
   /// A column-major matrix from world pixels less [originX], [originY], with
@@ -342,35 +417,67 @@ class MapView {
     // Clip y runs up the screen, so the offset from the screen's middle
     // points the other way from the screen's.
     final oy = (height / 2 - _sy) * 2 / h;
-    return Float64List.fromList([
+    final m4 = Float64List.fromList([
       2 * _cosB / w, 2 * _cosP * _sinB / h, a * wx, wx, //
       2 * _sinB / w, -2 * _cosP * _cosB / h, a * wy, wy,
       0, 2 * _sinP / h, a * wz, wz,
       2 * u0 / w + ox * wc, -2 * _cosP * v0 / h + oy * wc, a * wc + b, wc,
     ]);
+    if (roll != 0) {
+      // Clip x and y back to pixels from the screen's centre, y down,
+      // turned there, and back to clip space.
+      final kx = w / 2 - _sx, ky = h / 2 - _sy;
+      for (var col = 0; col < 16; col += 4) {
+        final cw = m4[col + 3];
+        final px = m4[col] * w / 2 + cw * kx;
+        final py = -m4[col + 1] * h / 2 + cw * ky;
+        final rx = px * _cosR + py * _sinR;
+        final ry = -px * _sinR + py * _cosR;
+        m4[col] = (rx - cw * kx) * 2 / w;
+        m4[col + 1] = -(ry - cw * ky) * 2 / h;
+      }
+    }
+    return m4;
   }
 
   /// How far MapLibre's far plane lies along the camera's line of sight,
-  /// in world pixels: it reaches twice the angle up to [horizonY], so the
-  /// ground covers the lowest pixels of the sky.
+  /// in world pixels (`_calculateNearFarZ`): far enough for the ground up to
+  /// the horizon, measured from a plane 100 metres under a camera lower
+  /// than that, so a low camera sees the ground run on past the horizon.
   late final double farDistance = () {
-    final p = pitch * math.pi / 180;
+    final p = math.min(pitch, 89.25) * math.pi / 180;
     final d = cameraToCenterDistance;
-    final ground = math.pi / 2 + p;
+    final offsetY = _sy - height / 2;
+    final lat = math.atan(_sinh(math.pi * (1 - 2 * centerY)));
+    final pixelsPerMeter = worldSize / (_earthCircumference * math.cos(lat));
+    final altitude = math.cos(pitch * math.pi / 180) * d / pixelsPerMeter;
+    final lowestElevation = math.min(0.0, altitude - 100);
+    final lowest = lowestElevation < 0
+        ? d - lowestElevation * pixelsPerMeter / math.cos(p)
+        : d;
+    final ground = math.pi / 2 + pitch * math.pi / 180;
     double reach(double angle) =>
         math.sin(angle) *
-        d /
+        lowest /
         math.sin((math.pi - ground - angle).clamp(0.01, math.pi - 0.01));
-    final toHorizon = math.atan((_sy - horizonY) / d);
+    final r = roll * math.pi / 180;
+    final zfov =
+        fov * (math.cos(r).abs() * height + math.sin(r).abs() * width) / height;
+    final above = zfov * (0.5 + offsetY / height);
+    final horizon = _sy - horizonY;
+    final horizonAngle = math.atan(horizon / d);
     const least = (90 - 89.25) * math.pi / 180;
-    return (math.sin(p) *
-                math.min(
-                  reach(fov / 2),
-                  reach(toHorizon > least ? 2 * toHorizon : least),
-                ) +
-            d) *
+    final toHorizon = horizonAngle > least
+        ? 2 * horizonAngle * (0.5 + offsetY / (horizon * 2))
+        : least;
+    return (math.sin(p) * math.min(reach(above), reach(toHorizon)) + lowest) *
         1.01;
   }();
+
+  /// MapLibre's `earthRadius` times two pi, in metres.
+  static const double _earthCircumference = 2 * math.pi * 6371008.8;
+
+  static double _sinh(double x) => (math.exp(x) - math.exp(-x)) / 2;
 
   /// Where the far plane cuts the ground on the screen, in logical pixels
   /// from the top; negative while that is above the screen.
@@ -394,12 +501,13 @@ class MapView {
             -beyond,
             height / 2 - cameraToCenterDistance * _cosP / _sinP + 1,
           )
-        : math.max(0.0, groundTopY);
+        : math.max(unrolledBounds.top, groundTopY);
+    final (:left, :right, :bottom, top: _) = unrolledBounds;
     return [
-      unproject(0, far)!,
-      unproject(width, far)!,
-      unproject(width, height)!,
-      unproject(0, height)!,
+      _unprojectUnrolled(left - _sx, far - _sy)!,
+      _unprojectUnrolled(right - _sx, far - _sy)!,
+      _unprojectUnrolled(right - _sx, bottom - _sy)!,
+      _unprojectUnrolled(left - _sx, bottom - _sy)!,
     ];
   }
 
