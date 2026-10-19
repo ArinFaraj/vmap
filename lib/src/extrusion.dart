@@ -10,6 +10,7 @@ import 'mercator.dart';
 import 'platform.dart';
 import 'round_corners.dart';
 import 'style_model.dart';
+import 'subdivide.dart';
 import 'tile_builder.dart' show tileExtent;
 import 'tiles.dart' show TileDraw;
 import 'view.dart';
@@ -261,7 +262,26 @@ class ExtrusionBuilder {
       ..add4(color.r * color.a, color.g * color.a, color.b * color.a, 1);
   }
 
-  BuiltExtrusion? finish() {
+  /// With [cells], the triangles are cut along a grid that many cells
+  /// across the tile, as MapLibre subdivides buildings for the globe.
+  static Float32List _subdivided(Float32List triangles, int cells) {
+    const width = BuiltExtrusion.floatsPerVertex;
+    final cut = Subdivider(width, tileExtent / cells);
+    final count = triangles.length ~/ width;
+    for (var v = 0; v + 2 < count; v += 3) {
+      cut.add(triangles, v, v + 1, v + 2);
+    }
+    final out = Float32List(cut.indices.length * width);
+    var o = 0;
+    for (final i in cut.indices) {
+      for (var k = 0; k < width; k++) {
+        out[o++] = cut.vertices[i * width + k];
+      }
+    }
+    return out;
+  }
+
+  BuiltExtrusion? finish({int cells = 0}) {
     if (_info.isEmpty) return null;
     var count = 0;
     for (var i = 0; i < _info.length; i += BuiltExtrusion.stride) {
@@ -337,7 +357,7 @@ class ExtrusionBuilder {
       _roof.toFloat32List(),
       _indices.toFloat32List(),
       info,
-      out,
+      cells > 0 ? _subdivided(out, cells) : out,
       BuildingIndex.of(walls, info),
       List.of(_patterns),
     );

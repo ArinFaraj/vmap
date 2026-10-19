@@ -22,6 +22,23 @@ dem_info;
 
 uniform sampler2D heights;
 
+// On the globe, which a tile width in tile.z marks: the tile's corner and
+// width as fractions of the mercator world and in tile.w how far from the
+// flat map to the globe; mvp the matrix from the unit sphere to clip space;
+// camera.xyz the camera on the unit sphere's scale; shift.xy the layer's
+// translate in tile units; light.xyz the light turned to the map's middle on
+// the sphere, MapLibre's u_lightpos_globe.
+uniform GlobeInfo {
+  vec4 tile;
+  mat4 mvp;
+  vec4 camera;
+  vec4 shift;
+  vec4 light;
+}
+globe_info;
+
+const float PI = 3.141592653589793;
+
 // The patterns of fill-extrusion-pattern: each one's place in the sprite
 // sheet, in its pixels, and in ratio.x how many of those a tile unit is.
 uniform PatternInfo {
@@ -41,6 +58,9 @@ in vec3 pattern_data;
 out vec4 v_color;
 out vec2 v_uv;
 out vec4 v_rect;
+// On the globe, the vertex on the unit sphere's scale and, in w, 1.
+out vec4 v_sphere;
+out vec3 v_camera;
 
 float height_at(vec2 p) {
   float size = dem_info.place.w;
@@ -54,7 +74,34 @@ float height_at(vec2 p) {
   return mix(mix(a, b, t.x), mix(c, d, t.x), t.y) * dem_info.scale.x;
 }
 
+// The tile point p on the unit sphere, MapLibre's projectToSphere.
+vec3 to_sphere(vec2 p) {
+  vec2 m = globe_info.tile.xy + p / 4096.0 * globe_info.tile.z;
+  float lng = m.x * PI * 2.0 + PI;
+  float t = exp(PI - m.y * PI * 2.0);
+  float d = t * t + 1.0;
+  float c = 2.0 * t / d;
+  return vec3(sin(lng) * c, (t * t - 1.0) / d, cos(lng) * c);
+}
+
+// How square on to the light a surface facing [normal] is; on the globe its
+// normal turned to the sphere at [s], as MapLibre's globeGetRotationMatrix.
+float facing(vec3 normal, vec3 s) {
+  float d = clamp(dot(normal, frame_info.light.xyz), 0.0, 1.0);
+  if (globe_info.tile.z > 0.0) {
+    vec3 right = vec3(s.z, 0.0, -s.x);
+    vec3 down = normalize(cross(right, s));
+    vec3 turned = mat3(normalize(right), down, s) * vec3(normal.x, -normal.y, normal.z);
+    float g = clamp(dot(turned, globe_info.light.xyz), 0.0, 1.0);
+    d = mix(d, g, globe_info.tile.w);
+  }
+  return d;
+}
+
 void main() {
+  vec3 s = globe_info.tile.z > 0.0
+      ? to_sphere(position.xy + globe_info.shift.xy)
+      : vec3(0.0);
   float rgb = color_data.x;
   float b = floor(rgb / 65536.0);
   float g = floor((rgb - b * 65536.0) / 256.0);
@@ -65,7 +112,7 @@ void main() {
   bool roof = normal_data.x == 0.0 && normal_data.y == 0.0;
   vec3 normal = roof ? vec3(0.0, 0.0, 1.0) : vec3(normal_data.xy, 0.0);
   float intensity = frame_info.light.w;
-  float directional = clamp(dot(normal, frame_info.light.xyz), 0.0, 1.0);
+  float directional = facing(normal, s);
   directional = mix(1.0 - intensity, max(1.0 - value + intensity, 1.0), directional);
   if (!roof) {
     directional *= normal_data.z;
@@ -78,7 +125,7 @@ void main() {
     // MapLibre's fill_extrusion_pattern lighting, which does not weigh the
     // colour, the pattern being the colour.
     int i = int(pattern_data.z - 0.5);
-    float d = clamp(dot(normal, frame_info.light.xyz), 0.0, 1.0);
+    float d = facing(normal, s);
     d = mix(1.0 - intensity, max(0.5 + intensity, 1.0), d);
     if (!roof) {
       d *= normal_data.z;
@@ -95,5 +142,17 @@ void main() {
     ground -= dem_info.scale.w;
   }
   float h = position.z + ground;
-  gl_Position = frame_info.mvp * vec4(position.xy, h, 1.0);
+  vec4 flat_pos = frame_info.mvp * vec4(position.xy, h, 1.0);
+  gl_Position = flat_pos;
+  v_sphere = vec4(0.0);
+  v_camera = globe_info.camera.xyz;
+  if (globe_info.tile.z > 0.0) {
+    // MapLibre's projectTileFor3D: raised from the sphere by the height
+    // over the earth's radius.
+    vec3 raised = s * (1.0 + h / 6371008.8);
+    v_sphere = vec4(raised, 1.0);
+    vec4 globe = globe_info.mvp * vec4(raised, 1.0);
+    float amount = globe_info.tile.w;
+    gl_Position = amount >= 0.999 ? globe : mix(flat_pos, globe, amount);
+  }
 }

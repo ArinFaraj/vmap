@@ -1,6 +1,8 @@
 in vec4 v_color;
 in vec2 v_uv;
 in vec4 v_rect;
+in vec4 v_sphere;
+in vec3 v_camera;
 out vec4 frag_color;
 
 // The sprite sheet's width and height.
@@ -14,6 +16,21 @@ uniform sampler2D sprite_sheet;
 void main() {
   if (v_rect.z < 0.0) {
     discard;
+  }
+  if (v_sphere.w > 0.5) {
+    // Hidden behind the globe: the line from the camera meets the sphere
+    // before it reaches this point.
+    vec3 d = v_sphere.xyz - v_camera;
+    float a = dot(d, d);
+    float b = 2.0 * dot(v_camera, d);
+    float c = dot(v_camera, v_camera) - 1.0;
+    float disc = b * b - 4.0 * a * c;
+    if (disc > 0.0) {
+      float t = (-b - sqrt(disc)) / (2.0 * a);
+      if (t > 0.0 && t < 0.9999) {
+        discard;
+      }
+    }
   }
   if (v_rect.z > 0.0) {
     // Sampled between texels wrapped within the pattern, as MapLibre's

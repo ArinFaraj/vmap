@@ -55,7 +55,7 @@ class GpuMap implements MapRenderer {
   gpu.UniformSlot? _globeFrame, _globeDrape;
   late final _drape = _Drape(this);
   gpu.UniformSlot? _flatFrame, _flatSlots, _buildingFrame, _stencilFrame;
-  gpu.UniformSlot? _buildingDem, _buildingHeights;
+  gpu.UniformSlot? _buildingDem, _buildingHeights, _buildingGlobe;
   gpu.UniformSlot? _buildingPatterns, _buildingSheet, _buildingSprites;
 
   /// A building layer's patterns as building.vert takes them: 16 places in
@@ -274,6 +274,7 @@ class GpuMap implements MapRenderer {
     _buildingFrame = buildingVertex.getUniformSlot('FrameInfo');
     _buildingDem = buildingVertex.getUniformSlot('DemInfo');
     _buildingHeights = buildingVertex.getUniformSlot('heights');
+    _buildingGlobe = buildingVertex.getUniformSlot('GlobeInfo');
     _buildingPatterns = buildingVertex.getUniformSlot('PatternInfo');
     _buildingSheet = buildingFragment.getUniformSlot('SheetInfo');
     _buildingSprites = buildingFragment.getUniformSlot('sprite_sheet');
@@ -689,6 +690,9 @@ class GpuMap implements MapRenderer {
               if (heated(run)) pass.globe = globe;
             }
             pass.drawRuns(runs.sublist(start));
+          }
+          for (final building in sheet.extrusions) {
+            if (_reveal.shows(building)) pass.drawBuildings(building);
           }
           return;
         }
@@ -1256,6 +1260,64 @@ class GpuMap implements MapRenderer {
   final Float32List _mapInfo = Float32List(64);
   late final ByteData _mapBytes = ByteData.sublistView(_mapInfo);
 
+  final Float32List _buildingGlobeInfo = Float32List(32);
+  late final ByteData _buildingGlobeBytes = ByteData.sublistView(
+    _buildingGlobeInfo,
+  );
+
+  /// building.vert's GlobeInfo for tile [id], zero off the globe.
+  ///
+  /// [shiftX], [shiftY] are the layer's translate in tile units.
+  ByteData _buildingGlobeFrame(
+    Globe? globe,
+    TileId id, [
+    double shiftX = 0,
+    double shiftY = 0,
+  ]) {
+    final out = _buildingGlobeInfo;
+    if (globe == null) {
+      out.fillRange(0, 32, 0);
+      return _buildingGlobeBytes;
+    }
+    final n = 1 << id.z;
+    out
+      ..[0] = (id.x % n) / n
+      ..[1] = id.y / n
+      ..[2] = 1 / n
+      ..[3] = globe.transition;
+    final unit = 1 / globe.view.cameraToCenterDistance;
+    for (var i = 0; i < 16; i++) {
+      out[4 + i] = globe.matrix[i] * unit;
+    }
+    out
+      ..[20] = globe.camera[0]
+      ..[21] = globe.camera[1]
+      ..[22] = globe.camera[2]
+      ..[24] = shiftX
+      ..[25] = shiftY;
+    // MapLibre's transformLightDirection: the light turned to the map's
+    // middle on the sphere.
+    final lng = (globe.view.centerX * 360 - 180) * math.pi / 180;
+    final lat = latitudeAt(globe.view.centerY) * math.pi / 180;
+    final px = math.sin(lng) * math.cos(lat), py = math.sin(lat);
+    final pz = math.cos(lng) * math.cos(lat);
+    var rx = pz, ry = 0.0, rz = -px;
+    var dx = ry * pz - rz * py, dy = rz * px - rx * pz, dz = rx * py - ry * px;
+    final rl = math.sqrt(rx * rx + rz * rz),
+        dl = math.sqrt(dx * dx + dy * dy + dz * dz);
+    rx /= rl;
+    rz /= rl;
+    dx /= dl;
+    dy /= dl;
+    dz /= dl;
+    final lx = _frameInfo[32], ly = -_frameInfo[33], lz = _frameInfo[34];
+    out
+      ..[28] = rx * lx + dx * ly + px * lz
+      ..[29] = ry * lx + dy * ly + py * lz
+      ..[30] = rz * lx + dz * ly + pz * lz;
+    return _buildingGlobeBytes;
+  }
+
   /// Fills [_mapInfo] for a tile [id], on [globe] when there is one.
   ByteData _mapFrame(Globe? globe, TileId id, int zoom) {
     final out = _mapInfo;
@@ -1627,6 +1689,17 @@ class _MapPass {
         continue;
       }
       map._drape.bindGround(_pass, map.terrain, d.tile.id);
+      _pass.bindUniform(
+        map._buildingGlobe!,
+        host.emplace(
+          map._buildingGlobeFrame(
+            view.globe,
+            d.tile.id,
+            mx / d.size * tileExtent,
+            my / d.size * tileExtent,
+          ),
+        ),
+      );
       for (final b in data.buildings) {
         if (b.extrusion.bucket != layer.bucket) continue;
         final fade = map._reveal.opacity(d.tile, layer, b);
