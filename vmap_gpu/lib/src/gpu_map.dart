@@ -697,18 +697,29 @@ class GpuMap implements MapRenderer {
           // the ground, as the drape is; without, onto the sphere.
           if (ground == null) {
             pass.globe = globe;
-            var start = 0;
-            final runs = sheet.runs;
-            for (var i = 0; i < runs.length; i++) {
-              final run = runs[i];
-              if (run.source < 0 || sheet.layers[run.first] is! HeatmapLayer) {
+            for (final run in sheet.runs) {
+              if (run.source < 0) continue;
+              if (sheet.layers[run.first] is HeatmapLayer) {
+                pass.drawRuns(below);
+                below = [];
+                if (heated(run)) pass.globe = globe;
                 continue;
               }
-              pass.drawRuns(runs.sublist(start, i));
-              start = i + 1;
-              if (heated(run)) pass.globe = globe;
+              final whole = sheet.runOpacity(run, context);
+              if (whole == null) {
+                below.add(run);
+              } else {
+                apart(
+                  whole,
+                  (into) => into
+                    ..globe = globe
+                    ..drawRuns([run]),
+                );
+                pass.globe = globe;
+              }
             }
-            pass.drawRuns(runs.sublist(start));
+            pass.drawRuns(below);
+            below = [];
           } else {
             drawStanding();
           }
