@@ -173,12 +173,41 @@ class LabelView {
   /// A style's translate read in [context], as the upright label frame
   /// sees it: a move along the map's sides turns with the map, one along
   /// the screen's sides when [onScreen] does not.
-  (double, double) moved(Expr? translate, bool onScreen, EvalContext context) {
+  ///
+  /// On a tilted map with the label's anchor [at], as fractions of the
+  /// world, the move is laid on the map as MapLibre's translatePosition
+  /// lays it, in pixels at the centre's scale, so the tilt foreshortens it.
+  (double, double) moved(
+    Expr? translate,
+    bool onScreen,
+    EvalContext context, {
+    (double, double)? at,
+  }) {
     if (translate == null) return (0, 0);
     final by = translate(context);
     if (by is! List || by.length != 2) return (0, 0);
     final x = asNumber(by[0]) ?? 0, y = asNumber(by[1]) ?? 0;
     final turn = mapTurn;
+    final view = tilted;
+    if (at != null && view != null && view.pitch > 0) {
+      var mx = x.toDouble(), my = y.toDouble();
+      if (onScreen && turn != 0) {
+        final c = math.cos(-turn), s = math.sin(-turn);
+        (mx, my) = (mx * c - my * s, mx * s + my * c);
+      }
+      final (wx, wy) = at;
+      final keepX = this.x, keepY = this.y;
+      final keepRatio = ratio, keepDepth = depth;
+      project(wx, wy);
+      final ax = this.x, ay = this.y;
+      project(wx + mx / view.worldSize, wy + my / view.worldSize);
+      final out = (this.x - ax, this.y - ay);
+      this.x = keepX;
+      this.y = keepY;
+      ratio = keepRatio;
+      depth = keepDepth;
+      return out;
+    }
     if (onScreen || turn == 0) return (x, y);
     final c = math.cos(turn), s = math.sin(turn);
     return (x * c - y * s, x * s + y * c);

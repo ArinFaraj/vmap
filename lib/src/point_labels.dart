@@ -94,6 +94,13 @@ class PointLabels {
     final spin =
         (symbol?.textRotate ?? 0) * math.pi / 180 + (along ? _view.mapTurn : 0);
     st.screenAngle = spin;
+    // Text pitched with the map is laid on the ground, its baseline turned
+    // by text-rotate on the map, or kept level on the screen.
+    st
+      ..onGround =
+          (symbol?.textOnGround ?? false) && (_view.tilted?.pitch ?? 0) > 0
+      ..keepUpright = false;
+    if (st.onGround) st.angle = spin - _view.mapTurn;
     _view.project(st.worldX, st.worldY);
     final spot = _Spot(
       _view.x,
@@ -111,6 +118,7 @@ class PointLabels {
             symbol.textTranslate,
             symbol.textTranslateOnScreen,
             context,
+            at: (st.worldX, st.worldY),
           );
     final ems = symbol?.textOffset(context) ?? (0.0, 0.0);
     var text = _textOffset(symbol, c, fontSize, spot, moved, ems);
@@ -294,6 +302,7 @@ class PointLabels {
       symbol.iconTranslate,
       symbol.iconTranslateOnScreen,
       context,
+      at: (st.worldX, st.worldY),
     );
     if (symbol.textFit) {
       // As MapLibre's fitIconToText: around the text box, padded, moved by
