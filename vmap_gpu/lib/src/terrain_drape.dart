@@ -195,11 +195,15 @@ class _Drape {
         }
       }
       _map._frameInfo[26] = size / span;
+      // Neighbours too: each tile's flat layers are clipped to its own
+      // square, and a circle near its edge, drawn whole as MapLibre draws
+      // it, reaches into this slot.
+      final margin = span / 4;
       bool inSlot(TileDraw d) =>
-          d.left < left + span &&
-          d.left + d.size > left &&
-          d.top < top + span &&
-          d.top + d.size > top;
+          d.left < left + span + margin &&
+          d.left + d.size > left - margin &&
+          d.top < top + span + margin &&
+          d.top + d.size > top - margin;
       // On the globe without terrain the vector layers are laid on the
       // sphere directly, as MapLibre draws them.
       if (view.globe != null && _map.terrain == null) continue;
