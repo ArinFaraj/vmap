@@ -7,6 +7,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_map/flutter_map.dart' show Marker;
 import 'package:latlong2/latlong.dart' show LatLng;
 
+import 'atmosphere.dart';
 import 'camera.dart';
 import 'expr.dart';
 import 'extrusion.dart';
@@ -1101,6 +1102,26 @@ class VmapEngine extends ChangeNotifier {
       if (view != null && onGpu) gpu.presentUntil(canvas, sheet.runs.length);
       if (horizon > 0) canvas.restore();
     }
+    final globeView = view?.globe;
+    final sky = sheet.sky;
+    if (globeView != null && sky != null) {
+      final blend = asNumber(sky.atmosphereBlend(_context))?.toDouble() ?? 0.8;
+      if (blend > 0) {
+        _unroll(canvas, view!);
+        final b = view.unrolledBounds;
+        if (!_atmosphere.paint(
+          canvas,
+          size,
+          ui.Rect.fromLTRB(b.left, b.top, b.right, b.bottom),
+          globeView,
+          blend,
+          sheet.light,
+        )) {
+          waiting = true;
+        }
+        canvas.restore();
+      }
+    }
     final finished = _clock.elapsedMicroseconds;
     var ideal = 0, fallback = 0, cached = 0, loading = 0, unpack = 0;
     var holes = 0;
@@ -1176,6 +1197,7 @@ class VmapEngine extends ChangeNotifier {
   double _lastZoom = 0;
   final FrameBudget _budget = FrameBudget();
   late final MeshPainter _meshes = MeshPainter(_budget, stats, _context);
+  final Atmosphere _atmosphere = Atmosphere();
 
   /// Whether this frame's flat layers are drawn by [renderer].
   bool _onGpu = false;

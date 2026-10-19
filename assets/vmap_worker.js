@@ -1,4 +1,4 @@
-// vmap web worker, built from lib da93a778
+// vmap web worker, built from lib 9987e921
 (function dartProgram(){function copyProperties(a,b){var s=Object.keys(a)
 for(var r=0;r<s.length;r++){var q=s[r]
 b[q]=a[q]}}function mixinPropertiesHard(a,b){var s=Object.keys(a)
@@ -15051,6 +15051,8 @@ A.u(s==null?"#ffffff":s)
 s=a6.h(0,"fog-ground-blend")
 A.u(s==null?0.5:s)
 s=a6.h(0,"horizon-fog-blend")
+A.u(s==null?0.8:s)
+s=a6.h(0,"atmosphere-blend")
 A.u(s==null?0.8:s)}s=A.qk(c1.a(c2.h(0,"projection")))
 q=A.tz(c1.a(c2.h(0,"light")))
 b7.fb(a4)

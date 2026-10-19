@@ -24,6 +24,7 @@ class Globe {
     final (:x, :y) = view.screenCenter;
     m[8] = -(x - w / 2) * 2 / w;
     m[9] = (y - h / 2) * 2 / h;
+    _unproject = _invert(m);
     _translate(m, 0, 0, -d);
     _rotateX(m, -pitch);
     _rotateZ(m, bearing);
@@ -48,6 +49,49 @@ class Globe {
   final double transition;
 
   late final double _lat, _lng;
+  late final Float64List _unproject;
+
+  /// MapLibre's `getGlobeCenterInViewSpace`: the sphere's centre in pixels,
+  /// the camera at the origin looking down negative z.
+  (double, double, double) get viewCentre {
+    final u = _unproject, m = matrix;
+    final r = [
+      for (var i = 0; i < 4; i++)
+        u[i] * m[12] + u[4 + i] * m[13] + u[8 + i] * m[14] + u[12 + i] * m[15],
+    ];
+    return (r[0] / r[3], r[1] / r[3], r[2] / r[3]);
+  }
+
+  /// The view ray through clip point (x, y) is `x * a + y * b + c`, as
+  /// MapLibre's atmosphere unprojects it; [a], [b], [c] in that order.
+  List<double> get viewRays {
+    final u = _unproject;
+    return [u[0], u[1], u[2], u[4], u[5], u[6], u[12], u[13], u[14]];
+  }
+
+  /// MapLibre's `getSunPos`: the light at [position], distance, azimuth and
+  /// polar angle in degrees, shining towards the camera's view space; held
+  /// on the map unless [viewport].
+  (double, double, double) sunAt(
+    List<double> position, {
+    required bool viewport,
+  }) {
+    final azimuth = (position[1] + 90) * math.pi / 180;
+    final polar = position[2] * math.pi / 180;
+    final r = position[0];
+    final v = Float64List.fromList([
+      -r * math.cos(azimuth) * math.sin(polar),
+      -r * math.sin(azimuth) * math.sin(polar),
+      -r * math.cos(polar),
+    ]);
+    if (!viewport) {
+      _rotVecY(v, -_lng);
+      _rotVecX(v, _lat);
+      _rotVecZ(v, view.bearing * math.pi / 180);
+      _rotVecX(v, -view.pitch * math.pi / 180);
+    }
+    return (v[0], v[1], v[2]);
+  }
 
   /// The sphere's radius in screen pixels.
   late final double radius;

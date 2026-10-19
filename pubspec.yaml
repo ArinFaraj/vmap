@@ -42,6 +42,8 @@ flutter:
       android:
         package: dev.vmap.vmap
         pluginClass: VmapPlugin
+  shaders:
+    - shaders/atmosphere.frag
   assets:
     - assets/fonts/Vazirmatn-Variable.ttf
     - assets/fonts/NotoSansSyriacEastern-Variable.ttf

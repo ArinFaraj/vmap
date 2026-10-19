@@ -1209,6 +1209,7 @@ class SkyPaint {
     required this.fogColor,
     required this.fogGroundBlend,
     required this.horizonFogBlend,
+    required this.atmosphereBlend,
   });
 
   /// Reads [json], the style's `sky`, with MapLibre's defaults.
@@ -1221,11 +1222,15 @@ class SkyPaint {
       fogColor: compileExpr(sky['fog-color'] ?? '#ffffff'),
       fogGroundBlend: compileExpr(sky['fog-ground-blend'] ?? 0.5),
       horizonFogBlend: compileExpr(sky['horizon-fog-blend'] ?? 0.8),
+      atmosphereBlend: compileExpr(sky['atmosphere-blend'] ?? 0.8),
     );
   }
 
   final Expr skyColor, horizonColor, skyHorizonBlend;
   final Expr fogColor, fogGroundBlend, horizonFogBlend;
+
+  /// How much of the globe's atmosphere is drawn, from 0 to 1.
+  final Expr atmosphereBlend;
 }
 
 /// A style's root `projection`, as MapLibre reads it: how far from the
