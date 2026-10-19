@@ -412,6 +412,18 @@ class StyleCompiler {
     );
   }
 
+  /// The layout properties a symbol reads from each feature or the zoom,
+  /// which its labels carry and are laid out by.
+  static const _layoutByFeature = [
+    'text-transform',
+    'text-letter-spacing',
+    'text-max-width',
+    'text-justify',
+    'text-anchor',
+    'text-rotate',
+    'text-font',
+  ];
+
   static const _symbolPaintReads = [
     'text-color',
     'text-opacity',
@@ -459,6 +471,13 @@ class StyleCompiler {
     _reads(layout['icon-size'], paintKeys);
     _reads(layout['icon-offset'], paintKeys);
     _reads(layout['text-offset'], paintKeys);
+    for (final key in _layoutByFeature) {
+      _reads(layout[key], paintKeys);
+    }
+    Expr? varying(String key) => switch (layout[key]) {
+      final List _ || final Map _ => compileExpr(layout[key]),
+      _ => null,
+    };
     final build = SymbolBuild({
       SymbolBuild.sourceKey: source,
       SymbolBuild.sourceLayerKey: sourceLayer,
@@ -488,6 +507,19 @@ class StyleCompiler {
         italic: font.contains('italic') || font.contains('oblique'),
         fontStack: _fontStack(layout['text-font']),
         uppercase: layout['text-transform'] == 'uppercase',
+        layoutAt: SymbolLayout(
+          transform:
+              varying('text-transform') ??
+              (layout['text-transform'] == 'lowercase'
+                  ? compileExpr('lowercase')
+                  : null),
+          letterSpacing: varying('text-letter-spacing'),
+          maxWidth: varying('text-max-width'),
+          justify: varying('text-justify'),
+          anchor: varying('text-anchor'),
+          rotate: varying('text-rotate'),
+          font: varying('text-font'),
+        ),
         writingModes: placement == 'point'
             ? switch (layout['text-writing-mode']) {
                 final List modes => [

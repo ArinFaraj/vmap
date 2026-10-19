@@ -256,9 +256,31 @@ class LabelEngine {
   String _spriteKey(LabelState st) {
     final c = st.candidate;
     final symbol = _symbolOf(c);
-    final key = st.vertical ? '${c.spriteKey}|v' : c.spriteKey;
-    if (symbol == null || !symbol.justifyAuto) return key;
+    var key = st.vertical ? '${c.spriteKey}|v' : c.spriteKey;
+    if (symbol == null) return key;
+    if (symbol.layoutAt.any) {
+      final context = _layoutContext(c);
+      key =
+          '$key|${symbol.transformed('a', context)}'
+          '|${symbol.letterSpacingAt(context)}|${symbol.maxWidthAt(context)}'
+          '|${symbol.justifyAt(context).index}'
+          '|${symbol.justifyAutoAt(context)}'
+          '|${symbol.fontStackAt(context).join(',')}';
+      if (!symbol.justifyAutoAt(context)) return key;
+    } else if (!symbol.justifyAuto) {
+      return key;
+    }
     return '$key|${_autoJustify(st, symbol).index}';
+  }
+
+  /// The zoom a tile's symbols are laid out at: MapLibre lays them out at
+  /// the tile's zoom.
+  double _layoutZoom = 0;
+
+  /// The context [c]'s layout is read in: its feature, at [_layoutZoom].
+  EvalContext _layoutContext(LabelCandidate c) {
+    _bind(c);
+    return _context..zoom = _layoutZoom;
   }
 
   /// Whether [c] may be written down the page: its layer allows it, it is
@@ -273,10 +295,12 @@ class LabelEngine {
 
   /// The side of the anchor [st] takes, which `text-justify: auto` makes
   /// its lines flush on.
-  static ui.TextAlign _autoJustify(LabelState st, SymbolLayer symbol) {
+  ui.TextAlign _autoJustify(LabelState st, SymbolLayer symbol) {
     final anchors = symbol.anchors;
     final anchor = anchors.isEmpty
-        ? symbol.anchor
+        ? (symbol.layoutAt.anchor == null
+              ? symbol.anchor
+              : symbol.anchorAt(_layoutContext(st.candidate)))
         : anchors[st.side.clamp(0, anchors.length - 1)];
     if (anchor.endsWith('left')) return ui.TextAlign.left;
     if (anchor.endsWith('right')) return ui.TextAlign.right;
@@ -484,6 +508,7 @@ class LabelEngine {
     work.rasterized += rasterized;
     _lastZoom = zoom;
     final styleZoom = zoom - 1 + zoomOffset;
+    _layoutZoom = styleZoom.floorToDouble();
     var animating = pending;
     final step = dt / _fadeSeconds;
     work.statesWalked += _live.length;
@@ -652,6 +677,7 @@ class LabelEngine {
     _placeAgain = false;
     occlusion.startPass();
     final styleZoom = zoom - 1 + zoomOffset;
+    _layoutZoom = styleZoom.floorToDouble();
     final states = _frameStates..clear();
     const margin = 60.0;
     for (final list in sources) {
@@ -947,11 +973,30 @@ class LabelEngine {
     final c = st.candidate;
     final beside = c is MarkerName;
     final symbol = _symbolOf(c);
+    final ui.TextAlign? align;
+    final String label;
+    final double letterSpacing, maxWidth;
+    final List<String> fontStack;
+    if (symbol == null) {
+      align = null;
+      label = c.text;
+      letterSpacing = 0;
+      maxWidth = 9;
+      fontStack = const [];
+    } else {
+      final layout = _layoutContext(c);
+      label = symbol.transformed(c.text, layout);
+      letterSpacing = symbol.letterSpacingAt(layout);
+      maxWidth = symbol.maxWidthAt(layout);
+      fontStack = symbol.fontStackAt(layout);
+      align = symbol.justifyAutoAt(layout)
+          ? _autoJustify(st, symbol)
+          : symbol.justifyAt(_layoutContext(c));
+    }
     _context.zoom = styleZoom;
     _bind(c);
     final fontSize = _size(c, styleZoom) * st.perspective;
     final isRoad = c is TileLabel && c.tile.line != null;
-    final label = symbol?.uppercase ?? false ? c.text.toUpperCase() : c.text;
     final dark =
         (background >> 16 & 255) * 0.3 +
             (background >> 8 & 255) * 0.59 +
@@ -984,23 +1029,19 @@ class LabelEngine {
             : (asNumber(symbol.haloBlur(_context)) ?? 0).clamp(0.0, haloWidth),
         weight: weight,
         italic: symbol?.italic ?? false,
-        letterSpacing: symbol?.letterSpacing ?? 0,
+        letterSpacing: letterSpacing,
         lineHeight: symbol?.lineHeight ?? _rules.lineHeight,
         // A marker's name hugs its marker: lines are flush on the side the
         // text starts from, which is the side the marker is on.
         align: !beside
-            ? (symbol == null
-                  ? ui.TextAlign.center
-                  : symbol.justifyAuto
-                  ? _autoJustify(st, symbol)
-                  : symbol.justify)
+            ? align ?? ui.TextAlign.center
             : (rightToLeft ? ui.TextAlign.right : ui.TextAlign.left),
         rightToLeft: rightToLeft,
         road: isRoad,
-        layoutWidth: (isRoad ? 60.0 : (symbol?.maxWidth ?? 9)) * fontSize,
+        layoutWidth: (isRoad ? 60.0 : maxWidth) * fontSize,
         fontFamily: text.fontFamily,
         fontFamilyFallback: text.fontFamilyFallback,
-        fontStack: symbol?.fontStack ?? const [],
+        fontStack: fontStack,
         format: c is TileLabel
             ? (c.tile.props?[formatKey] as List<Object?>?)
             : null,

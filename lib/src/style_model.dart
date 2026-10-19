@@ -705,6 +705,7 @@ class SymbolLayer {
     required this.italic,
     this.fontStack = const [],
     required this.uppercase,
+    this.layoutAt = const SymbolLayout(),
     this.writingModes = const [],
     required this.letterSpacing,
     required this.haloBlur,
@@ -778,6 +779,52 @@ class SymbolLayer {
   /// The style's `text-font`: the fonts to try first, by name.
   final List<String> fontStack;
   final bool uppercase;
+
+  /// Layout read from each feature or the zoom, where the style gives an
+  /// expression; the constant fields hold the rest.
+  final SymbolLayout layoutAt;
+
+  /// The text as `text-transform` in [c] makes it.
+  String transformed(String text, EvalContext c) {
+    final by = layoutAt.transform?.call(c);
+    if (by == 'uppercase' || (by == null && uppercase)) {
+      return text.toUpperCase();
+    }
+    return by == 'lowercase' ? text.toLowerCase() : text;
+  }
+
+  double letterSpacingAt(EvalContext c) =>
+      _number(layoutAt.letterSpacing, c, letterSpacing);
+
+  double maxWidthAt(EvalContext c) => _number(layoutAt.maxWidth, c, maxWidth);
+
+  double rotateAt(EvalContext c) => _number(layoutAt.rotate, c, textRotate);
+
+  String anchorAt(EvalContext c) => switch (layoutAt.anchor?.call(c)) {
+    final String a => a,
+    _ => anchor,
+  };
+
+  ui.TextAlign justifyAt(EvalContext c) => switch (layoutAt.justify?.call(c)) {
+    'left' => ui.TextAlign.left,
+    'right' => ui.TextAlign.right,
+    'center' => ui.TextAlign.center,
+    _ => justify,
+  };
+
+  /// Whether `text-justify` in [c] is auto, which follows the anchor.
+  bool justifyAutoAt(EvalContext c) => switch (layoutAt.justify?.call(c)) {
+    final String j => j == 'auto',
+    _ => justifyAuto,
+  };
+
+  List<String> fontStackAt(EvalContext c) => switch (layoutAt.font?.call(c)) {
+    final List names => [for (final n in names) '$n'],
+    _ => fontStack,
+  };
+
+  static double _number(Expr? expr, EvalContext c, double otherwise) =>
+      expr == null ? otherwise : (asNumber(expr(c)) ?? otherwise).toDouble();
 
   /// A point label's `text-writing-mode`, in the order it is tried: true
   /// for vertical, down the page where the script allows, false for
@@ -1366,4 +1413,31 @@ class StyleSheet {
 
   /// Raster layers, each drawn where [runs] puts it.
   final List<RasterLayer> rasters;
+}
+
+/// A symbol layer's layout properties given as expressions of the feature
+/// or the zoom; null for one the style gives as a constant.
+class SymbolLayout {
+  const SymbolLayout({
+    this.transform,
+    this.letterSpacing,
+    this.maxWidth,
+    this.justify,
+    this.anchor,
+    this.rotate,
+    this.font,
+  });
+
+  final Expr? transform, letterSpacing, maxWidth, justify, anchor, rotate;
+  final Expr? font;
+
+  /// Whether any of them is an expression, which each label then evaluates.
+  bool get any =>
+      transform != null ||
+      letterSpacing != null ||
+      maxWidth != null ||
+      justify != null ||
+      anchor != null ||
+      rotate != null ||
+      font != null;
 }

@@ -30,6 +30,9 @@ class PointLabels {
   /// bottom and whether it was placed (1 or 0).
   List<double>? debugBoxes;
 
+  /// The text anchor of the label being placed.
+  String _anchor = 'center';
+
   /// Space between a pin and its name.
   static const double _pinGap = 3;
 
@@ -91,8 +94,13 @@ class PointLabels {
       return false;
     }
     final along = symbol?.textAlongMap ?? false;
-    final spin =
-        (symbol?.textRotate ?? 0) * math.pi / 180 + (along ? _view.mapTurn : 0);
+    // Layout is read at the tile's zoom, as MapLibre lays symbols out.
+    final zoom = context.zoom;
+    context.zoom = zoom.floorToDouble();
+    final rotate = symbol?.rotateAt(context) ?? 0;
+    _anchor = symbol?.anchorAt(context) ?? 'center';
+    context.zoom = zoom;
+    final spin = rotate * math.pi / 180 + (along ? _view.mapTurn : 0);
     st.screenAngle = spin;
     // Text pitched with the map is laid on the ground, its baseline turned
     // by text-rotate on the map, or kept level on the screen.
@@ -120,7 +128,14 @@ class PointLabels {
             context,
             at: (st.worldX, st.worldY),
           );
-    final ems = symbol?.textOffset(context) ?? (0.0, 0.0);
+    // As MapLibre, a radial offset without variable anchors moves the text
+    // from its anchor in place of text-offset.
+    final radial = symbol?.radialOffset ?? 0;
+    final ems = symbol == null
+        ? (0.0, 0.0)
+        : symbol.anchors.isEmpty && radial != 0
+        ? _fromRadialOffset(_anchor, radial)
+        : symbol.textOffset(context);
     var text = _textOffset(symbol, c, fontSize, spot, moved, ems);
     final icon = _sizeIcon(st, symbol, spot, context);
     final pin = _choosePin(st, symbol);
@@ -258,7 +273,7 @@ class PointLabels {
     if (symbol != null && c.hasText) {
       tx = ems.$1 * fontSize;
       ty = ems.$2 * fontSize;
-      final anchor = symbol.anchor;
+      final anchor = _anchor;
       if (anchor.startsWith('top')) ty += spot.textH / 2;
       if (anchor.startsWith('bottom')) ty -= spot.textH / 2;
       if (anchor.endsWith('left')) tx += spot.textW / 2;
@@ -352,9 +367,33 @@ class PointLabels {
     return (pin, pins.size / 2 + _pinGap);
   }
 
+  /// MapLibre's fromRadialOffset: the offset in ems [radial] ems from the
+  /// anchor towards [anchor]'s side, a text above or below its point
+  /// 7/24 of an em nearer it.
+  static (double, double) _fromRadialOffset(String anchor, double radial) {
+    const baseline = 7 / 24;
+    final r = math.max(0.0, radial);
+    final h = r / math.sqrt2;
+    final y = switch (anchor) {
+      'top-right' || 'top-left' => h - baseline,
+      'bottom-right' || 'bottom-left' => -h + baseline,
+      'bottom' => -r + baseline,
+      'top' => r - baseline,
+      _ => 0.0,
+    };
+    final x = switch (anchor) {
+      'top-right' || 'bottom-right' => -h,
+      'top-left' || 'bottom-left' => h,
+      'left' => r,
+      'right' => -r,
+      _ => 0.0,
+    };
+    return (x, y);
+  }
+
   /// Where a name sits beside a pin, on the side its anchor names.
   (double, double) _besidePin(SymbolLayer symbol, _Spot spot, double reach) {
-    final anchor = symbol.anchor;
+    final anchor = _anchor;
     if (anchor.endsWith('left')) return (reach + spot.textW / 2, 0);
     if (anchor.endsWith('right')) return (-reach - spot.textW / 2, 0);
     if (anchor.startsWith('bottom')) return (0, -reach - spot.textH / 2);
