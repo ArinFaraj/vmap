@@ -557,17 +557,19 @@ class MapView {
       }
     }
 
-    // A tilted view's ground can reach far past the horizon; one copy of
-    // the world each side of the centre's is as far as tiles are drawn.
+    // A tilted view's ground can reach far past the horizon; a few copies
+    // of the world each side of the centre's are as far as tiles are drawn.
     final xs = [for (final p in quad) p.x / worldSize];
-    final first = math.max(xs.reduce(math.min).floor(), -1);
-    final last = math.min(xs.reduce(math.max).floor(), 1);
+    final first = math.max(xs.reduce(math.min).floor(), -_copies);
+    final last = math.min(xs.reduce(math.max).floor(), _copies);
     for (var copy = first; copy <= last; copy++) {
       visit(0, copy, 0);
     }
     out.sort((a, b) => a.distance.compareTo(b.distance));
     return out;
   }
+
+  static const _copies = 4;
 
   /// Whether a convex quadrilateral and an axis-aligned box overlap, by
   /// looking for an axis that separates them.

@@ -41,13 +41,11 @@ class _Camera {
   double longitude = 0, latitude = 0, zoom = 0, bearing = 0, pitch = 0;
   double roll = 0;
 
-  /// On the globe; the flat map's world is kept as tall as the screen.
+  /// On the globe.
   bool globe = false;
 
-  /// [zoom] raised, on the flat map, until the world is as tall as a
-  /// screen [height] high, as MapLibre's mercator transform constrains it.
-  double zoomFor(double height) =>
-      globe ? zoom : math.max(zoom, math.log(height / 512) / math.ln2);
+  /// [zoom] no lower than MapLibre's default minZoom, -2.
+  double zoomFor(double height) => math.max(zoom, -2);
 
   /// Space kept free around the drawn area, in pixels, as the style's
   /// operations ask for it.
