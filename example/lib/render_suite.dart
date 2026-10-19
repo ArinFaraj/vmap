@@ -41,6 +41,14 @@ class _Camera {
   double longitude = 0, latitude = 0, zoom = 0, bearing = 0, pitch = 0;
   double roll = 0;
 
+  /// On the globe; the flat map's world is kept as tall as the screen.
+  bool globe = false;
+
+  /// [zoom] raised, on the flat map, until the world is as tall as a
+  /// screen [height] high, as MapLibre's mercator transform constrains it.
+  double zoomFor(double height) =>
+      globe ? zoom : math.max(zoom, math.log(height / 512) / math.ln2);
+
   /// Space kept free around the drawn area, in pixels, as the style's
   /// operations ask for it.
   EdgeInsets2 pad = EdgeInsets2.zero;
@@ -55,10 +63,10 @@ class _Camera {
   /// The test's `maxPitch`, else MapLibre's default.
   double maxPitch = 60;
 
-  MapCameraPosition get position => MapCameraPosition(
+  MapCameraPosition positionFor(double height) => MapCameraPosition(
     latitude: latitude,
     longitude: longitude,
-    zoom: zoom,
+    zoom: zoomFor(height),
     bearing: bearing,
     pitch: math.min(pitch, maxPitch),
     roll: roll,
@@ -488,7 +496,12 @@ void _readCamera(Map<String, Object?> style, _Camera camera) {
     ..zoom = (style['zoom'] as num? ?? 0).toDouble()
     ..bearing = (style['bearing'] as num? ?? 0).toDouble()
     ..pitch = (style['pitch'] as num? ?? 0).toDouble()
-    ..roll = (style['roll'] as num? ?? 0).toDouble();
+    ..roll = (style['roll'] as num? ?? 0).toDouble()
+    ..globe = switch (style['projection']) {
+      {'type': final type} =>
+        '$type'.contains('globe') || '$type'.contains('vertical-perspective'),
+      _ => false,
+    };
 }
 
 /// Points every `local://` address in [value] at the asset server.
@@ -514,14 +527,14 @@ ui.Image? _paint(
   final recorder = ui.PictureRecorder();
   final canvas = ui.Canvas(recorder)..scale(ratio);
   final size = ui.Size(width.toDouble(), height.toDouble());
-  final view = camera.position.view(size.width, size.height);
+  final view = camera.positionFor(size.height).view(size.width, size.height);
   final center = view.center;
   final screen = view.screenCenter;
   canvas.clipRect(ui.Offset.zero & size);
   engine.paint(
     canvas,
     VmapCamera(
-      zoom: camera.zoom + 1,
+      zoom: camera.zoomFor(size.height) + 1,
       origin: ui.Offset(center.x - screen.x, center.y - screen.y),
       size: size,
       rotation: camera.bearing * math.pi / 180,
