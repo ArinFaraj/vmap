@@ -187,12 +187,20 @@ Future<_Result> _runOne(String id, String dir) async {
             ?.cast<String, Object?>() ??
         const {};
     result.allowed = (test['allowed'] as num? ?? 0.00025).toDouble();
+    final width = (test['width'] as num? ?? 512).toInt();
+    final height = (test['height'] as num? ?? 512).toInt();
+    // MapLibre's runner caps the canvas at 8192 pixels a side, which lowers
+    // the pixel ratio.
+    final ratio = math.min(
+      (test['pixelRatio'] as num? ?? 1).toDouble(),
+      math.min(8192 / width, 8192 / height),
+    );
     session =
         _Session(
             style,
-            width: (test['width'] as num? ?? 512).toInt(),
-            height: (test['height'] as num? ?? 512).toInt(),
-            ratio: (test['pixelRatio'] as num? ?? 1).toDouble(),
+            width: width,
+            height: height,
+            ratio: ratio,
             collisionBoxes: test['collisionDebug'] == true,
             onError: (e) => result.note ??= 'engine: $e',
           )
@@ -203,7 +211,26 @@ Future<_Result> _runOne(String id, String dir) async {
       await session.apply(op as List);
     }
     await session.settle();
-    final actual = session.capture();
+    var actual = session.capture();
+    // The runner reads back the bottom-left corner of that size.
+    if (test['reportWidth'] case final num w) {
+      final h = (test['reportHeight'] as num? ?? w).toInt();
+      final recorder = ui.PictureRecorder();
+      ui.Canvas(recorder).drawImageRect(
+        actual,
+        ui.Rect.fromLTWH(
+          0,
+          actual.height - h.toDouble(),
+          w.toDouble(),
+          h.toDouble(),
+        ),
+        ui.Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()),
+        ui.Paint(),
+      );
+      final cropped = recorder.endRecording().toImageSync(w.toInt(), h);
+      actual.dispose();
+      actual = cropped;
+    }
     await _score(
       result,
       actual,
