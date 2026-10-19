@@ -144,14 +144,41 @@ class PointLabels {
     if (!hasIcon && !c.hasText) return false;
 
     final sides = symbol?.anchors ?? const <String>[];
+    final fitted = pin == null && (symbol?.textFit ?? false);
+    final pads = symbol?.iconPaddings;
+    // As MapLibre's attemptAnchorPlacement: an icon fitted to the text
+    // moves with it, and a side where it collides is passed over.
+    bool fittedIconClear(double dx, double dy) {
+      final ix = spot.x + st.iconDx + dx * st.iconScale;
+      final iy = spot.y + st.iconDy + dy * st.iconScale;
+      return !_boxes.hits(
+        ix - st.iconW / 2 - (pads?[3] ?? iconPad),
+        iy - st.iconH / 2 - (pads?[0] ?? iconPad),
+        ix + st.iconW / 2 + (pads?[1] ?? iconPad),
+        iy + st.iconH / 2 + (pads?[2] ?? iconPad),
+        cooperative: symbol?.iconCooperative ?? false,
+      );
+    }
+
     final textFits = !c.hasText
         ? false
         : sides.isNotEmpty
-        ? _fitOnSides(st, symbol!, sides, fontSize, spot, moved, pin?.$2, ems)
+        ? _fitOnSides(
+            st,
+            symbol!,
+            sides,
+            fontSize,
+            spot,
+            moved,
+            pin?.$2,
+            ems,
+            iconClear: fitted && icon != null && !symbol.iconOverlaps
+                ? fittedIconClear
+                : null,
+          )
         : _obstacles.isEmpty
         ? _fitInPlace(st, symbol, spot, text)
         : _fitAside(st, spot, text, hasIcon);
-    final fitted = pin == null && (symbol?.textFit ?? false);
     if (fitted && icon != null) {
       // Now the text's place is settled, the box fitted about it is kept
       // from the anchor like any icon's.
@@ -159,8 +186,6 @@ class PointLabels {
         ..iconDx += st.dx * st.iconScale
         ..iconDy += st.dy * st.iconScale;
     }
-    // icon-padding may differ on each side: top, right, bottom, left.
-    final pads = symbol?.iconPaddings;
     final ix = spot.x + st.iconDx, iy = spot.y + st.iconDy;
     final il = ix - st.iconW / 2 - (pads?[3] ?? iconPad);
     final it = iy - st.iconH / 2 - (pads?[0] ?? iconPad);
@@ -169,7 +194,6 @@ class PointLabels {
     final iconFits =
         hasIcon &&
         ((symbol?.iconOverlaps ?? false) ||
-            fitted ||
             !_boxes.hits(
               il,
               it,
@@ -216,7 +240,7 @@ class PointLabels {
             !(symbol?.textCooperative ?? false),
       );
     }
-    if (showIcon && !fitted && !(symbol?.iconIgnored ?? false)) {
+    if (showIcon && !(symbol?.iconIgnored ?? false)) {
       _boxes.add(
         il,
         it,
@@ -402,8 +426,9 @@ class PointLabels {
     _Spot spot,
     (double, double) moved,
     double? pinReach,
-    (double, double) ems,
-  ) {
+    (double, double) ems, {
+    bool Function(double dx, double dy)? iconClear,
+  }) {
     final radial = symbol.radialOffset;
     final away = pinReach ?? (radial == null ? null : radial * fontSize);
     // As MapLibre: a text set above or below its point sits 7/24 of an em
@@ -428,6 +453,7 @@ class PointLabels {
         fx = moved.$1 + ax * halfW + given[at].$1 * fontSize;
         fy = moved.$2 + ay * halfH + given[at].$2 * fontSize - ay * baseline;
         if (!symbol.textOverlaps && _textHits(spot, fx, fy)) continue;
+        if (iconClear != null && !iconClear(fx, fy)) continue;
         st
           ..side = at
           ..dx = fx
@@ -445,6 +471,7 @@ class PointLabels {
       if (!symbol.textOverlaps && _textHits(spot, fx, fy - ay * baseline)) {
         continue;
       }
+      if (iconClear != null && !iconClear(fx, fy - ay * baseline)) continue;
       st
         ..side = at
         ..dx = fx
