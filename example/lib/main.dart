@@ -13,6 +13,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart' as vmt;
 import 'package:vmap/vmap.dart';
+import 'package:vmap_gpu/vmap_gpu.dart';
 
 import 'showcase.dart';
 
@@ -32,6 +33,9 @@ const vmapGestures = bool.fromEnvironment('GESTURES');
 const hud = bool.fromEnvironment('HUD');
 const record = bool.fromEnvironment('REC');
 const stress = bool.fromEnvironment('STRESS');
+
+/// Draws with the GPU renderer instead of the canvas.
+const gpuRenderer = bool.fromEnvironment('GPU');
 
 const erbil = LatLng(
   int.fromEnvironment('LAT', defaultValue: 36191113) / 1e6,
@@ -171,6 +175,7 @@ class _BenchAppState extends State<BenchApp>
       fontFamilyFallback: ['Vazirmatn'],
     ),
     showLabels: flags['labels'] != 'off',
+    renderer: gpuRenderer ? GpuMap.create() : null,
   );
   late final Ticker ticker;
   final laps = <List<FrameTiming>>[
