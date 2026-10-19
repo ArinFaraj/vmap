@@ -193,38 +193,14 @@ class GeoJsonTiles {
     final out = <TileFeature>[];
     for (final f in _features) {
       final reach = f.type == mvtLine ? linePad : pad;
-      if (f.maxX < left - reach ||
-          f.minX > right + reach ||
-          f.maxY < top - reach ||
-          f.minY > bottom + reach) {
-        continue;
-      }
-      final rings = <Float64List>[];
-      final metrics = f.type == mvtLine ? <double>[] : null;
-      for (final ring in f.rings) {
-        final local = Float64List(ring.length);
-        for (var i = 0; i < ring.length; i += 2) {
-          local[i] = _onGrid(ring[i] * n - x);
-          local[i + 1] = _onGrid(ring[i + 1] * n - y);
-        }
-        switch (f.type) {
-          case mvtPoint:
-            rings.add(local);
-          case mvtLine:
-            final starts = <double>[];
-            final length = _clipLine(local, rings, starts);
-            for (final start in starts) {
-              metrics!
-                ..add(length == 0 ? 0 : start / length)
-                ..add(length == 0 ? 0 : 1 / length);
-            }
-          default:
-            final clipped = _clipRing(local);
-            if (clipped.length >= 6) rings.add(clipped);
-        }
-      }
-      if (rings.isNotEmpty) {
-        out.add(_Clipped(f.type, f.props, rings, metrics));
+      // As geojson-vt's wrap: what reaches past the world's edge is drawn
+      // again a world over, so it shows across the antimeridian.
+      for (final shift in const [0.0, -1.0, 1.0]) {
+        if (shift != 0 && f.minX + shift > 1 + reach) continue;
+        if (shift != 0 && f.maxX + shift < -reach) continue;
+        if (shift < 0 && f.maxX <= 1) continue;
+        if (shift > 0 && f.minX >= 0) continue;
+        _clip(f, shift, n, x, y, reach, left, top, right, bottom, out);
       }
     }
     for (final p in _clusters?.at(z) ?? const <ClusterPoint>[]) {
@@ -243,6 +219,56 @@ class GeoJsonTiles {
       );
     }
     return out.isEmpty ? const [] : [_Layer(out)];
+  }
+
+  /// Adds [f], moved [shift] worlds east, cut to tile [x], [y] of [n]
+  /// across, to [out].
+  void _clip(
+    _Feature f,
+    double shift,
+    double n,
+    int x,
+    int y,
+    double reach,
+    double left,
+    double top,
+    double right,
+    double bottom,
+    List<TileFeature> out,
+  ) {
+    if (f.maxX + shift < left - reach ||
+        f.minX + shift > right + reach ||
+        f.maxY < top - reach ||
+        f.minY > bottom + reach) {
+      return;
+    }
+    final rings = <Float64List>[];
+    final metrics = f.type == mvtLine ? <double>[] : null;
+    for (final ring in f.rings) {
+      final local = Float64List(ring.length);
+      for (var i = 0; i < ring.length; i += 2) {
+        local[i] = _onGrid((ring[i] + shift) * n - x);
+        local[i + 1] = _onGrid(ring[i + 1] * n - y);
+      }
+      switch (f.type) {
+        case mvtPoint:
+          rings.add(local);
+        case mvtLine:
+          final starts = <double>[];
+          final length = _clipLine(local, rings, starts);
+          for (final start in starts) {
+            metrics!
+              ..add(length == 0 ? 0 : start / length)
+              ..add(length == 0 ? 0 : 1 / length);
+          }
+        default:
+          final clipped = _clipRing(local);
+          if (clipped.length >= 6) rings.add(clipped);
+      }
+    }
+    if (rings.isNotEmpty) {
+      out.add(_Clipped(f.type, f.props, rings, metrics));
+    }
   }
 
   /// [v], a share of the tile, in tile units rounded as geojson-vt rounds
