@@ -207,7 +207,8 @@ void main() {
   if (patterned_line) {
     v_uv = vec3(packed_data.w / color.z, side_v, 2.0);
   } else if (gradient_line) {
-    v_uv = vec3(packed_data.w * color.y, color.x, 3.0);
+    // A dashed one keeps its share of the line in packed_data.y.
+    v_uv = vec3((p.w > 0.0 ? packed_data.y : packed_data.w) * color.y, color.x, 3.0);
   } else {
     bool patterned = abs(kind - 2.0) < 0.5;
     vec2 uv = (patterned ? position : pos) * color.r * frame_info.fade.y;
@@ -227,10 +228,10 @@ void main() {
   // units, zero when undashed; then p.z is a line drawn as two's gap.
   // v_dash is how many repeats along, p.z, and the repeat in device pixels.
   bool plain_line = abs(kind - 1.0) < 0.5;
-  bool dashed = plain_line && p.w > 0.0;
+  bool dashed = (plain_line || gradient_line) && p.w > 0.0;
   v_dash = vec3(
     dashed ? packed_data.w / p.w : 0.0,
-    plain_line ? p.z : 0.0,
+    plain_line || dashed ? p.z : 0.0,
     dashed ? p.w / line_pixel : 0.0);
   // v_circle.z: one for a circle, plus its blur, packed_data.y.
   v_circle = vec4(corner, circle ? 1.0 + packed_data.y : 0.0, 1.0 / max(frame_info.fade.y, 1e-6));

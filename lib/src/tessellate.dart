@@ -739,7 +739,9 @@ class LineMesher {
       _b.dst[o] = before == null
           ? _along
           : (before + _along * _sharePer) * shareSpan;
-      _b.dst[o + 1] = across;
+      // A gradient line keeps its distance where another keeps where the
+      // vertex sits across it, for dashes over the gradient.
+      _b.dst[o + 1] = before == null ? across : _along;
     }
     if (_b.withOffsets) {
       _b.off[o] = _ox;

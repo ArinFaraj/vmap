@@ -191,6 +191,13 @@ class GpuStream {
         final ext = stroked ? chunk.extrusions : null;
         final off = stroked ? chunk.offsets : null;
         final along = stroked ? chunk.distances : null;
+        // A dashed gradient line without an offset keeps its share of the
+        // line where the offset would be and its distance where a plain
+        // line keeps it.
+        final dashedRamp =
+            kind == gradientLine &&
+            off == null &&
+            ((layer as LineLayer).dash != null || layer.dashChoices.isNotEmpty);
         final edges = stroked ? chunk.edges : null;
         final n = pos.length ~/ 2;
         if (points) {
@@ -247,7 +254,10 @@ class GpuStream {
                 ..[v * 8 + 4] = off[v * 2]
                 ..[v * 8 + 5] = off[v * 2 + 1];
             }
-            if (along != null) src[v * 8 + 6] = along[v * 2];
+            if (along != null) {
+              src[v * 8 + 6] = along[v * 2 + (dashedRamp ? 1 : 0)];
+              if (dashedRamp) src[v * 8 + 4] = along[v * 2];
+            }
             src[v * 8 + 7] = _edgeCode(edges, v).toDouble();
           }
           final tri = chunk.indices;
@@ -262,7 +272,11 @@ class GpuStream {
                 out[o],
                 out[o + 1],
                 ext == null ? 0 : packPair(out[o + 2], out[o + 3]),
-                off == null ? 0 : packPair(out[o + 4], out[o + 5]),
+                dashedRamp
+                    ? out[o + 4]
+                    : off == null
+                    ? 0
+                    : packPair(out[o + 4], out[o + 5]),
               )
               ..add2(
                 (slot +
@@ -283,11 +297,15 @@ class GpuStream {
               pos[v * 2],
               pos[v * 2 + 1],
               ext == null ? 0 : packPair(ext[v * 2], ext[v * 2 + 1]),
-              off == null ? 0 : packPair(off[v * 2], off[v * 2 + 1]),
+              dashedRamp
+                  ? along![v * 2]
+                  : off == null
+                  ? 0
+                  : packPair(off[v * 2], off[v * 2 + 1]),
             )
             ..add2(
               (slot + kind * 16384 + _edgeCode(edges, v) * 131072).toDouble(),
-              along == null ? 0 : along[v * 2],
+              along == null ? 0 : along[v * 2 + (dashedRamp ? 1 : 0)],
             );
         }
         for (final i in chunk.indices) {

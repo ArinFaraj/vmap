@@ -662,18 +662,22 @@ class StyleCompiler {
     ]);
     final beside = paint['line-offset'];
     final blur = paint['line-blur'];
-    final dashStops = _dashStops(paint['line-dasharray']);
+    // A gradient line drawn beside its centre line keeps its gradient and
+    // drops its dashes: its vertices have room for one or the other.
+    final dashJson = paint['line-gradient'] != null && beside != null
+        ? null
+        : paint['line-dasharray'];
+    final dashStops = _dashStops(dashJson);
     // A dasharray read from each feature is one of the arrays written in
     // its expression.
-    final dashChoices =
-        dashStops.isEmpty && _dash(paint['line-dasharray']) == null
-        ? _dashLiterals(paint['line-dasharray'])
+    final dashChoices = dashStops.isEmpty && _dash(dashJson) == null
+        ? _dashLiterals(dashJson)
         : const <Float64List>[];
     final dash = dashStops.isNotEmpty
         ? dashStops.first.$2
         : dashChoices.isNotEmpty
         ? dashChoices.first
-        : _dash(paint['line-dasharray']);
+        : _dash(dashJson);
     final own = _withDefault(paint['line-width'], 1);
     final gap = paint['line-gap-width'];
     Expr width = own;
@@ -682,9 +686,7 @@ class StyleCompiler {
       width = (c) => (asNumber(own(c)) ?? 1) * 2 + (asNumber(between(c)) ?? 0);
     }
     final picture = paint['line-pattern'];
-    final ramp = dash == null && picture == null
-        ? paint['line-gradient']
-        : null;
+    final ramp = picture == null ? paint['line-gradient'] : null;
     final soft = blur != null && picture == null && ramp == null;
     _layers.add(
       LineLayer(
@@ -727,7 +729,7 @@ class StyleCompiler {
         dashStops: picture == null ? dashStops : const [],
         dashChoices: picture == null ? dashChoices : const [],
         dashPick: picture == null && dashChoices.isNotEmpty
-            ? compileExpr(paint['line-dasharray'])
+            ? compileExpr(dashJson)
             : null,
         dashCap: switch (layout['line-cap']) {
           'round' => DashCap.round,

@@ -296,6 +296,8 @@ class LayerPaint {
         // radius.
         put(r, 0, 0, 1, halfWidth / scale, 0, 0, 0);
       case GpuStream.gradientLine:
+        // p.zw: as a plain line's, its dashes, when it has them.
+        final dashed = dashRow != null && dashPeriod > 0;
         put(
           rampRow ?? 0,
           1 / GpuStream.progressSpan,
@@ -303,8 +305,8 @@ class LayerPaint {
           rampRow == null ? 0 : a,
           halfWidth / scale,
           offset / scale,
-          0,
-          0,
+          dashed ? dashRow + 2 * dashOn : 0,
+          dashed ? dashPeriod / scale : 0,
         );
       case GpuStream.patternedLine:
         // Stretched across the line's width and repeated along it, as the

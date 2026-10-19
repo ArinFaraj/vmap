@@ -54,7 +54,8 @@ class LineRamps {
         ramps.add((i, line.gradient!));
       } else if (sheet.layers[i] case final HeatmapLayer heat) {
         ramps.add((i, heat.heat.ramp));
-      } else if (sheet.layers[i] case final LineLayer line
+      }
+      if (sheet.layers[i] case final LineLayer line
           when (line.dash?.fold(0.0, (a, b) => a + b) ?? 0) > 0) {
         dashes.add((i, line));
       }
