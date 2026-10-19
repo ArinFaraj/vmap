@@ -291,6 +291,9 @@ class LineMesher {
   final double miterLimit;
   final double roundLimit;
 
+  /// The limits of the line being added.
+  double _miterLimit = 2, _roundLimit = 1.05;
+
   /// How far from a sharp corner a vertex is added, in tile units, so a
   /// dash tilts over a shorter part of the line: MapLibre's 15 pixels.
   final double sharpCorner;
@@ -313,8 +316,12 @@ class LineMesher {
     LineJoin? join,
     double? shareBefore,
     double sharePer = 0,
+    double? miter,
+    double? round,
   }) {
     join ??= this.join;
+    _miterLimit = miter ?? this.miterLimit;
+    _roundLimit = round ?? this.roundLimit;
     if (end - start < 2) return;
     if (end - start > _maxPoints) {
       final mid = start + _maxPoints - 1;
@@ -335,6 +342,8 @@ class LineMesher {
         join: join,
         shareBefore: shareBefore,
         sharePer: sharePer,
+        miter: miter,
+        round: round,
       );
       addLine(
         coords,
@@ -347,6 +356,8 @@ class LineMesher {
             ? null
             : shareBefore + first * sharePer,
         sharePer: sharePer,
+        miter: miter,
+        round: round,
       );
       return;
     }
@@ -382,7 +393,8 @@ class LineMesher {
       pts[n * 2 + 1] = pts[1];
       n++;
     }
-    final miterLimit = join == LineJoin.bevel ? 1.05 : this.miterLimit;
+    final miterLimit = join == LineJoin.bevel ? 1.05 : _miterLimit;
+    final roundLimit = _roundLimit;
     final last = n - 1;
 
     double cx = 0, cy = 0;

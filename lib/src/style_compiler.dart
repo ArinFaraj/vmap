@@ -914,6 +914,15 @@ class StyleCompiler {
     LineJoin join = LineJoin.miter,
   }) {
     final _VectorLayer(:layer, :source, :sourceLayer, :filter) = vector;
+    // How a line's corners are drawn, read from each feature where the
+    // style gives an expression.
+    final lineJoin = kind == BucketKind.line ? layer.layout['line-join'] : null;
+    final miter = kind == BucketKind.line
+        ? layer.layout['line-miter-limit']
+        : null;
+    final round = kind == BucketKind.line
+        ? layer.layout['line-round-limit']
+        : null;
     final keys = reads.toList()..sort();
     final sortKey = layer.layout['${layer.type}-sort-key'];
     final key = jsonEncode([
@@ -930,6 +939,9 @@ class StyleCompiler {
       metered,
       join.index,
       keys,
+      if (lineJoin is List || lineJoin is Map) lineJoin,
+      ?miter,
+      ?round,
     ]);
     final index = _bucketIndex.putIfAbsent(key, () {
       _buckets.add(
@@ -945,6 +957,11 @@ class StyleCompiler {
           edged: edged,
           metered: metered,
           join: join,
+          joinBy: lineJoin is List || lineJoin is Map
+              ? compileExpr(lineJoin)
+              : null,
+          miterLimit: miter == null ? null : compileExpr(miter),
+          roundLimit: round == null ? null : compileExpr(round),
           variantKeys: keys,
           sortKey: sortKey == null ? null : compileExpr(sortKey),
         ),

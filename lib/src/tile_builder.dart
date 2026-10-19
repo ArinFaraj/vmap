@@ -601,6 +601,14 @@ class TileBuilder {
                   end,
                   lineTolerance,
                   cap: bucket.cap,
+                  join: switch (bucket.joinBy?.call(context)) {
+                    'round' => LineJoin.round,
+                    'bevel' => LineJoin.bevel,
+                    'miter' => LineJoin.miter,
+                    _ => null,
+                  },
+                  miter: asNumber(bucket.miterLimit?.call(context))?.toDouble(),
+                  round: asNumber(bucket.roundLimit?.call(context))?.toDouble(),
                   shareBefore: known
                       ? shares[r * 2]
                       : bucket.metered

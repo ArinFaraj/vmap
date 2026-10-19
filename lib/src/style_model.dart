@@ -210,6 +210,9 @@ class Bucket {
     this.edged = false,
     this.metered = false,
     this.join = LineJoin.miter,
+    this.joinBy,
+    this.miterLimit,
+    this.roundLimit,
     this.variantKeys = const [],
     this.extrude,
     this.sortKey,
@@ -249,6 +252,11 @@ class Bucket {
   /// of a distance, which a gradient along the line is drawn by.
   final bool metered;
   final LineJoin join;
+
+  /// `line-join`, `line-miter-limit` and `line-round-limit` read from each
+  /// feature; null where the style gives the join as a constant or leaves
+  /// a limit at its default.
+  final Expr? joinBy, miterLimit, roundLimit;
 
   /// The feature properties the paint of its layers reads. Features are
   /// split into one mesh per combination of their values.
