@@ -672,6 +672,7 @@ class SymbolLayer {
     required this.italic,
     this.fontStack = const [],
     required this.uppercase,
+    this.writingModes = const [],
     required this.letterSpacing,
     required this.haloBlur,
     this.lineHeight,
@@ -744,6 +745,11 @@ class SymbolLayer {
   /// The style's `text-font`: the fonts to try first, by name.
   final List<String> fontStack;
   final bool uppercase;
+
+  /// A point label's `text-writing-mode`, in the order it is tried: true
+  /// for vertical, down the page where the script allows, false for
+  /// horizontal. Empty for horizontal only.
+  final List<bool> writingModes;
 
   /// In ems.
   final double letterSpacing;

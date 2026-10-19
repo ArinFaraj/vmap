@@ -105,4 +105,29 @@ void main() {
     final xs = {for (final (_, to) in pieces) (to.left, to.right)};
     expect(xs, {(0.0, 10.0), (10.0, 90.0), (90.0, 100.0)});
   });
+
+  test('vertical text runs down a column an em a glyph, upright', () {
+    final shaped = layoutRanges(tenWide, 600, 'マップ', vertical: true)!;
+    expect(shaped.width, closeTo(1.2, 1e-9));
+    expect(shaped.height, closeTo(3, 1e-9));
+    final g = shaped.glyphs;
+    expect(g[7] - g[2], closeTo(0, 1e-6));
+    expect(g[8] - g[3], closeTo(1, 1e-6));
+    expect(shaped.turns, everyElement(0));
+  });
+
+  test('vertical text lays a script shaped as words on its side', () {
+    final shaped = layoutRanges(tenWide, 600, 'マ ب', vertical: true)!;
+    expect(shaped.turns, [0, 1, 1]);
+  });
+
+  test('vertical punctuation takes its vertical form beside ideographs', () {
+    expect(verticalPunctuation('地「図」'), '地﹁図﹂');
+    expect(verticalPunctuation('a(b)'), 'a(b)');
+  });
+
+  test('a line may break between ideographs', () {
+    final breaks = mapLibreLineBreaks('一二三四五六'.runes.toList(), (_) => 10, 30);
+    expect(breaks, [3, 6]);
+  });
 }

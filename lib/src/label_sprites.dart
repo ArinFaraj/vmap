@@ -166,7 +166,11 @@ class TextLook {
     required this.fontFamilyFallback,
     this.fontStack = const [],
     this.format,
+    this.vertical = false,
   });
+
+  /// Written down the page, as MapLibre writes a vertical point label.
+  final bool vertical;
 
   /// The style's `text-font` for this label.
   final List<String> fontStack;
@@ -322,9 +326,10 @@ class LabelSprites {
           if (!store.ready(section, plain)) return null;
         }
       }
-      final text = format == null && hasJoiningLetters(look.text)
+      final joined = format == null && hasJoiningLetters(look.text)
           ? String.fromCharCodes(joinArabic(look.text.runes.toList()))
           : look.text;
+      final text = look.vertical ? verticalPunctuation(joined) : joined;
       if (format == null && !store.ready(face, text)) return null;
       final laid = layoutRanges(
         store.glyph,
@@ -338,6 +343,7 @@ class LabelSprites {
           return image == null ? null : (image.width, image.height);
         },
         textSize: look.fontSize,
+        vertical: look.vertical,
         letterSpacing: look.letterSpacing,
         lineHeight: look.lineHeight,
         maxWidth: look.road

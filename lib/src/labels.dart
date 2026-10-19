@@ -14,6 +14,7 @@ import 'occlusion.dart';
 import 'glyphs/glyph_layout.dart';
 import 'glyphs/glyph_pages.dart';
 import 'glyphs/glyph_ranges.dart';
+import 'glyphs/maplibre_shaping.dart' show allowsVerticalText;
 import 'label_rules.dart';
 import 'label_view.dart';
 import 'view.dart';
@@ -255,9 +256,20 @@ class LabelEngine {
   String _spriteKey(LabelState st) {
     final c = st.candidate;
     final symbol = _symbolOf(c);
-    if (symbol == null || !symbol.justifyAuto) return c.spriteKey;
-    return '${c.spriteKey}|${_autoJustify(st, symbol).index}';
+    final key = st.vertical ? '${c.spriteKey}|v' : c.spriteKey;
+    if (symbol == null || !symbol.justifyAuto) return key;
+    return '$key|${_autoJustify(st, symbol).index}';
   }
+
+  /// Whether [c] may be written down the page: its layer allows it, it is
+  /// a point's plain text, and its script has upright vertical forms.
+  bool _mayBeVertical(LabelCandidate c, SymbolLayer? symbol) =>
+      symbol != null &&
+      symbol.writingModes.contains(true) &&
+      c is TileLabel &&
+      c.tile.line == null &&
+      c.tile.props?[formatKey] == null &&
+      allowsVerticalText(c.text);
 
   /// The side of the anchor [st] takes, which `text-justify: auto` makes
   /// its lines flush on.
@@ -721,55 +733,29 @@ class LabelEngine {
         }
       }
       if (st.sprite?.dropped ?? false) st.sprite = null;
-      final key = _spriteKey(st);
-      if (st.spriteKey != key || st.sprite == null) {
-        st
-          ..sprite = _sprites[key]
-          ..spriteKey = key;
-      }
-      final sprite = st.sprite;
-      st.scale = sprite == null ? 1 : fontSize / sprite.fontSize;
-      st.resize = sprite is GlyphSprite
-          ? false
-          : _zooming
-          ? st.scale < 0.7 || st.scale > 1.4
-          : st.scale < 0.87 || st.scale > 1.15;
-      final textW = sprite == null
-          ? c.text.length * fontSize * 0.55
-          : sprite.textWidth * st.scale;
-      final textH = sprite == null
-          ? fontSize * 1.35
-          : sprite.textHeight * st.scale;
-
-      st
-        ..placed = false
-        ..showText = c.hasText
-        ..showIcon = false;
-      if (road != null) {
-        _placeRoad(
+      // As MapLibre, each writing mode the layer names is tried in turn
+      // until one fits.
+      final modes = road == null && _mayBeVertical(c, layer)
+          ? layer!.writingModes
+          : const [false];
+      for (final vertical in modes) {
+        if (st.vertical != vertical) {
+          st
+            ..vertical = vertical
+            ..sprite = null;
+        }
+        if (_placeIn(
           st,
+          c,
           road,
           layer,
-          sprite,
           fontSize,
-          textW,
-          textH,
-          textPad,
-          styleZoom,
-          fitKey,
-        );
-      } else {
-        if (_points.place(
-          st,
-          layer,
-          fontSize,
-          textW,
-          textH,
           textPad,
           iconPad,
-          _context..zoom = styleZoom,
+          styleZoom,
+          fitKey,
         )) {
-          _showPlaced(st, sprite);
+          break;
         }
       }
     }
@@ -778,6 +764,74 @@ class LabelEngine {
       return same.isEmpty;
     });
     _sprites.trim(_pass);
+  }
+
+  /// Places [st] in its writing mode; true when it shows.
+  bool _placeIn(
+    LabelState st,
+    LabelCandidate c,
+    TileLabel? road,
+    SymbolLayer? layer,
+    double fontSize,
+    double textPad,
+    double iconPad,
+    double styleZoom,
+    int fitKey,
+  ) {
+    final key = _spriteKey(st);
+    if (st.spriteKey != key || st.sprite == null) {
+      st
+        ..sprite = _sprites[key]
+        ..spriteKey = key;
+    }
+    final sprite = st.sprite;
+    st.scale = sprite == null ? 1 : fontSize / sprite.fontSize;
+    st.resize = sprite is GlyphSprite
+        ? false
+        : _zooming
+        ? st.scale < 0.7 || st.scale > 1.4
+        : st.scale < 0.87 || st.scale > 1.15;
+    final long = c.text.length * fontSize * (st.vertical ? 1.0 : 0.55);
+    final textW = sprite == null
+        ? (st.vertical ? fontSize * 1.2 : long)
+        : sprite.textWidth * st.scale;
+    final textH = sprite == null
+        ? (st.vertical ? long : fontSize * 1.35)
+        : sprite.textHeight * st.scale;
+
+    st
+      ..placed = false
+      ..showText = c.hasText
+      ..showIcon = false;
+    if (road != null) {
+      _placeRoad(
+        st,
+        road,
+        layer,
+        sprite,
+        fontSize,
+        textW,
+        textH,
+        textPad,
+        styleZoom,
+        fitKey,
+      );
+      return st.placed;
+    }
+    if (_points.place(
+      st,
+      layer,
+      fontSize,
+      textW,
+      textH,
+      textPad,
+      iconPad,
+      _context..zoom = styleZoom,
+    )) {
+      _showPlaced(st, sprite);
+      return true;
+    }
+    return false;
   }
 
   /// Places a name along its road, when the road can carry it and it runs
@@ -950,6 +1004,7 @@ class LabelEngine {
         format: c is TileLabel
             ? (c.tile.props?[formatKey] as List<Object?>?)
             : null,
+        vertical: st.vertical,
       ),
       dpr: dpr,
       pass: _pass,

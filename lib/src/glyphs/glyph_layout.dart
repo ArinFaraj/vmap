@@ -139,7 +139,12 @@ class ShapedText {
     this.lines, [
     this.scales,
     this.colors,
+    this.turns,
   ]);
+
+  /// For vertical text, each glyph's quarter turns clockwise about its
+  /// origin: 1 for one lying on its side. Null for horizontal text.
+  final Uint8List? turns;
 
   /// For a formatted label, each glyph's size against the label's, and its
   /// colour, zero for the label's own. Null for plain text.

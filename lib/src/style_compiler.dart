@@ -484,6 +484,15 @@ class StyleCompiler {
         italic: font.contains('italic') || font.contains('oblique'),
         fontStack: _fontStack(layout['text-font']),
         uppercase: layout['text-transform'] == 'uppercase',
+        writingModes: placement == 'point'
+            ? switch (layout['text-writing-mode']) {
+                final List modes => [
+                  for (final m in modes)
+                    if (m == 'vertical' || m == 'horizontal') m == 'vertical',
+                ],
+                _ => const [],
+              }
+            : const [],
         letterSpacing: asNumber(layout['text-letter-spacing']) ?? 0,
         lineHeight: asNumber(layout['text-line-height']),
         justify: switch (layout['text-justify']) {

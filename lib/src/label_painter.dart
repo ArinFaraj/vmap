@@ -465,6 +465,7 @@ class LabelPainter {
     );
     final g = sprite.shaped.glyphs;
     final scales = sprite.shaped.scales, colors = sprite.shaped.colors;
+    final turns = sprite.shaped.turns;
     for (var i = 0; i < g.length; i += 5) {
       if (g[i] < 0) {
         if (quarters == 0 && canvas != null) {
@@ -508,7 +509,7 @@ class LabelPainter {
         cell,
         (ax + ux * cos - uy * sin) * k,
         (ay + ux * sin + uy * cos) * k,
-        quarters * math.pi / 2,
+        (quarters + (turns?[i ~/ 5] ?? 0)) * math.pi / 2,
         k * size / 16 / pages.found.em,
         own == 0 ? ink : _faded(own, st.opacity),
         halo,
