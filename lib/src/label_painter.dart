@@ -802,7 +802,8 @@ class LabelPainter {
         around,
         by * devicePixelRatio,
         edge: (0.75 - reach / (8 * by)).clamp(0.1, 0.75),
-        fade: (asNumber(symbol.iconHaloBlur?.call(context)) ?? 0) / (8 * by),
+        blur:
+            (asNumber(symbol.iconHaloBlur?.call(context)) ?? 0) * 1.19 / 8 / by,
       ),
     );
   }
@@ -811,17 +812,17 @@ class LabelPainter {
   /// shape is where the field is [edge] full, three quarters for the shape
   /// itself and less for a rim around it; [scale] is how many screen pixels
   /// one pixel of the field covers, which sets how sharp the edge may be.
-  /// The edge fades out over [fade] of the field's range.
+  /// A halo's [blur], in the field's range, widens the fade as MapLibre's
+  /// gamma_halo does.
   static ui.ColorFilter sdf(
     Rgba tint,
     double scale, {
     double edge = 0.75,
-    double fade = 0,
+    double blur = 0,
   }) {
-    // smoothstep's slope at the edge in MapLibre's symbol_sdf shader,
-    // 0.75 over a gamma of 0.105 per screen pixel of field.
-    final crisp = (0.75 / 0.105 * scale).clamp(2.0, 24.0);
-    final gain = fade > 0 ? math.min(crisp, 1 / fade) : crisp;
+    // smoothstep's slope at the edge in MapLibre's symbol_sdf shader: 0.75
+    // over its gamma, 0.105 per screen pixel of field plus the blur.
+    final gain = (0.75 / (blur + 0.105 / scale)).clamp(0.5, 24.0);
     return ui.ColorFilter.matrix([
       0, 0, 0, 0, tint.r * 255, //
       0, 0, 0, 0, tint.g * 255,
