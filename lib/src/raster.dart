@@ -463,7 +463,7 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
       // The hold takes the cover to [z] whatever the view's own zoom.
       for (final t in view.cover(
         maxZoom: z,
-        minZoom: spread ? 0 : z,
+        minZoom: spread ? math.min(layer.cover.minZoom, z) : z,
         hold: z + 0.5 - view.zoom,
         variableZoom: spread,
         beyond: variable ? view.height : 0,

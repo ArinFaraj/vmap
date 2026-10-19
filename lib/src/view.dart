@@ -526,7 +526,7 @@ class MapView {
     double beyond = 0,
   }) {
     if (globe case final globe?) {
-      return globe.cover(maxZoom: maxZoom, minZoom: minZoom);
+      return globe.cover(maxZoom: maxZoom, minZoom: minZoom, hold: hold);
     }
     final quad = ground(beyond: beyond);
     final (x: camX, y: camY, height: camH) = eye;

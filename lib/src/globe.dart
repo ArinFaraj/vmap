@@ -158,9 +158,13 @@ class Globe {
   /// The tiles that cover the side of the sphere in view, nearest first:
   /// MapLibre's `coveringTiles` for the globe, each tile at the zoom its
   /// distance from the camera asks for, no deeper than [maxZoom].
-  List<CoverTile> cover({required int maxZoom, int minZoom = 0}) {
+  List<CoverTile> cover({
+    required int maxZoom,
+    int minZoom = 0,
+    double hold = 0,
+  }) {
     final out = <CoverTile>[];
-    final zoom = view.zoom;
+    final zoom = view.zoom + hold;
     final cx = camera[0], cy = camera[1], cz = camera[2];
     final centreDistance = view.cameraToCenterDistance / radius;
     final spread = math.max(0.5, math.cos(view.fov / 2));
