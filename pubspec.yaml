@@ -44,6 +44,7 @@ flutter:
         pluginClass: VmapPlugin
   shaders:
     - shaders/atmosphere.frag
+    - shaders/sky.frag
   assets:
     - assets/fonts/Vazirmatn-Variable.ttf
     - assets/fonts/NotoSansSyriacEastern-Variable.ttf

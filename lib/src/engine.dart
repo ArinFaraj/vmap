@@ -943,6 +943,30 @@ class VmapEngine extends ChangeNotifier {
       );
       canvas.restore();
     }
+    final globeSky = sheet.sky;
+    if (view != null && globeSky != null && view.globe != null) {
+      _unroll(canvas, view);
+      final b = view.unrolledBounds;
+      final top = Rgba.of(globeSky.skyColor(_context)) ?? Rgba.transparent;
+      if (!_atmosphere.sky(
+        canvas,
+        size,
+        ui.Rect.fromLTRB(b.left, b.top, b.right, b.bottom),
+        view.globe!,
+        top: top,
+        low: Rgba.of(globeSky.horizonColor(_context)) ?? top,
+        band:
+            (asNumber(globeSky.skyHorizonBlend(_context)) ?? 0).toDouble() *
+            size.height /
+            2,
+        horizonY: view.horizonY,
+        atmosphereBlend:
+            asNumber(globeSky.atmosphereBlend(_context))?.toDouble() ?? 0.8,
+      )) {
+        waiting = true;
+      }
+      canvas.restore();
+    }
     if (horizon > 0) {
       canvas.save();
       _clipGround(canvas, view!, horizon);
