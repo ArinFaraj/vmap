@@ -197,6 +197,24 @@ class LabelEngine {
   bool _zooming = false;
   int lastRasterMicros = 0;
   int get stateCount => _allStates.length;
+
+  /// Every map label as last placed, for tools that compare placement with
+  /// another renderer: its layer, text, icon, point as fractions of the
+  /// world and what of it shows.
+  List<Map<String, Object?>> debugLabels(StyleSheet sheet) => [
+    for (final st in _allStates)
+      if (st.candidate case final TileLabel c)
+        {
+          'layer': sheet.symbols[c.tile.layer].id,
+          'text': c.text,
+          'icon': c.tile.icon,
+          'x': c.worldX,
+          'y': c.worldY,
+          'placed': st.placed,
+          'text_shown': st.placed && st.showText,
+          'icon_shown': st.placed && st.showIcon,
+        },
+  ];
   int get spriteCount => _sprites.length;
 
   int get shown => _allStates.where((s) => s.opacity > 0).length;

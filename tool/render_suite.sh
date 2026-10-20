@@ -60,6 +60,7 @@ VMAP_BACKGROUND=1 flutter run -d macos --profile -t lib/render_suite.dart \
   --dart-define=GPU="$gpu" \
   --dart-define=MULTISAMPLE="${MULTISAMPLE:-true}" \
   --dart-define=PARALLEL="${PARALLEL:-6}" \
-  --dart-define=IDLE_CHECK="${IDLE_CHECK:-false}" >"$out/run.log" 2>&1 || true
+  --dart-define=IDLE_CHECK="${IDLE_CHECK:-false}" \
+  --dart-define=LABELS="${LABELS:-false}" >"$out/run.log" 2>&1 || true
 grep -E '^flutter: (render suite|in scope|must pass):' "$out/run.log" || tail -20 "$out/run.log"
 echo "report: $out/index.html"

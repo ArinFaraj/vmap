@@ -112,6 +112,14 @@ class VmapEngine extends ChangeNotifier {
   bool showLabels;
   StyleSheet? _sheet;
   final LabelEngine _labels;
+
+  /// The map labels as last placed, for tools that compare placement: see
+  /// [LabelEngine.debugLabels].
+  List<Map<String, Object?>> debugLabels() {
+    final sheet = _sheet;
+    return sheet == null ? const [] : _labels.debugLabels(sheet);
+  }
+
   final List<TileSource> _sources = [];
   final List<RasterDrawing<RasterLayer>> _rasters = [];
   final VmapStats stats = VmapStats();
