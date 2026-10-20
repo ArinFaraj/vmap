@@ -497,6 +497,8 @@ class PointLabels {
     // The side taken last is tried first, so a label stays put while it
     // fits there; then the sides in the layer's order.
     final previous = st.opacity > 0 && st.side < sides.length ? st.side : -1;
+    final turn = symbol.textAlongMap && !st.onGround ? _view.mapTurn : 0.0;
+    final cos = math.cos(turn), sin = math.sin(turn);
     for (var k = previous < 0 ? 0 : -1; k < sides.length; k++) {
       final at = k < 0 ? previous : k;
       if (k >= 0 && at == previous) continue;
@@ -507,35 +509,30 @@ class PointLabels {
       final halfW = spot.textW / 2 + spot.textPad;
       final halfH = spot.textH / 2 + spot.textPad;
       final given = symbol.anchorOffsets;
+      final double lx, ly;
       if (given != null) {
         // As MapLibre's getTextVariableAnchorOffset: the offset as given,
         // with the baseline shift of a text above or below its point.
-        fx = moved.$1 + ax * halfW + given[at].$1 * fontSize;
-        fy = moved.$2 + ay * halfH + given[at].$2 * fontSize - ay * baseline;
-        if (!symbol.textOverlaps && _textHits(spot, fx, fy)) continue;
-        if (iconClear != null && !iconClear(fx, fy)) continue;
-        st
-          ..side = at
-          ..dx = fx
-          ..dy = fy;
-        return true;
-      }
-      if (away != null) {
+        lx = ax * halfW + given[at].$1 * fontSize;
+        ly = ay * halfH + given[at].$2 * fontSize - ay * baseline;
+      } else if (away != null) {
         final reach = ax != 0 && ay != 0 ? away / math.sqrt2 : away;
-        fx = moved.$1 + ax * (reach + halfW);
-        fy = moved.$2 + ay * (reach + halfH);
+        lx = ax * (reach + halfW);
+        ly = ay * (reach + halfH) - ay * baseline;
       } else {
-        fx = moved.$1 + ax * ((ems.$1 * fontSize).abs() + halfW);
-        fy = moved.$2 + ay * ((ems.$2 * fontSize).abs() + halfH);
+        lx = ax * ((ems.$1 * fontSize).abs() + halfW);
+        ly = ay * ((ems.$2 * fontSize).abs() + halfH) - ay * baseline;
       }
-      if (!symbol.textOverlaps && _textHits(spot, fx, fy - ay * baseline)) {
-        continue;
-      }
-      if (iconClear != null && !iconClear(fx, fy - ay * baseline)) continue;
+      // Text turned with the map is shifted along the map's axes, as
+      // MapLibre's collision index shifts it in tile units.
+      fx = moved.$1 + lx * cos - ly * sin;
+      fy = moved.$2 + lx * sin + ly * cos;
+      if (!symbol.textOverlaps && _textHits(spot, fx, fy)) continue;
+      if (iconClear != null && !iconClear(fx, fy)) continue;
       st
         ..side = at
         ..dx = fx
-        ..dy = fy - ay * baseline;
+        ..dy = fy;
       return true;
     }
     return false;
