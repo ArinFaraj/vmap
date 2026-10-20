@@ -34,7 +34,14 @@ class SpriteImage {
     this.stretchX,
     this.stretchY,
     this.content,
+    this.textFitWidth,
+    this.textFitHeight,
   });
+
+  /// How a picture fitted to text keeps to its content's shape across and
+  /// down: `stretchOrShrink`, `stretchOnly` or `proportional`; null for the
+  /// first.
+  final String? textFitWidth, textFitHeight;
 
   /// The spans of the picture, in its own pixels, that grow when it is
   /// fitted to text; the rest keeps its size.
@@ -66,6 +73,8 @@ class SpriteImage {
     stretchX: stretchX,
     stretchY: stretchY,
     content: content,
+    textFitWidth: textFitWidth,
+    textFitHeight: textFitHeight,
   );
 }
 
@@ -295,6 +304,8 @@ class SpriteSheet {
           ],
           _ => null,
         },
+        textFitWidth: v['textFitWidth'] as String?,
+        textFitHeight: v['textFitHeight'] as String?,
       );
     }
     return SpriteSheet(frame.image, entries);

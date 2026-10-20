@@ -199,6 +199,7 @@ class PointLabels {
       st
         ..iconDx += st.dx * st.iconScale
         ..iconDy += st.dy * st.iconScale;
+      _keepContentShape(st, icon);
     }
     final ix = spot.x + st.iconDx, iy = spot.y + st.iconDy;
     final il = ix - st.iconW / 2 - (pads?[3] ?? iconPad);
@@ -424,6 +425,44 @@ class PointLabels {
         1.0,
       );
     return icon;
+  }
+
+  /// As MapLibre's applyTextFit: a fitted picture whose sprite asks for a
+  /// `proportional` side has that side pushed back out to its content's
+  /// shape, about the label's point.
+  static void _keepContentShape(LabelState st, SpriteImage icon) {
+    final content = icon.content;
+    final across = icon.textFitWidth, down = icon.textFitHeight;
+    if (content == null || (across == null && down == null)) return;
+    final aspect = (content[2] - content[0]) / (content[3] - content[1]);
+    final by = st.iconScale;
+    // Vertical text is laid out across and turned a quarter, so its width
+    // runs down the screen.
+    final turned = st.vertical;
+    var w = (turned ? st.iconH : st.iconW) / by;
+    var h = (turned ? st.iconW : st.iconH) / by;
+    var left = (turned ? st.iconDy : st.iconDx) / by - w / 2;
+    var top = (turned ? st.iconDx : st.iconDy) / by - h / 2;
+    if (down == 'proportional') {
+      if ((across == 'stretchOnly' && w / h < aspect) ||
+          across == 'proportional') {
+        final wider = (h * aspect).ceilToDouble();
+        left *= wider / w;
+        w = wider;
+      }
+    } else if (across == 'proportional') {
+      if (down == 'stretchOnly' && aspect != 0 && w / h > aspect) {
+        final taller = (w / aspect).ceilToDouble();
+        top *= taller / h;
+        h = taller;
+      }
+    }
+    final cx = (left + w / 2) * by, cy = (top + h / 2) * by;
+    st
+      ..iconW = (turned ? h : w) * by
+      ..iconH = (turned ? w : h) * by
+      ..iconDx = turned ? cy : cx
+      ..iconDy = turned ? cx : cy;
   }
 
   /// The pin drawn in place of [st]'s icon, and how far its name sits from
