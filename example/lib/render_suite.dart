@@ -31,6 +31,10 @@ const _multisample = bool.fromEnvironment('MULTISAMPLE', defaultValue: true);
 /// Tests run at once: each has its own engine and draws off screen.
 const _parallel = int.fromEnvironment('PARALLEL', defaultValue: 6);
 
+/// Whether each test, once drawn, is also watched for a second for frames
+/// that still ask for another: a map that is not moving should draw none.
+const _idleCheck = bool.fromEnvironment('IDLE_CHECK');
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const SizedBox.expand());
@@ -211,6 +215,10 @@ Future<_Result> _runOne(String id, String dir) async {
       await session.apply(op as List);
     }
     await session.settle();
+    if (_idleCheck) {
+      final busy = await session.framesAskedWhileIdle();
+      if (busy > 2) result.note ??= 'asked for $busy frames while idle';
+    }
     var actual = session.capture();
     // The runner reads back the bottom-left corner of that size.
     if (test['reportWidth'] case final num w) {
@@ -285,6 +293,19 @@ class _Session {
         ..showCollisionBoxes = collisionBoxes;
 
   Future<void> settle() => _settle(_engine, () => _paintNow(false));
+
+  /// Of the frames drawn over the second after the first 300 ms, how many
+  /// left the engine busy.
+  Future<int> framesAskedWhileIdle() async {
+    final watch = Stopwatch()..start();
+    var busy = 0;
+    while (watch.elapsedMilliseconds < 1300) {
+      _paintNow(false);
+      if (watch.elapsedMilliseconds > 300 && _engine.stats.busy) busy++;
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+    }
+    return busy;
+  }
 
   ui.Image capture() => _paintNow(true)!;
 

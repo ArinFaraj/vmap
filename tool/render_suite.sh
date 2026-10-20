@@ -6,6 +6,8 @@
 #
 # The filter is a comma separated list of test id prefixes, for example
 # "line-width,fill-color". The checkout only needs test/integration.
+# IDLE_CHECK=true also notes each test whose map, once drawn and still,
+# keeps asking for frames.
 set -euo pipefail
 
 checkout=${1:?usage: tool/render_suite.sh <maplibre-gl-js checkout> [out dir] [filter] [--gpu]}
@@ -55,6 +57,7 @@ VMAP_BACKGROUND=1 flutter run -d macos --profile -t lib/render_suite.dart \
   --dart-define=PORT="$port" \
   --dart-define=GPU="$gpu" \
   --dart-define=MULTISAMPLE="${MULTISAMPLE:-true}" \
-  --dart-define=PARALLEL="${PARALLEL:-6}" >"$out/run.log" 2>&1 || true
+  --dart-define=PARALLEL="${PARALLEL:-6}" \
+  --dart-define=IDLE_CHECK="${IDLE_CHECK:-false}" >"$out/run.log" 2>&1 || true
 grep -E '^flutter: (render suite|in scope):' "$out/run.log" || tail -20 "$out/run.log"
 echo "report: $out/index.html"
