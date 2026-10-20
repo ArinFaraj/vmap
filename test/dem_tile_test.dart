@@ -58,6 +58,18 @@ void main() {
     expect(DemTiles().heightAt(0.5, 0.5, 3), 0);
   });
 
+  test(
+    'a shallow tile standing in at one point does not hide a deeper one',
+    () {
+      final tiles = DemTiles()
+        ..add(const TileId(0, 0, 0), flat(4, 100))
+        ..add(const TileId(1, 1, 1), flat(4, 700));
+      expect(tiles.heightAt(0.25, 0.25, 1), closeTo(100, 0.01));
+      expect(tiles.heightAt(0.75, 0.75, 1), closeTo(700, 0.01));
+      expect(tiles.locate(0.75, 0.75, 1)?.$2, 1);
+    },
+  );
+
   test('neighbours fill each other\'s borders', () {
     final tiles = DemTiles()
       ..add(const TileId(1, 0, 0), flat(4, 100))

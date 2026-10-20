@@ -133,12 +133,18 @@ class DemTiles {
   /// left in [_last] with its place, or null.
   DemTile? _find(double wx, double wy, int maxZoom) {
     final last = _last;
+    var lowest = 0;
     if (last != null && maxZoom == _lastMax) {
       final n = 1 << _lastZ;
       final tx = wx * n, ty = wy * n;
-      if (tx.floor() % n == _lastX && ty.floor() == _lastY) return last;
+      if (tx.floor() % n == _lastX && ty.floor() == _lastY) {
+        // A tile above [maxZoom] stood in for a deeper one missing where
+        // the last point was; one may be loaded here.
+        if (_lastZ == maxZoom) return last;
+        lowest = _lastZ;
+      }
     }
-    for (var z = maxZoom; z >= 0; z--) {
+    for (var z = maxZoom; z >= lowest; z--) {
       final n = 1 << z;
       final x = (wx * n).floor(), y = (wy * n).floor();
       if (y < 0 || y >= n) continue;
