@@ -11,6 +11,7 @@ import 'gpu_stream.dart';
 import 'extrusion.dart';
 import 'format.dart';
 import 'mvt.dart';
+import 'pole.dart';
 import 'platform.dart';
 import 'round_corners.dart';
 import 'style_model.dart';
@@ -699,21 +700,26 @@ class TileBuilder {
             // rings.
             if (f.type == mvtPolygon && !along) {
               scaled();
-              final at = _inside();
-              if (at == null) continue;
-              labels.add(
-                BuiltLabel(
-                  s,
-                  base + order,
-                  text,
-                  at.$1,
-                  at.$2,
-                  null,
-                  icon: icon,
-                  angle: spin,
-                  spaced: true,
-                )..props = carried,
-              );
+              // As MapLibre: each polygon at its pole of inaccessibility,
+              // to 2 pixels, when that lies in this tile.
+              for (final (x, y) in polygonLabelPoints(_sink)) {
+                if (x < 0 || y < 0 || x >= tileExtent || y >= tileExtent) {
+                  continue;
+                }
+                labels.add(
+                  BuiltLabel(
+                    s,
+                    base + order,
+                    text,
+                    x,
+                    y,
+                    null,
+                    icon: icon,
+                    angle: spin,
+                    spaced: true,
+                  )..props = carried,
+                );
+              }
               continue;
             }
             if (f.type == mvtPoint) {
@@ -991,90 +997,6 @@ class TileBuilder {
         return c != 0 ? c : a.compareTo(b);
       });
     return [for (final i in order) features[i]];
-  }
-
-  /// A point well inside the largest ring in the sink, for a polygon's label:
-  /// the spot on a grid over the ring that is furthest from its edge. Null
-  /// when that spot is outside the tile, so a polygon cut by a tile edge is
-  /// named by the tile holding its middle.
-  (double, double)? _inside() {
-    final c = _sink.coords;
-    var best = -1;
-    var bestArea = 0.0;
-    for (var r = 0; r < _sink.ringCount; r++) {
-      final start = _sink.ringStart(r), end = _sink.ringEnd(r);
-      if (end - start < 3) continue;
-      var area = 0.0;
-      var px = c[end * 2 - 2], py = c[end * 2 - 1];
-      for (var i = start; i < end; i++) {
-        area += px * c[i * 2 + 1] - c[i * 2] * py;
-        px = c[i * 2];
-        py = c[i * 2 + 1];
-      }
-      if (area > bestArea) {
-        bestArea = area;
-        best = r;
-      }
-    }
-    if (best < 0) return null;
-    final start = _sink.ringStart(best), end = _sink.ringEnd(best);
-    var minX = double.infinity, minY = double.infinity;
-    var maxX = -double.infinity, maxY = -double.infinity;
-    for (var i = start; i < end; i++) {
-      minX = math.min(minX, c[i * 2]);
-      maxX = math.max(maxX, c[i * 2]);
-      minY = math.min(minY, c[i * 2 + 1]);
-      maxY = math.max(maxY, c[i * 2 + 1]);
-    }
-
-    /// How far inside the ring a point is, squared. Negative when outside.
-    double depth(double x, double y) {
-      var inside = false;
-      var nearest = double.infinity;
-      var ax = c[end * 2 - 2], ay = c[end * 2 - 1];
-      for (var i = start; i < end; i++) {
-        final bx = c[i * 2], by = c[i * 2 + 1];
-        if ((ay > y) != (by > y) && x < (bx - ax) * (y - ay) / (by - ay) + ax) {
-          inside = !inside;
-        }
-        final dx = bx - ax, dy = by - ay;
-        final length = dx * dx + dy * dy;
-        var t = length == 0 ? 0.0 : ((x - ax) * dx + (y - ay) * dy) / length;
-        t = t.clamp(0.0, 1.0);
-        final qx = ax + dx * t - x, qy = ay + dy * t - y;
-        nearest = math.min(nearest, qx * qx + qy * qy);
-        ax = bx;
-        ay = by;
-      }
-      return inside ? nearest : -nearest;
-    }
-
-    var bx = (minX + maxX) / 2, by = (minY + maxY) / 2;
-    var bestDepth = depth(bx, by);
-    var stepX = (maxX - minX) / 8, stepY = (maxY - minY) / 8;
-    var fromX = minX + stepX / 2, fromY = minY + stepY / 2;
-    for (var pass = 0; pass < 3; pass++) {
-      final cx = bx, cy = by;
-      for (var gy = 0; gy < 8; gy++) {
-        for (var gx = 0; gx < 8; gx++) {
-          final x = pass == 0 ? fromX + gx * stepX : cx + (gx - 3.5) * stepX;
-          final y = pass == 0 ? fromY + gy * stepY : cy + (gy - 3.5) * stepY;
-          final d = depth(x, y);
-          if (d > bestDepth) {
-            bestDepth = d;
-            bx = x;
-            by = y;
-          }
-        }
-      }
-      stepX /= 4;
-      stepY /= 4;
-      fromX = 0;
-      fromY = 0;
-    }
-    if (bestDepth <= 0) return null;
-    if (bx < 0 || by < 0 || bx >= tileExtent || by >= tileExtent) return null;
-    return (bx, by);
   }
 
   void _scaleSink(double scale) {
