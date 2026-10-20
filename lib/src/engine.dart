@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -332,15 +333,96 @@ class VmapEngine extends ChangeNotifier {
     _apply(base, _style, keepLabels: sameSymbols);
   }
 
+  /// The document last applied, before its transitions were written in.
+  Map<String, Object?>? _applied;
+
+  /// Paint properties on their way from one value to another, by layer id
+  /// and property name.
+  final Map<String, _Transition> _transitions = {};
+
+  /// [document] with each paint property that changed since the last
+  /// document passing from its old value to its new one, over its
+  /// `-transition` or the style's `transition`, 300 ms by default, as
+  /// MapLibre animates a changed paint property.
+  Map<String, Object?> _transitioned(Map<String, Object?> document) {
+    final before = _applied;
+    _applied = document;
+    final now = _clock.elapsedMilliseconds.toDouble();
+    _transitions.removeWhere((_, t) => t.over(now));
+    if (before != null) {
+      final old = {
+        for (final l in (before['layers'] as List?) ?? const [])
+          if (l is Map) '${l['id']}': l,
+      };
+      final style = document['transition'];
+      for (final l in (document['layers'] as List?) ?? const []) {
+        if (l is! Map) continue;
+        final id = '${l['id']}';
+        final was = old[id];
+        if (was == null) continue;
+        final paint = l['paint'] is Map ? l['paint'] as Map : const {};
+        final prior = was['paint'] is Map ? was['paint'] as Map : const {};
+        for (final key in {...paint.keys, ...prior.keys}) {
+          if ('$key'.endsWith('-transition')) continue;
+          final a = prior[key], b = paint[key];
+          if (a == null || b == null || _sameJson(a, b)) continue;
+          final own = paint['$key-transition'];
+          double timing(String name, double fallback) =>
+              asNumber(own is Map ? own[name] : null) ??
+              asNumber(style is Map ? style[name] : null) ??
+              fallback;
+          final duration = timing('duration', 300);
+          final delay = timing('delay', 0);
+          if (duration <= 0 && delay <= 0) continue;
+          _transitions['$id\u0000$key'] = _Transition(
+            id,
+            '$key',
+            a,
+            b,
+            now,
+            duration,
+            delay,
+          );
+        }
+      }
+    }
+    if (_transitions.isEmpty) return document;
+    return {
+      ...document,
+      'layers': [
+        for (final l in (document['layers'] as List?) ?? const [])
+          if (l is Map &&
+              _transitions.values.any((t) => t.layer == '${l['id']}'))
+            {
+              ...l,
+              'paint': {
+                ...?(l['paint'] as Map?),
+                for (final t in _transitions.values)
+                  if (t.layer == '${l['id']}') t.key: t.expression,
+              },
+            }
+          else
+            l,
+      ],
+    };
+  }
+
+  static bool _sameJson(Object? a, Object? b) {
+    try {
+      return jsonEncode(a) == jsonEncode(b);
+    } on JsonUnsupportedObjectError {
+      return identical(a, b);
+    }
+  }
+
   void _apply(
     Map<String, Object?> base,
     VmapStyle from, {
     bool keepLabels = false,
   }) {
     _base = base;
-    final document = VmapStyleEdit.applyAll(
-      _edits,
-      _overlay?.applyTo(base) ?? base,
+    final document = _transitioned(
+      VmapStyleEdit.applyAll(_edits, _overlay?.applyTo(base) ?? base),
     );
     final sheet = StyleSheet.compile(
       document,
@@ -882,7 +964,9 @@ class VmapEngine extends ChangeNotifier {
     if (sheet == null) return;
     final dataZoom = camera.zoom - 1;
     final styleZoom = dataZoom + sheet.zoomOffset;
-    _context.zoom = styleZoom;
+    _context
+      ..zoom = styleZoom
+      ..nowMs = _clock.elapsedMilliseconds.toDouble();
     _meshes.startFrame(
       sheet,
       styleZoom,
@@ -1210,7 +1294,24 @@ class VmapEngine extends ChangeNotifier {
       );
     timings.labels.take(_labels.work);
     if (holes > 0) timings.framesWithHoles++;
-    stats.busy = animating || waiting || _budget.stale;
+    if (_transitions.isNotEmpty) {
+      final now = _clock.elapsedMilliseconds.toDouble();
+      if (_transitions.values.every((t) => t.over(now))) {
+        // Done: the plain values take over, after this frame.
+        _transitions.clear();
+        scheduleMicrotask(() {
+          final base = _base;
+          if (base != null && !_disposed) {
+            _apply(base, _style, keepLabels: true);
+          }
+        });
+      } else {
+        animating = true;
+      }
+    }
+    stats
+      ..busy = animating || waiting || _budget.stale
+      ..preparing = waiting;
     if (stats.busy) {
       _requestFrame();
     } else {
@@ -1310,4 +1411,43 @@ class VmapEngine extends ChangeNotifier {
     _terrain?.close();
     super.dispose();
   }
+}
+
+/// A paint property passing from one value to another.
+class _Transition {
+  _Transition(
+    this.layer,
+    this.key,
+    this.from,
+    this.to,
+    this.startMs,
+    this.duration,
+    this.delay,
+  );
+
+  final String layer, key;
+  final Object? from, to;
+  final double startMs, duration, delay;
+
+  bool over(double nowMs) => nowMs >= startMs + delay + duration;
+
+  /// The property's value as an expression of the frame's time.
+  List<Object?> get expression => [
+    r'$transition',
+    _quoted(from),
+    _quoted(to),
+    startMs,
+    duration,
+    delay,
+  ];
+
+  /// [v] as an expression: a list that is not one is a literal.
+  static Object? _quoted(Object? v) =>
+      v is List && (v.isEmpty || v.first is! String) ||
+          v is Map && !_isFunction(v)
+      ? ['literal', v]
+      : v;
+
+  static bool _isFunction(Map<Object?, Object?> v) =>
+      v.containsKey('stops') || v.containsKey('property');
 }

@@ -25,6 +25,10 @@ class EvalContext {
   /// What `accumulated` reads while a cluster adds up one of its properties.
   Object? accumulated;
 
+  /// The time a frame is drawn at, in milliseconds on the engine's clock,
+  /// which a paint property's transition is timed by.
+  double nowMs = 0;
+
   /// The feature's parts (its points, lines or rings), each as longitude
   /// and latitude in turn, which `within`
   /// and `distance` read. Null where features are not weighed by place.
@@ -111,6 +115,7 @@ const _operators = {
   'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'within', 'distance',
   'accumulated', 'to-rgba', 'hsl', 'hsla', 'split', 'join', 'semiliteral',
   r'$images',
+  r'$transition',
 };
 
 /// The variables `let` has bound around the expression being compiled.
@@ -399,6 +404,20 @@ Expr _op(String op, List<Object?> args) {
       if (name is String) return (c) => c.state[name];
       final inner = arg(0);
       return (c) => c.state[inner(c)];
+    case r'$transition':
+      // From one value to another over a span of the engine's clock, eased
+      // as MapLibre eases a paint property's transition.
+      final from = arg(0), to = arg(1);
+      final start = asNumber(args.elementAtOrNull(2)) ?? 0;
+      final duration = asNumber(args.elementAtOrNull(3)) ?? 0;
+      final delay = asNumber(args.elementAtOrNull(4)) ?? 0;
+      return (c) {
+        final t = duration <= 0
+            ? 1.0
+            : ((c.nowMs - start - delay) / duration).clamp(0.0, 1.0);
+        if (t >= 1) return to(c);
+        return _blend(from(c), to(c), _easeCubicInOut(t));
+      };
     case r'$images':
       final parts = all();
       return (c) =>
@@ -957,6 +976,25 @@ String _grouped(double value, int least, int most) {
   }
   text = fraction.isEmpty ? '$groups' : '$groups.$fraction';
   return value < 0 && text.contains(RegExp('[1-9]')) ? '-$text' : text;
+}
+
+double _easeCubicInOut(double t) {
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  final t2 = t * t, t3 = t2 * t;
+  return 4 * (t < 0.5 ? t3 : 3 * (t - t2) + t3 - 0.75);
+}
+
+/// [a] to [b] by [t]: numbers, colours and lists of numbers in between,
+/// anything else [a] until the end.
+Object? _blend(Object? a, Object? b, double t) {
+  if (a is num && b is num) return a + (b - a) * t;
+  if (a is List && b is List && a.length == b.length) {
+    return [for (var i = 0; i < a.length; i++) _blend(a[i], b[i], t)];
+  }
+  final ca = Rgba.of(a), cb = Rgba.of(b);
+  if (ca != null && cb != null) return Rgba.lerp(ca, cb, t);
+  return t < 1 ? a : b;
 }
 
 /// [v] as a colour, as `to-color` reads one: a CSS colour or three or four

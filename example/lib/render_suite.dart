@@ -233,10 +233,16 @@ Future<_Result> _runOne(String id, String dir) async {
           ..camera.showPadding = test['showPadding'] == true
           ..camera.maxPitch = (test['maxPitch'] as num? ?? 60).toDouble();
     await session.settle();
-    for (final op in (test['operations'] as List?) ?? const []) {
+    final operations = (test['operations'] as List?) ?? const [];
+    for (final op in operations) {
       await session.apply(op as List);
     }
-    await session.settle();
+    // After a timed wait the picture is taken as it stands, mid-transition.
+    final timed = switch (operations.lastOrNull) {
+      ['wait', num _] => true,
+      _ => false,
+    };
+    if (!timed) await session.settle();
     if (_idleCheck) {
       final busy = await session.framesAskedWhileIdle();
       if (busy > 2) result.note ??= 'asked for $busy frames while idle';
@@ -361,6 +367,12 @@ class _Session {
   /// Makes one of the test's operations, as MapLibre's runner names them.
   Future<void> apply(List o) async {
     switch (o[0]) {
+      case 'wait' when o.length > 1 && o[1] is num:
+        // As MapLibre's runner: that long, then one frame.
+        await Future<void>.delayed(
+          Duration(milliseconds: (o[1] as num).toInt()),
+        );
+        await _loaded(_engine, () => _paintNow(false));
       case 'wait' || 'idle':
         await settle();
       case 'sleep':
@@ -668,6 +680,21 @@ Future<void> _settle(VmapEngine engine, void Function() paint) async {
     }
   }
   engine.removeListener(listen);
+}
+
+/// Paints until nothing [engine] needs is still loading, without waiting
+/// for what is animating, then once more.
+Future<void> _loaded(VmapEngine engine, void Function() paint) async {
+  final clock = Stopwatch()..start();
+  paint();
+  while (clock.elapsedMilliseconds < 20000 &&
+      (!engine.styleLoaded ||
+          engine.stats.tilesLoading > 0 ||
+          engine.stats.resourcesLoading > 0 ||
+          engine.stats.preparing)) {
+    await Future<void>.delayed(const Duration(milliseconds: 16));
+    paint();
+  }
 }
 
 Future<({Uint8List pixels, int width, int height})> _decode(

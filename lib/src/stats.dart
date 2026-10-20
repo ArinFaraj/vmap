@@ -14,6 +14,10 @@ class VmapStats {
   /// The last frame asked for another: something was still fading,
   /// growing, loading or waiting its turn to be drawn.
   bool busy = false;
+
+  /// The last frame drew tiles that were not ready yet in their place:
+  /// built tiles being prepared, or the tiles of a changed style.
+  bool preparing = false;
   int drawCalls = 0;
   int labelStates = 0;
   int labelSprites = 0;
