@@ -13,6 +13,9 @@ import 'dart:math' as math;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/expr.dart';
 import 'package:vmap/src/format.dart';
+import 'package:vmap/src/geojson.dart';
+import 'package:vmap/src/style_model.dart';
+import 'package:vmap/src/tile_builder.dart';
 
 void main() {
   final root = Platform.environment['STYLE_SPEC'];
@@ -37,6 +40,20 @@ void main() {
       final expected = fixture['expected'] as Map;
       if ((expected['compiled'] as Map)['result'] == 'error') {
         compileErrors++;
+        // MapLibre rejects these; vmap only has to come through them.
+        try {
+          final expr = compileExpr(fixture['expression']);
+          for (final input
+              in (fixture['inputs'] as List?) ??
+                  const [
+                    [{}, {}],
+                  ]) {
+            _evaluate(expr, input as List, 'value');
+          }
+        } catch (e) {
+          failed++;
+          failures.add('$id\tmalformed expression threw $e');
+        }
         continue;
       }
       final type = (expected['compiled'] as Map)['type'] as String;
@@ -88,6 +105,118 @@ void main() {
       'expression suite: $passed passed, $failed failed, '
       '$compileErrors expect a compile error, $errorsOnly expect only '
       'runtime errors',
+    );
+  }, skip: root == null ? 'set STYLE_SPEC' : false);
+
+  test('every fixture expression in every slot builds a tile', () {
+    final dir = Directory('$root/test/integration/expression/tests');
+    final expressions = [
+      for (final f in dir.listSync(recursive: true).whereType<File>())
+        if (f.path.endsWith('test.json'))
+          (jsonDecode(f.readAsStringSync()) as Map)['expression'],
+    ];
+    const data = {
+      'type': 'FeatureCollection',
+      'features': [
+        {
+          'type': 'Feature',
+          'id': 7,
+          'properties': {
+            'x': 1,
+            'name': 'a',
+            'b': true,
+            'c': [1, 2],
+          },
+          'geometry': {
+            'type': 'Point',
+            'coordinates': [1.0, 1.0],
+          },
+        },
+        {
+          'type': 'Feature',
+          'properties': {'x': 'y'},
+          'geometry': {
+            'type': 'LineString',
+            'coordinates': [
+              [0.0, 0.0],
+              [2.0, 2.0],
+            ],
+          },
+        },
+        {
+          'type': 'Feature',
+          'properties': <String, Object?>{},
+          'geometry': {
+            'type': 'Polygon',
+            'coordinates': [
+              [
+                [0.0, 0.0],
+                [3.0, 0.0],
+                [3.0, 3.0],
+                [0.0, 0.0],
+              ],
+            ],
+          },
+        },
+      ],
+    };
+    final slots = <(String, String, String)>[
+      ('fill', 'paint', 'fill-color'),
+      ('fill', 'paint', 'fill-opacity'),
+      ('fill', 'paint', 'fill-pattern'),
+      ('fill', 'paint', 'fill-sort-key'),
+      ('line', 'paint', 'line-width'),
+      ('line', 'paint', 'line-color'),
+      ('line', 'paint', 'line-dasharray'),
+      ('line', 'layout', 'line-join'),
+      ('circle', 'paint', 'circle-radius'),
+      ('circle', 'paint', 'circle-color'),
+      ('symbol', 'layout', 'text-field'),
+      ('symbol', 'layout', 'icon-image'),
+      ('symbol', 'layout', 'text-size'),
+      ('symbol', 'layout', 'text-offset'),
+      ('symbol', 'layout', 'text-anchor'),
+      ('symbol', 'layout', 'text-font'),
+      ('symbol', 'layout', 'symbol-sort-key'),
+      ('symbol', 'paint', 'text-color'),
+      ('fill-extrusion', 'paint', 'fill-extrusion-height'),
+      ('heatmap', 'paint', 'heatmap-weight'),
+    ];
+    final threw = <String>[];
+    for (final expression in expressions) {
+      for (final (type, part, key) in [...slots, ('fill', 'filter', '')]) {
+        final layer = <String, Object?>{
+          'id': 'x',
+          'type': type,
+          'source': 'mine',
+          if (type == 'symbol') 'layout': {'text-field': 'a'},
+        };
+        if (part == 'filter') {
+          layer['filter'] = expression;
+        } else {
+          layer[part] = {...?(layer[part] as Map?), key: expression};
+        }
+        try {
+          final sheet = StyleSheet.compile({
+            'version': 8,
+            'sources': {
+              'mine': {'type': 'geojson', 'data': data},
+            },
+            'layers': [layer],
+          });
+          TileBuilder(sheet).buildLayers(GeoJsonTiles(data).tile(0, 0, 0), 0);
+        } catch (e) {
+          threw.add('${jsonEncode(expression)} in $key$part: $e');
+        }
+      }
+    }
+    for (final t in threw.take(40)) {
+      // ignore: avoid_print
+      print(t.length > 300 ? '${t.substring(0, 300)}...' : t);
+    }
+    // ignore: avoid_print
+    print(
+      '${threw.length} of ${expressions.length * (slots.length + 1)} threw',
     );
   }, skip: root == null ? 'set STYLE_SPEC' : false);
 }

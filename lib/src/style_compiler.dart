@@ -260,7 +260,7 @@ class StyleCompiler {
         maxZoom: layer.maxZoom,
         color: _withDefault(paint['background-color'], '#000000'),
         opacity: _withDefault(paint['background-opacity'], 1),
-        pattern: picture == null ? null : compileText(picture),
+        pattern: picture == null ? null : compileImage(picture),
       ),
     );
   }
@@ -782,7 +782,7 @@ class StyleCompiler {
           'square' => DashCap.square,
           _ => DashCap.butt,
         },
-        pattern: picture == null ? null : compileText(picture),
+        pattern: picture == null ? null : compileImage(picture),
         perFeature: names.isNotEmpty,
       ),
     );
@@ -813,7 +813,7 @@ class StyleCompiler {
             ? _withDefault(color, '#000000')
             : compileExpr('#ffffff')),
         opacity: compileExpr(opacity),
-        pattern: image == null ? null : compileText(image),
+        pattern: image == null ? null : compileImage(image),
         patternTint: image == null ? null : _withDefault(color, '#000000'),
         // As MapLibre, an antialiased fill is outlined in its own colour
         // when it names no outline colour, and a patterned one in its
@@ -861,7 +861,7 @@ class StyleCompiler {
               roundedCorners: compileExpr(
                 layer.layout['fill-extrusion-rounded-corner-distance'] ?? 0,
               ),
-              pattern: image == null ? null : compileText(image),
+              pattern: image == null ? null : compileImage(image),
             ),
           ),
         );

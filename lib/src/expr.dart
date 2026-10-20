@@ -194,7 +194,17 @@ Expr compileIcon(Object? json) {
     final List<Object?> l => [for (final e in l) walk(e)],
     _ => v,
   };
-  return compileText(walk(json));
+  return compileImage(walk(json));
+}
+
+/// Compiles a sprite image's name, for an icon or a pattern: as
+/// [compileText], with formatted text read as its plain text.
+Expr compileImage(Object? json) {
+  final text = compileText(json);
+  return (c) => switch (text(c)) {
+    final FormattedText f => '$f',
+    final v => v,
+  };
 }
 
 /// Compiles a layer filter in either the expression or the legacy syntax.
