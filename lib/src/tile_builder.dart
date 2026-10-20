@@ -389,6 +389,9 @@ class TileBuilder {
     final groups = <_Group>[];
     final labels = <BuiltLabel>[];
     final namedLines = <int, List<NamedLine>>{};
+    // Text along lines kept level on the screen, joined by name before its
+    // anchors are found, as names that follow the line are.
+    final levelLines = <int, List<NamedLine>>{};
     final extruders = <int, ExtrusionBuilder>{};
     final deepest = z >= maxZoom;
     final lineTolerance = deepest ? 0.75 : 2.0;
@@ -795,12 +798,38 @@ class TileBuilder {
                       (asNumber(symbol.iconSize(context)) ?? 1) *
                       em /
                       GlyphPbf.em;
+            final labelLength = math.max(
+              text.isEmpty ? 0.0 : _textEms(symbol, text) * em,
+              iconWidth,
+            );
+            if (placement == 'line' && text.isNotEmpty) {
+              (levelLines[s] ??= []).add(
+                NamedLine(
+                  priority: base + (symbol.build.sortKey == null ? 50 : order),
+                  text: text,
+                  spacing: spacing,
+                  labelLength: labelLength,
+                  em: em,
+                  maxBend: symbol.maxBend ?? math.pi / 4,
+                  props: carried,
+                  rings: [
+                    for (var r = 0; r < _sink.ringCount; r++)
+                      Float32List.fromList(
+                        _sink.coords.sublist(
+                          _sink.ringStart(r) * 2,
+                          _sink.ringEnd(r) * 2,
+                        ),
+                      ),
+                  ],
+                  icon: icon,
+                  spin: spin,
+                ),
+              );
+              continue;
+            }
             _anchorsAlong(
               spacing,
-              math.max(
-                text.isEmpty ? 0.0 : _textEms(symbol, text) * em,
-                iconWidth,
-              ),
+              labelLength,
               em,
               symbol.maxBend ?? math.pi / 4,
               placement == 'line-center',
@@ -822,6 +851,32 @@ class TileBuilder {
             );
           }
         }
+    }
+
+    for (final MapEntry(key: layer, value: lines) in levelLines.entries) {
+      for (final line in mergeNamedLines(lines)) {
+        _anchorsAlong(
+          line.spacing,
+          line.labelLength,
+          line.em,
+          line.maxBend,
+          false,
+          (x, y, angle) => labels.add(
+            BuiltLabel(
+              layer,
+              line.priority,
+              line.text,
+              x,
+              y,
+              null,
+              icon: line.icon,
+              angle: line.spin,
+              spaced: true,
+            )..props = line.props,
+          ),
+          rings: line.rings,
+        );
+      }
     }
 
     for (final MapEntry(key: layer, value: lines) in namedLines.entries) {
@@ -874,6 +929,7 @@ class TileBuilder {
   /// Calls [place] at the anchors MapLibre's `getAnchors` gives a symbol
   /// [labelLength] tile units long, an [em] tall, on each line of the sink
   /// cut to the tile, [spacing] apart; with [center], at each line's middle.
+  /// The lines are [rings], or the sink's.
   /// A symbol without [text] is not held to the line's bends, as
   /// MapLibre's angle window is none without text.
   void _anchorsAlong(
@@ -884,12 +940,20 @@ class TileBuilder {
     bool center,
     void Function(double x, double y, double angle) place, {
     bool text = true,
+    List<Float32List>? rings,
   }) {
     final window = text ? 3 / 5 * em : 0.0;
-    for (var r = 0; r < _sink.ringCount; r++) {
-      final ring = Float32List.fromList(
-        _sink.coords.sublist(_sink.ringStart(r) * 2, _sink.ringEnd(r) * 2),
-      );
+    for (final ring
+        in rings ??
+            [
+              for (var r = 0; r < _sink.ringCount; r++)
+                Float32List.fromList(
+                  _sink.coords.sublist(
+                    _sink.ringStart(r) * 2,
+                    _sink.ringEnd(r) * 2,
+                  ),
+                ),
+            ]) {
       for (final line in center ? [ring] : clipLineToTile(ring)) {
         final anchors = center
             ? centerAnchor(line, labelLength, window, maxBend)
@@ -1245,7 +1309,12 @@ class NamedLine {
     required this.props,
     required this.rings,
     this.icon = '',
+    this.spin = 0,
   });
+
+  /// The text's own turn, `text-rotate`, for a name kept level on the
+  /// screen.
+  final double spin;
 
   final int priority;
   final String text;

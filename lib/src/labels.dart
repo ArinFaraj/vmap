@@ -206,6 +206,7 @@ class LabelEngine {
       if (st.candidate case final TileLabel c)
         {
           'layer': sheet.symbols[c.tile.layer].id,
+          'tileZ': (math.log(1 / c.tileSpan) / math.ln2).round(),
           'text': c.text,
           'icon': c.tile.icon,
           'x': c.worldX,
