@@ -5,7 +5,8 @@
 //
 // Each test gets <out dir>/<id>/maplibre_labels.json: every symbol MapLibre
 // laid out, its layer, its anchor as fractions of the world and whether its
-// text and icon were placed. The test's operations are not run.
+// text and icon were placed, after running the test's operations that are
+// map methods.
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -60,7 +61,9 @@ for (const id of ids) {
       .replaceAll('local://', `${origin}assets/`),
   );
   const test = style.metadata?.test ?? {};
-  const labels = await page.evaluate(async (style, test) => {
+  let labels;
+  try {
+    labels = await page.evaluate(async (style, test) => {
     window.map?.remove();
     const div = document.getElementById('m');
     div.style.width = `${test.width ?? 512}px`;
@@ -70,13 +73,28 @@ for (const id of ids) {
       attributionControl: false, interactive: false,
       crossSourceCollisions: test.crossSourceCollisions ?? true,
     });
-    await new Promise((done) => map.once('idle', done));
+    const settle = () => Promise.race([
+      new Promise((done) => map.once('idle', done)),
+      new Promise((done) => setTimeout(done, 10000)),
+    ]);
+    await settle();
+    // As MapLibre's runner: each operation is the map method of its name.
+    for (const [name, ...args] of test.operations ?? []) {
+      if (name === 'wait' || name === 'idle') {
+        await settle();
+      } else if (typeof map[name] === 'function') {
+        map[name](...args);
+        map.triggerRepaint();
+        await settle();
+      }
+    }
     const placements = map.style.placement.placements;
     const seen = new Map();
     for (const manager of Object.values(map.style.tileManagers)) {
       for (const key of manager.getRenderableIds()) {
         const tile = manager.getTileByID(key);
-        const {z, x, y} = tile.tileID.canonical;
+        const {z, y} = tile.tileID.canonical;
+        const x = tile.tileID.canonical.x + tile.tileID.wrap * 2 ** z;
         const n = 2 ** z;
         for (const [layer, bucket] of Object.entries(tile.buckets)) {
           if (!bucket.symbolInstances) continue;
@@ -84,7 +102,12 @@ for (const id of ids) {
             const s = bucket.symbolInstances.get(i);
             if (seen.has(s.crossTileID)) continue;
             const p = placements[s.crossTileID];
+            const wx = (x + s.anchorX / 8192) / n, wy = (y + s.anchorY / 8192) / n;
+            const lng = wx * 360 - 180;
+            const lat = 360 / Math.PI * Math.atan(Math.exp((180 - wy * 360) * Math.PI / 180)) - 90;
+            const screen = map.project([lng, lat]);
             seen.set(s.crossTileID, {
+              onScreen: screen.x >= 0 && screen.y >= 0 && screen.x <= map.getCanvas().clientWidth && screen.y <= map.getCanvas().clientHeight,
               layer: bucket.layerIds[0] ?? layer,
               tile: `${tile.tileID.overscaledZ}/${z}/${x}/${y}`,
               x: (x + s.anchorX / 8192) / n,
@@ -98,8 +121,18 @@ for (const id of ids) {
         }
       }
     }
-    return {zoom: map.getZoom(), labels: [...seen.values()]};
-  }, style, test);
+    const w = map.getCanvas().clientWidth, h = map.getCanvas().clientHeight;
+    const view = [[0, 0], [w, 0], [w, h], [0, h]].map(([sx, sy]) => {
+      const ll = map.unproject([sx, sy]);
+      const s = Math.sin(ll.lat * Math.PI / 180);
+      return [(ll.lng + 180) / 360, 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)];
+    });
+    return {zoom: map.getZoom(), view, labels: [...seen.values()]};
+    }, style, test);
+  } catch (e) {
+    console.log(`${id}: ${e.message}`);
+    continue;
+  }
   const dir = path.join(outDir, id);
   fs.mkdirSync(dir, {recursive: true});
   fs.writeFileSync(path.join(dir, 'maplibre_labels.json'), JSON.stringify(labels));

@@ -23,8 +23,26 @@ for root, _, files in sorted(os.walk(out)):
     ours = json.load(open(os.path.join(root, 'labels.json')))
     theirs = json.load(open(os.path.join(root, 'maplibre_labels.json')))
     scale = 512 * 2 ** theirs['zoom']
-    a = [l for l in theirs['labels'] if l['text'] or l['icon']]
-    b = [l for l in ours if l['placed']]
+    view = theirs.get('view')
+
+    def inside(l):
+        # Within the quadrilateral the screen covers on the map.
+        if not view:
+            return True
+        sign = 0
+        for i in range(4):
+            (x0, y0), (x1, y1) = view[i], view[(i + 1) % 4]
+            c = (x1 - x0) * (l['y'] - y0) - (y1 - y0) * (l['x'] - x0)
+            if c != 0:
+                if sign == 0:
+                    sign = 1 if c > 0 else -1
+                elif (c > 0) != (sign > 0):
+                    return False
+        return True
+
+    a = [l for l in theirs['labels']
+         if (l['text'] or l['icon']) and l.get('onScreen', True)]
+    b = [l for l in ours if l['placed'] and inside(l)]
     left = list(range(len(b)))
     matched, only_theirs, offsets = 0, [], []
     for l in a:
