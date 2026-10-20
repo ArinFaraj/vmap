@@ -170,7 +170,7 @@ void main() {
 
   test('a transition eases from one value to the next over its span', () {
     final expr = compileExpr([r'$transition', 0, 10, 1000, 500, 100]);
-    double at(double ms) => expr(EvalContext()..nowMs = ms)! as double;
+    num at(double ms) => expr(EvalContext()..nowMs = ms)! as num;
     expect(at(1000), 0);
     expect(at(1100), 0);
     expect(at(1350), closeTo(5, 1e-9));
