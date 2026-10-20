@@ -748,7 +748,7 @@ class TileBuilder {
                 priority: base + (symbol.build.sortKey == null ? 50 : order),
                 text: text,
                 spacing: spacing,
-                labelLength: _textEms(symbol, text) * em,
+                labelLength: _textEms(symbol, text, format) * em,
                 em: em,
                 maxBend: symbol.maxBend ?? math.pi / 4,
                 props: carried,
@@ -799,7 +799,7 @@ class TileBuilder {
                       em /
                       GlyphPbf.em;
             final labelLength = math.max(
-              text.isEmpty ? 0.0 : _textEms(symbol, text) * em,
+              text.isEmpty ? 0.0 : _textEms(symbol, text, format) * em,
               iconWidth,
             );
             if (placement == 'line' && text.isNotEmpty) {
@@ -1191,10 +1191,14 @@ class TileBuilder {
   /// measures a label: from the style's glyph ranges, its letters joined,
   /// when the labels are drawn from them; else as the fonts set it, or
   /// about half an em a letter.
-  double _textEms(SymbolLayer symbol, String text) {
+  double _textEms(SymbolLayer symbol, String text, [List<Object?>? format]) {
+    final ranges = this.ranges;
+    if (format != null && ranges != null) {
+      final width = _formattedEms(symbol, text, format, ranges);
+      if (width != null) return width;
+    }
     final plain = plainText(text);
     final label = symbol.uppercase ? plain.toUpperCase() : plain;
-    final ranges = this.ranges;
     if (ranges != null) {
       final face = ranges.face(symbol.fontStack);
       final forms = [
@@ -1229,6 +1233,45 @@ class TileBuilder {
   }
 
   final Map<String, double> _fontEms = {};
+
+  /// The width in ems of a formatted [text], each section in its own font
+  /// and scale, as MapLibre shapes it; null until its glyphs are here.
+  double? _formattedEms(
+    SymbolLayer symbol,
+    String text,
+    List<Object?> format,
+    GlyphRanges ranges,
+  ) {
+    var width = 0.0;
+    var section = 0;
+    final runes = text.runes.toList();
+    for (var i = 0; i < runes.length; i++) {
+      final r = runes[i];
+      if (r == formatMark && i + 1 < runes.length) {
+        section = runes[++i] - formatIndexBase;
+        continue;
+      }
+      if (r == formatImage) continue;
+      final spec = section < format.length ? format[section] : null;
+      final scale = spec is List ? (spec[0] as num?)?.toDouble() ?? 1 : 1.0;
+      final fonts = spec is List && spec[1] is List
+          ? (spec[1] as List).cast<String>()
+          : symbol.fontStack;
+      final face = ranges.face(fonts);
+      final c = symbol.uppercase
+          ? String.fromCharCode(r).toUpperCase().runes.first
+          : r;
+      if (!ranges.ready(face, String.fromCharCode(c))) {
+        missedGlyphs = true;
+        return null;
+      }
+      final g = ranges.glyph(face, c);
+      if (g != null) {
+        width += (g.advance / GlyphPbf.em + symbol.letterSpacing) * scale;
+      }
+    }
+    return width;
+  }
 
   /// A name along each line of [named], as MapLibre's `getAnchors` places
   /// them: the line cut to the tile, anchors its spacing apart from an
