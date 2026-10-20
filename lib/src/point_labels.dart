@@ -131,6 +131,8 @@ class PointLabels {
       textPad: textPad,
       iconPad: iconPad,
       cooperative: symbol?.textCooperative ?? false,
+      groundW: st.onGround ? textW / st.perspective : null,
+      groundH: st.onGround ? textH / st.perspective : null,
     );
     final moved = symbol == null
         ? (0.0, 0.0)
@@ -281,7 +283,10 @@ class PointLabels {
     double w,
     double h, {
     required bool perspective,
+    double? atX,
+    double? atY,
   }) {
+    final cx = atX ?? st.worldX, cy = atY ?? st.worldY;
     final grow = perspective ? 0.5 + 0.5 * _view.depth : 1.0;
     final hw = w * grow / 2 / _view.world, hh = h * grow / 2 / _view.world;
     final c = math.cos(st.angle), s = math.sin(st.angle);
@@ -289,8 +294,8 @@ class PointLabels {
     var maxX = double.negativeInfinity, maxY = double.negativeInfinity;
     for (final (u, v) in const [(-1, -1), (1, -1), (1, 1), (-1, 1)]) {
       _view.project(
-        st.worldX + (u * hw * c - v * hh * s),
-        st.worldY + (u * hw * s + v * hh * c),
+        cx + (u * hw * c - v * hh * s),
+        cy + (u * hw * s + v * hh * c),
       );
       minX = math.min(minX, _view.x);
       maxX = math.max(maxX, _view.x);
@@ -506,8 +511,9 @@ class PointLabels {
       final double fx, fy;
       // As MapLibre's calculateVariableLayoutShift: by half the text's
       // collision box, which its padding is part of.
-      final halfW = spot.textW / 2 + spot.textPad;
-      final halfH = spot.textH / 2 + spot.textPad;
+      final groundW = spot.groundW, groundH = spot.groundH;
+      final halfW = (groundW ?? spot.textW) / 2 + spot.textPad;
+      final halfH = (groundH ?? spot.textH) / 2 + spot.textPad;
       final given = symbol.anchorOffsets;
       final double lx, ly;
       if (given != null) {
@@ -523,11 +529,42 @@ class PointLabels {
         lx = ax * ((ems.$1 * fontSize).abs() + halfW);
         ly = ay * ((ems.$2 * fontSize).abs() + halfH) - ay * baseline;
       }
-      // Text turned with the map is shifted along the map's axes, as
-      // MapLibre's collision index shifts it in tile units.
-      fx = moved.$1 + lx * cos - ly * sin;
-      fy = moved.$2 + lx * sin + ly * cos;
-      if (!symbol.textOverlaps && _textHits(spot, fx, fy)) continue;
+      var hits = false;
+      if (groundW != null && groundH != null) {
+        // Text lying on a tilted map is shifted on the ground and the
+        // shift then seen through the tilt, as MapLibre shifts it in tile
+        // units, without its perspective growth.
+        final c = math.cos(st.angle), s = math.sin(st.angle);
+        final wx = st.worldX + (lx * c - ly * s) / _view.world;
+        final wy = st.worldY + (lx * s + ly * c) / _view.world;
+        final (bw, bh) = _groundBox(
+          st,
+          groundW,
+          groundH,
+          perspective: false,
+          atX: wx,
+          atY: wy,
+        );
+        _view.project(wx, wy);
+        fx = moved.$1 + _view.x - spot.x;
+        fy = moved.$2 + _view.y - spot.y;
+        hits = _boxes.collides(
+          _view.x + moved.$1,
+          _view.y + moved.$2,
+          bw,
+          bh,
+          0,
+          pad: spot.textPad,
+          cooperative: spot.cooperative,
+        );
+      } else {
+        // Text turned with the map is shifted along the map's axes, as
+        // MapLibre's collision index shifts it in tile units.
+        fx = moved.$1 + lx * cos - ly * sin;
+        fy = moved.$2 + lx * sin + ly * cos;
+        hits = _textHits(spot, fx, fy);
+      }
+      if (!symbol.textOverlaps && hits) continue;
       if (iconClear != null && !iconClear(fx, fy)) continue;
       st
         ..side = at
@@ -653,7 +690,13 @@ class _Spot {
     required this.textPad,
     required this.iconPad,
     this.cooperative = false,
+    this.groundW,
+    this.groundH,
   });
+
+  /// For text lying on a tilted map: its flat width and height, which
+  /// it has on the ground before the view tilts it.
+  final double? groundW, groundH;
 
   final double x;
   final double y;
