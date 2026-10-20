@@ -8,12 +8,8 @@
 # Delete a line when its test passes.
 bright-v9/z0	equal	edge pixels
 combinations/background-translucent--symbol-translucent	equal	edge pixels
-combinations/circle-translucent--hillshade-translucent	equal	edge pixels
 combinations/circle-translucent--symbol-translucent	equal	edge pixels
-combinations/fill-extrusion-translucent--background-opaque	skip	MapLibre drops a translucent extrusion over an opaque background
 combinations/fill-extrusion-translucent--symbol-translucent	equal	edge pixels of a symbol
-combinations/fill-opaque--hillshade-translucent	equal	edge pixels
-combinations/fill-translucent--hillshade-translucent	equal	edge pixels
 combinations/fill-translucent--symbol-translucent	equal	edge pixels of a symbol
 combinations/heatmap-translucent--background-opaque	skip	MapLibre shows a heatmap through opaque layers drawn above it
 combinations/heatmap-translucent--fill-opaque	skip	MapLibre shows a heatmap through opaque layers drawn above it

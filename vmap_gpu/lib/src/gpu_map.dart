@@ -163,17 +163,7 @@ class GpuMap implements MapRenderer {
   }
 
   @override
-  bool supports(StyleSheet sheet) {
-    var meshSeen = false;
-    for (final run in sheet.runs) {
-      if (run.source < 0) {
-        if (meshSeen) return false;
-        continue;
-      }
-      meshSeen = true;
-    }
-    return _library != null && !_failed;
-  }
+  bool supports(StyleSheet sheet) => _library != null && !_failed;
 
   /// Set when the shaders or pipelines could not be made on this device,
   /// so the canvas draws the map.
