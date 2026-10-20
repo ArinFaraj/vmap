@@ -109,11 +109,18 @@ class MeshPainter {
     _paint.shader = null;
   }
 
-  /// Fills [area], the screen above the horizon, with [sky], as MapLibre's
-  /// sky shader does: its sky colour, turning towards its horizon colour over the
-  /// blend's share of half the screen's height above the horizon.
-  void drawSky(ui.Canvas canvas, SkyPaint sky, ui.Size size, ui.Rect area) {
-    final horizonY = area.bottom;
+  /// Fills [area], the screen above the horizon at [horizonY], by default
+  /// its bottom, with [sky], as MapLibre's sky shader does: its sky colour,
+  /// turning towards its horizon colour over the blend's share of half the
+  /// screen's height above the horizon.
+  void drawSky(
+    ui.Canvas canvas,
+    SkyPaint sky,
+    ui.Size size,
+    ui.Rect area, {
+    double? horizonY,
+  }) {
+    horizonY ??= area.bottom;
     final top = Rgba.of(sky.skyColor(_context)) ?? Rgba.transparent;
     final low = Rgba.of(sky.horizonColor(_context)) ?? top;
     final band =

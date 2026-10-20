@@ -467,7 +467,7 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
   /// the screen, or under the tilted screen when [view] is set. Over raised
   /// ground ([variable]) or past 60 degrees of pitch, as MapLibre covers
   /// them, each at the zoom its distance from the camera asks for, up to
-  /// [z].
+  /// the source's deepest.
   Iterable<(int, int, int)> _inView(
     int z,
     double span,
@@ -478,11 +478,15 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
   }) sync* {
     if (view != null) {
       final spread = variable || view.pitch > 60;
-      // The hold takes the cover to [z] whatever the view's own zoom.
+      // The hold takes the cover to [z] whatever the view's own zoom; spread
+      // out, each tile's zoom is rounded from the source's own, as
+      // MapLibre's raster tiles, tiles nearer the camera going deeper.
       for (final t in view.cover(
-        maxZoom: z,
+        maxZoom: spread ? _maxZoom : z,
         minZoom: spread ? math.min(layer.cover.minZoom, z) : z,
-        hold: z + 0.5 - view.zoom,
+        hold: spread
+            ? math.log(512 / layer.tileSize) / math.ln2 + 0.5
+            : z + 0.5 - view.zoom,
         variableZoom: spread,
         beyond: variable ? view.height : 0,
       )) {
@@ -1285,6 +1289,10 @@ final class TerrainTiles extends TileDrawing<TerrainLayer> {
 
   /// The deepest zoom the source has.
   int get maxZoom => _maxZoom;
+
+  /// [Terrain.shallower] for this source's tile size.
+  int get shallower =>
+      (math.log(layer.tileSize / 128) / math.ln2).round().clamp(0, 8);
 
   @override
   double get _lap => 0;

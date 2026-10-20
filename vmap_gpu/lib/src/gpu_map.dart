@@ -1231,9 +1231,9 @@ class GpuMap implements MapRenderer {
 
   /// The fog raised ground fades into, as MapLibre's: with a sky in the
   /// style and the map pitched past 60 degrees, by depth between the
-  /// camera's distance and the far plane ([23], in camera distances), to
-  /// the sky's fog colour and then its horizon colour ([28..30]), as
-  /// strong as [31]. None otherwise.
+  /// camera's distance to sea level ([39]) and the far plane ([23]), both
+  /// in camera distances, to the sky's fog colour and then its horizon
+  /// colour ([28..30]), as strong as [31]. None otherwise.
   void _setFog(StyleSheet sheet, EvalContext context, MapView view) {
     final out = _frameInfo;
     final sky = sheet.sky;
@@ -1250,6 +1250,7 @@ class GpuMap implements MapRenderer {
       ..[21] = fog.g
       ..[22] = fog.b
       ..[23] = view.farDistance / view.cameraToCenterDistance
+      ..[39] = view.seaLevelDistance / view.cameraToCenterDistance
       ..[24] = (asNumber(sky.fogGroundBlend(context)) ?? 0.5).toDouble()
       ..[25] = (asNumber(sky.horizonFogBlend(context)) ?? 0.8).toDouble()
       ..[28] = horizon.r

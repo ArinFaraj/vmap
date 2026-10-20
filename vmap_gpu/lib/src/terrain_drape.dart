@@ -36,7 +36,7 @@ class _Drape {
     1,
     format: gpu.PixelFormat.r32Float,
   )..overwrite(ByteData(4));
-  final Float32List _demInfo = Float32List(8);
+  final Float32List _demInfo = Float32List(12);
   late final ByteData _demBytes = ByteData.sublistView(_demInfo);
 
   /// Each raster tile's picture on the GPU, with the colour filter it was
@@ -322,6 +322,11 @@ class _Drape {
           magFilter: gpu.MinMagFilter.nearest,
         ),
       );
+    _demInfo
+      ..[8] = 0
+      ..[9] = 0
+      ..[10] = 1
+      ..[11] = 1;
   }
 
   /// One pixel textures of the background colours drawn, by colour.
@@ -494,12 +499,14 @@ class _Drape {
         ..[17] = y / height
         ..[18] = size / _width
         ..[19] = size / height;
+      final heights = _heightsFor(t.z, t.x, t.y, terrain, 0);
+      _demInfo
+        ..[8] = (x + 0.5) / _width
+        ..[9] = (y + 0.5) / height
+        ..[10] = (x + size - 0.5) / _width
+        ..[11] = (y + size - 0.5) / height;
       pass
-        ..bindTexture(
-          map._groundHeights!,
-          _heightsFor(t.z, t.x, t.y, terrain, 0),
-          sampler: nearest,
-        )
+        ..bindTexture(map._groundHeights!, heights, sampler: nearest)
         ..bindUniform(map._groundFrame!, map._host!.emplace(map._frameBytes))
         ..bindUniform(map._groundDem!, map._host!.emplace(_demBytes))
         ..drawIndexed(_indexCount);
@@ -714,7 +721,7 @@ class _Drape {
     final found = terrain.heights.locate(
       (tx + 0.5) / n,
       (ty + 0.5) / n,
-      math.min(tz, terrain.maxZoom),
+      terrain.zoomFor(tz),
     );
     if (found == null) return _flatHeights(terrain.centre, sink);
     final (dem, z, x, y) = found;

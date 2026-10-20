@@ -554,25 +554,21 @@ class VmapEngine extends ChangeNotifier {
   }
 
   /// Asks for the heights under [view] and hands them to the renderer.
-  /// Returns whether the ground is still easing to its height, when the
-  /// map is not settled.
-  bool _raiseGround(MapView view) {
+  /// Returns the view over that ground, and whether the ground is still
+  /// easing to its height, when the map is not settled.
+  ({MapView view, bool easing}) _raiseGround(MapView view) {
     final terrain = _terrain, gpu = renderer;
-    if (gpu == null) return false;
+    if (gpu == null) return (view: view, easing: false);
     if (terrain == null) {
       gpu.terrain = null;
-      return false;
+      return (view: view, easing: false);
     }
-    terrain.want([
-      for (final t in view.cover(
-        maxZoom: terrain.maxZoom,
-        variableZoom: true,
-        beyond: view.height,
-      ))
-        TileId(t.z, t.x % (1 << t.z), t.y),
-    ]);
     final exaggeration = terrain.layer.exaggeration;
-    final zoom = math.min(view.zoom.floor(), terrain.maxZoom);
+    final shallower = terrain.shallower;
+    final zoom = math.max(
+      0,
+      math.min(view.zoom.floor() - shallower, terrain.maxZoom),
+    );
     final perMetre =
         view.worldSize /
         (40075016.686 * math.cos(latitudeAt(view.centerY) * math.pi / 180));
@@ -585,11 +581,12 @@ class VmapEngine extends ChangeNotifier {
         ) *
         exaggeration;
     // The ground under the map's middle, raised further when a hill would
-    // otherwise reach the camera: everything sinks instead, as MapLibre
-    // lifts its camera over terrain.
+    // otherwise reach the camera's near plane: everything sinks instead, as
+    // MapLibre lifts its camera over terrain.
+    final near = view.height / 50;
     final under = math.max(
       terrain.heights.heightAt(view.centerX, view.centerY, zoom) * exaggeration,
-      belowEye + 50 - eye.height / perMetre,
+      belowEye + (near - eye.height) / perMetre,
     );
     // Eased, so an arriving tile of heights does not make the map jump.
     final centre = centerElevation != null
@@ -597,13 +594,34 @@ class VmapEngine extends ChangeNotifier {
         : _groundCentre += (under - _groundCentre) * 0.15;
     final easing = centerElevation == null && (under - centre).abs() > 0.5;
     if (easing) _requestFrame();
+    final centreTile = terrain.heights.locate(view.centerX, view.centerY, zoom);
+    final raised = view.withGround(
+      centre,
+      (centreTile?.$1.min ?? 0) * exaggeration,
+    );
+    terrain.want(
+      {
+        for (final t in raised.cover(
+          maxZoom: terrain.maxZoom + shallower,
+          variableZoom: true,
+          beyond: view.height,
+        ))
+          if (t.z >= shallower)
+            TileId(
+              t.z - shallower,
+              (t.x % (1 << t.z)) >> shallower,
+              t.y >> shallower,
+            ),
+      }.toList(),
+    );
     gpu.terrain = Terrain(
       terrain.heights,
       exaggeration,
       terrain.maxZoom,
       centre,
+      shallower: shallower,
     );
-    return easing;
+    return (view: raised, easing: easing);
   }
 
   double _groundCentre = 0;
@@ -1016,7 +1034,23 @@ class VmapEngine extends ChangeNotifier {
     _lastZoom = camera.zoom;
     final hold = _zoomOutHold.at(camera.view?.zoom, _clock.elapsedMilliseconds);
     if (camera.view case final view? when onGpu) {
-      if (_raiseGround(view)) waiting = true;
+      final (view: raised, :easing) = _raiseGround(view);
+      if (easing) waiting = true;
+      if (!identical(raised, view)) {
+        camera = VmapCamera(
+          zoom: camera.zoom,
+          origin: camera.origin,
+          size: camera.size,
+          rotation: camera.rotation,
+          devicePixelRatio: camera.devicePixelRatio,
+          view: raised,
+          ahead: camera.ahead?.withGround(
+            raised.groundElevation,
+            raised.groundLowest,
+          ),
+        );
+        _camera = camera;
+      }
     }
     if (hold > 0) _requestFrame();
     for (final s in _sources) {
@@ -1047,11 +1081,19 @@ class VmapEngine extends ChangeNotifier {
         sheet.sky != null) {
       _unroll(canvas, view);
       final b = view.unrolledBounds;
+      // As MapLibre's sky shader, every pixel whose centre is above the
+      // horizon is wholly sky: an edge across a pixel would leave it part
+      // see-through, the ground reaching only up to the horizon.
+      final dpr = camera.devicePixelRatio;
+      final bottom = view.roll == 0
+          ? (view.horizonY * dpr).roundToDouble() / dpr
+          : view.horizonY;
       _meshes.drawSky(
         canvas,
         sheet.sky!,
         size,
-        ui.Rect.fromLTRB(b.left, b.top, b.right, view.horizonY),
+        ui.Rect.fromLTRB(b.left, b.top, b.right, bottom),
+        horizonY: view.horizonY,
       );
       canvas.restore();
     }

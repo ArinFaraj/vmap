@@ -84,6 +84,8 @@ class MapView {
     this.fov = defaultFov,
     this.pad = EdgeInsets2.zero,
     this.globeness = 0,
+    this.groundElevation = 0,
+    this.groundLowest = 0,
   }) : pitch = pitch.clamp(0, maxPitch) {
     final b = bearing * math.pi / 180;
     final r = roll * math.pi / 180;
@@ -153,6 +155,12 @@ class MapView {
   /// 0 is the flat map.
   final double globeness;
 
+  /// Over raised ground, the height in metres of the ground under the
+  /// centre, as MapLibre's center elevation, and the lowest height in the
+  /// tile of heights there, as its `minElevationForCurrentTile`. Both 0
+  /// over flat ground.
+  final double groundElevation, groundLowest;
+
   /// The globe this view is drawn on, or null for the flat map.
   late final Globe? globe = globeness > 0
       ? Globe(this, transition: globeness)
@@ -171,6 +179,26 @@ class MapView {
     fov: fov,
     pad: pad,
     globeness: amount,
+    groundElevation: groundElevation,
+    groundLowest: groundLowest,
+  );
+
+  /// The same view over raised ground, the centre [elevation] metres high
+  /// and the tile of heights under it reaching down to [lowest].
+  MapView withGround(double elevation, double lowest) => MapView(
+    centerX: centerX,
+    centerY: centerY,
+    zoom: zoom,
+    width: width,
+    height: height,
+    bearing: bearing,
+    pitch: pitch,
+    roll: roll,
+    fov: fov,
+    pad: pad,
+    globeness: globeness,
+    groundElevation: elevation,
+    groundLowest: lowest,
   );
 
   late final double worldSize;
@@ -228,6 +256,8 @@ class MapView {
     fov: fov,
     pad: pad,
     globeness: globeness,
+    groundElevation: groundElevation,
+    groundLowest: groundLowest,
   );
 
   /// Where the camera is: over world point [x], [y] at [height], all in
@@ -443,21 +473,41 @@ class MapView {
     return m4;
   }
 
+  late final double _pixelsPerMeter =
+      worldSize /
+      (_earthCircumference *
+          math.cos(math.atan(_sinh(math.pi * (1 - 2 * centerY)))));
+
+  /// How far the camera is from sea level along its line of sight, in world
+  /// pixels, as MapLibre's `cameraToSeaLevelDistance`: the near plane of its
+  /// terrain fog.
+  late final double seaLevelDistance = math.max(
+    cameraToCenterDistance / 2,
+    cameraToCenterDistance +
+        groundElevation *
+            _pixelsPerMeter /
+            math.cos(math.min(pitch, 89.25) * math.pi / 180),
+  );
+
   /// How far MapLibre's far plane lies along the camera's line of sight,
   /// in world pixels (`_calculateNearFarZ`): far enough for the ground up to
-  /// the horizon, measured from a plane 100 metres under a camera lower
-  /// than that, so a low camera sees the ground run on past the horizon.
+  /// the horizon, measured from a plane under the lowest of the centre's
+  /// ground, the tile of heights under it and 100 metres under the camera,
+  /// so a low camera sees the ground run on past the horizon.
   late final double farDistance = () {
     final p = math.min(pitch, 89.25) * math.pi / 180;
     final d = cameraToCenterDistance;
     final offsetY = _sy - height / 2;
-    final lat = math.atan(_sinh(math.pi * (1 - 2 * centerY)));
-    final pixelsPerMeter = worldSize / (_earthCircumference * math.cos(lat));
-    final altitude = math.cos(pitch * math.pi / 180) * d / pixelsPerMeter;
-    final lowestElevation = math.min(0.0, altitude - 100);
+    final pixelsPerMeter = _pixelsPerMeter;
+    final altitude =
+        math.cos(pitch * math.pi / 180) * d / pixelsPerMeter + groundElevation;
+    final lowestElevation = math.min(
+      math.min(groundElevation, groundLowest),
+      altitude - 100,
+    );
     final lowest = lowestElevation < 0
-        ? d - lowestElevation * pixelsPerMeter / math.cos(p)
-        : d;
+        ? seaLevelDistance - lowestElevation * pixelsPerMeter / math.cos(p)
+        : seaLevelDistance;
     final ground = math.pi / 2 + pitch * math.pi / 180;
     double reach(double angle) =>
         math.sin(angle) *
@@ -494,17 +544,11 @@ class MapView {
 
   /// The ground the screen shows, as the four corners in world pixels,
   /// clockwise from the top left, its far edge at [groundTopY] when that
-  /// is on the screen. With [beyond], over raised ground, the far edge is
-  /// that many pixels above the screen's top instead, still under the
-  /// horizon: hills there rise into view, as MapLibre's far plane, measured
-  /// from sea level, lets them.
+  /// is on the screen. With [beyond], over raised ground, the far edge may
+  /// lie up to that many pixels above the screen's top instead: hills
+  /// there rise into view, as far off as MapLibre's far plane lets them.
   List<WorldPoint> ground({double beyond = 0}) {
-    final far = beyond > 0
-        ? math.max(
-            -beyond,
-            height / 2 - cameraToCenterDistance * _cosP / _sinP + 1,
-          )
-        : math.max(unrolledBounds.top, groundTopY);
+    final far = math.max(beyond > 0 ? -beyond : unrolledBounds.top, groundTopY);
     final (:left, :right, :bottom, top: _) = unrolledBounds;
     return [
       _unprojectUnrolled(left - _sx, far - _sy)!,
@@ -549,8 +593,11 @@ class MapView {
       final asked = tileZoom == null
           ? (zoom + hold).floor()
           : tileZoom.at(zoom + hold, flat, camH).floor();
+      // Tiles nearer the camera than the centre ask for deeper zooms than
+      // the view's own, as deep as [maxZoom].
       final wanted = tileZoom == null ? top : asked;
-      if (z >= top || (z >= minZoom && z >= wanted)) {
+      final deepest = tileZoom == null ? top : maxZoom;
+      if (z >= deepest || (z >= minZoom && z >= wanted)) {
         out.add((
           z: z,
           x: x,

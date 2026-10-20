@@ -3,10 +3,14 @@ uniform FrameInfo {
   vec4 fade;
   // MapLibre's fog: fog_color.rgb its colour and .a the far plane in
   // camera distances; fog_range.x the ground blend and .y the horizon
-  // blend; fog_horizon.rgb the horizon colour and .a how strong.
+  // blend; fog_horizon.rgb the horizon colour and .a how strong;
+  // light_colour.w the fog's near plane, the camera's distance to sea
+  // level, in camera distances.
   vec4 fog_color;
   vec4 fog_range;
   vec4 fog_horizon;
+  vec4 light_direction;
+  vec4 light_colour;
 }
 frame_info;
 
@@ -18,6 +22,9 @@ frame_info;
 uniform DemInfo {
   vec4 place;
   vec4 scale;
+  // The tile's slot in the atlas, its top left and bottom right corners
+  // half a texel in.
+  vec4 slot;
 }
 dem_info;
 
@@ -28,6 +35,7 @@ uniform sampler2D heights;
 // different zoom.
 in vec2 position;
 out vec2 v_uv;
+out vec4 v_slot;
 // The fog colour in linear light, and how much of it.
 out vec4 v_fog;
 // fog_range.w: how opaque the picture laid on the ground is.
@@ -55,15 +63,17 @@ void main() {
   }
   v_opacity = frame_info.fog_range.w;
   v_uv = frame_info.fade.xy + at * frame_info.fade.zw;
+  v_slot = dem_info.slot;
   gl_Position = frame_info.mvp * vec4(at * 4096.0, h, 1.0);
   float strength = frame_info.fog_horizon.a;
   v_fog = vec4(0.0);
   if (strength > 0.0) {
     // MapLibre's terrain fog: the depth a perspective from the camera's
-    // distance to the far plane gives.
+    // distance to sea level to the far plane gives.
     float f = frame_info.fog_color.a;
+    float n = frame_info.light_colour.w;
     float d = max(gl_Position.w, 1e-3);
-    float depth = f * (d - 1.0) / (d * (f - 1.0));
+    float depth = f * (d - n) / (d * (f - n));
     float ground = frame_info.fog_range.x;
     float toHorizon = frame_info.fog_range.y;
     float blend = smoothstep(0.0, 1.0, max((depth - toHorizon) / (1.0 - toHorizon), 0.0));
