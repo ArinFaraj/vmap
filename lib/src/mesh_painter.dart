@@ -209,6 +209,7 @@ class MeshPainter {
     Map<Object, Map<String, Object?>>? states,
   ) {
     final scale = d.size / tileExtent;
+    final corner = ui.Offset(d.tile.id.x * d.size, d.tile.id.y * d.size);
     void enter({bool clip = true}) {
       canvas.save();
       final clips = d.clips;
@@ -269,7 +270,15 @@ class MeshPainter {
       };
       ui.ImageShader? shader;
       if (!layer.perFeature) {
-        shader = _shaders.of(layer, width, scale, _context, sprites, color);
+        shader = _shaders.of(
+          layer,
+          width,
+          scale,
+          _context,
+          sprites,
+          color,
+          corner: corner,
+        );
         if (shader == null && patterned) continue;
       }
       final moved = layer.translate?.call(_context);
@@ -298,7 +307,15 @@ class MeshPainter {
           if (layer case StrokedLayer(width: final own)) {
             width = asNumber(own(_context)) ?? 0;
           }
-          shader = _shaders.of(layer, width, scale, _context, sprites, color);
+          shader = _shaders.of(
+            layer,
+            width,
+            scale,
+            _context,
+            sprites,
+            color,
+            corner: corner,
+          );
           if (shader == null && patterned) continue;
         }
         switch (layer) {

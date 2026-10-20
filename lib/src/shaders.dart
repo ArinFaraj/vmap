@@ -19,7 +19,16 @@ double patternGrowth(double zoom) =>
 class LayerShaders {
   final Map<String, _DashImage> _dashImages = {};
   final Map<
-    (PaintLayer, double, double, int, Float64List?, double, (String, int)?),
+    (
+      PaintLayer,
+      double,
+      double,
+      int,
+      Float64List?,
+      double,
+      (String, int)?,
+      ui.Offset,
+    ),
     ui.ImageShader
   >
   _shaders = {};
@@ -108,15 +117,18 @@ class LayerShaders {
   /// whose sprite sheet has not loaded.
   ///
   /// Dashes carry their colour because a colour filter on the paint does
-  /// not reach vertices drawn through a shader.
+  /// not reach vertices drawn through a shader. A fill's pattern lies on
+  /// the world's pixel grid, as MapLibre's, from the tile's [corner] in
+  /// world pixels.
   ui.ImageShader? of(
     MeshLayer layer,
     double width,
     double scale,
     EvalContext context,
     SpriteSheet? sprites,
-    int color,
-  ) {
+    int color, {
+    ui.Offset corner = ui.Offset.zero,
+  }) {
     final line = layer is LineLayer ? layer : null;
     final blur = line?.blur;
     final gradient = line?.gradient;
@@ -159,6 +171,7 @@ class LayerShaders {
       dash,
       repeat,
       before == null ? null : (before.join(','), shown),
+      line == null && pattern != null ? corner : ui.Offset.zero,
     );
     final made = _shaders[key];
     if (made != null) return made;
@@ -223,9 +236,15 @@ class LayerShaders {
                 (sheet.entries[name]!.pixelRatio * scale);
     }
     final along = line != null;
+    final across = image.width * stretch * scale;
+    final onGrid = line == null && pattern != null && across > 0;
     _matrix
       ..[0] = stretch
-      ..[5] = along ? 1 / image.height : stretch;
+      ..[5] = along ? 1 / image.height : stretch
+      ..[12] = onGrid ? -(corner.dx % across) / scale : 0
+      ..[13] = onGrid
+          ? -(corner.dy % (image.height * stretch * scale)) / scale
+          : 0;
     final shader = ui.ImageShader(
       forShader(image),
       gradient != null ? ui.TileMode.clamp : ui.TileMode.repeated,
