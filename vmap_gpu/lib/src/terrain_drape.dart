@@ -793,7 +793,7 @@ class _Drape {
     final map = _map;
     final heights = terrain == null || id == null
         ? _flatHeights(0, 0)
-        : _heightsFor(id.z, id.x, id.y, terrain, 2);
+        : _heightsFor(id.z, id.x, id.y, terrain, 10);
     pass
       ..bindTexture(
         flat ? map._flatHeightsSlot! : map._buildingHeights!,

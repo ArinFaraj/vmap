@@ -256,6 +256,11 @@ class GpuMap implements MapRenderer {
                 format: gpu.VertexFormat.float32x3,
                 offsetInBytes: 32,
               ),
+              gpu.VertexAttribute(
+                name: 'middle',
+                format: gpu.VertexFormat.float32x2,
+                offsetInBytes: 44,
+              ),
             ],
           ),
         ],
@@ -1091,7 +1096,8 @@ class GpuMap implements MapRenderer {
   /// [scale] screen pixels a tile unit across with patterns grown by
   /// [growth]: sheet pixels a tile unit is, as a patterned fill takes them.
   /// A pattern the sheet lacks has a negative width, and as MapLibre its
-  /// buildings are not drawn.
+  /// buildings are not drawn. Last, how far up a wall a metre moves its
+  /// pattern, as the tile was built with.
   ///
   /// As MapLibre's `u_pixel_coord`, patterns are laid from the world's
   /// corner, not the tile's: the tile [id]'s corner in world pixels at the
@@ -1121,7 +1127,8 @@ class GpuMap implements MapRenderer {
         ..[i * 4 + 3] = source.height
         ..[64 + i * 4] = entry.pixelRatio / growth * scale
         ..[64 + i * 4 + 1] = (cornerX * entry.pixelRatio) % source.width
-        ..[64 + i * 4 + 2] = (cornerY * entry.pixelRatio) % source.height;
+        ..[64 + i * 4 + 2] = (cornerY * entry.pixelRatio) % source.height
+        ..[64 + i * 4 + 3] = -(1 << id.z) / 8192;
     }
     return _patternBytes;
   }

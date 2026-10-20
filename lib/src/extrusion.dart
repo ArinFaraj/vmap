@@ -36,12 +36,14 @@ class BuiltExtrusion {
   /// Every wall and roof as triangles ready for the GPU, [floatsPerVertex]
   /// floats a vertex: x and y in tile units, height in metres, the colour
   /// as red plus 256 green plus 65536 blue, from 0 to 255 each, alpha from
-  /// 0 to 255, the wall's outward normal and its gradient, then where its
-  /// pattern is, in tile units, and which pattern. Every one exact, so
+  /// 0 to 255, the wall's outward normal and its gradient, where its
+  /// pattern is, in tile units, and which pattern, then the middle of its
+  /// polygon, in tile units, which raised ground lifts it from. Every one
+  /// exact, so
   /// OpenGL ES 2 shaders, which have no integers, unpack them.
   final Float32List vertices;
 
-  static const floatsPerVertex = 11;
+  static const floatsPerVertex = 13;
 
   /// The sprite images the buildings are covered in; a vertex's last float
   /// is one more than the index of its building's, zero for none.
@@ -127,6 +129,12 @@ class ExtrusionBuilder {
   final _ring = DoubleBuffer();
   final _normals = DoubleBuffer();
   final _edges = DoubleBuffer();
+
+  /// The middle of the polygon each wall, and each roof corner, belongs
+  /// to, as MapLibre's `a_centroid`: the mean of its rings' corners in
+  /// whole tile units, where raised ground lifts the building from.
+  final _wallMiddles = DoubleBuffer();
+  final _roofMiddles = DoubleBuffer();
   final List<int> _patternOf = [];
   final List<String> _patterns = [];
 
@@ -151,9 +159,31 @@ class ExtrusionBuilder {
     final wallsFrom = _walls.length ~/ 4;
     final roofFrom = _indices.length;
     var sx = 0.0, sy = 0.0, area = 0.0;
+    var middleX = 0.0, middleY = 0.0, corners = 0;
+    var polygonWalls = _walls.length ~/ 4;
 
     void roof() {
-      if (polygonStart < 0 || ring.length < 6) return;
+      if (corners > 0) {
+        final mx = (middleX / corners).floorToDouble();
+        final my = (middleY / corners).floorToDouble();
+        for (var w = polygonWalls; w < _walls.length ~/ 4; w++) {
+          _wallMiddles.add2(mx, my);
+        }
+        if (polygonStart >= 0 && ring.length >= 6) {
+          for (var v = 0; v < ring.length ~/ 2; v++) {
+            _roofMiddles.add2(mx, my);
+          }
+        }
+      }
+      middleX = middleY = 0;
+      corners = 0;
+      polygonWalls = _walls.length ~/ 4;
+      if (polygonStart < 0 || ring.length < 6) {
+        ring.clear();
+        holes.clear();
+        polygonStart = -1;
+        return;
+      }
       final flat = ring.toFloat64List();
       final tris = Earcut.triangulateRaw(flat, holeIndices: holes);
       final at = _roof.length ~/ 2;
@@ -199,6 +229,11 @@ class ExtrusionBuilder {
       } else {
         continue;
       }
+      for (var i = 0; i < count; i++) {
+        middleX += pts[i * 2];
+        middleY += pts[i * 2 + 1];
+      }
+      corners += count;
       final perps = Float64List(count * 2);
       for (var i = 0; i < count; i++) {
         final x = pts[i * 2], y = pts[i * 2 + 1];
@@ -311,6 +346,8 @@ class ExtrusionBuilder {
         double t,
         double u,
         double v,
+        double mx,
+        double my,
       ) {
         out[o++] = x;
         out[o++] = y;
@@ -325,6 +362,8 @@ class ExtrusionBuilder {
         out[o++] = u;
         out[o++] = v;
         out[o++] = patternIndex;
+        out[o++] = mx;
+        out[o++] = my;
       }
 
       final firstWall = _info[i + 4].toInt(), walls = _info[i + 5].toInt();
@@ -336,18 +375,30 @@ class ExtrusionBuilder {
         final nx1 = _normals[j * 4 + 2], ny1 = _normals[j * 4 + 3];
         final e0 = _edges[j * 2], e1 = _edges[j * 2 + 1];
         final v0 = bottom * patternPerMetre, v1 = top * patternPerMetre;
-        vertex(x0, y0, bottom, nx0, ny0, 0, e0, v0);
-        vertex(x1, y1, bottom, nx1, ny1, 0, e1, v0);
-        vertex(x1, y1, top, nx1, ny1, 1, e1, v1);
-        vertex(x0, y0, bottom, nx0, ny0, 0, e0, v0);
-        vertex(x1, y1, top, nx1, ny1, 1, e1, v1);
-        vertex(x0, y0, top, nx0, ny0, 1, e0, v1);
+        final mx = _wallMiddles[j * 2], my = _wallMiddles[j * 2 + 1];
+        vertex(x0, y0, bottom, nx0, ny0, 0, e0, v0, mx, my);
+        vertex(x1, y1, bottom, nx1, ny1, 0, e1, v0, mx, my);
+        vertex(x1, y1, top, nx1, ny1, 1, e1, v1, mx, my);
+        vertex(x0, y0, bottom, nx0, ny0, 0, e0, v0, mx, my);
+        vertex(x1, y1, top, nx1, ny1, 1, e1, v1, mx, my);
+        vertex(x0, y0, top, nx0, ny0, 1, e0, v1, mx, my);
       }
       final firstRoof = _info[i + 6].toInt(), roofs = _info[i + 7].toInt();
       for (var j = firstRoof; j < firstRoof + roofs; j++) {
         final v = _indices[j].toInt();
         final x = _roof[v * 2], y = _roof[v * 2 + 1];
-        vertex(x, y, top, 0, 0, 1, x, y);
+        vertex(
+          x,
+          y,
+          top,
+          0,
+          0,
+          1,
+          x,
+          y,
+          _roofMiddles[v * 2],
+          _roofMiddles[v * 2 + 1],
+        );
       }
     }
     final walls = _walls.toFloat32List(), info = _info.toFloat32List();

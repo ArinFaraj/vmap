@@ -86,14 +86,21 @@ style.glyphs = local(style.glyphs);
 
 const browser = await puppeteer.launch({
   headless: true,
-  args: ['--disable-gpu', '--enable-unsafe-swiftshader'],
+  args: [
+    '--disable-gpu',
+    '--enable-features=AllowSwiftShaderFallback,AllowSoftwareGLFallbackDueToCrashes',
+    '--enable-unsafe-swiftshader',
+  ],
 });
 try {
   const page = await browser.newPage();
+  await page.setViewport({width: test.width ?? 512, height: test.height ?? 512});
+  page.on('error', (e) => console.error('page crashed:', e.message));
+  page.on('pageerror', (e) => console.error('page error:', e.message));
   await page.goto(`http://localhost:${port}/test-page.html`, {waitUntil: 'load'});
   await page.waitForFunction(() => window.maplibregl, {timeout: 10000});
   const result = await page.evaluate(
-    async (style, test, expression) => {
+    async (style, test, expression, picture) => {
       const container = document.getElementById('map') ?? document.body;
       container.style.width = `${test.width ?? 512}px`;
       container.style.height = `${test.height ?? 512}px`;
@@ -109,24 +116,31 @@ try {
         canvasContextAttributes: {preserveDrawingBuffer: true},
       });
       await map.once('load');
+      // A map that never settles is read after 20 seconds.
       await new Promise((resolve) => {
         if (map.loaded()) resolve();
         map.once('idle', resolve);
+        setTimeout(resolve, 20000);
       });
       // eslint-disable-next-line no-eval
       const value = await eval(expression);
-      map.triggerRepaint();
-      await new Promise((resolve) => map.once('render', resolve));
+      let png = null;
+      if (picture) {
+        map.triggerRepaint();
+        await new Promise((resolve) => map.once('render', resolve));
+        png = map.getCanvas().toDataURL('image/png');
+      }
       return {
         value: JSON.stringify(value, (_, v) =>
           ArrayBuffer.isView(v) ? Array.from(v) : v,
         ),
-        png: map.getCanvas().toDataURL('image/png'),
+        png,
       };
     },
     style,
     test,
     expression,
+    Boolean(process.env.PNG),
   );
   console.log(result.value);
   if (process.env.PNG) {

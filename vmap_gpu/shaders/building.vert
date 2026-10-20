@@ -12,8 +12,8 @@ uniform FrameInfo {
 frame_info;
 
 // The ground the tile stands on, laid out as terrain.vert's DemInfo; scale.w
-// is how far below the ground a wall's foot is sunk, so a slope shows no
-// gap under it.
+// is how far below the ground a building standing on it starts, as
+// MapLibre's basement, so a slope shows no gap under it.
 uniform DemInfo {
   vec4 place;
   vec4 scale;
@@ -40,7 +40,8 @@ globe_info;
 const float PI = 3.141592653589793;
 
 // The patterns of fill-extrusion-pattern: each one's place in the sprite
-// sheet, in its pixels, and in ratio.x how many of those a tile unit is.
+// sheet, in its pixels, in ratio.x how many of those a tile unit is, and in
+// ratio.w how far up a wall a metre moves the pattern, in tile units.
 uniform PatternInfo {
   vec4 rect[16];
   vec4 ratio[16];
@@ -55,6 +56,9 @@ in vec3 normal_data;
 // Where the vertex is on its pattern, in tile units, and one more than its
 // pattern's index, zero for none.
 in vec3 pattern_data;
+// The middle of the vertex's polygon, in tile units: as MapLibre, raised
+// ground lifts a building whole by its height there, its roof flat.
+in vec2 middle;
 out vec4 v_color;
 out vec2 v_uv;
 out vec4 v_rect;
@@ -119,6 +123,11 @@ void main() {
   }
   vec3 tint = frame_info.light_color.rgb;
   vec3 lit = clamp((color + 0.03) * directional * tint, 0.3 * (1.0 - tint), vec3(1.0));
+  vec2 p = dem_info.place.xy + middle / 4096.0 * dem_info.place.z;
+  float ground = height_at(p) - dem_info.scale.z;
+  if (position.z < 0.01) {
+    ground -= dem_info.scale.w;
+  }
   v_rect = vec4(0.0);
   v_uv = vec2(0.0);
   if (pattern_data.z > 0.5) {
@@ -133,14 +142,15 @@ void main() {
     lit = clamp(d * tint, mix(vec3(0.0), vec3(0.3), 1.0 - tint), vec3(1.0));
     v_rect = pattern_info.rect[i];
     v_uv = pattern_data.xy * pattern_info.ratio[i].x + pattern_info.ratio[i].yz;
+    if (!roof) {
+      // As MapLibre, a wall's pattern is laid up from sea level: the
+      // height raised ground lifts the wall by moves it too.
+      v_uv.y += (ground + dem_info.scale.z) * pattern_info.ratio[i].w *
+          pattern_info.ratio[i].x;
+    }
   }
   v_color = vec4(lit, color_data.y / 255.0);
   v_color.a *= frame_info.fade.x;
-  vec2 p = dem_info.place.xy + position.xy / 4096.0 * dem_info.place.z;
-  float ground = height_at(p) - dem_info.scale.z;
-  if (position.z < 0.01) {
-    ground -= dem_info.scale.w;
-  }
   float h = position.z + ground;
   vec4 flat_pos = frame_info.mvp * vec4(position.xy, h, 1.0);
   gl_Position = flat_pos;
