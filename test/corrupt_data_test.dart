@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/geojson.dart';
 import 'package:vmap/src/glyphs/glyph_pbf.dart';
 import 'package:vmap/src/mvt.dart';
+import 'package:vmap/src/style_model.dart';
 
 /// A field of wire type 2 with tag [tag] whose length is ten bytes of 0xff:
 /// past 64 bits, it reads back negative.
@@ -48,5 +49,47 @@ void main() {
       ],
     }).tile(0, 0, 0);
     expect(layers.single.features, hasLength(1));
+  });
+
+  test('a style with parts of the wrong kind compiles what it can', () {
+    const line = {
+      'id': 'roads',
+      'type': 'line',
+      'source': 'tiles',
+      'source-layer': 'roads',
+    };
+    final styles = <Map<String, Object?>>[
+      {'version': 8, 'sources': <Object?>[], 'layers': 'x'},
+      {
+        'version': 8,
+        'glyphs': <Object?>['x'],
+        'layers': <Object?>[],
+      },
+      {
+        'version': 8,
+        'sources': {
+          'tiles': {
+            'type': 'vector',
+            'url': <String, Object?>{},
+            'maxzoom': double.nan,
+          },
+        },
+        'layers': [
+          {
+            ...line,
+            'paint': <Object?>['match'],
+            'layout': 'x',
+          },
+          {
+            ...line,
+            'filter': ['==', 'x', double.nan],
+          },
+        ],
+      },
+    ];
+    for (final style in styles) {
+      expect(() => StyleSheet.compile(style), returnsNormally);
+    }
+    expect(StyleSheet.compile(styles.last).buckets, isNotEmpty);
   });
 }

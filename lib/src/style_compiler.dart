@@ -12,13 +12,37 @@ import 'style_model.dart';
 import 'tessellate.dart';
 
 /// What every layer of a style document says the same way.
+/// [v] when it is a map, else an empty one: a style's part of the wrong
+/// kind counts as left out, as MapLibre draws what it can of a style it
+/// warns about.
+Map<Object?, Object?> _map(Object? v) => v is Map ? v : const {};
+
+List<Object?> _list(Object? v) => v is List ? v : const [];
+
+String? _string(Object? v) => v is String ? v : null;
+
+int? _int(Object? v) => switch (asNumber(v)) {
+  final n? when n.isFinite => n.toInt(),
+  _ => null,
+};
+
+/// [v] as JSON, for keys and the style's shape; a value JSON cannot write,
+/// such as NaN, as its text.
+String _encode(Object? v) {
+  try {
+    return jsonEncode(v);
+  } on JsonUnsupportedObjectError {
+    return '$v';
+  }
+}
+
 class _Layer {
   _Layer(Map<Object?, Object?> raw)
     : id = '${raw['id'] ?? ''}',
       type = raw['type'],
       raw = raw,
-      paint = (raw['paint'] as Map?) ?? const {},
-      layout = (raw['layout'] as Map?) ?? const {},
+      paint = _map(raw['paint']),
+      layout = _map(raw['layout']),
       // As MapLibre's isHidden, a minzoom of 0 bounds nothing, so the
       // layer shows below zoom 0 too.
       minZoom = switch (asNumber(raw['minzoom'])) {
@@ -59,7 +83,7 @@ class _VectorLayer {
 /// Turns a MapLibre style document into a [StyleSheet], one layer at a time.
 class StyleCompiler {
   StyleCompiler(this.json, {this.nameKeys, this.zoomOffset = 0})
-    : _sources = (json['sources'] as Map?) ?? const {},
+    : _sources = _map(json['sources']),
       _shape = StringBuffer(
         StyleProjection.of(json['projection']).isGlobe
             ? '$zoomOffset globe'
@@ -110,7 +134,7 @@ class StyleCompiler {
   }
 
   StyleSheet compile() {
-    for (final raw in (json['layers'] as List?) ?? const []) {
+    for (final raw in _list(json['layers'])) {
       if (raw is! Map) continue;
       final layer = _Layer(raw);
       if (layer.hidden) continue;
@@ -175,7 +199,7 @@ class StyleCompiler {
             if (s case {'id': final String id, 'url': final String url})
               (id == 'default' ? '' : '$id:', url),
       ],
-      glyphs: json['glyphs'] as String?,
+      glyphs: _string(json['glyphs']),
       rasters: _rasters,
       extrusions: _extrusions,
       footprints: footprints,
@@ -204,15 +228,13 @@ class StyleCompiler {
     if (!geoJson && from['type'] != 'vector') return null;
     final direct = tileTemplate(from['tiles']);
     final data = from['data'];
-    final maxZoom = asNumber(from['maxzoom'])?.toInt();
+    final maxZoom = _int(from['maxzoom']);
     final cluster = geoJson && from['cluster'] == true
         ? ClusterOptions(
             radius: asNumber(from['clusterRadius'])?.toDouble() ?? 50,
-            maxZoom:
-                (asNumber(from['clusterMaxZoom'])?.toInt() ??
-                        (maxZoom ?? 18) - 1)
-                    .clamp(0, 24),
-            minPoints: asNumber(from['clusterMinPoints'])?.toInt() ?? 2,
+            maxZoom: (_int(from['clusterMaxZoom']) ?? (maxZoom ?? 18) - 1)
+                .clamp(0, 24),
+            minPoints: _int(from['clusterMinPoints']) ?? 2,
             properties: switch (from['clusterProperties']) {
               final Map<Object?, Object?> named => {
                 for (final e in named.entries) '${e.key}': e.value,
@@ -237,7 +259,7 @@ class StyleCompiler {
             )
           : TiledSource(
               name: '$name',
-              tileJsonUrl: from['url'] as String?,
+              tileJsonUrl: _string(from['url']),
               tiles: direct,
               maxZoom: maxZoom,
               promoteId: from['promoteId'],
@@ -289,10 +311,10 @@ class StyleCompiler {
     final nearest = paint['raster-resampling'] == 'nearest';
     final resampling = _maybe(paint['resampling']);
     final opacity = _withDefault(paint['raster-opacity'], 1);
-    final tileJsonUrl = from['url'] as String?;
+    final tileJsonUrl = _string(from['url']);
     final tiles = tileTemplate(from['tiles']);
     final tileSize = asNumber(from['tileSize']) ?? 512;
-    final sourceMaxZoom = asNumber(from['maxzoom'])?.toInt();
+    final sourceMaxZoom = _int(from['maxzoom']);
     final RasterLayer? made = switch ((layer.type, from['type'])) {
       ('raster', 'image') => switch (_corners(from['coordinates'])) {
         final corners? when tileJsonUrl != null => ImageLayer(
@@ -448,13 +470,13 @@ class StyleCompiler {
     final hasIcon = image != null && image != '';
     if (!hasText && !hasIcon) return;
     final nameKeys = this.nameKeys;
-    if (hasText && nameKeys != null && jsonEncode(field).contains('name')) {
+    if (hasText && nameKeys != null && _encode(field).contains('name')) {
       field = [
         'coalesce',
         for (final k in nameKeys) ['get', k],
       ];
     }
-    final font = jsonEncode(layout['text-font'] ?? '').toLowerCase();
+    final font = _encode(layout['text-font'] ?? '').toLowerCase();
     final offset = _pair(layout['text-offset']);
     final placement = layout['symbol-placement'] ?? 'point';
     final spacing = asNumber(layout['symbol-spacing']) ?? 250;
@@ -617,7 +639,7 @@ class StyleCompiler {
         },
       ),
     );
-    _shape.write(jsonEncode(['s', build.signature]));
+    _shape.write(_encode(['s', build.signature]));
   }
 
   void _addHeatmap(_VectorLayer vector) {
@@ -732,7 +754,7 @@ class StyleCompiler {
     final picture = paint['line-pattern'];
     final ramp = picture == null ? paint['line-gradient'] : null;
     // Built into the tiles' GPU streams, so a change rebuilds them.
-    _shape.write(jsonEncode(['l', picture != null, ramp != null]));
+    _shape.write(_encode(['l', picture != null, ramp != null]));
     final soft = blur != null && picture == null && ramp == null;
     _layers.add(
       LineLayer(
@@ -800,7 +822,7 @@ class StyleCompiler {
       '$prefix-pattern',
     ]);
     final image = paint['$prefix-pattern'];
-    _shape.write(jsonEncode(['f', image != null]));
+    _shape.write(_encode(['f', image != null]));
     _layers.add(
       FillLayer(
         id: layer.id,
@@ -831,7 +853,7 @@ class StyleCompiler {
       ),
     );
     if (prefix == 'fill-extrusion') {
-      final key = jsonEncode([
+      final key = _encode([
         'extrusion',
         vector.source,
         vector.sourceLayer,
@@ -870,7 +892,7 @@ class StyleCompiler {
       final bucket = _buckets[index];
       if (layer.minZoom < bucket.minZoom) bucket.minZoom = layer.minZoom;
       if (layer.maxZoom > bucket.maxZoom) bucket.maxZoom = layer.maxZoom;
-      _shape.write(jsonEncode([key, layer.minZoom, layer.maxZoom]));
+      _shape.write(_encode([key, layer.minZoom, layer.maxZoom]));
       _extrusions.add(
         ExtrusionLayer(
           id: layer.id,
@@ -937,7 +959,7 @@ class StyleCompiler {
         : null;
     final keys = reads.toList()..sort();
     final sortKey = layer.layout['${layer.type}-sort-key'];
-    final key = jsonEncode([
+    final key = _encode([
       sortKey,
       kind.index,
       source,
@@ -985,7 +1007,7 @@ class StyleCompiler {
     final bucket = _buckets[index];
     if (layer.minZoom < bucket.minZoom) bucket.minZoom = layer.minZoom;
     if (layer.maxZoom > bucket.maxZoom) bucket.maxZoom = layer.maxZoom;
-    _shape.write(jsonEncode([key, layer.minZoom, layer.maxZoom]));
+    _shape.write(_encode([key, layer.minZoom, layer.maxZoom]));
     return index;
   }
 
@@ -1037,10 +1059,10 @@ class StyleCompiler {
     if (from is! Map || from['type'] != 'raster-dem') return null;
     return TerrainLayer(
       opacity: compileExpr(1),
-      tileJsonUrl: from['url'] as String?,
+      tileJsonUrl: _string(from['url']),
       tiles: tileTemplate(from['tiles']),
       tileSize: asNumber(from['tileSize']) ?? 512,
-      sourceMaxZoom: asNumber(from['maxzoom'])?.toInt(),
+      sourceMaxZoom: _int(from['maxzoom']),
       cover: TileCover.of(from),
       terrarium: from['encoding'] == 'terrarium',
       exaggeration: (asNumber(terrain['exaggeration']) ?? 1).toDouble(),
