@@ -1104,10 +1104,15 @@ final class GeoJsonSource extends VectorSource {
     this.cluster,
     this.generateId = false,
     this.filter,
+    this.buffer,
   });
 
   /// A GeoJSON document, or the address of one.
   final Object? data;
+
+  /// The source's `buffer`: how far past a tile's edge its features are
+  /// kept, in pixels of a 512 pixel tile. Null for MapLibre's 128.
+  final double? buffer;
 
   /// The source's `filter` expression, which features must pass.
   final Object? filter;

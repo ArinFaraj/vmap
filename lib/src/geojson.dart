@@ -17,7 +17,10 @@ class GeoJsonTiles {
     this.promoteId,
     this.generateId = false,
     Object? filter,
+    double? buffer,
   }) : _clustering = cluster != null,
+       _buffer = math.min(128, (buffer ?? 128) * tileExtent / 512),
+       _lineBuffer = (buffer ?? 128) * tileExtent / 512,
        _filter = filter == null ? null : compileFilter(filter) {
     _read(data);
     if (cluster != null) _clusters = PointClusters(_loose, cluster);
@@ -43,14 +46,14 @@ class GeoJsonTiles {
   /// The clusters of the source's points, when it gathers them.
   PointClusters? get clusters => _clusters;
 
-  /// Kept around a tile so outlines do not end at its edge.
-  static const double _buffer = 128;
+  /// Kept around a tile so outlines do not end at its edge, in tile units.
+  final double _buffer;
 
-  /// Kept around a tile for lines: MapLibre's GeoJSON buffer, 128 pixels of
-  /// a 512 pixel tile, which sets where a dashed line's dashes start in the
-  /// tile. Polygons keep [_buffer], as their walls along the cut would show
-  /// on buildings.
-  static const double _lineBuffer = tileExtent * 128 / 512;
+  /// Kept around a tile for lines: the source's `buffer`, 128 pixels of a
+  /// 512 pixel tile by default as MapLibre's, which sets where a dashed
+  /// line's dashes start in the tile. Polygons keep no more than [_buffer]
+  /// of it, as their walls along the cut would show on buildings.
+  final double _lineBuffer;
 
   int get featureCount => _features.length;
 
@@ -300,15 +303,15 @@ class GeoJsonTiles {
   /// them on MapLibre's 8192 unit grid, half of one of ours.
   static double _onGrid(double v) => (v * tileExtent * 2).roundToDouble() / 2;
 
-  static const double _lo = -_buffer;
-  static const double _hi = tileExtent + _buffer;
-  static const double _lineLo = -_lineBuffer;
-  static const double _lineHi = tileExtent + _lineBuffer;
+  double get _lo => -_buffer;
+  double get _hi => tileExtent + _buffer;
+  double get _lineLo => -_lineBuffer;
+  double get _lineHi => tileExtent + _lineBuffer;
 
   /// Cuts a line at the padded tile edge into the pieces inside it, notes
   /// in [starts] how far along the line each piece begins, and returns the
   /// length of the whole line.
-  static double _clipLine(
+  double _clipLine(
     Float64List line,
     List<Float64List> into,
     List<double> starts,
@@ -378,7 +381,7 @@ class GeoJsonTiles {
   }
 
   /// Cuts a polygon ring to the padded tile, keeping its winding.
-  static Float64List _clipRing(Float64List ring) {
+  Float64List _clipRing(Float64List ring) {
     var points = ring;
     for (var side = 0; side < 4; side++) {
       final out = <double>[];

@@ -494,6 +494,7 @@ Future<void> tileWorkerMain(
       promoteId: def.idKey(''),
       generateId: def.generateId,
       filter: def.filter,
+      buffer: def.buffer,
     );
     geoJson = () async {
       if (data is! String) return tiles(data);

@@ -253,10 +253,12 @@ class StyleCompiler {
               promoteId: from['promoteId'],
               generateId: from['generateId'] == true,
               filter: from['filter'],
+              buffer: asNumber(from['buffer'])?.toDouble(),
               signature:
                   'g|${data is String ? data : identityHashCode(data)}'
                   '|${cluster?.signature}|${from['promoteId']}'
-                  '|${from['generateId']}|${_encode(from['filter'])}',
+                  '|${from['generateId']}|${_encode(from['filter'])}'
+                  '|${from['buffer']}',
             )
           : TiledSource(
               name: '$name',
