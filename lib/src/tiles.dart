@@ -152,6 +152,26 @@ class LoadedTile {
   BuiltTile? _built;
   final List<List<TileMesh>?> groups;
   final List<LabelCandidate> labels = [];
+  final Map<int, List<LabelCandidate>> _copies = {};
+
+  /// [labels] in the copy of the world [wrap] worlds east, where the tile
+  /// is also drawn: MapLibre places the labels of each copy on its own.
+  List<LabelCandidate> labelsIn(int wrap) {
+    if (wrap == 0) return labels;
+    final copy = _copies[wrap];
+    if (copy != null && copy.length == labels.length) return copy;
+    return _copies[wrap] = [
+      for (final l in labels)
+        if (l case TileLabel(
+          :final tile,
+          :final tileX,
+          :final tileY,
+          :final tileSpan,
+        ))
+          TileLabel('w$wrap|${l.key}', tile, tileX + wrap, tileY, tileSpan),
+    ];
+  }
+
   int usedFrame = 0;
 
   /// What a renderer keeps for this tile, let go with it.

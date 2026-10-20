@@ -1117,12 +1117,16 @@ class VmapEngine extends ChangeNotifier {
       _labels.occlusion.update(view, shown, sheet, styleZoom);
       animating = _labels.paint(
         canvas,
-        sources: [_markerLabels].followedBy(shown.map((d) => d.tile.labels)),
+        sources: [_markerLabels]
+            .followedBy(shown.map((d) => d.tile.labelsIn(_wrapOf(d, camera)))),
         sourcesKey:
             Object.hashAll(
               shown.map(
-                (d) =>
-                    Object.hash(identityHashCode(d.tile), d.tile.labels.length),
+                (d) => Object.hash(
+                  identityHashCode(d.tile),
+                  d.tile.labels.length,
+                  _wrapOf(d, camera),
+                ),
               ),
             ) ^
             _markerLabels.length,
@@ -1234,6 +1238,13 @@ class VmapEngine extends ChangeNotifier {
   }
 
   bool _retryPending = false;
+
+  /// How many worlds east of the first the copy [d] is drawn in lies.
+  static int _wrapOf(TileDraw d, VmapCamera camera) {
+    final n = 1 << d.tile.id.z;
+    final column = ((d.left + camera.origin.dx) / d.size).round();
+    return ((column - d.tile.id.x) / n).floor();
+  }
 
   void _requestFrameLater() {
     if (_retryPending || _disposed) return;
