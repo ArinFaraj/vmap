@@ -42,7 +42,7 @@ class MvtTile {
     while (r.hasMore) {
       final tag = r.varint();
       if (tag == 26) {
-        final len = r.varint();
+        final len = r.length();
         final layer = MvtLayer._decode(bytes, r.pos, r.pos + len);
         layers[layer.name] = layer;
         r.pos += len;
@@ -81,13 +81,13 @@ class MvtLayer implements TileLayer {
         case 10:
           name = r.string();
         case 18:
-          final len = r.varint();
+          final len = r.length();
           features.add(MvtFeature._decode(bytes, r.pos, r.pos + len));
           r.pos += len;
         case 26:
           keys.add(r.string());
         case 34:
-          final len = r.varint();
+          final len = r.length();
           values.add(_decodeValue(bytes, r.pos, r.pos + len));
           r.pos += len;
         case 40:
@@ -163,14 +163,14 @@ class MvtFeature implements TileFeature {
         case 8:
           id = r.varint();
         case 18:
-          final len = r.varint();
+          final len = r.length();
           tagsStart = r.pos;
           tagsEnd = r.pos + len;
           r.pos = tagsEnd;
         case 24:
           type = r.varint();
         case 34:
-          final len = r.varint();
+          final len = r.length();
           geomStart = r.pos;
           geomEnd = r.pos + len;
           r.pos = geomEnd;
@@ -304,16 +304,27 @@ class _Reader {
       if (b < 0x80) return result;
     }
     var scale = 0x10000000;
-    while (true) {
+    for (var i = 4; i < 10; i++) {
       final b = bytes[pos++];
       result += (b & 0x7f) * scale;
       if (b < 0x80) return result;
       scale *= 128;
     }
+    throw const FormatException('A varint runs over ten bytes');
+  }
+
+  /// A length that keeps inside the message being read. A corrupt one
+  /// could otherwise step back and read the same bytes forever.
+  int length() {
+    final n = varint();
+    if (n < 0 || n > end - pos) {
+      throw const FormatException('A length runs past its message');
+    }
+    return n;
   }
 
   String string() {
-    final len = varint();
+    final len = length();
     final s = utf8.decode(Uint8List.sublistView(bytes, pos, pos + len));
     pos += len;
     return s;
@@ -346,7 +357,8 @@ class _Reader {
       case 1:
         pos += 8;
       case 2:
-        pos += varint();
+        final n = length();
+        pos += n;
       case 5:
         pos += 4;
     }

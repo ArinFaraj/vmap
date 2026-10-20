@@ -162,15 +162,20 @@ class PmTiles {
     // By multiplying: a shift keeps only 32 bits in JavaScript.
     int varint() {
       var value = 0, scale = 1;
-      while (true) {
+      for (var i = 0; i < 10; i++) {
         final b = bytes[p++];
         value += (b & 0x7f) * scale;
         if (b < 0x80) return value;
         scale *= 128;
       }
+      throw const FormatException('A varint runs over ten bytes');
     }
 
     final n = varint();
+    // Every entry takes at least four bytes, so a larger count is corrupt.
+    if (n < 0 || n > bytes.length) {
+      throw const FormatException('The PMTiles directory is corrupt');
+    }
     final ids = List<int>.filled(n, 0);
     final runs = List<int>.filled(n, 0);
     final lengths = List<int>.filled(n, 0);

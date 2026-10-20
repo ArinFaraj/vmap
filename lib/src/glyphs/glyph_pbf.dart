@@ -105,13 +105,22 @@ class _Reader {
   }
 
   int varint() {
-    var shift = 0, value = 0;
-    while (true) {
+    var value = 0;
+    for (var shift = 0; shift < 70; shift += 7) {
       final b = data[at++];
       value |= (b & 0x7f) << shift;
       if (b < 0x80) return value;
-      shift += 7;
     }
+    throw const FormatException('A varint runs over ten bytes');
+  }
+
+  /// A length that keeps inside the message being read.
+  int length() {
+    final n = varint();
+    if (n < 0 || n > end - at) {
+      throw const FormatException('A length runs past its message');
+    }
+    return n;
   }
 
   int svarint() {
@@ -120,14 +129,14 @@ class _Reader {
   }
 
   Uint8List bytes() {
-    final n = varint();
+    final n = length();
     final out = Uint8List.sublistView(data, at, at + n);
     at += n;
     return out;
   }
 
   _Reader message() {
-    final n = varint();
+    final n = length();
     final r = _Reader(data, at, at + n);
     at += n;
     return r;
@@ -140,7 +149,7 @@ class _Reader {
       case 1:
         at += 8;
       case 2:
-        final n = varint();
+        final n = length();
         at += n;
       case 5:
         at += 4;
