@@ -118,6 +118,21 @@ class LabelPainter {
         turns ? _view.screenAngle(st.worldX, st.worldY, angle) : angle,
       MarkerName() => 0.0,
     };
+    var basis = (
+      math.cos(turn),
+      math.sin(turn),
+      -math.sin(turn),
+      math.cos(turn),
+    );
+    if (st.iconOnGround && _view.tilted != null) {
+      final onMap = switch (st.candidate) {
+        TileLabel(tile: BuiltLabel(line: _?)) => st.angle,
+        TileLabel(tile: BuiltLabel(:final angle, :final turns)) =>
+          turns ? angle : angle - _view.mapTurn,
+        MarkerName() => -_view.mapTurn,
+      };
+      basis = _groundBasis(st, onMap);
+    }
     final area = ui.Rect.fromLTWH(
       -st.iconW / 2,
       -st.iconH / 2,
@@ -161,7 +176,7 @@ class LabelPainter {
           pieces,
           ix,
           iy,
-          turn,
+          basis,
           linear: !(nearest || texelForPixel),
         )) {
       return;
@@ -238,10 +253,10 @@ class LabelPainter {
     List<(ui.Rect, ui.Rect)> pieces,
     double ix,
     double iy,
-    double turn, {
+    (double, double, double, double) basis, {
     required bool linear,
   }) {
-    final c = math.cos(turn), s = math.sin(turn);
+    final (ux, uy, vx, vy) = basis;
     final opacity = st.opacity * st.iconOpacity;
     final layer = switch (st.candidate) {
       TileLabel(:final tile) => tile.layer,
@@ -277,9 +292,9 @@ class LabelPainter {
       if (from.width <= 0 || from.height <= 0) continue;
       final kx = to.width / from.width, ky = to.height / from.height;
       var source = from;
-      var ox = ix + c * to.left - s * to.top,
-          oy = iy + s * to.left + c * to.top;
-      final ax = c * kx, ay = s * kx, bx = -s * ky, by = c * ky;
+      var ox = ix + ux * to.left + vx * to.top,
+          oy = iy + uy * to.left + vy * to.top;
+      final ax = ux * kx, ay = uy * kx, bx = vx * ky, by = vy * ky;
       if (single) {
         source = from.inflate(1);
         ox -= ax + bx;
@@ -303,6 +318,28 @@ class LabelPainter {
       }
     }
     return true;
+  }
+
+  /// Where a step of one pixel right and one down in [st]'s icon land on the
+  /// screen, the icon lying on the ground of the tilted map at [onMap]
+  /// radians, as MapLibre lays an icon pitched with the map: its size on
+  /// the ground its size facing the viewer times half its anchor's
+  /// distance ratio and a half, foreshortened by the tilt. Leaves [LabelView.x]
+  /// and [LabelView.y] at the anchor.
+  (double, double, double, double) _groundBasis(LabelState st, double onMap) {
+    _view.project(st.worldX, st.worldY);
+    final x0 = _view.x, y0 = _view.y;
+    final unit =
+        (0.5 + 0.5 * _view.depth) /
+        math.max(st.perspective, 1e-6) /
+        _view.world;
+    final c = math.cos(onMap) * unit, s = math.sin(onMap) * unit;
+    _view.project(st.worldX + c, st.worldY + s);
+    final ux = _view.x - x0, uy = _view.y - y0;
+    _view.project(st.worldX - s, st.worldY + c);
+    final vx = _view.x - x0, vy = _view.y - y0;
+    _view.project(st.worldX, st.worldY);
+    return (ux, uy, vx, vy);
   }
 
   /// [to] cut to the device pixels whose centres it covers, as GL fills a

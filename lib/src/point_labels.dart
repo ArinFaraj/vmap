@@ -383,7 +383,12 @@ class PointLabels {
       ..iconDx = 0
       ..iconDy = 0;
     if (icon == null || symbol == null) return icon;
-    final by = asNumber(symbol.iconSize(context)) ?? 1;
+    // As MapLibre's icon shader, an icon grows and shrinks with its
+    // distance from a tilted camera as text does; a fitted icon takes its
+    // size from its text, which already has.
+    final by =
+        (asNumber(symbol.iconSize(context)) ?? 1) *
+        (symbol.textFit ? 1 : st.perspective);
     final (offsetX, offsetY) = symbol.iconOffset(context);
     st.iconScale = by;
     if (!symbol.textFit) {

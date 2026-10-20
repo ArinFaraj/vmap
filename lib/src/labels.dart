@@ -795,6 +795,7 @@ class LabelEngine {
         st
           ..seenPass = _pass
           ..perspective = _view.ratio
+          ..iconOnGround = _symbolOf(c)?.iconOnGround ?? false
           ..candidate = c
           // Ties keep the order the tiles list them in, as MapLibre
           // places features.

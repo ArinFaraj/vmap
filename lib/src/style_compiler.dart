@@ -572,6 +572,15 @@ class StyleCompiler {
         iconPadding: asNumber(layout['icon-padding']),
         iconPaddings: _sides(layout['icon-padding']),
         textIgnored: layout['text-ignore-placement'] == true,
+        iconOnGround: switch (layout['icon-pitch-alignment']) {
+          'map' => true,
+          'viewport' => false,
+          _ => switch (layout['icon-rotation-alignment']) {
+            'map' => true,
+            'viewport' => false,
+            _ => placement is String && placement.startsWith('line'),
+          },
+        },
         textOnGround: switch (layout['text-pitch-alignment']) {
           'map' => true,
           'viewport' => false,

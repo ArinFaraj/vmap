@@ -165,6 +165,9 @@ class LabelState {
   /// Drawn lying on the ground of a tilted map.
   bool onGround = false;
 
+  /// Its icon drawn lying on the ground of a tilted map.
+  bool iconOnGround = false;
+
   /// Written down the page, in the vertical writing mode.
   bool vertical = false;
 

@@ -731,6 +731,7 @@ class SymbolLayer {
     this.textIgnored = false,
     this.keepUpright = true,
     this.textOnGround = false,
+    this.iconOnGround = false,
     this.iconIgnored = false,
     required this.maxWidth,
     required this.iconSize,
@@ -885,6 +886,11 @@ class SymbolLayer {
   /// a name along a line by default: foreshortened, and on the screen as
   /// large as text facing the viewer.
   final bool textOnGround;
+
+  /// The icon lies on the ground of a tilted map, as MapLibre lays it for
+  /// `icon-pitch-alignment: map`, or `auto` with the icon turning with the
+  /// map.
+  final bool iconOnGround;
   final bool iconIgnored;
 
   /// How far the edge of the halo fades out, in logical pixels.

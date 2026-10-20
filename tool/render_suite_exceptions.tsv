@@ -35,7 +35,6 @@ icon-overlap/always	equal	edge pixels
 icon-overlap/cooperative	equal	edge pixels
 icon-pitch-alignment/auto-rotation-alignment-map	equal	edge pixels
 icon-pitch-alignment/viewport-rotation-alignment-map	equal	edge pixels
-icon-pitch-scaling/rotation-alignment-viewport	equal	edge pixels
 icon-pixelratio-mismatch/default	equal	icon resampling
 icon-roll-alignment/auto-rotation-alignment-map	equal	edge pixels
 icon-roll-alignment/viewport-rotation-alignment-map	equal	edge pixels
@@ -132,7 +131,6 @@ sky/horizon-fog-blend/function	equal	the skyline's edge pixels
 sky/horizon-fog-blend/global-state	equal	the skyline's edge pixels
 sprites/2x-screen-1x-icon	equal	edge pixels
 symbol-placement/line-promote-id	equal	edge pixels
-symbol-z-order/icon-with-text	equal	edge pixels
 symbol-z-order/pitched	equal	edge pixels
 terrain/default	equal	edge pixels
 terrain/field-of-view	equal	edge pixels
