@@ -56,8 +56,6 @@ is-supported-script/filter	equal	Devanagari drawn in a different font
 is-supported-script/layout	equal	Devanagari drawn in a different font
 line-dasharray/diagonal-dash	equal	edge pixels
 line-dasharray/fractional-zoom	equal	edge pixels
-line-dasharray/overscaled	equal	edge pixels
-line-dasharray/slant	equal	edge pixels
 line-gradient/color-interpolation-rgb-hcl-lab	equal	gradient shade
 line-gradient/color-interpolation-transparent	equal	gradient shade
 line-gradient/gradient-shared-source	equal	edge pixels
@@ -66,7 +64,6 @@ line-layer-opacity/line-offset	equal	edge pixels
 line-miter-limit/default	equal	edge pixels
 line-overlap	equal	edge pixels
 line-pattern/@2x	equal	edge pixels
-line-pattern/pitch	equal	pattern shade
 mlt/render-layers/render-building-extrusion	later	the MLT tile format
 mlt/render-layers/render-building-extrusion-untessellated	later	the MLT tile format
 overscale	equal	edge pixels

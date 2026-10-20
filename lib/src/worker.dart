@@ -1,6 +1,7 @@
 import 'dart:developer' show Timeline;
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'cluster.dart';
@@ -11,6 +12,7 @@ import 'pmtiles.dart';
 import 'protocol.dart';
 import 'source_config.dart';
 import 'tile_id.dart';
+import 'tile_slice.dart';
 import 'glyphs/glyph_ranges.dart';
 import 'glyphs/glyph_layout.dart';
 import 'sprite_sizes.dart';
@@ -69,6 +71,12 @@ class TilePool {
 
   /// The deepest zoom the source has tiles for.
   int maxZoom;
+
+  /// The deepest zoom the source's tiles are drawn from: past [maxZoom]
+  /// a tiled source's tiles are cut from its deepest ones down to
+  /// [splitZoom], and only past that drawn scaled, as MapLibre's.
+  int get coverMaxZoom =>
+      _def is TiledSource ? math.max(maxZoom, splitZoom) : maxZoom;
   final TileLoaded onLoaded;
   final TileFailed onFailed;
 
@@ -286,13 +294,15 @@ class TilePool {
     await _starting;
     if (startError case final error?) throw error;
     final store = _store;
-    if (store == null || id.z > maxZoom) return false;
-    return store.keep(id.z, id.x, id.y);
+    if (store == null) return false;
+    final d = math.max(0, id.z - maxZoom);
+    return store.keep(id.z - d, id.x >> d, id.y >> d);
   }
 
   bool _onDisk(TileId id) {
     if (_notOnDisk.contains(id)) return false;
-    final found = _store?.onDisk(id.z, id.x, id.y) ?? false;
+    final d = math.max(0, id.z - maxZoom);
+    final found = _store?.onDisk(id.z - d, id.x >> d, id.y >> d) ?? false;
     if (!found) _notOnDisk.add(id);
     return found;
   }
@@ -517,8 +527,16 @@ Future<void> tileWorkerMain(
     return bytes;
   }
 
+  // The source's deepest zoom, as the pool last told it.
+  var dataMaxZoom = def.maxZoom ?? def.defaultMaxZoom;
+
   Future<Iterable<TileLayer>> layersOf(TileId id) async {
     if (geoJson != null) return (await geoJson).tile(id.z, id.x, id.y);
+    if (id.z > dataMaxZoom) {
+      final d = id.z - dataMaxZoom;
+      final from = TileId(dataMaxZoom, id.x >> d, id.y >> d);
+      return sliceLayers(await layersOf(from), from, id);
+    }
     final bytes = await fetch(id);
     return bytes.isEmpty
         ? const <TileLayer>[]
@@ -528,6 +546,7 @@ Future<void> tileWorkerMain(
   Future<WorkerReply> reply(WorkerRequest request) async {
     switch (request) {
       case BuildTile(:final job, :final tile, :final maxZoom):
+        dataMaxZoom = maxZoom;
         try {
           final fetched = Timeline.now;
           final layers = await layersOf(tile);
@@ -545,7 +564,9 @@ Future<void> tileWorkerMain(
                 tile.z,
                 x: tile.x,
                 y: tile.y,
-                maxZoom: maxZoom,
+                maxZoom: geoJson == null
+                    ? math.max(maxZoom, splitZoom)
+                    : maxZoom,
                 over: tile.over,
               )..keyLabels(
                 tile.z,

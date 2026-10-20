@@ -357,7 +357,7 @@ class TileSource {
   }) {
     retrying = false;
     final size = camera.size;
-    maxDataZoom = pool.maxZoom;
+    maxDataZoom = pool.coverMaxZoom;
     final view = camera.view;
     if (view != null) {
       return _coverView(
