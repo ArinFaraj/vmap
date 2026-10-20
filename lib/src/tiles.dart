@@ -293,7 +293,27 @@ class TileSource {
   /// Tiles of the data this source had before it changed, shown until the
   /// tiles of the new data are ready.
   final Map<TileId, LoadedTile> previous = {};
-  final Map<TileId, int> failedAt = {};
+  final Map<TileId, ({int atMs, int times})> failed = {};
+
+  /// Notes that tile [id] could not be had at [nowMs]. Data it could not
+  /// read will not read better soon, so it waits the longest at once.
+  void fail(TileId id, int nowMs, {required bool corrupt}) {
+    final times = corrupt ? _retryDoublings + 1 : (failed[id]?.times ?? 0) + 1;
+    failed[id] = (atMs: nowMs, times: times);
+  }
+
+  static const _retryDoublings = 7;
+
+  /// Whether tile [id] failed too lately to ask for it again: three seconds
+  /// after the first failure, twice as long after each one more, up to
+  /// about six minutes, so a missing tile is not asked for over and over.
+  bool resting(TileId id, int nowMs) {
+    final f = failed[id];
+    if (f == null) return false;
+    final wait = 3000 << (math.min(f.times, _retryDoublings + 1) - 1);
+    return nowMs - f.atMs < wait;
+  }
+
   final List<TileDraw> ideal = [];
   final List<TileDraw> fallback = [];
   final Map<int, TileDraw> fallbackByKey = {};
@@ -458,8 +478,7 @@ class TileSource {
     wanted.clear();
     missing.sort((a, b) => a.$2.compareTo(b.$2));
     for (final (id, _) in missing) {
-      final failed = failedAt[id];
-      if (failed != null && nowMs - failed < 3000) {
+      if (resting(id, nowMs)) {
         retrying = true;
         continue;
       }
@@ -506,8 +525,7 @@ class TileSource {
         if (!have.prepared) prepare(have, ahead.worldSize / n / tileExtent);
         continue;
       }
-      final failed = failedAt[id];
-      if (failed != null && nowMs - failed < 3000) continue;
+      if (resting(id, nowMs)) continue;
       if (!wanted.contains(id)) wanted.add(id);
     }
   }
@@ -604,8 +622,7 @@ class TileSource {
     wanted.clear();
     missing.sort((a, b) => a.$2.compareTo(b.$2));
     for (final (id, _) in missing) {
-      final failed = failedAt[id];
-      if (failed != null && nowMs - failed < 3000) {
+      if (resting(id, nowMs)) {
         retrying = true;
         continue;
       }

@@ -397,7 +397,11 @@ class VmapEngine extends ChangeNotifier {
         source: i,
         onLoaded: (id, built) => _onLoaded(made, id, built),
         onFailed: (id, error) {
-          made.failedAt[id] = _clock.elapsedMilliseconds;
+          made.fail(
+            id,
+            _clock.elapsedMilliseconds,
+            corrupt: '$error'.startsWith('FormatException'),
+          );
           onError?.call(error);
         },
         script: webWorker,
@@ -500,7 +504,7 @@ class VmapEngine extends ChangeNotifier {
     final centre = centerElevation != null
         ? _groundCentre = centerElevation!
         : _groundCentre += (under - _groundCentre) * 0.15;
-    final easing = (under - centre).abs() > 0.5;
+    final easing = centerElevation == null && (under - centre).abs() > 0.5;
     if (easing) _requestFrame();
     gpu.terrain = Terrain(
       terrain.heights,
@@ -659,7 +663,7 @@ class VmapEngine extends ChangeNotifier {
     if (_disposed || !_sources.contains(from)) return;
     from.tiles[id]?.dispose();
     from.tiles[id] = LoadedTile(id, built, _sheet!)..usedFrame = _frame;
-    from.failedAt.remove(id);
+    from.failed.remove(id);
     notifyListeners();
   }
 
@@ -1167,7 +1171,9 @@ class VmapEngine extends ChangeNotifier {
       ideal += s.ideal.length;
       fallback += s.fallback.length;
       cached += s.tiles.length;
-      loading += s.missing.length;
+      for (final (id, _) in s.missing) {
+        if (!s.resting(id, _clock.elapsedMilliseconds)) loading++;
+      }
       unpack = math.max(unpack, s.pool.takeMaxUnpackMicros());
     }
     final timings = stats.timings

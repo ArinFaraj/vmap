@@ -22,7 +22,14 @@ class _RasterTile {
   ui.Image? image;
   int usedFrame = 0;
   int failedAtMs = -1;
+  int failures = 0;
   bool loading = false;
+
+  /// Whether the tile failed too lately to load again: five seconds after
+  /// the first failure, twice as long after each one more, up to about five
+  /// minutes.
+  bool resting(int nowMs) =>
+      failedAtMs >= 0 && nowMs - failedAtMs < 5000 << math.min(failures - 1, 6);
 
   /// The server has no such tile, which a sparse source leaves out: the
   /// tile above it is drawn in its place.
@@ -548,9 +555,7 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
       } else if (tile.empty) {
         continue;
       } else {
-        final failed =
-            tile.failedAtMs >= 0 &&
-            _clock.elapsedMilliseconds - tile.failedAtMs < 5000;
+        final failed = tile.resting(_clock.elapsedMilliseconds);
         if (!tile.missing) {
           _load(tile, z, x % n, y);
           final covered = _store?.cover.has(z, x % n, y) ?? false;
@@ -638,10 +643,7 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
     if (tile.loading || tile.empty || tile.missing) return;
     if (_loading >= _maxLoading) return;
     if (!(_store?.cover.has(z, x, y) ?? false)) return;
-    if (tile.failedAtMs >= 0 &&
-        _clock.elapsedMilliseconds - tile.failedAtMs < 5000) {
-      return;
-    }
+    if (tile.resting(_clock.elapsedMilliseconds)) return;
     tile.loading = true;
     _loading++;
     try {
@@ -659,8 +661,11 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
       final frame = await codec.getNextFrame();
       codec.dispose();
       await _decoded(tile, frame.image, z, x, y);
+      tile.failures = 0;
     } catch (e) {
-      tile.failedAtMs = _clock.elapsedMilliseconds;
+      tile
+        ..failedAtMs = _clock.elapsedMilliseconds
+        ..failures += 1;
       if (!_closed) onError?.call(e);
     } finally {
       tile.loading = false;
@@ -1326,9 +1331,7 @@ final class TerrainTiles extends TileDrawing<TerrainLayer> {
           !tile.empty &&
           !tile.missing) {
         _load(tile, z, x, y);
-        final failed =
-            tile.failedAtMs >= 0 &&
-            _clock.elapsedMilliseconds - tile.failedAtMs < 5000;
+        final failed = tile.resting(_clock.elapsedMilliseconds);
         if (!failed && (_store?.cover.has(z, x, y) ?? false)) waiting++;
       }
     }
