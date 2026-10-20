@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'cluster.dart';
+import 'expr.dart';
 import 'mvt.dart';
 import 'tile_builder.dart' show tileExtent;
 import 'mercator.dart';
@@ -15,7 +16,9 @@ class GeoJsonTiles {
     ClusterOptions? cluster,
     this.promoteId,
     this.generateId = false,
-  }) : _clustering = cluster != null {
+    Object? filter,
+  }) : _clustering = cluster != null,
+       _filter = filter == null ? null : compileFilter(filter) {
     _read(data);
     if (cluster != null) _clusters = PointClusters(_loose, cluster);
   }
@@ -27,6 +30,11 @@ class GeoJsonTiles {
   /// own `id`.
   final bool generateId;
   int _count = 0;
+
+  /// The source's `filter`: features it turns away are left out before
+  /// they are tiled or clustered.
+  final bool Function(EvalContext)? _filter;
+  final EvalContext _context = EvalContext();
   final List<_Feature> _features = [];
   final bool _clustering;
   final List<ClusterPoint> _loose = [];
@@ -67,6 +75,21 @@ class GeoJsonTiles {
         // name is left out rather than taken for an id.
         props.remove(r'$id');
         if (id != null) props[r'$id'] = id;
+        final filter = _filter;
+        if (filter != null) {
+          final geometry = json['geometry'];
+          _context
+            ..props = props
+            ..geometryType = switch (geometry is Map
+                ? geometry['type']
+                : null) {
+              'Point' || 'MultiPoint' => 'Point',
+              'LineString' || 'MultiLineString' => 'LineString',
+              'Polygon' || 'MultiPolygon' => 'Polygon',
+              _ => '',
+            };
+          if (!filter(_context)) return;
+        }
         _geometry(json['geometry'], props);
       default:
         _geometry(json, const {});

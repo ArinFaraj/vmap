@@ -493,6 +493,7 @@ Future<void> tileWorkerMain(
       cluster: def.cluster,
       promoteId: def.idKey(''),
       generateId: def.generateId,
+      filter: def.filter,
     );
     geoJson = () async {
       if (data is! String) return tiles(data);

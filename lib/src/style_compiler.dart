@@ -252,10 +252,11 @@ class StyleCompiler {
               cluster: cluster,
               promoteId: from['promoteId'],
               generateId: from['generateId'] == true,
+              filter: from['filter'],
               signature:
                   'g|${data is String ? data : identityHashCode(data)}'
                   '|${cluster?.signature}|${from['promoteId']}'
-                  '|${from['generateId']}',
+                  '|${from['generateId']}|${_encode(from['filter'])}',
             )
           : TiledSource(
               name: '$name',

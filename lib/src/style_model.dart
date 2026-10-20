@@ -1103,10 +1103,14 @@ final class GeoJsonSource extends VectorSource {
     super.promoteId,
     this.cluster,
     this.generateId = false,
+    this.filter,
   });
 
   /// A GeoJSON document, or the address of one.
   final Object? data;
+
+  /// The source's `filter` expression, which features must pass.
+  final Object? filter;
 
   /// Set when the source asks for its points to be clustered.
   final ClusterOptions? cluster;
