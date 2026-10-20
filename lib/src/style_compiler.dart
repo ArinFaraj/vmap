@@ -731,6 +731,8 @@ class StyleCompiler {
     }
     final picture = paint['line-pattern'];
     final ramp = picture == null ? paint['line-gradient'] : null;
+    // Built into the tiles' GPU streams, so a change rebuilds them.
+    _shape.write(jsonEncode(['l', picture != null, ramp != null]));
     final soft = blur != null && picture == null && ramp == null;
     _layers.add(
       LineLayer(
@@ -798,6 +800,7 @@ class StyleCompiler {
       '$prefix-pattern',
     ]);
     final image = paint['$prefix-pattern'];
+    _shape.write(jsonEncode(['f', image != null]));
     _layers.add(
       FillLayer(
         id: layer.id,
