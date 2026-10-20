@@ -541,6 +541,18 @@ class VmapEngine extends ChangeNotifier {
           ) as TerrainTiles;
   }
 
+  /// World pixels in a metre of height for labels raised by
+  /// `symbol-height-offset`: at the middle's latitude on the flat map, as
+  /// MapLibre's pixels per meter, and at the equator's on the globe, whose
+  /// sphere is the world's width around.
+  static double _labelPerMetre(MapView? view) {
+    if (view == null) return 0;
+    const circumference = 40075016.686;
+    if (view.globe != null) return view.worldSize / circumference;
+    return view.worldSize /
+        (circumference * math.cos(latitudeAt(view.centerY) * math.pi / 180));
+  }
+
   /// The ground's height in world pixels under a point of the world, for
   /// labels to stand on, when the renderer draws raised ground.
   double Function(double wx, double wy)? _groundOf(MapView? view) {
@@ -1271,6 +1283,10 @@ class VmapEngine extends ChangeNotifier {
         zooming: _budget.zooming,
         view: view,
         ground: _groundOf(view),
+        perMetre: _labelPerMetre(view),
+        seaLevel: onGpu && gpu.terrain != null
+            ? -gpu.terrain!.centre * _labelPerMetre(view)
+            : 0,
         sdf: onGpu ? gpu.sdfText : null,
       );
     }

@@ -30,6 +30,24 @@ class LabelView {
   /// style raises it: points are projected standing on it.
   double Function(double wx, double wy)? ground;
 
+  /// World pixels in a metre, and sea level's height in world pixels: 0
+  /// unless raised ground is drawn from the height under the middle.
+  double perMetre = 0, seaLevel = 0;
+
+  double _lift = 0;
+  bool _fromSea = false;
+
+  /// Projects points [metres] above the ground, or above sea level
+  /// [fromSea], until called again: a label's `symbol-height-offset`.
+  void standAt(double metres, {bool fromSea = false}) {
+    _lift = metres * perMetre;
+    _fromSea = fromSea;
+  }
+
+  /// The height in world pixels points at [wx], [wy] are projected at.
+  double heightAt(double wx, double wy) =>
+      (_fromSea ? seaLevel : ground?.call(wx, wy) ?? 0) + _lift;
+
   /// Where [project] put the last point, and the label scale there: 1 on a
   /// flat map, less farther from a tilted camera.
   double x = 0;
@@ -57,7 +75,8 @@ class LabelView {
   }
 
   /// Whether raised ground stands between the camera and the point [wx],
-  /// [wy] of the world, in fractions of it, standing on the ground: the
+  /// [wy] of the world, in fractions of it, at the height it is projected
+  /// at: the
   /// line of sight is walked over the heights, as MapLibre reads its
   /// terrain depth. Its last tenth is left out, or a label on a slope would
   /// hide behind the slope it stands on.
@@ -66,7 +85,7 @@ class LabelView {
     if (view == null || height == null) return false;
     final w = view.worldSize;
     final (x: ex, y: ey, height: eh) = view.eye;
-    final px = wx * w, py = wy * w, ph = height(wx, wy);
+    final px = wx * w, py = wy * w, ph = heightAt(wx, wy);
     final dx = px - ex, dy = py - ey, dh = ph - eh;
     final margin = 0.002 * math.sqrt(dx * dx + dy * dy + dh * dh);
     const steps = 32;
@@ -86,7 +105,7 @@ class LabelView {
       view.projectTo(
         wx * view.worldSize,
         wy * view.worldSize,
-        ground?.call(wx, wy) ?? 0,
+        heightAt(wx, wy),
       );
       x = view.outX;
       y = view.outY;

@@ -444,6 +444,8 @@ class LabelEngine {
     required bool zooming,
     MapView? view,
     double Function(double wx, double wy)? ground,
+    double perMetre = 0,
+    double seaLevel = 0,
     SdfText? sdf,
   }) {
     lastPlaceMicros = 0;
@@ -462,7 +464,11 @@ class LabelEngine {
       origin: origin,
       tilted: view,
     );
-    _view.ground = ground;
+    _view
+      ..ground = ground
+      ..perMetre = perMetre
+      ..seaLevel = seaLevel
+      ..standAt(0);
     final tilt = view == null
         ? 0.0
         : Object.hash(view.pitch, view.bearing, view.roll).toDouble();
@@ -606,6 +612,7 @@ class LabelEngine {
     final pages = _glyphPages;
     var textLayer = -1 << 30;
     for (final st in _drawn) {
+      _stand(st.candidate);
       final layer = _layerOf(st.candidate);
       final sprite = st.sprite;
       final wantsText = st.candidate.hasText && st.showText;
@@ -632,6 +639,7 @@ class LabelEngine {
       _painter.paintText(canvas, st, sprite, devicePixelRatio);
       textLayer = layer;
     }
+    _view.standAt(0);
     _drawn.clear();
     if (sdfText != null) {
       if (sdfText.end(canvas)) animating = true;
@@ -675,7 +683,9 @@ class LabelEngine {
         st.drawY = ((-ts * x + tc * y) * _sortExtent).roundToDouble();
         continue;
       }
+      _stand(candidate);
       _view.project(st.worldX, st.worldY);
+      _view.standAt(0);
       st.drawY = (s * _view.x + c * _view.y).roundToDouble();
     }
     _drawn.sort((a, b) {
@@ -761,7 +771,9 @@ class LabelEngine {
     for (final list in sources) {
       for (final c in list) {
         if (!_inRange(c, styleZoom)) continue;
+        _stand(c);
         _view.project(c.worldX, c.worldY);
+        _view.standAt(0);
         final sx = _view.x;
         final sy = _view.y;
         if (_view.ratio < _perspectiveCutoff) continue;
@@ -810,6 +822,7 @@ class LabelEngine {
     var considered = 0;
     for (final st in states) {
       final c = st.candidate;
+      _stand(c);
       // Only labels that test for collisions count towards the cap: one
       // that may overlap anything and is ignored by everything costs
       // nothing to place.
@@ -875,11 +888,27 @@ class LabelEngine {
         }
       }
     }
+    _view.standAt(0);
     _states.removeWhere((_, same) {
       same.removeWhere((st) => st.seenPass != _pass && !st.live);
       return same.isEmpty;
     });
     _sprites.trim(_pass);
+  }
+
+  /// Has [_view] project [c]'s points at its layer's height offset.
+  void _stand(LabelCandidate c) {
+    final layer = _symbolOf(c);
+    final offset = layer?.heightOffset;
+    if (offset == null) {
+      _view.standAt(0);
+      return;
+    }
+    final metres = c.heightMetres ??= () {
+      _bind(c);
+      return finiteOr(offset(_context), 0);
+    }();
+    _view.standAt(metres, fromSea: layer!.heightFromSea);
   }
 
   /// Places [st] in its writing mode; true when it shows.

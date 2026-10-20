@@ -22,6 +22,10 @@ sealed class LabelCandidate {
   final double worldX;
   final double worldY;
 
+  /// Its layer's `symbol-height-offset` for its feature, in metres, once
+  /// worked out: as MapLibre's, read once, whatever the zoom.
+  double? heightMetres;
+
   /// Names the picture of the text, shared by labels that look the same.
   late String spriteKey = '$_kind|$text';
   String get _kind;

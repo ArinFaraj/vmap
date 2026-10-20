@@ -769,6 +769,8 @@ class SymbolLayer {
     this.iconHaloColor,
     this.iconHaloWidth,
     this.iconHaloBlur,
+    this.heightOffset,
+    this.heightFromSea = false,
   });
 
   final String id;
@@ -976,6 +978,12 @@ class SymbolLayer {
   final Expr? iconHaloColor;
   final Expr? iconHaloWidth;
   final Expr? iconHaloBlur;
+
+  /// `symbol-height-offset`: how many metres above the ground the label
+  /// stands, or above sea level with [heightFromSea]
+  /// (`symbol-height-anchor: absolute`). Null for none.
+  final Expr? heightOffset;
+  final bool heightFromSea;
 
   /// `text-max-angle` in radians: the sharpest turn a name bent along a
   /// line takes. Null for the package's own.

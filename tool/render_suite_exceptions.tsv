@@ -121,12 +121,24 @@ resampling/hillshade/tile-boundaries	equal	edge pixels
 runtime-styling/image-add-1x-image-2x-screen	equal	edge pixels
 sky/atmosphere-blend/default	equal	edge pixels
 sky/atmosphere-blend/function	equal	edge pixels
+sky/fog-color/default	equal	the skyline's edge pixels
+sky/fog-color/function	equal	the skyline's edge pixels
+sky/fog-color/global-state	equal	the skyline's edge pixels
+sky/fog-ground-blend/default	equal	the skyline's edge pixels
+sky/fog-ground-blend/function	equal	the skyline's edge pixels
+sky/fog-ground-blend/global-state	equal	the skyline's edge pixels
+sky/horizon-fog-blend/default	equal	the skyline's edge pixels
+sky/horizon-fog-blend/function	equal	the skyline's edge pixels
+sky/horizon-fog-blend/global-state	equal	the skyline's edge pixels
 sprites/2x-screen-1x-icon	equal	edge pixels
 symbol-placement/line-promote-id	equal	edge pixels
 symbol-z-order/icon-with-text	equal	edge pixels
 symbol-z-order/pitched	equal	edge pixels
 terrain/default	equal	edge pixels
+terrain/field-of-view	equal	edge pixels
+terrain/fog	equal	the skyline's edge pixels
 terrain/skirts-none	equal	edge pixels
+terrain/symbol-height-anchor-absolute	equal	edge pixels
 text-field/formatted-images	equal	edge pixels
 text-field/formatted-images-mixed	equal	edge pixels
 text-field/formatted-images-multiline	equal	edge pixels

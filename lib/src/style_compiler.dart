@@ -500,6 +500,7 @@ class StyleCompiler {
     _reads(layout['icon-size'], paintKeys);
     _reads(layout['icon-offset'], paintKeys);
     _reads(layout['text-offset'], paintKeys);
+    _reads(layout['symbol-height-offset'], paintKeys);
     for (final key in _layoutByFeature) {
       _reads(layout[key], paintKeys);
     }
@@ -636,6 +637,11 @@ class StyleCompiler {
         iconTranslate: _maybe(paint['icon-translate']),
         iconHaloBlur: _maybe(paint['icon-halo-blur']),
         iconTranslateOnScreen: paint['icon-translate-anchor'] == 'viewport',
+        heightOffset: switch (layout['symbol-height-offset']) {
+          null || 0 => null,
+          final offset => compileExpr(offset),
+        },
+        heightFromSea: layout['symbol-height-anchor'] == 'absolute',
         maxBend: switch (asNumber(layout['text-max-angle'])) {
           final degrees? => degrees * math.pi / 180,
           null => null,
