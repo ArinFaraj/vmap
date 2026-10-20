@@ -654,7 +654,7 @@ class SymbolBuild {
       },
       icon = switch (json[iconKey]) {
         null => null,
-        final image => compileText(image),
+        final image => compileIcon(image),
       },
       placement = compileExpr(json[placementKey]),
       spacing = (json[spacingKey]! as num).toDouble(),

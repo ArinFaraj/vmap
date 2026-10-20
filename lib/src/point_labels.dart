@@ -329,7 +329,7 @@ class PointLabels {
     final name = _iconName(st.candidate);
     var icon = st.icon;
     if (icon == null && name.isNotEmpty) {
-      icon = st.icon = sheet?.entries[name];
+      icon = st.icon = sheet?.icon(name);
     }
     st
       ..iconDx = 0
@@ -386,7 +386,10 @@ class PointLabels {
     final name = _iconName(st.candidate);
     final pin = pins == null || symbol == null || name.isEmpty
         ? null
-        : pins.resolve(name, place: symbol.sourceLayer == 'poi');
+        : pins.resolve(
+            name.split(imageChoice).first,
+            place: symbol.sourceLayer == 'poi',
+          );
     st.pin = pin;
     if (pin == null) return null;
     st

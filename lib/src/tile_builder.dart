@@ -492,10 +492,17 @@ class TileBuilder {
             final across = pending / tileExtent;
             final tiles = 1 << z;
             return [
-              for (var i = 0; i < _sink.coordCount; i += 2) ...[
-                longitudeAt((x + _sink.coords[i] * across) / tiles),
-                latitudeAt((y + _sink.coords[i + 1] * across) / tiles),
-              ],
+              for (var r = 0; r < _sink.ringCount; r++)
+                [
+                  for (
+                    var i = _sink.ringStart(r);
+                    i < _sink.ringEnd(r);
+                    i++
+                  ) ...[
+                    longitudeAt((x + _sink.coords[i * 2] * across) / tiles),
+                    latitudeAt((y + _sink.coords[i * 2 + 1] * across) / tiles),
+                  ],
+                ],
             ];
           };
 

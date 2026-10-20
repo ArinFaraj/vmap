@@ -25,9 +25,10 @@ class EvalContext {
   /// What `accumulated` reads while a cluster adds up one of its properties.
   Object? accumulated;
 
-  /// The feature's points as longitude and latitude in turn, which `within`
+  /// The feature's parts (its points, lines or rings), each as longitude
+  /// and latitude in turn, which `within`
   /// and `distance` read. Null where features are not weighed by place.
-  List<double> Function()? lonLats;
+  List<List<double>> Function()? lonLats;
 }
 
 typedef Expr = Object? Function(EvalContext c);
@@ -47,10 +48,50 @@ double? asNumber(Object? v) => v is num
     ? (v ? 1 : 0)
     : null;
 
+/// [v] as JavaScript's `String(v)` writes it, which `in` and `index-of`
+/// search a string for.
+String _jsText(Object? v) => v is bool
+    ? '$v'
+    : v == null
+    ? 'null'
+    : asText(v);
+
 String asText(Object? v) {
   if (v == null) return '';
   if (v is double && v == v.roundToDouble()) return v.toInt().toString();
   return v.toString();
+}
+
+/// The name MapLibre's `typeof` gives [v]'s type.
+String _typeName(Object? v) {
+  switch (v) {
+    case null:
+      return 'null';
+    case bool():
+      return 'boolean';
+    case num():
+      return 'number';
+    case String():
+      return 'string';
+    case Rgba():
+      return 'color';
+    case FormattedText():
+      return 'formatted';
+    case List():
+      String? item;
+      for (final e in v) {
+        final t = _typeName(e);
+        if (item == null) {
+          item = t;
+        } else if (item != t) {
+          item = 'value';
+          break;
+        }
+      }
+      return 'array<${item ?? 'value'}, ${v.length}>';
+    default:
+      return 'object';
+  }
 }
 
 bool _truthy(Object? v) =>
@@ -68,7 +109,8 @@ const _operators = {
   'typeof', 'collator', 'resolved-locale', 'is-supported-script', 'slice',
   'index-of', 'e', 'pi', 'ln2', 'line-progress', 'heatmap-density',
   'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'within', 'distance',
-  'accumulated', 'to-rgba', 'hsl', 'hsla', 'split', 'join',
+  'accumulated', 'to-rgba', 'hsl', 'hsla', 'split', 'join', 'semiliteral',
+  r'$images',
 };
 
 /// The variables `let` has bound around the expression being compiled.
@@ -132,6 +174,27 @@ Expr compileText(Object? json) {
     }
     return out.toString().trim();
   };
+}
+
+/// Between the names an icon falls back through, first to last, where an
+/// `icon-image` coalesces images: the sprite takes the first it has, as
+/// MapLibre skips an image that is not available.
+const imageChoice = '\u001f';
+
+/// Compiles an `icon-image`: as [compileText], with each `coalesce` of
+/// images giving every name it names, joined by [imageChoice].
+Expr compileIcon(Object? json) {
+  Object? walk(Object? v) => switch (v) {
+    ['coalesce', ...final rest]
+        when rest.isNotEmpty &&
+            rest.every(
+              (a) => a is List && a.isNotEmpty && a.first == 'image',
+            ) =>
+      [r'$images', ...rest],
+    final List<Object?> l => [for (final e in l) walk(e)],
+    _ => v,
+  };
+  return compileText(walk(json));
 }
 
 /// Compiles a layer filter in either the expression or the legacy syntax.
@@ -199,18 +262,65 @@ Expr _filter(Object? json) {
   return compileExpr(json);
 }
 
-/// Whether a comparison is given a collator that sets case aside, which is
-/// what a collator does unless told otherwise.
-bool _folds(List<Object?> args) =>
-    args.length > 2 &&
-    args[2] is List &&
-    (args[2]! as List).firstOrNull == 'collator' &&
-    switch ((args[2]! as List).elementAtOrNull(1)) {
-      {'case-sensitive': true} => false,
-      _ => true,
-    };
+/// What a `collator` expression gives: how text compares, as MapLibre's
+/// `Intl.Collator` for searching, with the root locale's ordering.
+class _Collator {
+  const _Collator(this.caseSensitive, this.diacriticSensitive, this.locale);
 
-Object? _folded(Object? value) => value is String ? value.toLowerCase() : value;
+  final bool caseSensitive;
+  final bool diacriticSensitive;
+  final String? locale;
+
+  int compare(String a, String b) {
+    final lowerA = a.toLowerCase(), lowerB = b.toLowerCase();
+    var order = _withoutMarks(lowerA).compareTo(_withoutMarks(lowerB));
+    if (order == 0 && diacriticSensitive) order = lowerA.compareTo(lowerB);
+    if (order == 0 && caseSensitive) {
+      // Lower case sorts before upper case at the same letter.
+      final ra = a.runes.toList(), rb = b.runes.toList();
+      for (var i = 0; order == 0 && i < ra.length && i < rb.length; i++) {
+        order = _upper(ra[i]).compareTo(_upper(rb[i]));
+      }
+    }
+    return order.sign;
+  }
+
+  static int _upper(int rune) {
+    final s = String.fromCharCode(rune);
+    return s == s.toLowerCase() ? 0 : 1;
+  }
+}
+
+/// The Latin letters with marks, under the letter they are drawn from.
+const _marked = {
+  'a': '\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u0101\u0103\u0105',
+  'c': '\u00e7\u0107\u0109\u010b\u010d',
+  'd': '\u010f\u0111',
+  'e': '\u00e8\u00e9\u00ea\u00eb\u0113\u0115\u0117\u0119\u011b',
+  'g': '\u011d\u011f\u0121\u0123',
+  'h': '\u0125\u0127',
+  'i': '\u00ec\u00ed\u00ee\u00ef\u0129\u012b\u012d\u012f\u0131',
+  'j': '\u0135',
+  'k': '\u0137',
+  'l': '\u013a\u013c\u013e\u0140\u0142',
+  'n': '\u00f1\u0144\u0146\u0148\u0149',
+  'o': '\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u014d\u014f\u0151',
+  'r': '\u0155\u0157\u0159',
+  's': '\u015b\u015d\u015f\u0161',
+  't': '\u0163\u0165\u0167',
+  'u': '\u00f9\u00fa\u00fb\u00fc\u0169\u016b\u016d\u016f\u0171\u0173',
+  'w': '\u0175',
+  'y': '\u00fd\u00ff\u0177',
+  'z': '\u017a\u017c\u017e',
+};
+
+final Map<int, int> _baseLetters = {
+  for (final MapEntry(:key, :value) in _marked.entries)
+    for (final r in value.runes) r: key.codeUnitAt(0),
+};
+
+String _withoutMarks(String s) =>
+    String.fromCharCodes(s.runes.map((r) => _baseLetters[r] ?? r));
 
 bool _compare(String op, Object? a, Object? b) {
   final int order;
@@ -276,7 +386,20 @@ Expr _op(String op, List<Object?> args) {
       return (c) => c.accumulated;
     case 'feature-state':
       final name = args.isEmpty ? null : args.first;
-      return (c) => c.state[name];
+      if (name is String) return (c) => c.state[name];
+      final inner = arg(0);
+      return (c) => c.state[inner(c)];
+    case r'$images':
+      final parts = all();
+      return (c) =>
+          [for (final p in parts) asText(p(c))]
+              .where((n) => n.isNotEmpty)
+              .join(imageChoice);
+    case 'semiliteral':
+      final value = args.isEmpty ? null : args.first;
+      if (value is! List) return _constant(value);
+      final items = [for (final v in value) compileExpr(v)];
+      return (c) => [for (final i in items) i(c)];
     case 'let':
       final scope = <String, Expr>{};
       for (var i = 0; i + 2 < args.length; i += 2) {
@@ -301,7 +424,11 @@ Expr _op(String op, List<Object?> args) {
     case 'is-supported-script':
       return _constant(true);
     case 'resolved-locale':
-      return _constant('en');
+      final collator = arg(0);
+      return (c) => switch (collator(c)) {
+        _Collator(:final String locale) => locale,
+        _ => 'en',
+      };
     case 'within':
       final place = Place.of(args.isEmpty ? null : args.first);
       if (place == null) return _constant(false);
@@ -309,7 +436,7 @@ Expr _op(String op, List<Object?> args) {
         final points = c.lonLats?.call();
         return points != null &&
             c.geometryType != 'Polygon' &&
-            place.holds(points);
+            place.holds(points, line: c.geometryType == 'LineString');
       });
     case 'distance':
       final place = Place.of(args.isEmpty ? null : args.first);
@@ -318,36 +445,25 @@ Expr _op(String op, List<Object?> args) {
         final points = c.lonLats?.call();
         return points == null
             ? null
-            : place.distanceTo(points, joined: c.geometryType != 'Point');
+            : place.distanceTo(points, shape: c.geometryType);
       });
     case 'typeof':
       final a = arg(0);
-      return (c) => switch (a(c)) {
-        null => 'null',
-        String() => 'string',
-        num() => 'number',
-        bool() => 'boolean',
-        List() => 'array',
-        Rgba() => 'color',
-        _ => 'object',
-      };
+      return (c) => _typeName(a(c));
     case 'to-rgba':
       final a = arg(0);
       return (c) {
-        final v = Rgba.of(a(c));
+        final v = _color(a(c));
         return v == null ? null : [v.r * 255, v.g * 255, v.b * 255, v.a];
       };
     case 'slice':
       final input = arg(0), from = arg(1);
       final to = args.length > 2 ? arg(2) : null;
       return (c) {
-        final v = input(c);
-        final length = v is String
-            ? v.length
-            : v is List
-            ? v.length
-            : -1;
-        if (length < 0) return null;
+        final raw = input(c);
+        final v = raw is String ? raw.runes.toList() : raw;
+        if (v is! List) return null;
+        final length = v.length;
         int at(Object? raw, int fallback) {
           var i = asNumber(raw)?.toInt() ?? fallback;
           if (i < 0) i += length;
@@ -356,17 +472,27 @@ Expr _op(String op, List<Object?> args) {
 
         final a = at(from(c), 0);
         final b = math.max(a, at(to?.call(c), length));
-        return v is String ? v.substring(a, b) : (v! as List).sublist(a, b);
+        final part = v.sublist(a, b);
+        return raw is String ? String.fromCharCodes(part.cast<int>()) : part;
       };
     case 'index-of':
       final needle = arg(0), haystack = arg(1);
-      final from = args.length > 2 ? arg(2) : null;
+      final fromIndex = args.length > 2 ? arg(2) : null;
       return (c) {
         final h = haystack(c);
         final n = needle(c);
-        final start = asNumber(from?.call(c))?.toInt() ?? 0;
-        if (h is String && n is String) return h.indexOf(n, start);
-        if (h is List) return h.indexOf(n, start);
+        final start = math.max(0, asNumber(fromIndex?.call(c))?.toInt() ?? 0);
+        if (h is String) {
+          final runes = h.runes.toList();
+          final units = String.fromCharCodes(runes.take(start)).length;
+          final i = h.indexOf(_jsText(n), units);
+          return i < 0 ? -1 : h.substring(0, i).runes.length;
+        }
+        if (h is List) {
+          var from = asNumber(fromIndex?.call(c))?.toInt() ?? 0;
+          if (from < 0) from = math.max(0, from + h.length);
+          return from >= h.length ? -1 : h.indexOf(n, from);
+        }
         return -1;
       };
     case 'sin':
@@ -388,14 +514,43 @@ Expr _op(String op, List<Object?> args) {
     case '!':
       final a = arg(0);
       return (c) => !_truthy(a(c));
-    case '==' || '!=' || '<' || '<=' || '>' || '>=' when _folds(args):
-      final a = arg(0), b = arg(1);
-      final same = op == '==' || op == '!=';
+    case '==' || '!=' || '<' || '<=' || '>' || '>=' when args.length > 2:
+      final a = arg(0), b = arg(1), collator = arg(2);
       return (c) {
-        final x = _folded(a(c)), y = _folded(b(c));
-        if (same) return (x == y) == (op == '==');
-        return _compare(op, x, y);
+        final x = a(c), y = b(c);
+        final k = collator(c);
+        if (x is String && y is String && k is _Collator) {
+          final order = k.compare(x, y);
+          return switch (op) {
+            '==' => order == 0,
+            '!=' => order != 0,
+            '<' => order < 0,
+            '<=' => order <= 0,
+            '>' => order > 0,
+            _ => order >= 0,
+          };
+        }
+        return switch (op) {
+          '==' => x == y,
+          '!=' => x != y,
+          _ => _compare(op, x, y),
+        };
       };
+    case 'collator':
+      final options = args.isNotEmpty && args.first is Map
+          ? args.first! as Map
+          : const <Object?, Object?>{};
+      final caseSensitive = compileExpr(options['case-sensitive']);
+      final diacriticSensitive = compileExpr(options['diacritic-sensitive']);
+      final locale = compileExpr(options['locale']);
+      return (c) => _Collator(
+        caseSensitive(c) == true,
+        diacriticSensitive(c) == true,
+        switch (locale(c)) {
+          final String l => l,
+          _ => null,
+        },
+      );
     case '==':
       final a = arg(0), b = arg(1);
       return (c) => a(c) == b(c);
@@ -507,31 +662,30 @@ Expr _op(String op, List<Object?> args) {
       );
     case 'to-string':
       final a = arg(0);
-      return (c) => asText(a(c));
+      return (c) => switch (a(c)) {
+        final Rgba v =>
+          'rgba(${(v.r * 255).round()},${(v.g * 255).round()},'
+              '${(v.b * 255).round()},${asText(v.a)})',
+        final List<Object?> v => jsonEncode(v),
+        final Map<Object?, Object?> v => jsonEncode(v),
+        final v => _jsText(v) == 'null' ? '' : _jsText(v),
+      };
     case 'number-format':
       final a = arg(0);
       final options = args.length > 1 && args[1] is Map
           ? args[1] as Map
           : const <Object?, Object?>{};
-      final least = asNumber(options['min-fraction-digits'])?.toInt() ?? 0;
-      final most = math.max(
-        least,
-        asNumber(options['max-fraction-digits'])?.toInt() ?? 3,
-      );
+      final least = compileExpr(options['min-fraction-digits']);
+      final most = compileExpr(options['max-fraction-digits']);
       return (c) {
         final value = asNumber(a(c));
         if (value == null) return '';
-        var text = value.toStringAsFixed(most);
-        if (most > least && text.contains('.')) {
-          final keep = text.indexOf('.') + least + (least == 0 ? 0 : 1);
-          var end = text.length;
-          while (end > keep && text[end - 1] == '0') {
-            end--;
-          }
-          if (end > 0 && text[end - 1] == '.') end--;
-          text = text.substring(0, end);
-        }
-        return text;
+        final min = asNumber(least(c))?.toInt() ?? 0;
+        return _grouped(
+          value,
+          min,
+          math.max(min, asNumber(most(c))?.toInt() ?? 3),
+        );
       };
     case 'split':
       final a = arg(0), by = arg(1);
@@ -554,29 +708,61 @@ Expr _op(String op, List<Object?> args) {
           v.length > 3 ? v[3].toDouble() : 1,
         );
       };
-    case 'to-number' || 'number':
+    case 'to-number':
       final parts = all();
       return (c) {
         for (final p in parts) {
-          final v = asNumber(p(c));
-          if (v != null) return v;
+          final raw = p(c);
+          if (raw == null || (raw is String && raw.trim().isEmpty)) return 0.0;
+          final v = asNumber(raw);
+          if (v != null && !v.isNaN) return v;
         }
-        return op == 'to-number' ? 0.0 : null;
+        return null;
+      };
+    case 'number' || 'string' || 'boolean' || 'object':
+      final parts = all();
+      return (c) {
+        for (final p in parts) {
+          final v = p(c);
+          if (switch (op) {
+            'number' => v is num,
+            'string' => v is String,
+            'boolean' => v is bool,
+            _ => v is Map,
+          }) {
+            return v;
+          }
+        }
+        return null;
       };
     case 'to-boolean':
       final a = arg(0);
       return (c) => _truthy(a(c));
     case 'to-color':
-      final a = arg(0);
-      return (c) => Rgba.of(a(c));
-    case 'string' || 'boolean' || 'array' || 'object':
       final parts = all();
       return (c) {
         for (final p in parts) {
-          final v = p(c);
+          final v = _color(p(c));
           if (v != null) return v;
         }
         return null;
+      };
+    case 'array':
+      final item = args.length > 1 && args.first is String
+          ? args.first! as String
+          : null;
+      final length = args.length > 2 ? asNumber(args[1])?.toInt() : null;
+      final value = args.isEmpty ? _constant(null) : compileExpr(args.last);
+      return (c) {
+        final v = value(c);
+        if (v is! List) return null;
+        if (length != null && v.length != length) return null;
+        if (item != null &&
+            item != 'value' &&
+            !v.every((e) => _typeName(e) == item)) {
+          return null;
+        }
+        return v;
       };
     case 'format':
       final runs = <(Expr, Map<String, Expr>, bool)>[];
@@ -635,7 +821,13 @@ Expr _op(String op, List<Object?> args) {
     case '+' || '*' || 'min' || 'max':
       final parts = all();
       return (c) {
-        double? acc;
+        double? acc = switch (op) {
+          _ when parts.isNotEmpty => null,
+          '+' => 0,
+          '*' => 1,
+          'min' => double.infinity,
+          _ => double.negativeInfinity,
+        };
         for (final p in parts) {
           final v = asNumber(p(c));
           if (v == null) return null;
@@ -691,7 +883,7 @@ Expr _op(String op, List<Object?> args) {
       return (c) {
         final v = a(c);
         return v is String
-            ? v.length
+            ? v.runes.length
             : v is List
             ? v.length
             : null;
@@ -702,7 +894,8 @@ Expr _op(String op, List<Object?> args) {
         final h = haystack(c);
         final n = needle(c);
         if (h is List) return h.contains(n);
-        if (h is String && n is String) return h.contains(n);
+        if (h is String)
+          return n != null && h.contains(_jsText(n)) && h.isNotEmpty;
         return false;
       };
     case 'at':
@@ -726,6 +919,49 @@ Expr _op(String op, List<Object?> args) {
       };
   }
   return _constant(null);
+}
+
+/// [value] in English digits grouped by thousands, with [least] to [most]
+/// decimals, as `Intl.NumberFormat` writes it for `number-format`.
+String _grouped(double value, int least, int most) {
+  if (!value.isFinite) return value.isNaN ? 'NaN' : (value < 0 ? '-∞' : '∞');
+  final shortest = value.abs().toString();
+  final dot = shortest.indexOf('.');
+  var text = !shortest.contains('e') && shortest.length - dot - 1 <= most
+      ? shortest
+      : value.abs().toStringAsFixed(math.min(most, 20));
+  var (whole, fraction) = text.contains('.')
+      ? (
+          text.substring(0, text.indexOf('.')),
+          text.substring(text.indexOf('.') + 1),
+        )
+      : (text, '');
+  while (fraction.length > least && fraction.endsWith('0')) {
+    fraction = fraction.substring(0, fraction.length - 1);
+  }
+  fraction = fraction.padRight(least, '0');
+  final groups = StringBuffer();
+  for (var i = 0; i < whole.length; i++) {
+    if (i > 0 && (whole.length - i) % 3 == 0) groups.write(',');
+    groups.write(whole[i]);
+  }
+  text = fraction.isEmpty ? '$groups' : '$groups.$fraction';
+  return value < 0 && text.contains(RegExp('[1-9]')) ? '-$text' : text;
+}
+
+/// [v] as a colour, as `to-color` reads one: a CSS colour or three or four
+/// channels, red, green and blue out of 255 and alpha out of 1.
+Rgba? _color(Object? v) {
+  if (v is List &&
+      (v.length == 3 || v.length == 4) &&
+      v.every((e) => e is num)) {
+    final n = [for (final e in v) (e as num).toDouble()];
+    if (n.take(3).any((e) => e < 0 || e > 255)) return null;
+    final a = n.length > 3 ? n[3] : 1.0;
+    if (a < 0 || a > 1) return null;
+    return Rgba(n[0] / 255, n[1] / 255, n[2] / 255, a);
+  }
+  return Rgba.of(v);
 }
 
 Expr _interpolate(
@@ -836,8 +1072,8 @@ Expr _legacyFunction(Map<Object?, Object?> json) {
   final outs = [for (final v in values) _constant(v)];
   if (type == 'interval' || (!numeric && type != 'exponential')) {
     return (c) {
-      final v = asNumber(input(c));
-      if (v == null) return fallback;
+      final v = input(c);
+      if (v is! num) return fallback;
       var out = values.first;
       for (var i = 0; i < stops.length && stops[i] <= v; i++) {
         out = values[i];
@@ -853,7 +1089,7 @@ Expr _legacyFunction(Map<Object?, Object?> json) {
     space: json['colorSpace'] as String?,
   );
   if (property is! String) return curve;
-  return (c) => c.props[property] == null ? fallback : curve(c);
+  return (c) => c.props[property] is num ? curve(c) : fallback;
 }
 
 /// A legacy function of both zoom and a feature property: its stops keyed
@@ -867,6 +1103,18 @@ Expr _compositeFunction(Map<Object?, Object?> json, List<Object?> rawStops) {
     (byZoom[zoom] ??= []).add([key['value'], s.length > 1 ? s[1] : null]);
   }
   final zooms = byZoom.keys.toList()..sort();
+  if (json['type'] == 'interval') {
+    final byStep = [
+      for (final z in zooms) _legacyFunction({...json, 'stops': byZoom[z]}),
+    ];
+    return (c) {
+      var i = 0;
+      while (i + 1 < zooms.length && zooms[i + 1] <= c.zoom) {
+        i++;
+      }
+      return byStep[i](c);
+    };
+  }
   return _interpolate(
     (c) => c.zoom,
     zooms,

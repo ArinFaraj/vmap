@@ -92,11 +92,23 @@ void main() {
       {'near'},
     );
     final place = Place.of(here)!;
-    expect(place.distanceTo([10, 10], joined: false), closeTo(111319, 200));
-    expect(Place.of(_west)!.distanceTo([10, 10], joined: false), 0);
     expect(
-      Place.of(_west)!.distanceTo([21, 0], joined: false),
-      closeTo(111319, 200),
+      place.distanceTo([
+        [10, 10],
+      ], shape: 'Point'),
+      closeTo(110608, 1),
+    );
+    expect(
+      Place.of(_west)!.distanceTo([
+        [10, 10],
+      ], shape: 'Point'),
+      0,
+    );
+    expect(
+      Place.of(_west)!.distanceTo([
+        [21, 0],
+      ], shape: 'Point'),
+      closeTo(111319, 1),
     );
   });
 

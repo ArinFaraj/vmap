@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'expr.dart' show imageChoice;
 import 'net.dart' show cacheKey;
 import 'platform.dart';
 
@@ -75,6 +76,16 @@ class SpriteSheet {
   final ui.Image image;
   final Map<String, SpriteImage> entries;
   final Map<String, ui.Image?> _patterns = {};
+
+  /// The icon [name] gives: the first of its [imageChoice]s the sheet has.
+  SpriteImage? icon(String name) {
+    if (!name.contains(imageChoice)) return entries[name];
+    for (final choice in name.split(imageChoice)) {
+      final entry = entries[choice];
+      if (entry != null) return entry;
+    }
+    return null;
+  }
 
   /// The named image on its own, which a repeating fill needs.
   ui.Image? pattern(String name) => _patterns.putIfAbsent(name, () {
