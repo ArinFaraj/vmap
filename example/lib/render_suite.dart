@@ -24,6 +24,10 @@ const _filter = String.fromEnvironment('FILTER');
 /// tool/render_suite_out_of_scope.tsv: tests of what a Flutter map has no
 /// part in, each id and why, left out of the score in scope.
 const _outOfScope = String.fromEnvironment('OUT_OF_SCOPE');
+
+/// tool/render_suite_exceptions.tsv: in-scope tests vmap need not pass yet,
+/// each with its kind and why. Every other in-scope test must pass.
+const _exceptions = String.fromEnvironment('EXCEPTIONS');
 const _port = int.fromEnvironment('PORT', defaultValue: 2900);
 const _gpu = bool.fromEnvironment('GPU');
 const _multisample = bool.fromEnvironment('MULTISAMPLE', defaultValue: true);
@@ -176,6 +180,20 @@ Future<void> _runAll() async {
       'in scope: ${scoped.where((r) => r.ok).length} of ${scoped.length} '
       'passed, ${all.length - scoped.length} out of scope',
     );
+    if (_exceptions.isNotEmpty) {
+      final excepted = {
+        for (final line in File(_exceptions).readAsLinesSync())
+          if (line.contains('\t')) line.split('\t').first,
+      };
+      final must = scoped.where((r) => !excepted.contains(r.id));
+      final stale = scoped.where((r) => r.ok && excepted.contains(r.id));
+      debugPrint(
+        'must pass: ${must.where((r) => r.ok).length} of ${must.length} '
+        'passed, ${scoped.length - must.length} excepted'
+        '${stale.isEmpty ? '' : ', ${stale.length} excepted but passing: '
+                  '${stale.map((r) => r.id).join(' ')}'}',
+      );
+    }
   }
 }
 

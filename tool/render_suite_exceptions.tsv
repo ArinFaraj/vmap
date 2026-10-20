@@ -1,0 +1,146 @@
+# In-scope render tests vmap does not have to pass yet, each with its kind
+# and why. Every other in-scope test must pass; tool/render_suite.sh reports
+# how many do. Kinds:
+#   equal  differs only in edge pixels, shading or a local font; a person
+#          comparing the pictures sees the same map
+#   later  a feature vmap adds after reaching parity
+#   skip   a MapLibre quirk vmap does not copy
+# Delete a line when its test passes.
+bright-v9/z0	equal	edge pixels
+combinations/background-translucent--symbol-translucent	equal	edge pixels
+combinations/circle-translucent--hillshade-translucent	equal	edge pixels
+combinations/circle-translucent--symbol-translucent	equal	edge pixels
+combinations/fill-extrusion-translucent--background-opaque	skip	MapLibre drops a translucent extrusion over an opaque background
+combinations/fill-extrusion-translucent--symbol-translucent	equal	edge pixels of a symbol
+combinations/fill-opaque--hillshade-translucent	equal	edge pixels
+combinations/fill-translucent--hillshade-translucent	equal	edge pixels
+combinations/fill-translucent--symbol-translucent	equal	edge pixels of a symbol
+combinations/heatmap-translucent--background-opaque	skip	MapLibre shows a heatmap through opaque layers drawn above it
+combinations/heatmap-translucent--fill-opaque	skip	MapLibre shows a heatmap through opaque layers drawn above it
+combinations/heatmap-translucent--symbol-translucent	equal	edge pixels of a symbol
+combinations/hillshade-translucent--symbol-translucent	equal	edge pixels of a symbol
+combinations/raster-translucent--symbol-translucent	equal	edge pixels of a symbol
+combinations/symbol-translucent--fill-translucent	equal	edge pixels of a symbol
+combinations/symbol-translucent--heatmap-translucent	equal	edge pixels of a symbol
+combinations/symbol-translucent--hillshade-translucent	equal	edge pixels of a symbol
+combinations/symbol-translucent--line-translucent	equal	edge pixels of a symbol
+feature-state/vector-source	equal	one dot's edge
+fill-extrusion-rounded-corner-distance/clamped	equal	shading along a rounded edge
+fill-extrusion-rounded-corner-distance/houses	equal	edge pixels
+font-faces/complex-scripts	later	the font-faces style property, local fonts for complex scripts
+geojson/clustered	equal	one cluster at the screen edge
+high-pitch/pitch95	later	camera pitch beyond 90 degrees
+high-pitch/pitch95-roll135	later	camera pitch beyond 90 degrees
+high-pitch/terrain-pitch95	later	camera pitch beyond 90 degrees
+icon-halo-color/multiply	equal	edge pixels
+icon-halo-color/opacity	equal	halo shade differs slightly
+icon-halo-color/property-function	equal	edge pixels
+icon-overlap/always	equal	edge pixels
+icon-overlap/cooperative	equal	edge pixels
+icon-pitch-alignment/auto-rotation-alignment-map	equal	edge pixels
+icon-pitch-alignment/viewport-rotation-alignment-map	equal	edge pixels
+icon-pitch-scaling/rotation-alignment-viewport	equal	edge pixels
+icon-pixelratio-mismatch/default	equal	icon resampling
+icon-roll-alignment/auto-rotation-alignment-map	equal	edge pixels
+icon-roll-alignment/viewport-rotation-alignment-map	equal	edge pixels
+icon-rotation-alignment/map-symbol-placement-point	equal	edge pixels
+icon-text-fit/both-text-anchor-1x-image-2x-screen	equal	edge pixels
+icon-text-fit/both-text-anchor-2x-image-2x-screen	equal	edge pixels
+icon-text-fit/textFit-anchors-long	equal	edge pixels
+image/dragged-corner	equal	texture sampling inside a warped image
+image/near-triangle	equal	texture sampling inside a warped image
+image/projective	equal	texture sampling inside a warped image
+image/projective-trapezoid	equal	texture sampling inside a warped image
+image/raster-resampling	equal	resampling shade
+is-supported-script/filter	equal	Devanagari drawn in a different font
+is-supported-script/layout	equal	Devanagari drawn in a different font
+line-dasharray/diagonal-dash	equal	edge pixels
+line-dasharray/fractional-zoom	equal	edge pixels
+line-dasharray/overscaled	equal	edge pixels
+line-dasharray/slant	equal	edge pixels
+line-gradient/color-interpolation-rgb-hcl-lab	equal	gradient shade
+line-gradient/color-interpolation-transparent	equal	gradient shade
+line-gradient/gradient-shared-source	equal	edge pixels
+line-gradient/gradient-step	equal	edge pixels
+line-layer-opacity/line-offset	equal	edge pixels
+line-miter-limit/default	equal	edge pixels
+line-overlap	equal	edge pixels
+line-pattern/@2x	equal	edge pixels
+line-pattern/pitch	equal	pattern shade
+mlt/render-layers/render-building-extrusion	later	the MLT tile format
+mlt/render-layers/render-building-extrusion-untessellated	later	the MLT tile format
+overscale	equal	edge pixels
+projection/global-state	equal	edge pixels
+projection/globe/atmosphere/atmosphere-blend/base	equal	the globe's rim is antialiased
+projection/globe/atmosphere/base	equal	the globe's rim is antialiased
+projection/globe/atmosphere/light-position-map	equal	the globe's rim is antialiased
+projection/globe/atmosphere/ligth-position-viewport	equal	the globe's rim is antialiased
+projection/globe/circle-pitch-alignment/map-scale-map	equal	edge pixels
+projection/globe/circle-pitch-alignment/map-scale-viewport	equal	edge pixels
+projection/globe/fill-extrusion	equal	edge pixels
+projection/globe/fill-extrusion-translate	equal	edge pixels
+projection/globe/fill-planet-pitched	equal	edge pixels
+projection/globe/fill-planet-pole	equal	edge pixels
+projection/globe/fill-planet-tiles	equal	edge pixels
+projection/globe/fill-seams/checkerboard	equal	faint tile seams
+projection/globe/hillshade	equal	edge pixels
+projection/globe/line-dasharray	equal	edge pixels
+projection/globe/line-gradient	equal	edge pixels
+projection/globe/line-gradient-dasharray	equal	edge pixels
+projection/globe/line-pattern	equal	edge pixels
+projection/globe/line-spiral	equal	edge pixels
+projection/globe/line-translate	equal	edge pixels
+projection/globe/raster-planet	equal	edge pixels
+projection/globe/raster-pole	equal	edge pixels
+projection/globe/terrain/atmosphere/atmosphere-blend/base	equal	the globe's rim is antialiased
+projection/globe/terrain/atmosphere/base	equal	the globe's rim is antialiased
+projection/globe/terrain/atmosphere/light-position-map	equal	the globe's rim is antialiased
+projection/globe/terrain/atmosphere/ligth-position-viewport	equal	the globe's rim is antialiased
+projection/globe/terrain/circle-pitch-alignment/map-scale-map	equal	edge pixels
+projection/globe/terrain/circle-pitch-alignment/map-scale-viewport	equal	edge pixels
+projection/globe/terrain/fill-extrusion	equal	edge pixels
+projection/globe/terrain/fill-extrusion-translate	equal	edge pixels
+projection/globe/terrain/fill-planet-pitched	equal	edge pixels
+projection/globe/terrain/fill-planet-pole	equal	edge pixels
+projection/globe/terrain/fill-planet-tiles	equal	edge pixels
+projection/globe/terrain/fill-planet-tiles-no-background	equal	edge pixels
+projection/globe/terrain/fill-seams/checkerboard	equal	edge pixels
+projection/globe/terrain/hillshade	equal	edge pixels
+projection/globe/terrain/hillshade-sky	equal	edge pixels
+projection/globe/terrain/line-gradient	equal	edge pixels
+projection/globe/terrain/line-gradient-on-background	equal	edge pixels
+projection/globe/terrain/line-spiral	equal	edge pixels
+projection/globe/terrain/line-translate	equal	edge pixels
+projection/identity/bounds	later	the identity projection
+projection/identity/hillshade	later	the identity projection
+projection/identity/image	later	the identity projection
+projection/identity/tiles	later	the identity projection
+raster-npot-mipmap/pitch-60	equal	edge pixels
+real-world/chicago	equal	edge pixels
+regressions/mapbox-gl-js#6548	equal	edge pixels
+resampling/hillshade/tile-boundaries	equal	edge pixels
+runtime-styling/image-add-1x-image-2x-screen	equal	edge pixels
+sky/atmosphere-blend/default	equal	edge pixels
+sky/atmosphere-blend/function	equal	edge pixels
+sprites/2x-screen-1x-icon	equal	edge pixels
+symbol-placement/line-promote-id	equal	edge pixels
+symbol-z-order/icon-with-text	equal	edge pixels
+symbol-z-order/pitched	equal	edge pixels
+terrain/default	equal	edge pixels
+terrain/skirts-none	equal	edge pixels
+text-field/formatted-images	equal	edge pixels
+text-field/formatted-images-mixed	equal	edge pixels
+text-field/formatted-images-multiline	equal	edge pixels
+text-local-glyphs/cjk	equal	CJK drawn with a local font, which differs by machine
+text-local-glyphs/missing	equal	CJK drawn with a local font, which differs by machine
+text-local-glyphs/no-glyphs	equal	CJK drawn with a local font, which differs by machine
+text-local-ideographs/cjk-symbols	equal	CJK drawn with a local font, which differs by machine
+text-size/composite-function-line-placement	equal	edge pixels
+text-translate-anchor/rotation-alignment-map/pitch-alignment-map/text-translate-anchor-viewport	equal	edge pixels
+text-translate-anchor/rotation-alignment-map/pitch-alignment-viewport/text-translate-anchor-viewport	equal	edge pixels
+text-translate-anchor/rotation-alignment-viewport/pitch-alignment-map/text-translate-anchor-map	equal	edge pixels
+text-translate-anchor/rotation-alignment-viewport/pitch-alignment-map/text-translate-anchor-viewport	equal	edge pixels
+text-translate-anchor/rotation-alignment-viewport/pitch-alignment-viewport/text-translate-anchor-map	equal	edge pixels
+text-variable-anchor-offset/pitched	equal	edge pixels
+text-variable-anchor/pitched	equal	edge pixels
+zoomed-raster/fractional	equal	edge pixels
