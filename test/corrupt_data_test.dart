@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vmap/src/geojson.dart';
 import 'package:vmap/src/glyphs/glyph_pbf.dart';
 import 'package:vmap/src/mvt.dart';
 
@@ -36,5 +37,16 @@ void main() {
       () => GlyphPbf.parse(_overflowingLength(0x0a)),
       throwsFormatException,
     );
+  });
+
+  test('a GeoJSON position that is not two numbers is passed over', () {
+    final layers = GeoJsonTiles({
+      'type': 'MultiPoint',
+      'coordinates': [
+        ['a', 'b'],
+        [1.0, 1.0],
+      ],
+    }).tile(0, 0, 0);
+    expect(layers.single.features, hasLength(1));
   });
 }

@@ -153,8 +153,10 @@ class GeoJsonTiles {
     var n = 0;
     for (final p in positions) {
       if (p is! List || p.length < 2) continue;
-      out[n++] = worldX((p[0] as num).toDouble());
-      out[n++] = worldY((p[1] as num).toDouble());
+      final [lon, lat, ...] = p;
+      if (lon is! num || lat is! num) continue;
+      out[n++] = worldX(lon.toDouble());
+      out[n++] = worldY(lat.toDouble());
     }
     return n == out.length ? out : Float64List.sublistView(out, 0, n);
   }
