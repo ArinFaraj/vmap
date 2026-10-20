@@ -16,6 +16,9 @@ class _Drape {
   static const _sizes = [1024, 512, 256];
 
   gpu.Texture? _atlas, _atlasDepth;
+
+  /// A second atlas, for a layer drawn whole at an opacity.
+  gpu.Texture? _layerAtlas;
   int _height = 0;
 
   /// The tiles of ground drawn this frame, nearest first, and their slots:
@@ -117,6 +120,12 @@ class _Drape {
       height,
       format: _map._color,
     );
+    _layerAtlas = gpu.gpuContext.createTexture(
+      gpu.StorageMode.devicePrivate,
+      _width,
+      height,
+      format: _map._color,
+    );
     _atlasDepth = _map._scratch(
       _width,
       height,
@@ -150,59 +159,78 @@ class _Drape {
     sending = false;
     if (_tiles.isEmpty) return;
     _fit();
-    final commands = gpu.gpuContext.createCommandBuffer();
-    buffers.add(commands);
-    final pass = commands.createRenderPass(
-      gpu.RenderTarget.singleColor(
-        // Clear: where no layer is drawn, the canvas's background, drawn
-        // under the GPU's picture, shows through.
-        gpu.ColorAttachment(texture: _atlas!, clearValue: Vector4.zero()),
-        depthStencilAttachment: gpu.DepthStencilAttachment(
-          texture: _atlasDepth!,
-          depthClearValue: 1,
+    gpu.RenderPass begin(gpu.Texture target, {bool keep = false}) {
+      final commands = gpu.gpuContext.createCommandBuffer();
+      buffers.add(commands);
+      return commands.createRenderPass(
+        gpu.RenderTarget.singleColor(
+          // Clear: where no layer is drawn, the canvas's background, drawn
+          // under the GPU's picture, shows through.
+          gpu.ColorAttachment(
+            texture: target,
+            loadAction: keep ? gpu.LoadAction.load : gpu.LoadAction.clear,
+            clearValue: Vector4.zero(),
+          ),
+          depthStencilAttachment: gpu.DepthStencilAttachment(
+            texture: _atlasDepth!,
+            depthClearValue: 1,
+          ),
         ),
-      ),
-    );
+      );
+    }
+
     final dpr = _map._frameInfo[26];
-    for (final (i, t) in _tiles.indexed) {
-      final span = view.worldSize / (1 << t.z);
-      final left = t.x * span - origin.dx, top = t.y * span - origin.dy;
-      final (x, y, size) = _slots[i];
-      pass
-        ..setViewport(gpu.Viewport(x: x, y: y, width: size, height: size))
-        ..setScissor(gpu.Scissor(x: x, y: y, width: size, height: size));
-      // From above: the tile's square fills the slot, north up.
-      final clip = Float64List(16)
-        ..[0] = 2 / span
-        ..[5] = -2 / span
-        ..[12] = -1 - 2 * left / span
-        ..[13] = 1 + 2 * top / span
-        ..[14] = 0.5
-        ..[15] = 1;
-      for (final run in sheet.runs) {
-        if (run.background >= 0) {
-          _drawBackground(
-            pass,
-            clip,
-            left,
-            top,
-            span,
-            sheet.backgrounds[run.background],
-            context,
-          );
-        } else if (run.raster >= 0 && run.raster < _map.rasters.length) {
-          _drawPictures(pass, _map.rasters[run.raster], clip, left, top, span);
-        }
+    // Each tile's slot in turn: its viewport, and the matrix that draws the
+    // tile's square from above into it, north up.
+    void inSlots(
+      gpu.RenderPass pass,
+      void Function(
+        int i,
+        Float64List clip,
+        double left,
+        double top,
+        double span,
+      )
+      draw,
+    ) {
+      for (final (i, t) in _tiles.indexed) {
+        final span = view.worldSize / (1 << t.z);
+        final left = t.x * span - origin.dx, top = t.y * span - origin.dy;
+        final (x, y, size) = _slots[i];
+        pass
+          ..setViewport(gpu.Viewport(x: x, y: y, width: size, height: size))
+          ..setScissor(gpu.Scissor(x: x, y: y, width: size, height: size));
+        final clip = Float64List(16)
+          ..[0] = 2 / span
+          ..[5] = -2 / span
+          ..[12] = -1 - 2 * left / span
+          ..[13] = 1 + 2 * top / span
+          ..[14] = 0.5
+          ..[15] = 1;
+        draw(i, clip, left, top, span);
       }
-      _map._frameInfo[26] = size / span;
+    }
+
+    void vector(
+      gpu.RenderPass pass,
+      List<StyleRun> runs,
+      int i,
+      Float64List clip,
+      double left,
+      double top,
+      double span,
+    ) {
+      // On the globe without terrain the vector layers are laid on the
+      // sphere directly, as MapLibre draws them.
+      if (runs.isEmpty || (view.globe != null && _map.terrain == null)) {
+        return;
+      }
+      _map._frameInfo[26] = _slots[i].$3 / span;
       bool inSlot(TileDraw d) =>
           d.left < left + span &&
           d.left + d.size > left &&
           d.top < top + span &&
           d.top + d.size > top;
-      // On the globe without terrain the vector layers are laid on the
-      // sphere directly, as MapLibre draws them.
-      if (view.globe != null && _map.terrain == null) continue;
       // Stand-ins too, clipped as the flat map clips them, so a tile still
       // loading leaves no hole in the ground.
       _MapPass(
@@ -217,9 +245,98 @@ class _Drape {
           [for (final tiles in ideal) tiles.where(inSlot).toList()],
         )
         ..standing = false
-        ..drawRuns(sheet.runs);
+        ..drawRuns(runs);
+      _map._frameInfo[26] = dpr;
     }
-    _map._frameInfo[26] = dpr;
+
+    // As on the flat map, a layer drawn whole at an opacity is drawn apart,
+    // into a second atlas, and laid over its slot at that opacity before
+    // the layers above it are drawn.
+    final groups = <(StyleRun?, List<StyleRun>)>[(null, [])];
+    for (final run in sheet.runs) {
+      if (sheet.runOpacity(run, context) == null) {
+        groups.last.$2.add(run);
+      } else {
+        groups.add((run, []));
+      }
+    }
+    var pass = begin(_atlas!);
+    for (final (index, (apart, runs)) in groups.indexed) {
+      if (apart != null) {
+        final opacity = sheet.runOpacity(apart, context)!;
+        if (opacity > 0) {
+          final alone = begin(_layerAtlas!);
+          inSlots(alone, (i, clip, left, top, span) {
+            vector(alone, [apart], i, clip, left, top, span);
+          });
+          pass = begin(_atlas!, keep: true);
+          final into = pass;
+          inSlots(into, (i, clip, left, top, span) {
+            _lay(into, i, clip, left, top, span, opacity);
+          });
+        } else if (runs.isNotEmpty) {
+          pass = begin(_atlas!, keep: true);
+        }
+      }
+      final p = pass;
+      inSlots(p, (i, clip, left, top, span) {
+        if (index == 0) {
+          for (final run in sheet.runs) {
+            if (run.background >= 0) {
+              _drawBackground(
+                p,
+                clip,
+                left,
+                top,
+                span,
+                sheet.backgrounds[run.background],
+                context,
+              );
+            } else if (run.raster >= 0 && run.raster < _map.rasters.length) {
+              _drawPictures(p, _map.rasters[run.raster], clip, left, top, span);
+            }
+          }
+        }
+        vector(p, runs, i, clip, left, top, span);
+      });
+    }
+  }
+
+  /// Lays slot [i] of the second atlas over the same slot of the atlas at
+  /// [opacity], with the ground's pipeline drawing flat.
+  void _lay(
+    gpu.RenderPass pass,
+    int i,
+    Float64List clip,
+    double left,
+    double top,
+    double span,
+    double opacity,
+  ) {
+    final map = _map;
+    final (x, y, size) = _slots[i];
+    final height = _height.toDouble();
+    _bindFlatGround(pass);
+    map._times(clip, span / tileExtent, 0, left, top, 0);
+    map._frameInfo
+      ..[16] = x / _width
+      ..[17] = y / height
+      ..[18] = size / _width
+      ..[19] = size / height
+      ..[27] = opacity;
+    pass
+      ..bindTexture(
+        map._groundDrape!,
+        _layerAtlas!,
+        sampler: gpu.SamplerOptions(
+          minFilter: gpu.MinMagFilter.nearest,
+          magFilter: gpu.MinMagFilter.nearest,
+        ),
+      )
+      ..bindUniform(map._groundFrame!, map._host!.emplace(map._frameBytes))
+      ..bindUniform(map._groundDem!, map._host!.emplace(_demBytes))
+      ..drawIndexed(_indexCount);
+    map._frameInfo[27] = 1;
   }
 
   /// Draws the raster tiles over the slot whose clip matrix is [clip] and

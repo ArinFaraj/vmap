@@ -542,19 +542,65 @@ class MapView {
                 _sinP *
                 (cameraToCenterDistance / farDistance - 1);
 
-  /// The ground the screen shows, as the four corners in world pixels,
-  /// clockwise from the top left, its far edge at [groundTopY] when that
-  /// is on the screen. With [beyond], over raised ground, the far edge may
+  /// The ground the screen shows, as the corners of a convex polygon in
+  /// world pixels: four, clockwise from the top left, its far edge at
+  /// [groundTopY] when that is on the screen, over flat ground. With [beyond], over raised ground, the far edge may
   /// lie up to that many pixels above the screen's top instead: hills
   /// there rise into view, as far off as MapLibre's far plane lets them.
   List<WorldPoint> ground({double beyond = 0}) {
     final far = math.max(beyond > 0 ? -beyond : unrolledBounds.top, groundTopY);
     final (:left, :right, :bottom, top: _) = unrolledBounds;
-    return [
+    final corners = [
       _unprojectUnrolled(left - _sx, far - _sy)!,
       _unprojectUnrolled(right - _sx, far - _sy)!,
       _unprojectUnrolled(right - _sx, bottom - _sy)!,
       _unprojectUnrolled(left - _sx, bottom - _sy)!,
+    ];
+    final below = (groundElevation - groundLowest) * _pixelsPerMeter;
+    if (beyond <= 0 || below <= 0) return corners;
+    // Ground lower than the centre shows from farther out: the ground is
+    // also met where each corner's line of sight reaches the lowest ground
+    // near the centre, though no farther than the far plane, as MapLibre
+    // culls tiles by their lowest height.
+    final (x: ex, y: ey, height: eh) = eye;
+    final reach = (eh + below) / eh;
+    return _hull([
+      ...corners,
+      for (final c in corners)
+        () {
+          final dx = c.x - ex, dy = c.y - ey;
+          final flat = math.sqrt(dx * dx + dy * dy);
+          final most = math.max(flat, farDistance);
+          final k = flat * reach > most ? most / flat : reach;
+          return (x: ex + dx * k, y: ey + dy * k);
+        }(),
+    ]);
+  }
+
+  /// The convex hull of [points], clockwise as the screen shows it.
+  static List<WorldPoint> _hull(List<WorldPoint> points) {
+    final sorted = [...points]
+      ..sort((a, b) => a.x != b.x ? a.x.compareTo(b.x) : a.y.compareTo(b.y));
+    double cross(WorldPoint o, WorldPoint a, WorldPoint b) =>
+        (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    final lower = <WorldPoint>[], upper = <WorldPoint>[];
+    for (final p in sorted) {
+      while (lower.length >= 2 &&
+          cross(lower[lower.length - 2], lower.last, p) <= 0) {
+        lower.removeLast();
+      }
+      lower.add(p);
+    }
+    for (final p in sorted.reversed) {
+      while (upper.length >= 2 &&
+          cross(upper[upper.length - 2], upper.last, p) <= 0) {
+        upper.removeLast();
+      }
+      upper.add(p);
+    }
+    return [
+      ...lower.sublist(0, lower.length - 1),
+      ...upper.sublist(0, upper.length - 1),
     ];
   }
 
