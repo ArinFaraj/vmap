@@ -145,6 +145,9 @@ class GpuMap implements MapRenderer {
   @override
   List<Map<Object, Map<String, Object?>>?> states = const [];
 
+  @override
+  DashFade dashFade = ZoomHistory.settled;
+
   /// Premultiplied source over, which also leaves the colour untouched
   /// where the stencil pass writes its transparent squares.
   static final _over = gpu.ColorBlendEquation(
@@ -1145,15 +1148,23 @@ class GpuMap implements MapRenderer {
     if (building == null) {
       final present = _presence.of(layerIndex);
       if (present <= 0) return LayerPaint.clear;
-      if (present >= 1) return LayerPaint.of(layer, context, styleZoom, props);
+      if (present >= 1) {
+        return LayerPaint.of(layer, context, styleZoom, props, dashFade);
+      }
       final zoom = styleZoom.clamp(layer.minZoom, layer.maxZoom - 1e-3);
-      return LayerPaint.of(layer, context, zoom, props).scaled(present);
+      return LayerPaint.of(
+        layer,
+        context,
+        zoom,
+        props,
+        dashFade,
+      ).scaled(present);
     }
     final shown =
         _presence.of(layerIndex) * (1 - _standingIn(d, data, building));
     if (shown <= 0) return LayerPaint.clear;
     final zoom = styleZoom.clamp(layer.minZoom, layer.maxZoom - 1e-3);
-    return LayerPaint.of(layer, context, zoom, props).scaled(shown);
+    return LayerPaint.of(layer, context, zoom, props, dashFade).scaled(shown);
   }
 
   /// How far [layer]'s buildings in tile [d] have faded in: 0 where the
@@ -1204,6 +1215,14 @@ class GpuMap implements MapRenderer {
         _sheet,
         _ramps.gradientOf(layerIndex),
         _ramps.dashOf(layerIndex, styleZoom, choice: paint.dashChoice),
+        dashBeforeRow: paint.dashBefore > 0
+            ? _ramps.dashOf(
+                layerIndex,
+                dashFade.fromZoom,
+                choice: paint.dashChoice,
+              )
+            : null,
+        rampRows: _ramps.rowCount,
         growth: patternGrowth(styleZoom),
         bearing: bearing,
       );
@@ -1356,7 +1375,9 @@ class GpuMap implements MapRenderer {
       ..[57] = (cornerY >> 16).toDouble()
       ..[58] = (cornerX & 0xFFFF).toDouble()
       ..[59] = (cornerY & 0xFFFF).toDouble()
-      ..[60] = 0;
+      ..[60] = 0
+      ..[61] = dashFade.mix
+      ..[62] = _ramps.rowCount.toDouble();
     if (globe == null) {
       out.fillRange(28, 56, 0);
       return _mapBytes;

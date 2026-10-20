@@ -20,3 +20,4 @@ export 'src/tile_builder.dart' show tileExtent;
 export 'src/tile_id.dart' show TileId, tileKey;
 export 'src/tiles.dart' show LoadedTile, TileDraw;
 export 'src/view.dart' show CoverTile, MapView;
+export 'src/zoom_history.dart' show DashFade, ZoomHistory;

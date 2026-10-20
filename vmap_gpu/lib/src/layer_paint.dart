@@ -26,7 +26,12 @@ class LayerPaint {
     this.translateOnScreen = false,
     this.tint,
     this.dashChoice,
+    this.dashBefore = 0,
   ]);
+
+  /// A dashed line cross-fading from the zoom level before: that level's
+  /// repeat over this one's. Zero when it shows this level's alone.
+  final double dashBefore;
 
   /// For a dasharray read from each feature, which of its layer's arrays
   /// this paint's feature takes.
@@ -85,6 +90,7 @@ class LayerPaint {
           translateOnScreen,
           tint,
           dashChoice,
+          dashBefore,
         );
 
   static LayerPaint of(
@@ -92,6 +98,7 @@ class LayerPaint {
     EvalContext context,
     double styleZoom, [
     Map<String, Object?>? props,
+    DashFade fade = ZoomHistory.settled,
   ]) {
     if (styleZoom < layer.minZoom || styleZoom >= layer.maxZoom) {
       return clear;
@@ -105,7 +112,7 @@ class LayerPaint {
         1.0,
       );
       var width = 0.0, offset = 0.0, dashOn = 0.0, dashPeriod = 0.0;
-      var gapShare = 0.0, blur = 0.0;
+      var gapShare = 0.0, blur = 0.0, dashBefore = 0.0;
       int? dashChoice;
       if (layer is LineLayer) {
         blur = math.max(
@@ -120,14 +127,24 @@ class LayerPaint {
         offset = (asNumber(layer.offset?.call(context)) ?? 0).toDouble();
         dashChoice = layer.dashChoiceAt(context);
         if (layer.dashFor(context, styleZoom) case final dash?) {
-          // As MapLibre's line-floorwidth: dashes are as long as the line
-          // is wide at the zoom level's floor.
+          // As MapLibre's line-floorwidth and tile ratio: dashes are as
+          // long as the line is wide at the zoom level's floor, and grow
+          // with the map from there to the next level.
           final zoom = context.zoom;
+          final tileZoom = math.max(0.0, styleZoom.floorToDouble());
           context.zoom = styleZoom.floorToDouble();
           final floorWidth = (asNumber(layer.width(context)) ?? 0).toDouble();
           context.zoom = zoom;
           dashOn = layer.dashCap.index.toDouble();
-          dashPeriod = dash.fold(0.0, (a, b) => a + b) * floorWidth;
+          final total = dash.fold(0.0, (a, b) => a + b);
+          dashPeriod = total * floorWidth * math.pow(2, styleZoom - tileZoom);
+          if (fade.mix < 1 && total > 0) {
+            final before = layer.dashFor(context, fade.fromZoom);
+            if (before != null) {
+              dashBefore =
+                  before.fold(0.0, (a, b) => a + b) / total * fade.fromScale;
+            }
+          }
         }
       }
       var tx = 0.0, ty = 0.0;
@@ -230,6 +247,7 @@ class LayerPaint {
         layer.translateOnScreen,
         tint,
         dashChoice,
+        dashBefore,
       );
     } finally {
       if (props != null) context.props = const {};
@@ -250,6 +268,8 @@ class LayerPaint {
     SpriteSheet? sprites,
     double? rampRow,
     double? dashRow, {
+    double? dashBeforeRow,
+    int rampRows = 0,
     double growth = 1,
     double bearing = 0,
   }) {
@@ -369,6 +389,19 @@ class LayerPaint {
           dashed ? dashRow + 2 * dashOn : -gapShare,
           dashed ? dashPeriod / scale : 0,
         );
+    }
+    // q.w of a dashed line cross-fading: one more than the ramp row of
+    // the zoom level before's dashes times 4096, plus its repeat over this
+    // one's in 256ths.
+    if ((kind == GpuStream.line || kind == GpuStream.gradientLine) &&
+        dashBeforeRow != null &&
+        dashBefore > 0 &&
+        dashRow != null &&
+        dashPeriod > 0 &&
+        rampRows > 0) {
+      final row = (dashBeforeRow * rampRows - 0.5).round();
+      out[o + 11] =
+          (row + 1) * 4096.0 + (dashBefore * 256).round().clamp(1, 4095);
     }
   }
 

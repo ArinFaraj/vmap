@@ -51,11 +51,17 @@ image/raster-resampling	equal	resampling shade
 is-supported-script/filter	equal	Devanagari drawn in a different font
 is-supported-script/layout	equal	Devanagari drawn in a different font
 line-dasharray/diagonal-dash	equal	edge pixels
-line-dasharray/fractional-zoom	equal	edge pixels
 line-gradient/color-interpolation-rgb-hcl-lab	equal	gradient shade
 line-gradient/color-interpolation-transparent	equal	gradient shade
 line-gradient/gradient-shared-source	equal	edge pixels
 line-gradient/gradient-step	equal	edge pixels
+line-gradient-dasharray/color-interpolation-hcl-lab	skip	MapLibre measures dashes on a line-metrics line by its share of the whole line, so their length follows the line
+line-gradient-dasharray/gradient-shared-source	skip	MapLibre measures dashes on a line-metrics line by its share of the whole line, so their length follows the line
+line-gradient-dasharray/gradient-tile-boundaries	skip	MapLibre measures dashes on a line-metrics line by its share of the whole line, so their length follows the line
+line-gradient-dasharray/gradient-with-dash	skip	MapLibre measures dashes on a line-metrics line by its share of the whole line, so their length follows the line
+line-gradient-dasharray/property-function	skip	MapLibre measures dashes on a line-metrics line by its share of the whole line, so their length follows the line
+line-gradient-dasharray/step-gradient	skip	MapLibre measures dashes on a line-metrics line by its share of the whole line, so their length follows the line
+line-gradient-dasharray/translucent	skip	MapLibre measures dashes on a line-metrics line by its share of the whole line, so their length follows the line
 line-layer-opacity/line-offset	equal	edge pixels
 line-miter-limit/default	equal	edge pixels
 line-overlap	equal	edge pixels

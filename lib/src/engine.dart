@@ -34,6 +34,7 @@ import 'style_model.dart';
 import 'tile_builder.dart';
 import 'tiles.dart';
 import 'worker.dart';
+import 'zoom_history.dart';
 import 'platform.dart';
 import 'mercator.dart';
 import 'protocol.dart';
@@ -967,11 +968,13 @@ class VmapEngine extends ChangeNotifier {
     _context
       ..zoom = styleZoom
       ..nowMs = _clock.elapsedMilliseconds.toDouble();
+    _zoomHistory.update(styleZoom, now);
     _meshes.startFrame(
       sheet,
       styleZoom,
       camera.rotation,
       standing: camera.view != null && sheet.extrusions.isNotEmpty,
+      dashFade: _zoomHistory.fade,
     );
     _budget.start(zooming: (camera.zoom - _lastZoom).abs() > 0.002);
     final gpu = renderer;
@@ -1086,6 +1089,7 @@ class VmapEngine extends ChangeNotifier {
       final gpuStarted = _clock.elapsedMicroseconds;
       gpu.rasters = drape ? [for (final r in _rasters) r.drawn] : const [];
       gpu.states = [for (final s in _sources) _states[s.def.name]];
+      gpu.dashFade = _zoomHistory.fade;
       final more = gpu.paint(
         canvas,
         view,
@@ -1192,7 +1196,7 @@ class VmapEngine extends ChangeNotifier {
     }
     if (horizon > 0) canvas.restore();
 
-    var animating = false;
+    var animating = sheet.dashed && _zoomHistory.fading;
     final labelsStarted = _clock.elapsedMicroseconds;
     if (showLabels) {
       final shown = [
@@ -1360,6 +1364,8 @@ class VmapEngine extends ChangeNotifier {
   double _lastZoom = 0;
   final FrameBudget _budget = FrameBudget();
   late final MeshPainter _meshes = MeshPainter(_budget, stats, _context);
+
+  final ZoomHistory _zoomHistory = ZoomHistory();
   final Atmosphere _atmosphere = Atmosphere();
 
   /// Whether this frame's flat layers are drawn by [renderer].

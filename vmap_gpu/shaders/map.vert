@@ -43,6 +43,7 @@ in vec2 position;
 in vec4 packed_data;
 out vec4 v_color;
 out vec3 v_dash;
+out vec4 v_dash_before;
 out vec4 v_pattern;
 out vec3 v_uv;
 out vec4 v_circle;
@@ -281,6 +282,20 @@ void main() {
     dashed ? packed_data.w / p.w : 0.0,
     plain_line || dashed ? p.z : 0.0,
     dashed ? p.w / line_pixel : 0.0);
+  // A dashed line cross-fading from the zoom level before, as MapLibre's
+  // line_sdf: q.w is one more than that level's ramp row times 4096, plus
+  // its repeat over this one's in 256ths; outline_info.y is how far this
+  // level's dashes show and outline_info.z the ramp's rows.
+  v_dash_before = vec4(0.0, 0.0, 0.0, 1.0);
+  if (dashed && q.w > 0.5 && frame_info.outline_info.y < 1.0) {
+    float before_row = floor(q.w / 4096.0);
+    float before_repeat = p.w * (q.w - before_row * 4096.0) / 256.0;
+    v_dash_before = vec4(
+      packed_data.w / before_repeat,
+      (before_row - 0.5) / frame_info.outline_info.z,
+      before_repeat / line_pixel,
+      frame_info.outline_info.y);
+  }
   // v_circle.z: one for a circle, plus its blur, packed_data.y.
   v_circle = vec4(corner, circle ? 1.0 + packed_data.y : 0.0, 1.0 / max(frame_info.fade.y, 1e-6));
   v_clip = vec3(pos.x, at_pole(pos) ? clamp(pos.y, 0.0, 4096.0) : pos.y, globe && !circle && !heat ? 1.0 : 0.0);

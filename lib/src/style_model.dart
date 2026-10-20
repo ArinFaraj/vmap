@@ -1390,6 +1390,13 @@ class StyleSheet {
   ExtrusionLayer? extrusionAt(StyleRun run) =>
       run.source >= 0 ? _extrusionByFill[run.first] : null;
 
+  /// Whether a line layer of the style has dashes.
+  late final bool dashed = layers.any(
+    (l) =>
+        l is LineLayer &&
+        (l.dash != null || l.dashStops.isNotEmpty || l.dashChoices.isNotEmpty),
+  );
+
   late final Map<int, ExtrusionLayer> _extrusionByFill = {
     for (final e in extrusions) e.fill: e,
   };

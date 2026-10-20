@@ -11,6 +11,7 @@ import 'stats.dart';
 import 'style_model.dart';
 import 'tile_builder.dart' show tileExtent;
 import 'tiles.dart';
+import 'zoom_history.dart';
 
 /// What one frame may still spend on the UI thread preparing tiles and
 /// widening lines before the rest waits for the next frame.
@@ -150,8 +151,10 @@ class MeshPainter {
     double styleZoom,
     double rotation, {
     bool standing = false,
+    DashFade dashFade = ZoomHistory.settled,
   }) {
     _rotation = rotation;
+    _shaders.dashFade = dashFade;
     for (var i = 0; i < sheet.layers.length; i++) {
       final layer = sheet.layers[i];
       _colors[i] = 0;

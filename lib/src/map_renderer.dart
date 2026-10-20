@@ -7,6 +7,7 @@ import 'style_model.dart';
 import 'terrain/terrain.dart';
 import 'tiles.dart' show LoadedTile, TileDraw;
 import 'view.dart';
+import 'zoom_history.dart';
 
 /// One tile of a raster layer as drawn this frame: [source] of [image]
 /// laid on [target], in pixels from the canvas origin, at [opacity] through
@@ -63,6 +64,9 @@ abstract class MapRenderer {
   /// The state the app gave single features, by their ids, indexed by the
   /// style's sources, for `feature-state`. Set before each [paint].
   List<Map<Object, Map<String, Object?>>?> states = const [];
+
+  /// How the frame's dashes cross-fade from the zoom level before.
+  DashFade dashFade = ZoomHistory.settled;
 
   /// Lays on [canvas] the images [paint] made of the vector layers before
   /// the style's run [run], those not laid yet: a background or raster run

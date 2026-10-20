@@ -18,6 +18,9 @@ class LineRamps {
   final Map<int, double> _gradients = {};
   final Map<int, List<double>> _dashes = {};
 
+  /// How many rows the ramp texture has.
+  int rowCount = 0;
+
   /// Null while the style has no gradient or dashed lines.
   gpu.Texture? texture;
 
@@ -69,6 +72,7 @@ class LineRamps {
             : [for (final (_, d) in line.dashStops) d],
     ];
     final rows = ramps.length + patterns.fold<int>(0, (n, p) => n + p.length);
+    rowCount = rows;
     if (rows == 0) return;
     final bytes = Uint8List(width * rows * 4);
     int byte(double v) => (v.clamp(0.0, 1.0) * 255).round();

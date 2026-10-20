@@ -1,5 +1,6 @@
 in vec4 v_color;
 in vec3 v_dash;
+in vec4 v_dash_before;
 in vec4 v_pattern;
 in vec3 v_uv;
 in vec4 v_circle;
@@ -17,6 +18,14 @@ frag_info;
 uniform sampler2D sprite_sheet;
 uniform sampler2D gradient_ramp;
 out vec4 frag_color;
+
+// The signed distance to a dashed line's nearest dash end, in device
+// pixels: dash.x is how many repeats along, dash.y the ramp row, which
+// holds the distance as a share of a repeat, and dash.z the repeat in
+// device pixels.
+float dash_distance(vec3 dash) {
+  return (texture(gradient_ramp, vec2(fract(dash.x), dash.y)).r * 255.0 - 127.5) / 254.0 * dash.z;
+}
 
 void main() {
   if (v_clip.z > 0.5 && (v_clip.x < 0.0 || v_clip.y < 0.0 || v_clip.x > 4096.0 || v_clip.y > 4096.0)) {
@@ -110,16 +119,18 @@ void main() {
       return;
     }
     color *= clamp(v_edge.z * (1.0 - across) * v_line.y, 0.0, 1.0);
-    // Dashes: the ramp row holds the signed distance to the nearest dash
-    // end as a share of a repeat. A round cap makes each dash a capsule
-    // half the line's width around it, exact at any width; a square cap
-    // lengthens it by as much.
     if (v_dash.z > 0.0) {
       float cap = floor(v_dash.y / 2.0);
-      float row = v_dash.y - cap * 2.0;
-      float sd = (texture(gradient_ramp, vec2(fract(v_dash.x), row)).r * 255.0 - 127.5) / 254.0 * v_dash.z;
       float half_width = v_edge.z - 0.5;
       float off_middle = across * v_edge.z;
+      float sd = dash_distance(vec3(v_dash.x, v_dash.y - cap * 2.0, v_dash.z));
+      // As MapLibre, the zoom level before's dashes morph into these: the
+      // distances mix, not the coverage.
+      if (v_dash_before.w < 1.0) {
+        sd = mix(dash_distance(v_dash_before.xyz), sd, v_dash_before.w);
+      }
+      // A round cap makes each dash a capsule half the line's width around
+      // it, exact at any width; a square cap lengthens it by as much.
       float inside = cap > 1.5 ? sd + half_width
           : cap > 0.5 ? (sd >= 0.0 ? half_width : half_width - length(vec2(sd, off_middle)))
           : sd;
