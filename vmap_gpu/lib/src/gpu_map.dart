@@ -1718,7 +1718,10 @@ class _MapPass {
       _pass
         ..clearBindings()
         ..bindPipeline(_map._buildings!)
-        ..setCullMode(gpu.CullMode.none)
+        // As MapLibre, walls facing away are not drawn, so they do not show
+        // through a pattern's clear parts.
+        ..setCullMode(gpu.CullMode.backFace)
+        ..setWindingOrder(gpu.WindingOrder.clockwise)
         ..setColorBlendEnable(true)
         ..setStencilConfig(gpu.StencilConfig())
         ..setDepthWriteEnable(true)
@@ -1730,6 +1733,7 @@ class _MapPass {
         _drawBuildingsOf(layer, _fallback[source]);
       }
     }
+    _pass.setCullMode(gpu.CullMode.none);
   }
 
   void _drawBuildingsOf(ExtrusionLayer layer, List<TileDraw> tiles) {
