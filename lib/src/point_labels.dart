@@ -110,12 +110,24 @@ class PointLabels {
       ..keepUpright = false;
     if (st.onGround) st.angle = spin - _view.mapTurn;
     _view.project(st.worldX, st.worldY);
+    final x = _view.x, y = _view.y;
+    var boxW = textW, boxH = textH, boxSpin = spin;
+    if (st.onGround) {
+      (boxW, boxH) = _groundBox(
+        st,
+        textW / st.perspective,
+        textH / st.perspective,
+        perspective: (symbol?.anchors ?? const []).isEmpty,
+      );
+      boxSpin = 0;
+      _view.project(st.worldX, st.worldY);
+    }
     final spot = _Spot(
-      _view.x,
-      _view.y,
-      textW,
-      textH,
-      spin,
+      x,
+      y,
+      boxW,
+      boxH,
+      boxSpin,
       textPad: textPad,
       iconPad: iconPad,
       cooperative: symbol?.textCooperative ?? false,
@@ -217,9 +229,9 @@ class PointLabels {
           debug,
           spot.x + st.dx,
           spot.y + st.dy,
-          textW,
-          textH,
-          spin,
+          spot.textW,
+          spot.textH,
+          spot.spin,
           textPad,
           showText,
         );
@@ -231,9 +243,9 @@ class PointLabels {
       _boxes.take(
         spot.x + st.dx,
         spot.y + st.dy,
-        textW,
-        textH,
-        spin,
+        spot.textW,
+        spot.textH,
+        spot.spin,
         pad: textPad,
         never:
             !(symbol?.textOverlaps ?? false) &&
@@ -256,6 +268,36 @@ class PointLabels {
       ..showIcon = showIcon;
     if (spaced && c.hasText) _roads.placed(st);
     return true;
+  }
+
+  /// The width and height on the screen of the box a label [w] by [h]
+  /// flat pixels takes lying on the ground at its point, turned by its
+  /// angle on the map, as MapLibre's collision index projects a
+  /// map-pitched label's box. [perspective] grows it with its distance as
+  /// MapLibre's shader does, which MapLibre leaves out with variable
+  /// anchors.
+  (double, double) _groundBox(
+    LabelState st,
+    double w,
+    double h, {
+    required bool perspective,
+  }) {
+    final grow = perspective ? 0.5 + 0.5 * _view.depth : 1.0;
+    final hw = w * grow / 2 / _view.world, hh = h * grow / 2 / _view.world;
+    final c = math.cos(st.angle), s = math.sin(st.angle);
+    var minX = double.infinity, minY = double.infinity;
+    var maxX = double.negativeInfinity, maxY = double.negativeInfinity;
+    for (final (u, v) in const [(-1, -1), (1, -1), (1, 1), (-1, 1)]) {
+      _view.project(
+        st.worldX + (u * hw * c - v * hh * s),
+        st.worldY + (u * hw * s + v * hh * c),
+      );
+      minX = math.min(minX, _view.x);
+      maxX = math.max(maxX, _view.x);
+      minY = math.min(minY, _view.y);
+      maxY = math.max(maxY, _view.y);
+    }
+    return (maxX - minX, maxY - minY);
   }
 
   static void _debugBox(
