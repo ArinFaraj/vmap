@@ -531,6 +531,30 @@ class LabelEngine {
       if (cached == null) rasterized++;
     }
 
+    // A label turned away on its guessed size is drawn too, so the next
+    // placement weighs it at its real one, as MapLibre lays out every
+    // label before placing any.
+    if (!pending) {
+      for (final st in _frameStates) {
+        if (st.placed || st.seenPass != _pass || st.sprite != null) continue;
+        if (!st.candidate.hasText) continue;
+        if (_clock.elapsedMicroseconds - rasterStart > rasterBudgetMicros) {
+          pending = true;
+          break;
+        }
+        final key = _spriteKey(st);
+        final sprite =
+            _sprites[key] ??
+            _rasterize(st, zoom - 1 + zoomOffset, background, devicePixelRatio);
+        if (sprite == null) continue;
+        st
+          ..sprite = sprite
+          ..spriteKey = key;
+        _placeAgain = true;
+        rasterized++;
+      }
+    }
+
     lastRasterMicros = _clock.elapsedMicroseconds - rasterStart;
     work.rasterized += rasterized;
     _lastZoom = zoom;
@@ -883,13 +907,11 @@ class LabelEngine {
         : _zooming
         ? st.scale < 0.7 || st.scale > 1.4
         : st.scale < 0.87 || st.scale > 1.15;
-    final long = c.text.length * fontSize * (st.vertical ? 1.0 : 0.55);
-    final textW = sprite == null
-        ? (st.vertical ? fontSize * 1.2 : long)
-        : sprite.textWidth * st.scale;
-    final textH = sprite == null
-        ? (st.vertical ? long : fontSize * 1.35)
-        : sprite.textHeight * st.scale;
+    final (guessW, guessH) = sprite == null
+        ? _guessSize(st, c, layer, fontSize, wraps: road == null)
+        : (0.0, 0.0);
+    final textW = sprite == null ? guessW : sprite.textWidth * st.scale;
+    final textH = sprite == null ? guessH : sprite.textHeight * st.scale;
 
     st
       ..placed = false
@@ -910,7 +932,7 @@ class LabelEngine {
       );
       return st.placed;
     }
-    if (_points.place(
+    final ok = _points.place(
       st,
       layer,
       fontSize,
@@ -919,11 +941,53 @@ class LabelEngine {
       textPad,
       iconPad,
       _context..zoom = styleZoom,
-    )) {
+    );
+    if (ok) {
       _showPlaced(st, sprite);
       return true;
     }
     return false;
+  }
+
+  /// The size of [c]'s text before it is laid out, for placing it until it
+  /// is: each line's characters at about half an em, a line [wraps] at the
+  /// layer's text-max-width.
+  (double, double) _guessSize(
+    LabelState st,
+    LabelCandidate c,
+    SymbolLayer? layer,
+    double fontSize, {
+    required bool wraps,
+  }) {
+    final ems = st.vertical ? 1.0 : 0.55;
+    final maxWidth = layer == null ? double.infinity : layer.maxWidth;
+    var widest = 0.0;
+    var lines = 0;
+    for (final line in c.text.split('\n')) {
+      final width = line.runes.length * ems;
+      if (!wraps || st.vertical || width <= maxWidth) {
+        lines++;
+        widest = math.max(widest, width);
+        continue;
+      }
+      // Words fill a line until the next would pass the width.
+      var run = 0.0;
+      lines++;
+      for (final word in line.split(' ')) {
+        final w = word.runes.length * ems;
+        if (run > 0 && run + ems + w > maxWidth) {
+          widest = math.max(widest, run);
+          lines++;
+          run = w;
+        } else {
+          run += (run > 0 ? ems : 0) + w;
+        }
+      }
+      widest = math.max(widest, run);
+    }
+    final long = widest * fontSize;
+    final across = (1.35 + (lines - 1) * 1.2) * fontSize;
+    return st.vertical ? (across, long) : (long, across);
   }
 
   /// Places a name along its road, when the road can carry it and it runs
