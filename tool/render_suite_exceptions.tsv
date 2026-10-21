@@ -150,6 +150,4 @@ text-translate-anchor/rotation-alignment-map/pitch-alignment-viewport/text-trans
 text-translate-anchor/rotation-alignment-viewport/pitch-alignment-map/text-translate-anchor-map	equal	edge pixels
 text-translate-anchor/rotation-alignment-viewport/pitch-alignment-map/text-translate-anchor-viewport	equal	edge pixels
 text-translate-anchor/rotation-alignment-viewport/pitch-alignment-viewport/text-translate-anchor-map	equal	edge pixels
-text-variable-anchor-offset/pitched	equal	edge pixels
-text-variable-anchor/pitched	equal	edge pixels
 zoomed-raster/fractional	equal	edge pixels

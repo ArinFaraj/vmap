@@ -899,7 +899,10 @@ class LabelEngine {
             ? 0
             : symbols[c.tile.layer].source + 1
         // MapLibre's 16 tile units to the pixel, seen through the tilt.
-        ..quantum = identical(_rules, LabelRules.mapLibre) && c is TileLabel
+        ..quantum =
+            identical(_rules, LabelRules.mapLibre) &&
+                c is TileLabel &&
+                c.tile.line == null
             ? st.perspective / 16
             : 0;
       // Only labels that test for collisions count towards the cap: one
@@ -921,10 +924,12 @@ class LabelEngine {
       final road = c is TileLabel && c.tile.line != null ? c : null;
       _bind(c);
       final layer = _symbolOf(c);
-      // As MapLibre keeps padding in tile units, a tilted map's distance
-      // grows and shrinks it with the label.
+      // As MapLibre keeps a point's padding in tile units, a tilted map's
+      // distance grows and shrinks it with the label; a name along a line
+      // is padded in pixels, as its collision circles are.
       final textPad =
-          (layer?.textPadding ?? CollisionBoxes.defaultPad) * st.perspective;
+          (layer?.textPadding ?? CollisionBoxes.defaultPad) *
+          (road == null ? st.perspective : 1);
       final iconPad =
           (layer?.iconPadding ?? CollisionBoxes.defaultPad) * st.perspective;
       final fontSize = _size(c, styleZoom) * st.perspective;
