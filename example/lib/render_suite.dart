@@ -73,16 +73,19 @@ class _Camera {
   /// The test's `maxPitch`, else MapLibre's default.
   double maxPitch = 60;
 
-  MapCameraPosition positionFor(double height) => MapCameraPosition(
-    latitude: latitude,
-    longitude: longitude,
-    zoom: zoomFor(height),
-    bearing: bearing,
-    pitch: math.min(pitch, maxPitch),
-    roll: roll,
-    pad: pad,
-    fov: fovDegrees * math.pi / 180,
-  );
+  MapCameraPosition positionFor(double height) {
+    final position = MapCameraPosition(
+      latitude: latitude,
+      longitude: longitude,
+      zoom: zoomFor(height),
+      bearing: bearing,
+      pitch: math.min(pitch, maxPitch),
+      roll: roll,
+      pad: pad,
+      fov: fovDegrees * math.pi / 180,
+    );
+    return globe ? position : position.constrained(height);
+  }
 }
 
 /// MapLibre's padding from a `setPadding` or `easeTo` argument.
@@ -632,7 +635,7 @@ ui.Image? _paint(
   engine.paint(
     canvas,
     VmapCamera(
-      zoom: camera.zoomFor(size.height) + 1,
+      zoom: view.zoom + 1,
       origin: ui.Offset(center.x - screen.x, center.y - screen.y),
       size: size,
       rotation: camera.bearing * math.pi / 180,

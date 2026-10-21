@@ -1,5 +1,8 @@
 ## Unreleased
 
+- `VMap` on a flat map keeps the camera to the world, as MapLibre does: it
+  does not zoom out past a world as tall as the map, nor show past the
+  poles. `MapCameraPosition.constrained` applies the same rule.
 - A vector source that names no `maxzoom`, in the style or its TileJSON,
   has tiles down to zoom 22, as the style spec and MapLibre say, not 14.
   Give the source its `maxzoom` when its server stops sooner.

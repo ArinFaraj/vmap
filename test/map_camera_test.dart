@@ -76,4 +76,24 @@ void main() {
     expect(defaultEasing(0.5), closeTo(0.8024, 1e-3));
     expect(defaultEasing(1), closeTo(1, 1e-6));
   });
+
+  test('a flat map zoomed out past the world zooms in to fill the screen', () {
+    const far = MapCameraPosition(latitude: 30, longitude: 10, zoom: -2);
+    final kept = far.constrained(512);
+    expect(kept.zoom, closeTo(0, 1e-9));
+    expect(kept.latitude, 0);
+    expect(kept.longitude, 10);
+  });
+
+  test('a flat map is moved back from past the poles', () {
+    const north = MapCameraPosition(latitude: 84, longitude: 0, zoom: 1);
+    final kept = north.constrained(512);
+    expect(kept.zoom, 1);
+    expect(kept.worldY * 1024, closeTo(256, 1e-6));
+  });
+
+  test('a camera inside the world is kept as it is', () {
+    const inside = MapCameraPosition(latitude: 36, longitude: 44, zoom: 5);
+    expect(inside.constrained(800), same(inside));
+  });
 }

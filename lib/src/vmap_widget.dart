@@ -39,6 +39,7 @@ class VMapController extends ChangeNotifier {
   _Motion? _motion;
   Ticker? _ticker;
   Size _size = Size.zero;
+  bool _flat = true;
   double minZoom = 0, maxZoom = 22, maxPitch = 60;
   final _clock = Stopwatch()..start();
   final _samples = <(int, MapCameraPosition)>[];
@@ -81,10 +82,11 @@ class VMapController extends ChangeNotifier {
   }
 
   void _set(MapCameraPosition to) {
-    final clamped = to.copyWith(
+    var clamped = to.copyWith(
       zoom: to.zoom.clamp(minZoom, maxZoom),
       pitch: to.pitch.clamp(0, math.min(maxPitch, MapView.maxPitch)),
     );
+    if (_flat && _size.height > 0) clamped = clamped.constrained(_size.height);
     final now = _clock.elapsedMicroseconds;
     _samples.add((now, clamped));
     while (_samples.length > 2 && now - _samples.first.$1 > 100000) {
@@ -746,7 +748,9 @@ class _VMapState extends State<VMap>
     final dpr = MediaQuery.devicePixelRatioOf(context);
     return LayoutBuilder(
       builder: (context, constraints) {
-        _c._size = constraints.biggest;
+        _c
+          .._size = constraints.biggest
+          .._flat = !_engine.drawsGlobe;
         return Listener(
           behavior: HitTestBehavior.opaque,
           onPointerDown: _onDown,

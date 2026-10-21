@@ -142,6 +142,27 @@ class MapCameraPosition {
     );
   }
 
+  /// This camera kept to the world on a flat map [height] pixels tall, as
+  /// MapLibre's mercator camera keeps it: zoomed in until the
+  /// world is as tall as the screen inside [pad], else moved north or
+  /// south so nothing past the world's edge shows.
+  MapCameraPosition constrained(double height) {
+    final screen = height - pad.top - pad.bottom;
+    if (screen <= 0) return this;
+    final worldSize = 512 * math.pow(2, zoom).toDouble();
+    if (worldSize < screen) {
+      return copyWith(
+        zoom: zoom + math.log(screen / worldSize) / math.ln2,
+        latitude: 0,
+      );
+    }
+    final y = worldY * worldSize;
+    final half = screen / 2;
+    final kept = y.clamp(half, worldSize - half);
+    if (kept == y) return this;
+    return copyWith(latitude: mercator.latitudeAt(kept / worldSize));
+  }
+
   static double _normal(double degrees) {
     final d = degrees % 360;
     return d > 180 ? d - 360 : d;

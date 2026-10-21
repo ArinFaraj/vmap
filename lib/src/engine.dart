@@ -147,6 +147,9 @@ class VmapEngine extends ChangeNotifier {
   bool _disposed = false;
   final Stopwatch _clock = Stopwatch()..start();
 
+  /// Whether the style draws the map as a globe at some zoom.
+  bool get drawsGlobe => _sheet?.projection.isGlobe ?? false;
+
   /// What went wrong loading the style or the tile source, if anything.
   Object? get error {
     if (_styleError != null) return _styleError;
