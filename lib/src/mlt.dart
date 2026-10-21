@@ -7,9 +7,9 @@ import 'mvt.dart';
 /// Reads a tile in the MapLibre Tile format, MLT, which a source with
 /// `"encoding": "mlt"` serves, into the same layers an MVT tile gives.
 ///
-/// A column of a kind it does not read, such as a nested MAP property,
-/// ends its reading of that layer: the layer's features keep their
-/// geometry and the properties read before it.
+/// A column of a kind it does not know ends its reading of that layer:
+/// the layer's features keep their geometry and the properties read
+/// before it.
 List<TileLayer> decodeMltTile(Uint8List bytes) {
   final layers = <TileLayer>[];
   final c = _Cursor(bytes);
@@ -188,6 +188,13 @@ TileLayer? _readLayer(_Cursor c) {
       final streams = c.varint();
       if (streams == 0) continue;
       for (final (childName, childValues) in _sharedDictionary(c, column)) {
+        names.add(childName);
+        values.add(childValues);
+      }
+    } else if (column.code == _typeMap) {
+      final streams = c.varint();
+      if (streams == 0) continue;
+      for (final (childName, childValues) in _nested(c, column, streams)) {
         names.add(childName);
         values.add(childValues);
       }
@@ -385,6 +392,155 @@ List<(String, List<Object?>)> _sharedDictionary(_Cursor c, _Column column) {
     out.add(('${column.name}${child.name}', _lookUp(texts, index, present)));
   }
   return out;
+}
+
+const _mapStrings = 1;
+const _mapInt32 = 2;
+const _mapUint32 = 4;
+const _mapInt64 = 8;
+const _mapUint64 = 16;
+const _mapFloat = 32;
+const _mapDouble = 64;
+const _mapPresent = 128;
+
+const _tokenFalse = 0;
+const _tokenTrue = 1;
+const _tokenMap = 2;
+const _tokenList = 3;
+const _tokenFirstValue = 4;
+
+/// A nested property column: maps, lists and scalars of any shape, one
+/// value per feature for each child, or for the column itself without
+/// children. Its values are tokens: structure, or an index into one
+/// dictionary of every scalar.
+List<(String, List<Object?>)> _nested(_Cursor c, _Column column, int streams) {
+  final names = column.children.isEmpty
+      ? [column.name]
+      : [for (final child in column.children) '${column.name}${child.name}'];
+  final mask = c.bytes[c.pos++];
+  final lengths = _ints(c, _Meta(c), signed: false);
+  var left = streams - 1;
+  final dictionary = <Object?>[];
+  if (mask & _mapStrings != 0) {
+    final count = c.bytes[c.pos++];
+    dictionary.addAll(_strings(c, count, null));
+    left -= count;
+  }
+  if (mask & _mapInt32 != 0) {
+    dictionary.addAll(_ints(c, _Meta(c), signed: true));
+    left--;
+  } else if (mask & _mapInt64 != 0) {
+    dictionary.addAll(_ints64(c, _Meta(c), signed: true));
+    left--;
+  }
+  if (mask & _mapUint32 != 0) {
+    dictionary.addAll(_ints(c, _Meta(c), signed: false));
+    left--;
+  } else if (mask & _mapUint64 != 0) {
+    dictionary.addAll(_ints64(c, _Meta(c)));
+    left--;
+  }
+  for (final (bit, size) in [(_mapFloat, 4), (_mapDouble, 8)]) {
+    if (mask & bit == 0) continue;
+    final m = _Meta(c);
+    final view = ByteData.sublistView(c.bytes, c.pos, c.pos + m.byteLength);
+    for (var i = 0; i < m.numValues; i++) {
+      dictionary.add(
+        size == 4
+            ? view.getFloat32(i * 4, Endian.little)
+            : view.getFloat64(i * 8, Endian.little),
+      );
+    }
+    c.pos += m.byteLength;
+    left--;
+  }
+  Uint8List? present;
+  if (mask & _mapPresent != 0) {
+    present = _bools(c, _Meta(c));
+    left--;
+  }
+  final List<int> tokens = left > 0
+      ? _ints(c, _Meta(c), signed: false)
+      : const [];
+  final features = (present?.length ?? lengths.length) ~/ names.length;
+
+  var counted = 0;
+  var at = 0;
+  final out = <(String, List<Object?>)>[];
+  for (var child = 0; child < names.length; child++) {
+    final values = List<Object?>.filled(features, null);
+    for (var f = 0; f < features; f++) {
+      if (present != null && present[child * features + f] == 0) continue;
+      final end = at + lengths[counted++];
+      if (end > tokens.length) {
+        throw const FormatException('An MLT map runs past its values');
+      }
+      values[f] = end - at == 1 || tokens[at] == _tokenList
+          ? _NestedReader(tokens, dictionary, end).value(at, end).$1
+          : _NestedReader(tokens, dictionary, end).entries(at, end);
+      at = end;
+    }
+    out.add((names[child], values));
+  }
+  return out;
+}
+
+class _NestedReader {
+  _NestedReader(this.tokens, this.dictionary, this.end);
+
+  final List<int> tokens;
+  final List<Object?> dictionary;
+  final int end;
+
+  Object? scalar(int token) {
+    final i = token - _tokenFirstValue;
+    if (i < 0 || i >= dictionary.length) {
+      throw const FormatException('An MLT map value is out of its dictionary');
+    }
+    return dictionary[i];
+  }
+
+  Map<String, Object?> entries(int from, int to) {
+    final out = <String, Object?>{};
+    var i = from;
+    while (i < to) {
+      final key = scalar(tokens[i++]);
+      if (key is! String) {
+        throw const FormatException('An MLT map key is not a string');
+      }
+      final (item, next) = value(i, to);
+      out[key] = item;
+      i = next;
+    }
+    return out;
+  }
+
+  (Object?, int) value(int at, int to) {
+    if (at >= to) throw const FormatException('An MLT map value is cut off');
+    final token = tokens[at];
+    switch (token) {
+      case _tokenFalse:
+        return (false, at + 1);
+      case _tokenTrue:
+        return (true, at + 1);
+      case _tokenMap || _tokenList:
+        if (at + 1 >= to || tokens[at + 1] < 2 || at + tokens[at + 1] > to) {
+          throw const FormatException('An MLT map nests past its end');
+        }
+        final stop = at + tokens[at + 1];
+        if (token == _tokenMap) return (entries(at + 2, stop), stop);
+        final list = <Object?>[];
+        var i = at + 2;
+        while (i < stop) {
+          final (item, next) = value(i, stop);
+          list.add(item);
+          i = next;
+        }
+        return (list, stop);
+      default:
+        return (scalar(token), at + 1);
+    }
+  }
 }
 
 /// Expands FSST compressed bytes: each byte is a symbol's index, or 255

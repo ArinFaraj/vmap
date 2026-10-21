@@ -72,6 +72,17 @@ void main() {
     }
   });
 
+  test('nested properties read as MapLibre reads them', () {
+    // Encoded by @maplibre/mlt 1.3.0; the expected tags are its decoding.
+    final layer = decodeMltTile(
+      File('test/support/mlt/nested.mlt').readAsBytesSync(),
+    ).single;
+    final expected = jsonDecode(
+      r'''[{"$id": 1, "name": "a", "tags": {"kind": "cafe", "open": true, "seats": 12, "rating": 4.5, "langs": ["en", "ku"]}, "rank": 3}, {"$id": 2, "name": "b", "rank": 7}, {"$id": 3, "name": "c", "tags": {"kind": "road", "lanes": -2, "nested": {"deep": {"x": 1}}, "empty": []}, "rank": 1}, {"$id": 4, "name": "d", "tags": ["plain", "list", 3], "rank": 2}]''',
+    ) as List<Object?>;
+    expect([for (final f in layer.features) f.allTags(layer)], expected);
+  });
+
   test('a cut off tile is refused', () {
     expect(
       () => decodeMltTile(Uint8List.sublistView(_tile, 0, _tile.length ~/ 2)),
