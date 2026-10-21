@@ -45,23 +45,29 @@ class RoadLabels {
     double unitPx, {
     double? maxBend,
     bool mapLibre = false,
+    double shift = 0,
   }) {
     final line = road.tile.line!;
     final half = textW / 2 / unitPx;
-    // As MapLibre's placeGlyphsAlongLine: centred on its anchor, and gone
-    // when it runs off either end of the line; its bends were held to the
-    // layer's max angle when the anchor was chosen.
+    // How far along the road its text-offset and anchor move the name.
+    final moved = shift / unitPx;
+    // As MapLibre's placeGlyphsAlongLine: centred on its anchor, moved along
+    // the road by its offset, and gone when it runs off either end of the
+    // line; its bends were held to the layer's max angle when the anchor
+    // was chosen.
     if (mapLibre &&
-        (road.anchorAlong - half < 0 ||
-            road.anchorAlong + half > road.lineLength)) {
+        (road.anchorAlong + moved - half < 0 ||
+            road.anchorAlong + moved + half > road.lineLength)) {
       return false;
     }
     final need = mapLibre ? 2 * half : textW * 1.15 / unitPx;
     if (road.lineLength < need) return false;
     // Centred on its anchor, moved along the road just enough to stay on it.
     final middle = road.anchorAlong.clamp(half, road.lineLength - half);
-    final from = middle - half;
-    final to = middle + half;
+    // The stretch the glyphs lie on, moved by the offset, whose bends are
+    // weighed; the name is laid out from its anchor in the middle.
+    final from = middle - half + math.min(0, moved);
+    final to = middle + half + math.max(0, moved);
     var walked = 0.0;
     var ax = 0.0, ay = 0.0, bx = 0.0, by = 0.0;
     var first = -1;
@@ -103,11 +109,12 @@ class RoadLabels {
             _bend(
               st,
               road,
-              from,
-              to,
+              middle - half,
+              middle + half,
               textH,
               unitPx,
               mapLibre ? double.infinity : maxBend,
+              moved: moved,
             );
       }
     }
@@ -115,11 +122,31 @@ class RoadLabels {
     var angle = math.atan2(cy, cx);
     if (angle > math.pi / 2) angle -= math.pi;
     if (angle < -math.pi / 2) angle += math.pi;
+    // The anchor's point on the straight stretch, which the name, moved by
+    // its offset in its layout, is drawn from.
+    final at = to > from ? (middle - from) / (to - from) : 0.5;
     st
       ..angle = angle
-      ..worldX = road.tileX + (ax + bx) / 2 / tileExtent * road.tileSpan
-      ..worldY = road.tileY + (ay + by) / 2 / tileExtent * road.tileSpan;
+      ..worldX = road.tileX + (ax + cx * at) / tileExtent * road.tileSpan
+      ..worldY = road.tileY + (ay + cy * at) / tileExtent * road.tileSpan;
     return true;
+  }
+
+  /// Whether a name along [road] kept upright reads against the road's own
+  /// direction at its anchor, which turns its offset along the road round.
+  bool flipsAt(TileLabel road) {
+    final line = road.tile.line!;
+    var walked = 0.0;
+    for (var i = 2; i < line.length; i += 2) {
+      final dx = line[i] - line[i - 2], dy = line[i + 1] - line[i - 1];
+      final seg = math.sqrt(dx * dx + dy * dy);
+      if (walked + seg >= road.anchorAlong || i + 2 >= line.length) {
+        final angle = math.atan2(dy, dx);
+        return math.cos(_view.screenAngle(road.worldX, road.worldY, angle)) < 0;
+      }
+      walked += seg;
+    }
+    return false;
   }
 
   /// The sharpest turn between two neighbouring slices of a bent name.
@@ -136,12 +163,13 @@ class RoadLabels {
     double to,
     double textH,
     double unitPx,
-    double? maxBend,
-  ) {
+    double? maxBend, {
+    double moved = 0,
+  }) {
     final line = road.tile.line!;
     final room = (to - from) / 2;
-    final lo = from - room;
-    final hi = to + room;
+    final lo = from + math.min(0, moved) - room;
+    final hi = to + math.max(0, moved) + room;
     final unit = road.tileSpan / tileExtent;
     final path = <double>[];
     var walked = 0.0;

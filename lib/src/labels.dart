@@ -1191,7 +1191,16 @@ class LabelEngine {
   ) {
     // A fit worked out on the text's estimated width is worked out again
     // once its glyphs are laid out.
-    final key = sprite == null ? -1 - fitKey : fitKey;
+    // The offset and anchor's move along the road, turned round with a name
+    // kept upright that reads against the road.
+    final flips = (layer?.keepUpright ?? true) && _roads.flipsAt(road);
+    var shift = 0.0;
+    if (_lineShift(road) case (final alignX, _, final offsetX, _)) {
+      shift = alignX * textW + offsetX * fontSize;
+      if (flips) shift = -shift;
+    }
+    var key = sprite == null ? -1 - fitKey : fitKey;
+    if (shift < 0) key = ~key;
     if (st.roadFitKey != key) {
       st
         ..roadFitKey = key
@@ -1203,6 +1212,7 @@ class LabelEngine {
           road.tileSpan * _view.world / tileExtent,
           maxBend: layer?.maxBend,
           mapLibre: identical(_rules, LabelRules.mapLibre),
+          shift: shift,
         );
     }
     if (!st.roadFits) return;
