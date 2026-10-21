@@ -4,7 +4,8 @@
   "type": "module",
   "description": "Renders style views in MapLibre GL JS for vmap to be compared against.",
   "dependencies": {
-    "puppeteer-core": "25.14.0",
-    "maplibre-gl": "6.14.0"
+    "@mapbox/mapbox-gl-rtl-text": "0.3.0",
+    "maplibre-gl": "6.14.0",
+    "puppeteer-core": "25.14.0"
   }
 }

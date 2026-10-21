@@ -26,11 +26,17 @@ for (const [name, url] of Object.entries(config.styles)) {
 // served from here.
 const dist = path.join(path.dirname(new URL(import.meta.url).pathname),
   'node_modules/maplibre-gl/dist');
+// Apps that show Arabic script load MapLibre's right-to-left text plugin,
+// without which it draws those letters unjoined and in the wrong order.
+const rtl = path.join(path.dirname(new URL(import.meta.url).pathname),
+  'node_modules/@mapbox/mapbox-gl-rtl-text/dist/mapbox-gl-rtl-text.js');
 const page_ = `<!doctype html><html><head>
 <link rel="stylesheet" href="/dist/maplibre-gl.css">
 <script type="module">
 import * as m from '/dist/maplibre-gl.mjs';
-window.maplibregl = m.default ?? m;
+const maplibregl = m.default ?? m;
+await maplibregl.setRTLTextPlugin(new URL('/rtl.js', location).href, false);
+window.maplibregl = maplibregl;
 </script>
 <style>html,body{margin:0}#m{width:${size}px;height:${size}px}</style></head>
 <body><div id="m"></div></body></html>`;
@@ -38,6 +44,10 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://local');
   if (url.pathname === '/') {
     res.writeHead(200, {'content-type': 'text/html'}).end(page_);
+    return;
+  }
+  if (url.pathname === '/rtl.js') {
+    res.writeHead(200, {'content-type': 'text/javascript'}).end(fs.readFileSync(rtl));
     return;
   }
   const file = path.join(dist, path.normalize(url.pathname.replace(/^\/dist\//, '')));
