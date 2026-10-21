@@ -26,6 +26,7 @@ class BuiltExtrusion {
     this.roofIndices,
     this.info,
     this.vertices,
+    this.indices,
     this.index, [
     this.patterns = const [],
   ]);
@@ -33,7 +34,7 @@ class BuiltExtrusion {
   /// The buildings by where they stand, for what hides labels.
   final BuildingIndex index;
 
-  /// Every wall and roof as triangles ready for the GPU, [floatsPerVertex]
+  /// Every wall and roof ready for the GPU, [floatsPerVertex]
   /// floats a vertex: x and y in tile units, height in metres, the colour
   /// as red plus 256 green plus 65536 blue, from 0 to 255 each, alpha from
   /// 0 to 255, the wall's outward normal and its gradient, where its
@@ -42,6 +43,11 @@ class BuiltExtrusion {
   /// exact, so
   /// OpenGL ES 2 shaders, which have no integers, unpack them.
   final Float32List vertices;
+
+  /// The triangles of [vertices], three indices each: a wall is two
+  /// triangles over its four corners, a roof shares its points. Empty, as
+  /// [vertices] is, for a renderer that draws buildings from [walls].
+  final Uint32List indices;
 
   static const floatsPerVertex = 13;
 
@@ -79,6 +85,9 @@ class BuiltExtrusion {
     pack(roofIndices),
     pack(info),
     pack(vertices),
+    pack(
+      Float32List.view(indices.buffer, indices.offsetInBytes, indices.length),
+    ),
     pack(index.bounds),
     pack(index.cellStart),
     pack(index.cellItems),
@@ -86,21 +95,25 @@ class BuiltExtrusion {
     patterns,
   ];
 
-  static BuiltExtrusion fromMessage(List<Object?> m) => BuiltExtrusion(
-    m[0]! as int,
-    unpackFloats(m[1]!),
-    unpackFloats(m[2]!),
-    unpackFloats(m[3]!),
-    unpackFloats(m[4]!),
-    unpackFloats(m[5]!),
-    BuildingIndex(
-      unpackFloats(m[6]!),
-      unpackFloats(m[7]!),
-      unpackFloats(m[8]!),
-      unpackFloats(m[9]!),
-    ),
-    (m[10]! as List).cast<String>(),
-  );
+  static BuiltExtrusion fromMessage(List<Object?> m) {
+    final words = unpackFloats(m[6]!);
+    return BuiltExtrusion(
+      m[0]! as int,
+      unpackFloats(m[1]!),
+      unpackFloats(m[2]!),
+      unpackFloats(m[3]!),
+      unpackFloats(m[4]!),
+      unpackFloats(m[5]!),
+      words.buffer.asUint32List(words.offsetInBytes, words.length),
+      BuildingIndex(
+        unpackFloats(m[7]!),
+        unpackFloats(m[8]!),
+        unpackFloats(m[9]!),
+        unpackFloats(m[10]!),
+      ),
+      (m[11]! as List).cast<String>(),
+    );
+  }
 }
 
 /// Collects buildings for one bucket while a tile is built.
@@ -299,31 +312,49 @@ class ExtrusionBuilder {
 
   /// With [cells], the triangles are cut along a grid that many cells
   /// across the tile, as MapLibre subdivides buildings for the globe.
-  static Float32List _subdivided(Float32List triangles, int cells) {
-    const width = BuiltExtrusion.floatsPerVertex;
-    final cut = Subdivider(width, tileExtent / cells);
-    final count = triangles.length ~/ width;
-    for (var v = 0; v + 2 < count; v += 3) {
-      cut.add(triangles, v, v + 1, v + 2);
+  static (Float32List, Uint32List) _subdivided(
+    Float32List vertices,
+    Uint32List indices,
+    int cells,
+  ) {
+    final cut = Subdivider(BuiltExtrusion.floatsPerVertex, tileExtent / cells);
+    for (var t = 0; t + 2 < indices.length; t += 3) {
+      cut.add(vertices, indices[t], indices[t + 1], indices[t + 2]);
     }
-    final out = Float32List(cut.indices.length * width);
-    var o = 0;
-    for (final i in cut.indices) {
-      for (var k = 0; k < width; k++) {
-        out[o++] = cut.vertices[i * width + k];
-      }
-    }
-    return out;
+    return (
+      Float32List.fromList(cut.vertices),
+      Uint32List.fromList(cut.indices),
+    );
   }
 
-  BuiltExtrusion? finish({int cells = 0}) {
+  /// The buildings collected. Without [vertices] they carry no vertices
+  /// for the GPU, for a renderer that draws them from their walls.
+  BuiltExtrusion? finish({int cells = 0, bool vertices = true}) {
     if (_info.isEmpty) return null;
-    var count = 0;
-    for (var i = 0; i < _info.length; i += BuiltExtrusion.stride) {
-      count += _info[i + 5].toInt() * 6 + _info[i + 7].toInt();
+    final walls = _walls.toFloat32List(), info = _info.toFloat32List();
+    if (!vertices) {
+      return BuiltExtrusion(
+        bucket,
+        walls,
+        _roof.toFloat32List(),
+        _indices.toFloat32List(),
+        info,
+        Float32List(0),
+        Uint32List(0),
+        BuildingIndex.of(walls, info),
+        List.of(_patterns),
+      );
     }
-    final out = Float32List(count * BuiltExtrusion.floatsPerVertex);
-    var o = 0;
+    var most = 0, triangles = 0;
+    for (var i = 0; i < _info.length; i += BuiltExtrusion.stride) {
+      most += _info[i + 5].toInt() * 4 + _info[i + 7].toInt();
+      triangles += _info[i + 5].toInt() * 6 + _info[i + 7].toInt();
+    }
+    final out = Float32List(most * BuiltExtrusion.floatsPerVertex);
+    final order = Uint32List(triangles);
+    final roofVertex = Int32List(_roof.length ~/ 2)
+      ..fillRange(0, _roof.length ~/ 2, -1);
+    var o = 0, n = 0;
     for (var i = 0; i < _info.length; i += BuiltExtrusion.stride) {
       final top = _info[i], bottom = _info[i + 1];
       final r = _info[i + 8], g = _info[i + 9], b = _info[i + 10];
@@ -376,39 +407,51 @@ class ExtrusionBuilder {
         final e0 = _edges[j * 2], e1 = _edges[j * 2 + 1];
         final v0 = bottom * patternPerMetre, v1 = top * patternPerMetre;
         final mx = _wallMiddles[j * 2], my = _wallMiddles[j * 2 + 1];
+        final first = o ~/ BuiltExtrusion.floatsPerVertex;
         vertex(x0, y0, bottom, nx0, ny0, 0, e0, v0, mx, my);
         vertex(x1, y1, bottom, nx1, ny1, 0, e1, v0, mx, my);
         vertex(x1, y1, top, nx1, ny1, 1, e1, v1, mx, my);
-        vertex(x0, y0, bottom, nx0, ny0, 0, e0, v0, mx, my);
-        vertex(x1, y1, top, nx1, ny1, 1, e1, v1, mx, my);
         vertex(x0, y0, top, nx0, ny0, 1, e0, v1, mx, my);
+        order
+          ..[n++] = first
+          ..[n++] = first + 1
+          ..[n++] = first + 2
+          ..[n++] = first
+          ..[n++] = first + 2
+          ..[n++] = first + 3;
       }
       final firstRoof = _info[i + 6].toInt(), roofs = _info[i + 7].toInt();
       for (var j = firstRoof; j < firstRoof + roofs; j++) {
         final v = _indices[j].toInt();
-        final x = _roof[v * 2], y = _roof[v * 2 + 1];
-        vertex(
-          x,
-          y,
-          top,
-          0,
-          0,
-          1,
-          x,
-          y,
-          _roofMiddles[v * 2],
-          _roofMiddles[v * 2 + 1],
-        );
+        if (roofVertex[v] < 0) {
+          roofVertex[v] = o ~/ BuiltExtrusion.floatsPerVertex;
+          final x = _roof[v * 2], y = _roof[v * 2 + 1];
+          vertex(
+            x,
+            y,
+            top,
+            0,
+            0,
+            1,
+            x,
+            y,
+            _roofMiddles[v * 2],
+            _roofMiddles[v * 2 + 1],
+          );
+        }
+        order[n++] = roofVertex[v];
       }
     }
-    final walls = _walls.toFloat32List(), info = _info.toFloat32List();
+    var (built, builtOrder) = (out.sublist(0, o), order.sublist(0, n));
+    if (cells > 0) (built, builtOrder) = _subdivided(built, builtOrder, cells);
     return BuiltExtrusion(
       bucket,
       walls,
       _roof.toFloat32List(),
       _indices.toFloat32List(),
       info,
-      cells > 0 ? _subdivided(out, cells) : out,
+      built,
+      builtOrder,
       BuildingIndex.of(walls, info),
       List.of(_patterns),
     );

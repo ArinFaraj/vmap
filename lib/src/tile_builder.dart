@@ -944,7 +944,10 @@ class TileBuilder {
     _shape(labels);
     return BuiltTile(meshes, labels, [
       for (final e in extruders.values)
-        ?e.finish(cells: sheet.projection.isGlobe ? fillCells(z) : 0),
+        ?e.finish(
+          cells: sheet.projection.isGlobe ? fillCells(z) : 0,
+          vertices: gpu,
+        ),
     ], gpu ? _stream(meshes, z, styleZoom) : null);
   }
 

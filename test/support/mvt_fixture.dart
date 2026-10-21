@@ -82,15 +82,19 @@ Uint8List tile(
   return Uint8List.fromList(_field(3, body));
 }
 
-BuiltTile build(List<Map<String, Object?>> layers, Uint8List bytes) =>
-    TileBuilder(
-      StyleSheet.compile({
-        'version': 8,
-        'sources': {
-          'omt': {'type': 'vector', 'url': 'https://example.org/planet'},
-        },
-        'layers': [
-          for (final l in layers) {'source': 'omt', ...l},
-        ],
-      }),
-    ).build(bytes, 14);
+BuiltTile build(
+  List<Map<String, Object?>> layers,
+  Uint8List bytes, {
+  bool gpu = false,
+}) => TileBuilder(
+  StyleSheet.compile({
+    'version': 8,
+    'sources': {
+      'omt': {'type': 'vector', 'url': 'https://example.org/planet'},
+    },
+    'layers': [
+      for (final l in layers) {'source': 'omt', ...l},
+    ],
+  }),
+  gpu: gpu,
+).build(bytes, 14);

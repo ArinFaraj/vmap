@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vmap/src/extrusion.dart';
 
 import 'support/mvt_fixture.dart';
 
@@ -230,5 +231,24 @@ void main() {
     final both = build(shields, roads);
     expect(one.labels, isNotEmpty);
     expect(both.labels, hasLength(one.labels.length));
+  });
+
+  test('a building shares its corners for the GPU and none without it', () {
+    const buildings = [
+      {
+        'type': 'fill-extrusion',
+        'source-layer': 'building',
+        'paint': {'fill-extrusion-height': 10},
+      },
+    ];
+    final bytes = tile('building', [
+      (polygon, {}, [square]),
+    ]);
+    final gpu = build(buildings, bytes, gpu: true).extrusions.single;
+    expect(gpu.vertices.length ~/ BuiltExtrusion.floatsPerVertex, 4 * 4 + 4);
+    expect(gpu.indices, hasLength(4 * 6 + 2 * 3));
+    final drawn = build(buildings, bytes).extrusions.single;
+    expect(drawn.vertices, isEmpty);
+    expect(drawn.walls, gpu.walls);
   });
 }

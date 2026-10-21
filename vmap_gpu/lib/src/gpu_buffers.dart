@@ -227,27 +227,39 @@ class TileGpu implements RendererTileData {
     final buildingsAt = [
       for (final e in tile.extrusions) (e, part(e.vertices)),
     ];
+    // The flat layers' indices first, then each building layer's.
+    final indexParts = <(ByteData, int)>[];
+    var indexAt = 0;
+    int indexPart(Uint32List data) {
+      final start = indexAt;
+      if (data.isNotEmpty) indexParts.add((ByteData.sublistView(data), start));
+      indexAt += data.lengthInBytes;
+      return start;
+    }
+
+    if (stream != null) indexPart(stream.indices);
+    final buildingIndicesAt = [
+      for (final e in tile.extrusions) indexPart(e.indices),
+    ];
     final range = at > 0 ? heap.take(at) : null;
-    final indices = stream == null || stream.indices.isEmpty
-        ? null
-        : heap.take(stream.indices.lengthInBytes, indices: true);
+    final indices = indexAt > 0 ? heap.take(indexAt, indices: true) : null;
     final base = range?.offset ?? 0;
+    final indexBase = indices?.offset ?? 0;
     return TileGpu._(
       tile,
       heap,
       stream,
       range,
       indices,
-      [for (final (e, offset) in buildingsAt) BuildingGpu(e, base + offset)],
+      [
+        for (final (k, (e, offset)) in buildingsAt.indexed)
+          BuildingGpu(e, base + offset, indexBase + buildingIndicesAt[k]),
+      ],
       [
         for (final (data, offset) in parts)
           (data, range!.buffer, base + offset),
-        if (indices != null)
-          (
-            ByteData.sublistView(stream!.indices),
-            indices.buffer,
-            indices.offset,
-          ),
+        for (final (data, offset) in indexParts)
+          (data, indices!.buffer, indexBase + offset),
       ],
     );
   }
@@ -321,12 +333,15 @@ class TileGpu implements RendererTileData {
   }
 }
 
-/// One building layer's vertices in a [TileGpu]'s buffer, from [offset].
+/// One building layer's vertices in a [TileGpu]'s buffer, from [offset],
+/// and its indices in the tile's index buffer, from [indexOffset].
 class BuildingGpu {
-  BuildingGpu(this.extrusion, this.offset);
+  BuildingGpu(this.extrusion, this.offset, this.indexOffset);
 
   final BuiltExtrusion extrusion;
-  final int offset;
+  final int offset, indexOffset;
+
+  int get indexCount => extrusion.indices.length;
 
   /// When the buildings were first drawn, on the renderer's clock.
   int shownAt = -1;

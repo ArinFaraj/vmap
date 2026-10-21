@@ -1829,7 +1829,15 @@ class _MapPass {
               ),
             ),
           )
-          ..draw(b.vertexCount);
+          ..bindIndexBuffer(
+            gpu.BufferView(
+              data.indexBuffer!,
+              offsetInBytes: b.indexOffset,
+              lengthInBytes: b.indexCount * 4,
+            ),
+            gpu.IndexType.int32,
+          )
+          ..drawIndexed(b.indexCount);
       }
     }
   }
