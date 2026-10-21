@@ -1,4 +1,4 @@
-// vmap web worker, built from lib 40adcab7
+// vmap web worker, built from lib ec41df51
 (function dartProgram(){function copyProperties(a,b){var s=Object.keys(a)
 for(var r=0;r<s.length;r++){var q=s[r]
 b[q]=a[q]}}function mixinPropertiesHard(a,b){var s=Object.keys(a)
@@ -5798,13 +5798,13 @@ if(q===10||q===13||q===8232||q===8233){if(g)B.a.j(o.a,32)
 else s.$0()
 continue}p=o.a
 B.a.j(p,q===9?32:q)}s.$0()
-return A.xO(a,m,i,d,e,c,n)},
-xO(a4,a5,a6,a7,a8,a9,b0){var s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d,c,b,a,a0,a1,a2,a3=A.b([],t.k_)
-for(s=a5.length,r=0;r<a5.length;a5.length===s||(0,A.h)(a5),++r){q=A.pY(a4,a5[r],a6,a7,b0)
+return A.xO(a,m,i,d,e,c,n,null)},
+xO(a3,a4,a5,a6,a7,a8,a9,b0){var s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d,c,b,a,a0,a1,a2=A.b([],t.k_)
+for(s=a4.length,r=0;r<a4.length;a4.length===s||(0,A.h)(a4),++r){q=A.pY(a3,a4[r],a5,a6,a9)
 if(q==null)return null
-B.a.j(a3,q)}p=B.a.bM(a3,0,new A.mN(),t.i)
-s=A.D(J.iO(b0))
-o=a4.c
+B.a.j(a2,q)}p=B.a.bM(a2,0,new A.mN(),t.i)
+s=A.D(J.iO(a9))
+o=a3.c
 if(!(s>=0&&s<o.length))return A.a(o,s)
 n=o[s]
 m=n.a.bk(1751672161)
@@ -5812,24 +5812,25 @@ l=n.gi9().f
 s=m.b+4
 m.l(s,2)
 o=m.a
-k=o.getInt16(s,!1)/l
-s=m.b+6
-m.l(s,2)
-j=(a8-k- -o.getInt16(s,!1)/l)/2
+s=o.getInt16(s,!1)
+k=m.b+6
+m.l(k,2)
+k=o.getInt16(k,!1)
+j=b0==null?(s/l- -k/l)/2:b0
 s=t.n
 i=A.b([],s)
-for(o=A.qU(a3,0,t.hT),h=J.F(o.a),g=o.b,o=new A.bD(h,g,A.u(o).i("bD<1>")),f=a9>0,e=a9<0;o.n();){d=o.c
-d=d>=0?new A.f(g+d,h.gp()):A.t(A.aI())
-c=d.b
-b=c.a
-a=c.b
-A:{if(e){a0=0
-break A}if(f){a0=p-a
-break A}a0=(p-a)/2
-break A}a1=d.a*a8+j+k
-for(d=J.o(b),a2=0;a2<d.gk(b);a2+=5)B.a.A(i,A.b([d.h(b,a2),d.h(b,a2+1),d.h(b,a2+2)+a0,d.h(b,a2+3)+a1,d.h(b,a2+4)],s))}s=new Float32Array(A.W(i))
-o=a3.length
-return new A.ky(s,p,o*a8,o)},
+for(o=A.qU(a2,0,t.hT),k=J.F(o.a),h=o.b,o=new A.bD(k,h,A.u(o).i("bD<1>")),g=a8>0,f=a8<0;o.n();){e=o.c
+e=e>=0?new A.f(h+e,k.gp()):A.t(A.aI())
+d=e.b
+c=d.a
+b=d.b
+A:{if(f){a=0
+break A}if(g){a=p-b
+break A}a=(p-b)/2
+break A}a0=(e.a+0.5)*a7+j
+for(e=J.o(c),a1=0;a1<e.gk(c);a1+=5)B.a.A(i,A.b([e.h(c,a1),e.h(c,a1+1),e.h(c,a1+2)+a,e.h(c,a1+3)+a0,e.h(c,a1+4)],s))}s=new Float32Array(A.W(i))
+o=a2.length
+return new A.ky(s,p,o*a7,o)},
 jC:function jC(a,b,c,d,e){var _=this
 _.c=a
 _.d=b

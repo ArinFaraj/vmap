@@ -315,6 +315,7 @@ ShapedText? layoutText(
   double Function(int index)? breakAdvance,
 }) {
   final order = fonts.orderFor(stack);
+  final baseline = mapLibreBreaks ? _rangeBaseline : null;
   if (mapLibreBreaks && !singleLine && maxWidth.isFinite) {
     return _layoutLines(
       fonts,
@@ -332,6 +333,7 @@ ShapedText? layoutText(
       lineHeight,
       align,
       order,
+      baseline,
     );
   }
   final lines = <List<int>>[];
@@ -367,8 +369,14 @@ ShapedText? layoutText(
     lineHeight,
     align,
     order,
+    baseline,
   );
 }
+
+/// How far below the middle of its line, in ems, MapLibre sets the baseline
+/// of a glyph from glyph ranges: they place a glyph 17 units of 24 above the
+/// line's y and measure its top from 26 units above the baseline.
+const _rangeBaseline = (26 - 17) / 24;
 
 /// [text] broken into lines as MapLibre breaks a label drawn from glyph
 /// ranges, the whole text weighed at once, its newlines among the breaks:
@@ -413,7 +421,9 @@ List<List<int>> _mapLibreLines(
   return lines;
 }
 
-/// [lines] shaped and stacked, each aligned by [align].
+/// [lines] shaped and stacked, each aligned by [align], each baseline
+/// [baseline] ems below the middle of its line, or where the font's ascent
+/// and descent centre it.
 ShapedText? _layoutLines(
   GlyphFonts fonts,
   List<List<int>> lines,
@@ -422,6 +432,7 @@ ShapedText? _layoutLines(
   double lineHeight,
   int align,
   List<int> order,
+  double? baseline,
 ) {
   final shaped = <(List<double>, double)>[];
   for (final line in lines) {
@@ -431,7 +442,7 @@ ShapedText? _layoutLines(
   }
   final width = shaped.fold<double>(0, (a, l) => math.max(a, l.$2));
   final (ascent, descent) = fonts.metrics(order.first);
-  final lead = (lineHeight - ascent - descent) / 2;
+  final below = baseline ?? (ascent - descent) / 2;
   final out = <double>[];
   for (final (i, (glyphs, w)) in shaped.indexed) {
     final shift = switch (align) {
@@ -439,13 +450,13 @@ ShapedText? _layoutLines(
       > 0 => width - w,
       _ => (width - w) / 2,
     };
-    final baseline = i * lineHeight + lead + ascent;
+    final y = (i + 0.5) * lineHeight + below;
     for (var g = 0; g < glyphs.length; g += 5) {
       out.addAll([
         glyphs[g],
         glyphs[g + 1],
         glyphs[g + 2] + shift,
-        glyphs[g + 3] + baseline,
+        glyphs[g + 3] + y,
         glyphs[g + 4],
       ]);
     }
