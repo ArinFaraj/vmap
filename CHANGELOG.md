@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Vector tiles in the MapLibre Tile format (MLT): a `vector` source with
+  `"encoding": "mlt"` is read as MapLibre reads it.
 - `VMap`, a map widget of vmap's own: it tilts up to 60 degrees and stands
   `fill-extrusion` buildings up, and its gestures and
   `VMapController.flyTo` and `easeTo` keep their speed.

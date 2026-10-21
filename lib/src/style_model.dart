@@ -1160,6 +1160,7 @@ final class TiledSource extends VectorSource {
     super.maxZoom,
     super.promoteId,
     this.cover = const TileCover(),
+    this.mlt = false,
   });
 
   /// A TileJSON address, or a `pmtiles://` archive.
@@ -1168,6 +1169,10 @@ final class TiledSource extends VectorSource {
   /// The tile addresses, when the style lists them itself.
   final String? tiles;
   final TileCover cover;
+
+  /// The tiles are in the MapLibre Tile format, as `"encoding": "mlt"`
+  /// says, rather than Mapbox Vector Tiles.
+  final bool mlt;
 
   @override
   int get defaultMaxZoom => 14;

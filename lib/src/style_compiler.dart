@@ -267,9 +267,10 @@ class StyleCompiler {
               maxZoom: maxZoom,
               promoteId: from['promoteId'],
               cover: TileCover.of(from),
+              mlt: from['encoding'] == 'mlt',
               signature:
                   'v|${from['url']}|$direct|${from['promoteId']}'
-                  '|${TileCover.of(from).signature}',
+                  '|${TileCover.of(from).signature}|${from['encoding']}',
             ),
     );
     return _vectorSources.length - 1;

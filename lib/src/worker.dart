@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'cluster.dart';
 import 'geojson.dart';
+import 'mlt.dart';
 import 'mvt.dart';
 import 'query.dart';
 import 'pmtiles.dart';
@@ -564,8 +565,9 @@ Future<void> tileWorkerMain(
       return sliceLayers(await layersOf(from), from, id);
     }
     final bytes = await fetch(id);
-    return bytes.isEmpty
-        ? const <TileLayer>[]
+    if (bytes.isEmpty) return const <TileLayer>[];
+    return def is TiledSource && def.mlt
+        ? decodeMltTile(bytes)
         : MvtTile.decode(bytes).layers.values;
   }
 
