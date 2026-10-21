@@ -614,6 +614,7 @@ class StyleCompiler {
         iconCooperative: _overlap(layout, 'icon') == 'cooperative',
         textCooperative: _overlap(layout, 'text') == 'cooperative',
         drawnByScreenY: _drawnByScreenY(layout),
+        placedByScreenY: layout['symbol-z-order'] == 'viewport-y',
         drawnByKey: layout['symbol-sort-key'] != null,
         iconSizeByFeature: _readsAny(layout['icon-size']),
         textFit: (layout['icon-text-fit'] ?? 'none') != 'none',

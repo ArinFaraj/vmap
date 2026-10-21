@@ -754,6 +754,7 @@ class SymbolLayer {
     this.iconCooperative = false,
     this.textCooperative = false,
     this.drawnByScreenY = false,
+    this.placedByScreenY = false,
     this.drawnByKey = false,
     this.iconSizeByFeature = false,
     required this.textFit,
@@ -1015,6 +1016,10 @@ class SymbolLayer {
   /// cover higher ones: `symbol-z-order` viewport-y, or auto without a
   /// sort key, when they may overlap.
   final bool drawnByScreenY;
+
+  /// `symbol-z-order` viewport-y: its symbols are also placed bottom to
+  /// top on the screen, so a lower one wins a collision.
+  final bool placedByScreenY;
 
   /// Whether the layer has a `symbol-sort-key`, which MapLibre draws by
   /// across tiles rather than tile by tile.

@@ -1,4 +1,4 @@
-// vmap web worker, built from lib a010867d
+// vmap web worker, built from lib b103107c
 (function dartProgram(){function copyProperties(a,b){var s=Object.keys(a)
 for(var r=0;r<s.length;r++){var q=s[r]
 b[q]=a[q]}}function mixinPropertiesHard(a,b){var s=Object.keys(a)
@@ -16150,6 +16150,7 @@ A.kC(e2,"text")
 A.kC(e2,"icon")
 A.kC(e2,"text")
 A.vB(e2)
+J.m(e2.h(0,"symbol-z-order"),"viewport-y")
 e2.h(0,d0)
 A.bF(e2.h(0,c8),A.b5(r))
 r=e2.h(0,d9)

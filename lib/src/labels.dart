@@ -492,7 +492,7 @@ class LabelEngine {
           : _zoomingIntervalMs;
       if (nowMs - _placedAtMs >= interval) {
         final t0 = _clock.elapsedMicroseconds;
-        _place(sources, zoom, world, origin, size);
+        _place(sources, zoom, world, origin, size, rotation);
         lastPlaceMicros = _clock.elapsedMicroseconds - t0;
         _placedAtMs = nowMs;
         _placedZoom = zoom;
@@ -710,7 +710,7 @@ class LabelEngine {
   /// first, each copy of the world, column and row in turn (the order
   /// `Style._updatePlacement` sorts them in), then the order the tile lists
   /// its symbols in.
-  static int _placementOrder(LabelState a, LabelState b) {
+  int _placementOrder(LabelState a, LabelState b) {
     final byRank = (a.sortKey >> 16) - (b.sortKey >> 16);
     if (byRank != 0) return byRank;
     final ca = a.candidate, cb = b.candidate;
@@ -725,6 +725,13 @@ class LabelEngine {
       final ay = (ca.tileY / ca.tileSpan).round();
       final by = (cb.tileY / cb.tileSpan).round();
       if (ay != by) return ay - by;
+      // As MapLibre's placeLayerBucketPart for symbol-z-order viewport-y:
+      // the lowest on the screen first, then the earlier feature.
+      if (ca.tile.layer == cb.tile.layer &&
+          (_symbolOf(ca)?.placedByScreenY ?? false)) {
+        final byY = b.drawY.compareTo(a.drawY);
+        if (byY != 0) return byY;
+      }
     }
     return a.sortKey - b.sortKey;
   }
@@ -763,6 +770,7 @@ class LabelEngine {
     double world,
     ui.Offset origin,
     ui.Size size,
+    double rotation,
   ) {
     _pass++;
     _placeAgain = false;
@@ -813,6 +821,16 @@ class LabelEngine {
       }
     }
     if (identical(_rules, LabelRules.mapLibre)) {
+      final bearing = _view.tilted != null ? -_view.mapTurn : rotation;
+      final ts = math.sin(bearing), tc = math.cos(bearing);
+      for (final st in states) {
+        final c = st.candidate;
+        if (c is TileLabel && (_symbolOf(c)?.placedByScreenY ?? false)) {
+          final x = (st.worldX - c.tileX) / c.tileSpan;
+          final y = (st.worldY - c.tileY) / c.tileSpan;
+          st.drawY = ((-ts * x + tc * y) * _sortExtent).roundToDouble();
+        }
+      }
       states.sort(_placementOrder);
     } else {
       states.sort((a, b) => a.sortKey - b.sortKey);
