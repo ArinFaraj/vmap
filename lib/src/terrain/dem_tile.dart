@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import '../tile_id.dart';
+import '../tiles/tile_id.dart';
 
 /// One tile of a raster DEM as heights in metres, with a border one pixel
 /// wide on every side. The border starts as a copy of the edge, and takes

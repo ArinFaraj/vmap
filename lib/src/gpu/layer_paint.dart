@@ -1,11 +1,11 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import '../expr.dart';
-import '../gpu_stream.dart';
-import '../sprites.dart';
-import '../style_model.dart';
-import '../zoom_history.dart';
+import '../style/expr.dart';
+import '../tiles/gpu_stream.dart';
+import '../style/sprites.dart';
+import '../style/style_model.dart';
+import '../canvas/zoom_history.dart';
 
 /// A fill or line layer's paint for one frame, in screen pixels.
 class LayerPaint {

@@ -1,8 +1,8 @@
 import 'dart:math' as math;
 
-import '../style_model.dart';
-import '../tile_id.dart';
-import '../tiles.dart';
+import '../style/style_model.dart';
+import '../tiles/tile_id.dart';
+import '../tiles/tiles.dart';
 
 import 'gpu_buffers.dart';
 

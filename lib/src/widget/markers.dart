@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 
-import '../marker.dart';
-import '../mercator.dart';
+import 'marker.dart';
+import '../camera/mercator.dart';
 import 'vmap_controller.dart';
 
 /// The markers of a map, moved with its camera every frame without

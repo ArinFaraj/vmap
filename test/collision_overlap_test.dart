@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/collision_boxes.dart';
+import 'package:vmap/src/labels/collision_boxes.dart';
 
 void main() {
   test('a cooperative box overlaps any box but one that overlaps nothing', () {

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/zoom_history.dart';
+import 'package:vmap/src/canvas/zoom_history.dart';
 
 void main() {
   const fade = ZoomHistory.fadeMicros;

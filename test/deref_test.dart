@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/style_model.dart';
+import 'package:vmap/src/style/style_model.dart';
 
 void main() {
   test('a layer with ref takes its source, filter and layout from it', () {

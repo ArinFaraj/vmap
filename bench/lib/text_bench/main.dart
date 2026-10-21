@@ -12,9 +12,9 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:vmap/src/map_camera.dart';
-import 'package:vmap/src/mercator.dart';
-import 'package:vmap/src/view.dart';
+import 'package:vmap/src/camera/map_camera.dart';
+import 'package:vmap/src/camera/mercator.dart';
+import 'package:vmap/src/camera/view.dart';
 import 'package:vmap/vmap.dart';
 
 import 'glyph_atlas.dart';

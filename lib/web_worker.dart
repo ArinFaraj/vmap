@@ -12,7 +12,7 @@ import 'dart:js_interop';
 import 'package:web/web.dart' as web;
 
 import 'src/platform/web_codec.dart';
-import 'src/worker.dart' show tileWorkerMain;
+import 'src/tiles/worker.dart' show tileWorkerMain;
 
 /// Builds tiles for the page that started this worker.
 void runVmapWorker() {

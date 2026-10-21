@@ -1,10 +1,10 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/gpu_stream.dart';
-import 'package:vmap/src/style_model.dart';
-import 'package:vmap/src/tessellate.dart';
-import 'package:vmap/src/tile_builder.dart' show BuiltMesh;
+import 'package:vmap/src/tiles/gpu_stream.dart';
+import 'package:vmap/src/style/style_model.dart';
+import 'package:vmap/src/tiles/tessellate.dart';
+import 'package:vmap/src/tiles/tile_builder.dart' show BuiltMesh;
 
 void main() {
   final sheet = StyleSheet.compile({

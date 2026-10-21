@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/geojson.dart';
+import 'package:vmap/src/tiles/geojson.dart';
 
 void main() {
   test("a GeoJSON source's filter leaves out the features it turns away", () {

@@ -11,11 +11,11 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/expr.dart';
-import 'package:vmap/src/format.dart';
-import 'package:vmap/src/geojson.dart';
-import 'package:vmap/src/style_model.dart';
-import 'package:vmap/src/tile_builder.dart';
+import 'package:vmap/src/style/expr.dart';
+import 'package:vmap/src/style/format.dart';
+import 'package:vmap/src/tiles/geojson.dart';
+import 'package:vmap/src/style/style_model.dart';
+import 'package:vmap/src/tiles/tile_builder.dart';
 
 void main() {
   final root = Platform.environment['STYLE_SPEC'];

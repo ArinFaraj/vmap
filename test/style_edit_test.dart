@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/style.dart';
-import 'package:vmap/src/style_model.dart';
+import 'package:vmap/src/style/style.dart';
+import 'package:vmap/src/style/style_model.dart';
 
 Map<String, Object?> _document() => {
   'version': 8,

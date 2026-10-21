@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/label_path.dart';
+import 'package:vmap/src/labels/label_path.dart';
 
 void main() {
   final corner = Float64List.fromList([0, 0, 10, 0, 10, 10]);

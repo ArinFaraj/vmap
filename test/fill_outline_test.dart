@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/tessellate.dart';
+import 'package:vmap/src/tiles/tessellate.dart';
 
 void main() {
   test('a fill kept for an outline gives each ring edge once', () {

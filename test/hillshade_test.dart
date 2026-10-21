@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/raster.dart';
+import 'package:vmap/src/canvas/raster.dart';
 
 ShadeLight light({int method = 0, List<double> accent = const [0, 0, 0, 1]}) =>
     ShadeLight(

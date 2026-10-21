@@ -2,12 +2,12 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/expr.dart';
-import 'package:vmap/src/map_renderer.dart';
-import 'package:vmap/src/sprites.dart';
-import 'package:vmap/src/style_model.dart';
-import 'package:vmap/src/tiles.dart';
-import 'package:vmap/src/view.dart';
+import 'package:vmap/src/style/expr.dart';
+import 'package:vmap/src/gpu/map_renderer.dart';
+import 'package:vmap/src/style/sprites.dart';
+import 'package:vmap/src/style/style_model.dart';
+import 'package:vmap/src/tiles/tiles.dart';
+import 'package:vmap/src/camera/view.dart';
 import 'package:vmap/vmap.dart';
 
 class _Renderer extends MapRenderer {

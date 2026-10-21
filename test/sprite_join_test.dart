@@ -1,7 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/sprites.dart';
+import 'package:vmap/src/style/sprites.dart';
 
 ui.Image _square(int w, int h) {
   final recorder = ui.PictureRecorder();

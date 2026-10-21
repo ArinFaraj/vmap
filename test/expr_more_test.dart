@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/expr.dart';
+import 'package:vmap/src/style/expr.dart';
 
 Object? _run(Object? json) => compileExpr(json)(EvalContext());
 

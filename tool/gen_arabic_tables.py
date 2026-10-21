@@ -1,4 +1,4 @@
-"""Writes lib/src/glyphs/arabic_tables.g.dart from the Unicode database.
+"""Writes lib/src/labels/glyphs/arabic_tables.g.dart from the Unicode database.
 
     python3 tool/gen_arabic_tables.py ArabicShaping.txt
 
@@ -69,5 +69,5 @@ out += ['};', '',
 for c in sorted(ligatures):
     out.append(f'  0x{c:04X}: [' + ', '.join(f'0x{f:04X}' for f in ligatures[c]) + '],')
 out.append('};')
-open('lib/src/glyphs/arabic_tables.g.dart', 'w', encoding='utf-8').write('\n'.join(out) + '\n')
+open('lib/src/labels/glyphs/arabic_tables.g.dart', 'w', encoding='utf-8').write('\n'.join(out) + '\n')
 print(len(types), 'joining types,', len(forms), 'letters with forms,', len(ligatures), 'lam ligatures')

@@ -1,9 +1,9 @@
 import 'dart:math' as math;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/globe.dart';
-import 'package:vmap/src/mercator.dart' as mercator;
-import 'package:vmap/src/view.dart';
+import 'package:vmap/src/camera/globe.dart';
+import 'package:vmap/src/camera/mercator.dart' as mercator;
+import 'package:vmap/src/camera/view.dart';
 
 MapView _view({
   double lng = 0,

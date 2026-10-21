@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/geojson.dart';
-import 'package:vmap/src/place.dart';
-import 'package:vmap/src/style_model.dart';
-import 'package:vmap/src/tile_builder.dart';
+import 'package:vmap/src/tiles/geojson.dart';
+import 'package:vmap/src/style/place.dart';
+import 'package:vmap/src/style/style_model.dart';
+import 'package:vmap/src/tiles/tile_builder.dart';
 
 const _towns = {
   'type': 'FeatureCollection',

@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/round_corners.dart';
+import 'package:vmap/src/tiles/round_corners.dart';
 
 void main() {
   test('each corner of a square becomes an arc on the half unit grid', () {

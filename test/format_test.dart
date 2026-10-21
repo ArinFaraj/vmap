@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/expr.dart';
-import 'package:vmap/src/format.dart';
+import 'package:vmap/src/style/expr.dart';
+import 'package:vmap/src/style/format.dart';
 
 void main() {
   test('a format keeps its runs, and plain runs read as plain text', () {

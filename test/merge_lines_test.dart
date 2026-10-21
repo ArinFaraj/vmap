@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/tile_builder.dart';
+import 'package:vmap/src/tiles/tile_builder.dart';
 
 NamedLine _road(String text, List<double> points) => NamedLine(
   priority: 0,

@@ -3,13 +3,13 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/label_state.dart';
-import 'package:vmap/src/labels.dart';
-import 'package:vmap/src/text_style.dart';
-import 'package:vmap/src/style_model.dart';
-import 'package:vmap/src/tile_builder.dart';
-import 'package:vmap/src/view.dart';
-import 'package:vmap/src/map_camera.dart';
+import 'package:vmap/src/labels/label_state.dart';
+import 'package:vmap/src/labels/labels.dart';
+import 'package:vmap/src/labels/text_style.dart';
+import 'package:vmap/src/style/style_model.dart';
+import 'package:vmap/src/tiles/tile_builder.dart';
+import 'package:vmap/src/camera/view.dart';
+import 'package:vmap/src/camera/map_camera.dart';
 import 'package:latlong2/latlong.dart';
 
 const _size = ui.Size(400, 400);

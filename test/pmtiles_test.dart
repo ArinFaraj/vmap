@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/pmtiles.dart';
+import 'package:vmap/src/tiles/pmtiles.dart';
 
 List<int> _varint(int value) {
   final out = <int>[];

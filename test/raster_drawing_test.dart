@@ -6,10 +6,10 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/expr.dart';
+import 'package:vmap/src/style/expr.dart';
 import 'package:vmap/src/options.dart';
-import 'package:vmap/src/raster.dart';
-import 'package:vmap/src/raster_style.dart';
+import 'package:vmap/src/canvas/raster.dart';
+import 'package:vmap/src/style/raster_style.dart';
 
 /// A PNG of [size] pixels filled with [color].
 Future<List<int>> _png(int size, ui.Color color) async {

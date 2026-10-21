@@ -8,11 +8,11 @@ import 'package:flutter/scheduler.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../engine.dart';
-import '../frame_rate.dart';
-import '../map_camera.dart';
-import '../mercator.dart';
-import '../query.dart';
-import '../view.dart';
+import 'frame_rate.dart';
+import '../camera/map_camera.dart';
+import '../camera/mercator.dart';
+import '../tiles/query.dart';
+import '../camera/view.dart';
 
 /// How fast the camera moves, per second: the centre in fractions of the
 /// world, zoom levels, and degrees of bearing and pitch.

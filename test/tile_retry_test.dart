@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/style_model.dart';
-import 'package:vmap/src/tile_id.dart';
-import 'package:vmap/src/tiles.dart';
+import 'package:vmap/src/style/style_model.dart';
+import 'package:vmap/src/tiles/tile_id.dart';
+import 'package:vmap/src/tiles/tiles.dart';
 
 void main() {
   final source = TileSource(

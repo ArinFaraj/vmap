@@ -1,9 +1,9 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/raster.dart';
-import 'package:vmap/src/raster_style.dart';
-import 'package:vmap/src/style_model.dart';
+import 'package:vmap/src/canvas/raster.dart';
+import 'package:vmap/src/style/raster_style.dart';
+import 'package:vmap/src/style/style_model.dart';
 
 void main() {
   test('heights take the ramp blended between its stops, held at its ends', () {

@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/geojson.dart';
-import 'package:vmap/src/mvt.dart';
-import 'package:vmap/src/tile_id.dart';
-import 'package:vmap/src/tile_slice.dart';
+import 'package:vmap/src/tiles/geojson.dart';
+import 'package:vmap/src/tiles/mvt.dart';
+import 'package:vmap/src/tiles/tile_id.dart';
+import 'package:vmap/src/tiles/tile_slice.dart';
 
 List<List<double>> _rings(TileFeature f) {
   final sink = GeometrySink();

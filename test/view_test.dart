@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/mercator.dart';
+import 'package:vmap/src/camera/mercator.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:vmap/src/map_camera.dart';
-import 'package:vmap/src/view.dart' show EdgeInsets2, MapView;
+import 'package:vmap/src/camera/map_camera.dart';
+import 'package:vmap/src/camera/view.dart' show EdgeInsets2, MapView;
 
 MapView _view({
   double pitch = 0,

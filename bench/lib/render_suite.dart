@@ -8,8 +8,8 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
-import 'package:vmap/src/map_camera.dart';
-import 'package:vmap/src/view.dart';
+import 'package:vmap/src/camera/map_camera.dart';
+import 'package:vmap/src/camera/view.dart';
 import 'package:vmap/vmap.dart';
 
 import 'render_suite/pixelmatch.dart';

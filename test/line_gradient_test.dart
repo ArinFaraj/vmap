@@ -1,11 +1,11 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/geojson.dart';
-import 'package:vmap/src/mvt.dart';
-import 'package:vmap/src/style_model.dart';
-import 'package:vmap/src/tessellate.dart';
-import 'package:vmap/src/tile_builder.dart' show tileExtent;
+import 'package:vmap/src/tiles/geojson.dart';
+import 'package:vmap/src/tiles/mvt.dart';
+import 'package:vmap/src/style/style_model.dart';
+import 'package:vmap/src/tiles/tessellate.dart';
+import 'package:vmap/src/tiles/tile_builder.dart' show tileExtent;
 
 void main() {
   test('each piece of a cut line knows its share of the whole line', () {

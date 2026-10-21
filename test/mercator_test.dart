@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/mercator.dart';
+import 'package:vmap/src/camera/mercator.dart';
 
 void main() {
   test('a pole lands on the edge of the world instead of off it', () {

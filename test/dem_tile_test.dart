@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/terrain/dem_tile.dart';
-import 'package:vmap/src/tile_id.dart';
+import 'package:vmap/src/tiles/tile_id.dart';
 
 /// A [dim] square Terrarium tile whose every pixel is [metres] high, or
 /// [height] of its x and y when given.

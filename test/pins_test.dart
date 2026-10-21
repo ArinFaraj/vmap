@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/pins.dart';
+import 'package:vmap/src/style/pins.dart';
 
 void main() {
   const pins = VmapPins.standard;

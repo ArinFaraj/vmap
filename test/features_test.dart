@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/extrusion.dart';
+import 'package:vmap/src/tiles/extrusion.dart';
 
 import 'support/mvt_fixture.dart';
 

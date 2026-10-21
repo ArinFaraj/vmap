@@ -1,9 +1,9 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/expr.dart';
-import 'package:vmap/src/label_view.dart';
-import 'package:vmap/src/view.dart';
+import 'package:vmap/src/style/expr.dart';
+import 'package:vmap/src/labels/label_view.dart';
+import 'package:vmap/src/camera/view.dart';
 
 void main() {
   test(

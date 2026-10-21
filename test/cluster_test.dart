@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/cluster.dart';
-import 'package:vmap/src/geojson.dart';
-import 'package:vmap/src/mvt.dart';
-import 'package:vmap/src/style_model.dart';
+import 'package:vmap/src/tiles/cluster.dart';
+import 'package:vmap/src/tiles/geojson.dart';
+import 'package:vmap/src/tiles/mvt.dart';
+import 'package:vmap/src/style/style_model.dart';
 
 Map<String, Object?> _point(double lon, double lat, String name) => {
   'type': 'Feature',

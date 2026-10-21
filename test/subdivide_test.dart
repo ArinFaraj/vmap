@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/subdivide.dart';
+import 'package:vmap/src/camera/subdivide.dart';
 
 double _area(List<double> v, List<int> idx, int width) {
   var sum = 0.0;

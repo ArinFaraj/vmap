@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/raster_style.dart';
-import 'package:vmap/src/style_model.dart';
+import 'package:vmap/src/style/raster_style.dart';
+import 'package:vmap/src/style/style_model.dart';
 
 void main() {
   test('a source has only the tiles inside its bounds and zooms', () {

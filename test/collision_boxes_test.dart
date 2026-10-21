@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/collision_boxes.dart';
+import 'package:vmap/src/labels/collision_boxes.dart';
 
 void main() {
   test('a box overlapping one taken hits it, one beside it does not', () {

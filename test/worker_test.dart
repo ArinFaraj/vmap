@@ -5,13 +5,13 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/mercator.dart';
-import 'package:vmap/src/style_model.dart';
-import 'package:vmap/src/tile_builder.dart';
-import 'package:vmap/src/protocol.dart';
-import 'package:vmap/src/tile_id.dart';
+import 'package:vmap/src/camera/mercator.dart';
+import 'package:vmap/src/style/style_model.dart';
+import 'package:vmap/src/tiles/tile_builder.dart';
+import 'package:vmap/src/tiles/protocol.dart';
+import 'package:vmap/src/tiles/tile_id.dart';
 import 'package:vmap/src/options.dart';
-import 'package:vmap/src/worker.dart';
+import 'package:vmap/src/tiles/worker.dart';
 
 import 'support/mvt_fixture.dart';
 

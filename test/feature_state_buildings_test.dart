@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/geojson.dart';
-import 'package:vmap/src/protocol.dart';
-import 'package:vmap/src/style_model.dart';
-import 'package:vmap/src/tile_builder.dart';
+import 'package:vmap/src/tiles/geojson.dart';
+import 'package:vmap/src/tiles/protocol.dart';
+import 'package:vmap/src/style/style_model.dart';
+import 'package:vmap/src/tiles/tile_builder.dart';
 
 Map<String, Object?> _style(Object? color) => {
   'version': 8,

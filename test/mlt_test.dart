@@ -3,9 +3,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/mlt.dart';
-import 'package:vmap/src/mvt.dart';
-import 'package:vmap/src/style_model.dart';
+import 'package:vmap/src/tiles/mlt.dart';
+import 'package:vmap/src/tiles/mvt.dart';
+import 'package:vmap/src/style/style_model.dart';
 
 // The tile is from MapLibre GL JS's render tests (BSD-3-Clause); the
 // reference is what @maplibre/mlt 1.3.0 decodes it to, polygon rings

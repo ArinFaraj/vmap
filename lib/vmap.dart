@@ -14,9 +14,9 @@ export 'package:latlong2/latlong.dart' show LatLng;
 
 export 'src/engine.dart' show VmapEngine;
 export 'src/errors.dart' show VmapError, VmapErrorKind;
-export 'src/glyphs/vmap_font.dart' show VmapFont;
-export 'src/map_camera.dart' show VmapCamera;
-export 'src/marker.dart' show VmapMarker;
+export 'src/labels/glyphs/vmap_font.dart' show VmapFont;
+export 'src/camera/map_camera.dart' show VmapCamera;
+export 'src/widget/marker.dart' show VmapMarker;
 export 'src/options.dart'
     show
         VmapGlyphs,
@@ -24,12 +24,12 @@ export 'src/options.dart'
         VmapNetworkOptions,
         VmapRenderOptions,
         VmapRenderer;
-export 'src/palette.dart' show VmapPalette;
-export 'src/pins.dart' show VmapPin, VmapPins;
-export 'src/query.dart'
+export 'src/style/palette.dart' show VmapPalette;
+export 'src/style/pins.dart' show VmapPin, VmapPins;
+export 'src/tiles/query.dart'
     show VmapClusterMember, VmapDownload, VmapFeature, VmapFeatureState;
-export 'src/sprites.dart' show VmapImage;
-export 'src/style.dart' show VmapOverlay, VmapStyle, VmapStyleEdit;
-export 'src/text_style.dart' show VmapTextStyle;
+export 'src/style/sprites.dart' show VmapImage;
+export 'src/style/style.dart' show VmapOverlay, VmapStyle, VmapStyleEdit;
+export 'src/labels/text_style.dart' show VmapTextStyle;
 export 'src/widget/vmap.dart' show Vmap;
 export 'src/widget/vmap_controller.dart' show VmapBounds, VmapController;

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/glyphs/arabic_forms.dart';
+import 'package:vmap/src/labels/glyphs/arabic_forms.dart';
 
 List<int> join(String text) => joinArabic(text.runes.toList());
 

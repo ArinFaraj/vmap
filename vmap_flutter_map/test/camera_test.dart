@@ -4,8 +4,8 @@ import 'dart:ui';
 
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/map_camera.dart';
-import 'package:vmap/src/mercator.dart';
+import 'package:vmap/src/camera/map_camera.dart';
+import 'package:vmap/src/camera/mercator.dart';
 import 'package:vmap/vmap.dart';
 import 'package:vmap_flutter_map/src/layer.dart';
 

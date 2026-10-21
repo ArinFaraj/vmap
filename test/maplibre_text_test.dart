@@ -2,11 +2,11 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/color.dart';
-import 'package:vmap/src/glyphs/glyph_pbf.dart';
-import 'package:vmap/src/glyphs/maplibre_shaping.dart';
-import 'package:vmap/src/icon_stretch.dart';
-import 'package:vmap/src/sprites.dart';
+import 'package:vmap/src/style/color.dart';
+import 'package:vmap/src/labels/glyphs/glyph_pbf.dart';
+import 'package:vmap/src/labels/glyphs/maplibre_shaping.dart';
+import 'package:vmap/src/labels/icon_stretch.dart';
+import 'package:vmap/src/style/sprites.dart';
 
 /// A font whose every glyph is 10 units wide, as glyph ranges measure.
 PbfGlyph? tenWide(int face, int c) =>

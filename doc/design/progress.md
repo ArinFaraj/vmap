@@ -7,7 +7,7 @@ Measured, on the `engine` branch:
 - Canvas tilt (D6): vmap's existing meshes drawn under a 4x4 perspective
   `Canvas.transform` render correctly on macOS with Impeller. The web is
   not checked yet.
-- `MapView` (`lib/src/view.dart`): MapLibre's conventions (512 pixel tiles,
+- `MapView` (`lib/src/camera/view.dart`): MapLibre's conventions (512 pixel tiles,
   field of view 0.6435 rad from GL JS `transform_helper.ts`, camera at
   `0.5 / tan(fov / 2) * height`). Projection, unprojection and the canvas
   matrix agree to 1e-6 px. The cover walks the tile tree against the
@@ -75,7 +75,7 @@ Phone (Vivo V2514, Impeller Vulkan), the run where the phone was idle:
 
 ### Glyph text in the engine
 
-`lib/src/glyphs/`: `GlyphFonts` and `layoutText` (bidi, script runs, first
+`lib/src/labels/glyphs/`: `GlyphFonts` and `layoutText` (bidi, script runs, first
 font with every glyph, wrapping into even lines, alignment, weight through
 the variable font), and `GlyphPages` (outlines rasterized by Flutter per
 size, halo stroked beside each glyph, one `drawRawAtlas` per page image per
@@ -92,7 +92,7 @@ budget, not yet in the tile worker.
 
 ### 3D buildings on the canvas tier
 
-`lib/src/extrusion.dart`: a `fill-extrusion` layer gets a bucket of
+`lib/src/tiles/extrusion.dart`: a `fill-extrusion` layer gets a bucket of
 buildings built in the tile worker (walls, roof triangles, height, base,
 colour per building). With a tilted view the engine leaves out the flat
 stand-in and draws the buildings in view in one `drawVertices`: projected
@@ -151,7 +151,7 @@ Scripted zoom and fly test, `--dart-define=ZOOMTEST=true`, with variants:
 
 `vmap_gpu/` draws a tilted map's fill and line layers and its buildings
 with Flutter GPU, one call per tile (or per 120 style slots): tile workers
-write a vertex stream per tile in style order (`lib/src/gpu_stream.dart`),
+write a vertex stream per tile in style order (`lib/src/tiles/gpu_stream.dart`),
 each vertex naming its style slot, and a frame only writes the slots'
 colour, width, offset and dash into a uniform table. Lines are widened and
 dashes cut in the shader, so a zoom rebuilds nothing on the CPU. Raster

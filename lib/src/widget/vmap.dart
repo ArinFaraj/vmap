@@ -9,16 +9,16 @@ import 'package:latlong2/latlong.dart';
 
 import '../engine.dart';
 import '../errors.dart';
-import '../frame_rate.dart';
-import '../glyphs/vmap_font.dart';
-import '../map_camera.dart';
-import '../marker.dart';
+import 'frame_rate.dart';
+import '../labels/glyphs/vmap_font.dart';
+import '../camera/map_camera.dart';
+import 'marker.dart';
 import '../options.dart';
-import '../pins.dart';
-import '../query.dart';
-import '../style.dart';
-import '../text_style.dart';
-import '../view.dart';
+import '../style/pins.dart';
+import '../tiles/query.dart';
+import '../style/style.dart';
+import '../labels/text_style.dart';
+import '../camera/view.dart';
 import 'markers.dart';
 import 'vmap_controller.dart';
 

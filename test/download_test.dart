@@ -5,7 +5,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/engine.dart';
-import 'package:vmap/src/style.dart';
+import 'package:vmap/src/style/style.dart';
 import 'package:vmap/src/options.dart';
 
 void main() {

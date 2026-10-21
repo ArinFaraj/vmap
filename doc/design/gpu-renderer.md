@@ -29,7 +29,7 @@ its geometry passes a buffer's size:
 
 Six floats a vertex, every one an exact integer or a value the shader
 can unpack with arithmetic alone, since OpenGL ES 2 shaders have no
-integers or bit operations (`GpuStream` in `lib/src/gpu_stream.dart` is
+integers or bit operations (`GpuStream` in `lib/src/tiles/gpu_stream.dart` is
 the reference):
 
 - position: x and y in tile units;

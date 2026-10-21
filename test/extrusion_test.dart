@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/expr.dart';
-import 'package:vmap/src/extrusion.dart';
+import 'package:vmap/src/style/expr.dart';
+import 'package:vmap/src/tiles/extrusion.dart';
 
 void main() {
   Float64List square(double x, double y, double s) => Float64List.fromList([

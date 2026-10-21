@@ -1,6 +1,6 @@
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/map_camera.dart';
+import 'package:vmap/src/camera/map_camera.dart';
 import 'package:vmap/vmap.dart';
 
 const _erbil = VmapCamera(center: LatLng(36.1912, 44.0092), zoom: 15);
