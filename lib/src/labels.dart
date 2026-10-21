@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
@@ -7,6 +8,7 @@ import 'collision_boxes.dart';
 import 'expr.dart';
 import 'format.dart';
 import 'label_painter.dart';
+import 'label_path.dart';
 import 'text_style.dart';
 import 'label_sprites.dart';
 import 'label_state.dart';
@@ -14,6 +16,7 @@ import 'occlusion.dart';
 import 'glyphs/cursive.dart';
 import 'glyphs/glyph_layout.dart';
 import 'glyphs/glyph_pages.dart';
+import 'glyphs/glyph_pbf.dart' show GlyphPbf;
 import 'glyphs/glyph_ranges.dart';
 import 'glyphs/maplibre_shaping.dart' show allowsVerticalText;
 import 'label_rules.dart';
@@ -1228,9 +1231,37 @@ class LabelEngine {
       keep: st.keepUpright,
     );
     st.screenAngle = turn;
+    final lift = (_lineShift(st.candidate)?.$4 ?? 0) * fontSize;
     if (st.curve != null) {
+      st.roadLift = lift;
+    } else {
+      st.roadLift = 0;
+      // Text shaped from glyphs carries its text-offset; an image of it is
+      // moved by it across the text, as MapLibre shapes the offset in.
+      if (sprite is! GlyphSprite) {
+        roadX -= math.sin(turn) * lift;
+        roadY += math.cos(turn) * lift;
+      }
+    }
+    if (mapLibre) {
+      if (!_roadCircles(
+        st,
+        sprite,
+        fontSize,
+        textW,
+        textPad,
+        sx,
+        sy,
+        turn,
+        lift,
+        styleZoom,
+        check: !overlaps,
+        add: !ignored,
+      )) {
+        return;
+      }
+    } else if (st.curve != null) {
       final reach = (textH + room) / 2 + textPad;
-      st.roadLift = (_lineShift(st.candidate)?.$4 ?? 0) * fontSize;
       if (_roads.curveHits(
         st,
         textW,
@@ -1238,23 +1269,12 @@ class LabelEngine {
         reach,
         check: !overlaps,
         add: !ignored,
-        lift: st.roadLift,
+        lift: lift,
       )) {
         return;
       }
     } else {
-      st.roadLift = 0;
-      // Text shaped from glyphs carries its text-offset; an image of it is
-      // moved by it across the text, as MapLibre shapes the offset in.
-      var bx = sx, by = sy;
-      if (sprite is! GlyphSprite) {
-        final lift = (_lineShift(st.candidate)?.$4 ?? 0) * fontSize;
-        final liftX = -math.sin(turn) * lift, liftY = math.cos(turn) * lift;
-        roadX += liftX;
-        roadY += liftY;
-        bx += liftX;
-        by += liftY;
-      }
+      final bx = sx + roadX - translateX, by = sy + roadY - translateY;
       if (_boxes.offGridAround(bx, by, textW + room, textH + room)) return;
       if (!overlaps &&
           _boxes.collides(
@@ -1289,6 +1309,195 @@ class LabelEngine {
     }
     _showPlaced(st, sprite);
     _roads.placed(st);
+  }
+
+  /// Whether a name along a line clears what is placed, weighed as
+  /// MapLibre's `placeCollisionCircles` weighs it, and with [add] takes the
+  /// room: a row of circles as tall as its text at its layout size, from
+  /// its first glyph's middle to its last's, along its road on the screen
+  /// moved [lift] across, spaced at most two and a half radii apart.
+  bool _roadCircles(
+    LabelState st,
+    LabelSprite? sprite,
+    double fontSize,
+    double textW,
+    double textPad,
+    double sx,
+    double sy,
+    double turn,
+    double lift,
+    double styleZoom, {
+    required bool check,
+    required bool add,
+  }) {
+    final layoutSize = _size(st.candidate, styleZoom.floorToDouble() + 1);
+    final glyphH = sprite == null
+        ? 28.8
+        : sprite.textHeight / sprite.fontSize * GlyphPbf.em;
+    final radius =
+        math.max(10, glyphH) * layoutSize / GlyphPbf.em / 2 * st.perspective +
+        textPad;
+    // The first and last glyphs' middles, from the text's middle.
+    var first = -textW / 2 + fontSize * 0.3, last = -first;
+    if (sprite is GlyphSprite) {
+      final g = sprite.shaped.glyphs;
+      final em = sprite.shaped.width > 0 ? textW / sprite.shaped.width : 0.0;
+      int? a, b;
+      for (var i = 0; i < g.length; i += 5) {
+        a ??= i;
+        b = i;
+      }
+      if (a != null && b != null) {
+        first = (g[a + 2] + g[a + 4] / 2) * em - textW / 2;
+        last = (g[b + 2] + g[b + 4] / 2) * em - textW / 2;
+      }
+    }
+    // The path from the first glyph's middle to the last's on the screen:
+    // laid on the ground and projected for text pitched with the map, as
+    // MapLibre lays it in its label plane, else along the road on screen.
+    final path = <double>[];
+    const samples = 8;
+    final tilted = _view.tilted;
+    if (st.onGround && tilted != null) {
+      _view.project(st.worldX, st.worldY);
+      final k =
+          (0.5 + 0.5 * _view.depth) /
+          math.max(st.perspective, 1e-6) /
+          _view.world *
+          _view.groundScale(st.worldY);
+      final shiftX = sx - _view.x, shiftY = sy - _view.y;
+      OffsetLine? ground;
+      if (st.curve case final curve?) {
+        ground = offsetPath(curve, st.curveMid, lift * k);
+      }
+      final c = math.cos(st.angle), sn = math.sin(st.angle);
+      final at = Float64List(3);
+      for (var q = 0; q <= samples; q++) {
+        final along = (first + (last - first) * q / samples) * k;
+        double wx, wy;
+        if (ground != null) {
+          ground.at(along, at);
+          wx = at[0];
+          wy = at[1];
+        } else {
+          wx = st.worldX + c * along - sn * lift * k;
+          wy = st.worldY + sn * along + c * lift * k;
+        }
+        _view.project(wx, wy);
+        path
+          ..add(_view.x + shiftX)
+          ..add(_view.y + shiftY);
+      }
+    } else {
+      OffsetLine? line;
+      if (st.curve case final curve?) {
+        final (screen, middle) = _view.onScreen(curve, st.curveMid);
+        line = offsetPath(screen, middle, lift);
+      }
+      _view.project(st.worldX, st.worldY);
+      final shiftX = sx - _view.x, shiftY = sy - _view.y;
+      final cos = math.cos(turn), sin = math.sin(turn);
+      final at = Float64List(3);
+      for (var q = 0; q <= samples; q++) {
+        final along = first + (last - first) * q / samples;
+        if (line != null) {
+          line.at(along, at);
+          path
+            ..add(at[0] + shiftX)
+            ..add(at[1] + shiftY);
+        } else {
+          path
+            ..add(sx + cos * along - sin * lift)
+            ..add(sy + sin * along + cos * lift);
+        }
+      }
+    }
+    // As MapLibre, only the stretches of the path inside the collision grid
+    // carry circles; a path wholly outside it places nothing.
+    final pad = radius * 0.25;
+    final centres = <double>[];
+    for (final piece in _clipToGrid(path)) {
+      var length = 0.0;
+      for (var q = 2; q < piece.length; q += 2) {
+        final dx = piece[q] - piece[q - 2], dy = piece[q + 1] - piece[q - 1];
+        length += math.sqrt(dx * dx + dy * dy);
+      }
+      final count = length <= 0.5 * radius
+          ? 1
+          : ((length - 2 * pad) / (radius * 2.5)).ceil() + 1;
+      final at = Float64List(3);
+      for (var k = 0; k < count; k++) {
+        final t = k / math.max(count - 1, 1);
+        pointAlong(piece, pad + t * (length - 2 * pad), at);
+        final x = at[0], y = at[1];
+        if (check && _boxes.hitsCircle(x, y, radius)) return false;
+        centres
+          ..add(x)
+          ..add(y);
+      }
+    }
+    if (centres.isEmpty) return false;
+    if (add) {
+      for (var k = 0; k < centres.length; k += 2) {
+        _boxes.addCircle(centres[k], centres[k + 1], radius);
+      }
+    }
+    return true;
+  }
+
+  /// [path], x and y in turn, cut to the collision grid: the pieces of it
+  /// inside, as MapLibre's `clipLine`.
+  List<Float64List> _clipToGrid(List<double> path) {
+    final g = _boxes.grid;
+    if (g == null) return [Float64List.fromList(path)];
+    final (x1, y1, x2, y2) = g;
+    final pieces = <Float64List>[];
+    var piece = <double>[];
+    void flush() {
+      if (piece.length >= 4) pieces.add(Float64List.fromList(piece));
+      piece = <double>[];
+    }
+
+    for (var q = 2; q < path.length; q += 2) {
+      var ax = path[q - 2], ay = path[q - 1], bx = path[q], by = path[q + 1];
+      // Liang-Barsky against the grid's four edges.
+      var t0 = 0.0, t1 = 1.0;
+      final dx = bx - ax, dy = by - ay;
+      var inside = true;
+      for (final (pv, qv) in [
+        (-dx, ax - x1),
+        (dx, x2 - ax),
+        (-dy, ay - y1),
+        (dy, y2 - ay),
+      ]) {
+        if (pv == 0) {
+          if (qv < 0) inside = false;
+          continue;
+        }
+        final r = qv / pv;
+        if (pv < 0) {
+          if (r > t1) inside = false;
+          if (r > t0) t0 = r;
+        } else {
+          if (r < t0) inside = false;
+          if (r < t1) t1 = r;
+        }
+      }
+      if (!inside || t0 > t1) {
+        flush();
+        continue;
+      }
+      final sx = ax + dx * t0, sy = ay + dy * t0;
+      final ex = ax + dx * t1, ey = ay + dy * t1;
+      if (piece.isEmpty || t0 > 0) {
+        flush();
+        piece.addAll([sx, sy]);
+      }
+      piece.addAll([ex, ey]);
+      if (t1 < 1) flush();
+    }
+    flush();
+    return pieces;
   }
 
   /// Grows or shrinks [st] to its text size in this frame, as MapLibre's

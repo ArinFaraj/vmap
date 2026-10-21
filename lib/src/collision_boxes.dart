@@ -36,6 +36,11 @@ class CollisionBoxes {
   int group = 0;
   Int32List _groups = Int32List(256);
 
+  /// For each entry, 1 when it is a circle, as MapLibre's grid keeps the
+  /// collision circles of names along lines: kept as its bounding box,
+  /// weighed as the circle inside it.
+  Uint8List _circles = Uint8List(256);
+
   /// The step an unturned box's half width and height, padding included,
   /// is cut down to, as MapLibre keeps a symbol's box in whole tile units
   /// in 16 bits: an edge between two steps comes in to the inner one. Zero
@@ -88,7 +93,14 @@ class CollisionBoxes {
 
   /// Takes the box from [l], [t] to [r], [b] as it is, and returns its
   /// number.
-  int add(double l, double t, double r, double b, {bool never = true}) {
+  int add(
+    double l,
+    double t,
+    double r,
+    double b, {
+    bool never = true,
+    bool circle = false,
+  }) {
     if (_count + 4 > _boxes.length) {
       _boxes = Float32List(_boxes.length * 2)..setRange(0, _count, _boxes);
     }
@@ -102,7 +114,10 @@ class CollisionBoxes {
       _never = Uint8List(_never.length * 2)..setRange(0, _never.length, _never);
       _groups = Int32List(_groups.length * 2)
         ..setRange(0, _groups.length, _groups);
+      _circles = Uint8List(_circles.length * 2)
+        ..setRange(0, _circles.length, _circles);
     }
+    _circles[number] = circle ? 1 : 0;
     _seen[number] = 0;
     _groups[number] = group;
     _never[number] = never ? 1 : 0;
@@ -146,12 +161,95 @@ class CollisionBoxes {
               r > boxes[i] &&
               t < boxes[i + 3] &&
               b > boxes[i + 1]) {
+            if (_circles[number] == 0) return true;
+            final cr = (boxes[i + 2] - boxes[i]) / 2;
+            if (_circleAndRect(
+              boxes[i] + cr,
+              boxes[i + 1] + cr,
+              cr,
+              l,
+              t,
+              r,
+              b,
+            )) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  /// Takes the circle of radius [radius] around [x], [y].
+  int addCircle(double x, double y, double radius, {bool never = true}) => add(
+    x - radius,
+    y - radius,
+    x + radius,
+    y + radius,
+    never: never,
+    circle: true,
+  );
+
+  /// Whether the circle of radius [radius] around [x], [y] overlaps a box
+  /// or circle taken, as MapLibre's `hitTestCircle`.
+  bool hitsCircle(
+    double x,
+    double y,
+    double radius, {
+    bool cooperative = false,
+  }) {
+    if (_count == 0) return false;
+    final boxes = _boxes;
+    final query = ++_query;
+    final x1 = _at(x + radius), y1 = _at(y + radius);
+    for (var cy = _at(y - radius); cy <= y1; cy++) {
+      for (var cx = _at(x - radius); cx <= x1; cx++) {
+        for (final number in _grid[cy * _side + cx]) {
+          if (_seen[number] == query) continue;
+          _seen[number] = query;
+          final owner = _groups[number];
+          if (owner != 0 && owner != group) continue;
+          if (cooperative && _never[number] == 0) continue;
+          final i = number * 4;
+          if (_circles[number] == 1) {
+            final r = (boxes[i + 2] - boxes[i]) / 2;
+            final dx = boxes[i] + r - x, dy = boxes[i + 1] + r - y;
+            final reach = r + radius;
+            if (dx * dx + dy * dy < reach * reach) return true;
+          } else if (_circleAndRect(
+            x,
+            y,
+            radius,
+            boxes[i],
+            boxes[i + 1],
+            boxes[i + 2],
+            boxes[i + 3],
+          )) {
             return true;
           }
         }
       }
     }
     return false;
+  }
+
+  /// MapLibre's `circleAndRectCollide`.
+  static bool _circleAndRect(
+    double x,
+    double y,
+    double radius,
+    double l,
+    double t,
+    double r,
+    double b,
+  ) {
+    final halfW = (r - l) / 2, halfH = (b - t) / 2;
+    final dx = (x - (l + halfW)).abs(), dy = (y - (t + halfH)).abs();
+    if (dx > halfW + radius || dy > halfH + radius) return false;
+    if (dx <= halfW || dy <= halfH) return true;
+    final cx = dx - halfW, cy = dy - halfH;
+    return cx * cx + cy * cy <= radius * radius;
   }
 
   /// Whether a [w] by [h] box around [sx], [sy], turned by [angle] and

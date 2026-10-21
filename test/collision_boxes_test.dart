@@ -46,4 +46,17 @@ void main() {
     expect(boxes.hits(22, 2, 28, 8), isFalse);
     expect(boxes.hits(2, 2, 8, 8), isTrue);
   });
+
+  test('a circle is weighed as a circle, against boxes and circles', () {
+    final boxes = CollisionBoxes()..add(0, 0, 10, 10);
+    // Beside the box's corner, inside its bounding square but not the box.
+    expect(boxes.hitsCircle(14, 14, 5), isFalse);
+    expect(boxes.hitsCircle(13, 13, 5), isTrue);
+    boxes.addCircle(100, 100, 10);
+    expect(boxes.hitsCircle(115, 100, 6), isTrue);
+    expect(boxes.hitsCircle(115, 115, 10), isFalse);
+    // A box in the circle's bounding square's corner clears the circle.
+    expect(boxes.hits(91, 91, 92, 92), isFalse);
+    expect(boxes.hits(98, 98, 102, 102), isTrue);
+  });
 }
