@@ -332,7 +332,8 @@ class LabelPainter {
     final unit =
         (0.5 + 0.5 * _view.depth) /
         math.max(st.perspective, 1e-6) /
-        _view.world;
+        _view.world *
+        _view.groundScale(st.worldY);
     final c = math.cos(onMap) * unit, s = math.sin(onMap) * unit;
     _view.project(st.worldX + c, st.worldY + s);
     final ux = _view.x - x0, uy = _view.y - y0;
@@ -800,7 +801,11 @@ class LabelPainter {
         st.keepUpright &&
         math.cos(_view.screenAngle(st.worldX, st.worldY, st.angle)) < 0;
     final unit =
-        em / math.max(st.perspective, 1e-6) * (0.5 + 0.5 * depth) / _view.world;
+        em /
+        math.max(st.perspective, 1e-6) *
+        (0.5 + 0.5 * depth) /
+        _view.world *
+        _view.groundScale(st.worldY);
     final half = shaped.width * unit / 2;
     final Float64List path;
     final double middle;
@@ -893,7 +898,11 @@ class LabelPainter {
       final flip =
           st.keepUpright &&
           math.cos(_view.screenAngle(st.worldX, st.worldY, st.angle)) < 0;
-      final size = em / math.max(st.perspective, 1e-6) * (0.5 + 0.5 * depth);
+      final size =
+          em /
+          math.max(st.perspective, 1e-6) *
+          (0.5 + 0.5 * depth) *
+          _view.groundScale(st.worldY);
       final unit = size / _view.world;
       final half = shaped.width * unit / 2;
       final Float64List path;

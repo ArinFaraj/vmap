@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'expr.dart';
 import 'label_path.dart';
+import 'mercator.dart';
 import 'view.dart';
 
 /// Where points of the world land on the screen for one frame, with the
@@ -95,6 +96,19 @@ class LabelView {
       if (height(x / w, y / w) > eh + dh * t + margin) return true;
     }
     return false;
+  }
+
+  /// How much larger text laid on the ground is at [wy] on the globe, as
+  /// MapLibre's getPitchedTextCorrection: a world unit there is smaller on
+  /// the sphere by the cosine of its latitude, against the centre's.
+  double groundScale(double wy) {
+    final view = tilted;
+    final globe = view?.globe;
+    if (view == null || globe == null) return 1;
+    double cosine(double y) =>
+        math.cos(math.min(latitudeAt(y).abs(), 85.051129) * math.pi / 180);
+    final full = cosine(view.centerY) / math.max(cosine(wy), 1e-6);
+    return 1 + (full - 1) * globe.transition;
   }
 
   /// Sets [x] and [y] to where the point [wx], [wy] of the world, in
@@ -208,7 +222,7 @@ class LabelView {
     final x = asNumber(by[0]) ?? 0, y = asNumber(by[1]) ?? 0;
     final turn = mapTurn;
     final view = tilted;
-    if (at != null && view != null && view.pitch > 0) {
+    if (at != null && view != null && (view.pitch > 0 || view.globe != null)) {
       var mx = x.toDouble(), my = y.toDouble();
       if (onScreen && turn != 0) {
         final c = math.cos(-turn), s = math.sin(-turn);

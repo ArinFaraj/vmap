@@ -106,17 +106,19 @@ class PointLabels {
     // by text-rotate on the map, or kept level on the screen.
     st
       ..onGround =
-          (symbol?.textOnGround ?? false) && (_view.tilted?.pitch ?? 0) > 0
+          (symbol?.textOnGround ?? false) &&
+          ((_view.tilted?.pitch ?? 0) > 0 || _view.tilted?.globe != null)
       ..keepUpright = false;
     if (st.onGround) st.angle = spin - _view.mapTurn;
     _view.project(st.worldX, st.worldY);
     final x = _view.x, y = _view.y;
     var boxW = textW, boxH = textH, boxSpin = spin;
     if (st.onGround) {
+      final grow = _view.groundScale(st.worldY);
       (boxW, boxH) = _groundBox(
         st,
-        textW / st.perspective,
-        textH / st.perspective,
+        textW / st.perspective * grow,
+        textH / st.perspective * grow,
         perspective: (symbol?.anchors ?? const []).isEmpty,
       );
       boxSpin = 0;
