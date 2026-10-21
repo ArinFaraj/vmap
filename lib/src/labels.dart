@@ -462,6 +462,11 @@ class LabelEngine {
 
   LabelRules _rules = LabelRules.vmap;
 
+  /// With the debug view on, the collision circles of names along lines as
+  /// the last placement laid them: x, y, radius and 1 when the name ran
+  /// into something.
+  List<double>? _debugCircles;
+
   /// The camera of the frame before, which [LabelPainter.still] compares.
   (double, ui.Offset, double, double)? _frameCamera;
 
@@ -733,7 +738,9 @@ class LabelEngine {
     }
     final debugBoxes = _points.debugBoxes;
     if (debugBoxes != null) {
-      _painter.paintCollisionBoxes(canvas, debugBoxes, devicePixelRatio);
+      _painter
+        ..paintCollisionBoxes(canvas, debugBoxes, devicePixelRatio)
+        ..paintCollisionCircles(canvas, _debugCircles ?? const []);
     }
     if (rotation != 0) canvas.restore();
     return animating;
@@ -927,6 +934,7 @@ class LabelEngine {
       ..group = 0
       ..grid = (-100, -100, size.width + 100, size.height + 100);
     _points.debugBoxes?.clear();
+    _debugCircles = _points.debugBoxes == null ? null : <double>[];
     _roads.startPass();
     _points.startPass();
     final fitKey = (zoom * 3).round();
@@ -1416,6 +1424,7 @@ class LabelEngine {
     // carry circles; a path wholly outside it places nothing.
     final pad = radius * 0.25;
     final centres = <double>[];
+    var hit = false;
     for (final piece in _clipToGrid(path)) {
       var length = 0.0;
       for (var q = 2; q < piece.length; q += 2) {
@@ -1430,13 +1439,23 @@ class LabelEngine {
         final t = k / math.max(count - 1, 1);
         pointAlong(piece, pad + t * (length - 2 * pad), at);
         final x = at[0], y = at[1];
-        if (check && _boxes.hitsCircle(x, y, radius)) return false;
+        if (check && !hit && _boxes.hitsCircle(x, y, radius)) {
+          // As MapLibre, the debug view still shows every circle of a name
+          // that runs into something, in red.
+          if (_debugCircles == null) return false;
+          hit = true;
+        }
         centres
           ..add(x)
           ..add(y);
       }
     }
-    if (centres.isEmpty) return false;
+    if (_debugCircles case final debug?) {
+      for (var k = 0; k < centres.length; k += 2) {
+        debug.addAll([centres[k], centres[k + 1], radius, hit ? 1 : 0]);
+      }
+    }
+    if (hit || centres.isEmpty) return false;
     if (add) {
       for (var k = 0; k < centres.length; k += 2) {
         _boxes.addCircle(centres[k], centres[k + 1], radius);

@@ -1368,6 +1368,27 @@ class LabelPainter {
 
   /// Draws [boxes] as [PointLabels.debugBoxes] holds them, one device pixel
   /// wide as MapLibre's GL lines, blue where placed and red where not.
+  /// Draws [circles], x, y, radius and whether it ran into something in
+  /// turn, as MapLibre's collision_circle shader rings them.
+  void paintCollisionCircles(ui.Canvas canvas, List<double> circles) {
+    if (circles.isEmpty) return;
+    final placed = ui.Paint()
+      ..style = ui.PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = const ui.Color(0x400000FF);
+    final hit = ui.Paint()
+      ..style = ui.PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = const ui.Color(0x80FF0000);
+    for (var i = 0; i + 3 < circles.length; i += 4) {
+      canvas.drawCircle(
+        ui.Offset(circles[i], circles[i + 1]),
+        circles[i + 2],
+        circles[i + 3] > 0 ? hit : placed,
+      );
+    }
+  }
+
   void paintCollisionBoxes(
     ui.Canvas canvas,
     List<double> boxes,
