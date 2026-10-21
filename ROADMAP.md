@@ -3,11 +3,25 @@
 vmap started as a flutter_map layer drawn with the canvas, because Flutter GPU
 did not run on the web. The WebGL2 shim taken from flutter_scene runs it
 there, Impeller is the default on every native platform as of Flutter 3.47,
-and the GPU renderer now passes about 91% of MapLibre's render tests. So the
+and the GPU renderer now passes 1,399 of the 1,530 MapLibre render tests in
+scope (91%; 1,394 of all 1,730, including ones out of scope). So the
 project becomes its own map engine for Flutter: GPU first, 3D, its own widget
 and camera, and a small adapter for apps that use flutter_map.
 
 Where each platform stands, with sources: [doc/platform-support.md](doc/platform-support.md).
+What the API looks like and what should change before release:
+[doc/api-review.md](doc/api-review.md).
+
+## Status
+
+- **Now:** 0.1, step 1. Waiting on the package name; nothing can be renamed
+  or restructured without it.
+- **Next:** the API polish in [doc/api-review.md](doc/api-review.md), once
+  its proposals are approved.
+- Work happens on the `engine` branch of `ArinFaraj/vmap`. Merging to `main`
+  and tagging (which publishes to pub.dev) waits for Arin's yes.
+
+Keep this section current: update it whenever a step starts or finishes.
 
 ## Decided
 
@@ -17,7 +31,8 @@ Where each platform stands, with sources: [doc/platform-support.md](doc/platform
 - **GPU first.** All new work is on the GPU renderer. The canvas renderer is
   frozen: kept so a map still draws on Android 9 and older, Vivante devices,
   browsers without WebGL2 and in `flutter test`, but given no new features.
-  Tilt, 3D buildings, globe and terrain are GPU only.
+  Standing 3D buildings, globe and terrain are GPU only; the canvas draws a
+  tilted map with its buildings flat.
 - **flutter_map is optional.** Its layers move to a separate adapter package
   built on the engine, so apps that do not use flutter_map do not pull it in.
 - **Flutter 3.47.1 or newer**, the first release where Windows and Linux can
@@ -41,13 +56,15 @@ The engine as it stands, packaged and run on every platform.
 
 Already in, from the work so far:
 
-- Any MapLibre style: about 1,399 of the 1,530 render tests that must pass,
-  and within a few percent of MapLibre on the OpenFreeMap styles.
+- Any MapLibre style: 1,399 of the 1,530 render tests that must pass, and at
+  most 4.3% of pixels different from MapLibre over 21 views of the
+  OpenFreeMap liberty, bright and positron styles.
 - GPU drawing: fills, lines, gradients, dashes and patterns in one draw per
   tile; 3D buildings with a depth buffer; globe, terrain, sky and fog;
   heatmaps; raster and hillshade layers.
-- Labels in every script, Arabic and Kurdish shaped correctly (MapLibre leaves
-  their letters unjoined), with MapLibre's placement and collision circles,
+- Labels in every script, Arabic and Kurdish shaped correctly (MapLibre, with
+  its right-to-left plugin and OpenFreeMap's fonts, leaves some of their
+  letters unjoined), with MapLibre's placement and collision circles,
   smooth motion while panning, zooming and tilting, and an old frame warped to
   the new camera when the GPU falls behind.
 - Vector tiles in MVT and MLT, PMTiles archives, GeoJSON with clustering, a
@@ -59,19 +76,24 @@ To do before publishing:
 
 1. Name the package and restructure: the engine package with the GPU renderer
    inside, the flutter_map adapter beside it, the canvas renderer frozen.
-2. Example app targets for iOS, Windows and Linux, with Flutter GPU switched on
-   for each platform; the Android manifest and the Apple `Info.plist` already
-   have it.
-3. Packaging: a `.pubignore` so scratch files and the untracked `docs/` folder
+2. Polish the API and the first impression, per
+   [doc/api-review.md](doc/api-review.md): one prefix, GPU and style glyphs by
+   default, a loading builder and state callbacks on the widget, `onTap` with
+   the features, grouped options, statistics moved out, wording that
+   describes the engine.
+3. Example app targets for iOS, Windows and Linux, with Flutter GPU switched on
+   for each platform; the Android manifest and the macOS `Info.plist` already
+   have it, and the example has no iOS, Windows or Linux target yet.
+4. Packaging: a `.pubignore` so scratch files and the untracked `docs/` folder
    are not published, `payv: ^0.1.2` instead of an exact pin, and a version and
    changelog for the new name.
-4. CI that builds the web and Android example as well as running the checks on
+5. CI that builds the web and Android example as well as running the checks on
    Linux.
-5. Run it on an iPhone, a Windows PC, a Linux PC, Safari and Firefox, and fix
+6. Run it on an iPhone, a Windows PC, a Linux PC, Safari and Firefox, and fix
    what breaks.
-6. A README written around the engine, an honest platform table, and a short
+7. A README written around the engine, an honest platform table, and a short
    guide for moving from vmap.
-7. Publish, then mark vmap discontinued on pub.dev with the new package as its
+8. Publish, then mark vmap discontinued on pub.dev with the new package as its
    replacement.
 
 ## 0.2: steady on real devices
@@ -129,6 +151,19 @@ Render tests that still fail and could matter to some styles:
   Flutter GPU out of preview.
 - Ideas raised but not planned yet: route and navigation lines, indoor maps,
   more of what the MapLibre spec leaves out.
+
+## Decision log
+
+- 2026-10-18: the goal is passing the MapLibre render tests that make sense
+  for vmap, then going past MapLibre.
+- 2026-10-20: parity work on the GPU renderer; the canvas only has to draw
+  ordinary styles well.
+- 2026-10-21: Flutter GPU runs on every platform (Impeller default on native
+  as of 3.47, the WebGL2 shim on the web), so a new GPU first package replaces
+  vmap, the canvas is frozen as a fallback, and flutter_map becomes an
+  adapter. Before release, the API and first impression get a polish pass.
+- 2026-10-21: test Impeller's OpenGL ES backend by forcing it on an Android
+  phone (0.2).
 
 ## How this is measured
 
