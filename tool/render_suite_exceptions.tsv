@@ -115,7 +115,6 @@ projection/identity/hillshade	later	the identity projection
 projection/identity/image	later	the identity projection
 projection/identity/tiles	later	the identity projection
 raster-npot-mipmap/pitch-60	equal	edge pixels
-real-world/chicago	equal	edge pixels
 regressions/mapbox-gl-js#6548	equal	edge pixels
 resampling/hillshade/tile-boundaries	equal	edge pixels
 runtime-styling/image-add-1x-image-2x-screen	equal	edge pixels

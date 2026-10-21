@@ -743,11 +743,15 @@ class TileBuilder {
             final spacing = placement == 'line-center'
                 ? double.infinity
                 : symbol.build.spacing * 8 / (1 << deeper) / overscale;
+            // As MapLibre's textMaxBoxScale, anchors are spaced by the text's
+            // size at zoom 18, not the size it is laid out at.
             final zoom = context.zoom;
             context.zoom = styleZoom + 1;
             final size = finiteOr(symbol.size(context), 16);
+            context.zoom = 18;
+            final maxSize = finiteOr(symbol.size(context), size);
             context.zoom = zoom;
-            final em = size * tileExtent / 512 / overscale;
+            final em = maxSize * tileExtent / 512 / overscale;
             if (along && text.isNotEmpty && !symbol.build.textUpright) {
               final rings = [
                 for (var r = 0; r < _sink.ringCount; r++)
@@ -1137,13 +1141,16 @@ class TileBuilder {
       ];
       if (ranges.ready(face, String.fromCharCodes(forms))) {
         var width = 0.0;
+        var glyphs = 0;
         for (final c in forms) {
           final g = ranges.glyph(face, c);
           if (g != null) {
             width += g.advance / GlyphPbf.em + symbol.letterSpacing;
+            glyphs++;
           }
         }
-        return width;
+        // As MapLibre's shaping, no spacing follows the last letter.
+        return glyphs == 0 ? 0 : width - symbol.letterSpacing;
       }
       missedGlyphs = true;
     }
