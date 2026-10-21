@@ -36,6 +36,32 @@ class CollisionBoxes {
   int group = 0;
   Int32List _groups = Int32List(256);
 
+  /// MapLibre's collision grid: the screen and 100 pixels around it, as
+  /// left, top, right and bottom. A box wholly outside it is not placed,
+  /// whatever may overlap. Null for no such edge.
+  (double, double, double, double)? grid;
+
+  /// Whether the box from [l], [t] to [r], [b] lies wholly outside [grid].
+  bool offGrid(double l, double t, double r, double b) {
+    final g = grid;
+    if (g == null) return false;
+    return r < g.$1 || l >= g.$3 || b < g.$2 || t >= g.$4;
+  }
+
+  /// [offGrid] for a [w] by [h] box around [sx], [sy] with [pad] around it.
+  bool offGridAround(
+    double sx,
+    double sy,
+    double w,
+    double h, {
+    double pad = 0,
+  }) => offGrid(
+    sx - w / 2 - pad,
+    sy - h / 2 - pad,
+    sx + w / 2 + pad,
+    sy + h / 2 + pad,
+  );
+
   void clear() {
     _count = 0;
     for (final i in _used) {

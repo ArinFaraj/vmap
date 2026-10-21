@@ -222,6 +222,11 @@ class LabelEngine {
           'placed': st.placed,
           'text_shown': st.placed && st.showText,
           'icon_shown': st.placed && st.showIcon,
+          'order': st.placeOrder,
+          'anchor': switch (sheet.symbols[c.tile.layer].anchors) {
+            final sides when st.side < sides.length => sides[st.side],
+            _ => null,
+          },
         },
   ];
   int get spriteCount => _sprites.length;
@@ -871,13 +876,15 @@ class LabelEngine {
 
     _boxes
       ..clear()
-      ..group = 0;
+      ..group = 0
+      ..grid = (-100, -100, size.width + 100, size.height + 100);
     _points.debugBoxes?.clear();
     _roads.startPass();
     _points.startPass();
     final fitKey = (zoom * 3).round();
     var considered = 0;
-    for (final st in states) {
+    for (final (order, st) in states.indexed) {
+      st.placeOrder = order;
       final c = st.candidate;
       _stand(c);
       _boxes.group = crossSourceCollisions || c is! TileLabel
@@ -1154,6 +1161,7 @@ class LabelEngine {
         return;
       }
     } else {
+      if (_boxes.offGridAround(sx, sy, textW + room, textH + room)) return;
       if (!overlaps &&
           _boxes.collides(
             sx,

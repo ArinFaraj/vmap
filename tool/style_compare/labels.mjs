@@ -116,6 +116,8 @@ for (const id of ids) {
               icon: !!p?.icon,
               hasText: s.numHorizontalGlyphVertices > 0 || s.numVerticalGlyphVertices > 0,
               hasIcon: s.numIconVertices > 0,
+              anchor: map.style.placement.variableOffsets[s.crossTileID]?.anchor ?? null,
+              index: i,
             });
           }
         }

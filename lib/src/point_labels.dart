@@ -224,6 +224,7 @@ class PointLabels {
     final ib = iy + st.iconH / 2 + (pads?[2] ?? iconPad) + mb;
     final iconFits =
         hasIcon &&
+        !_boxes.offGrid(il, it, ir, ib) &&
         ((symbol?.iconOverlaps ?? false) ||
             !_boxes.hits(
               il,
@@ -608,6 +609,15 @@ class PointLabels {
         _view.project(wx, wy);
         fx = moved.$1 + _view.x - spot.x;
         fy = moved.$2 + _view.y - spot.y;
+        if (_boxes.offGridAround(
+          _view.x + moved.$1,
+          _view.y + moved.$2,
+          bw,
+          bh,
+          pad: spot.textPad,
+        )) {
+          continue;
+        }
         hits = _boxes.collides(
           _view.x + moved.$1,
           _view.y + moved.$2,
@@ -622,6 +632,7 @@ class PointLabels {
         // MapLibre's collision index shifts it in tile units.
         fx = moved.$1 + lx * cos - ly * sin;
         fy = moved.$2 + lx * sin + ly * cos;
+        if (_textOffGrid(spot, fx, fy)) continue;
         hits = _textHits(spot, fx, fy);
       }
       if (!symbol.textOverlaps && hits) continue;
@@ -645,6 +656,7 @@ class PointLabels {
     st
       ..dx = text.$1
       ..dy = text.$2;
+    if (_textOffGrid(spot, text.$1, text.$2)) return false;
     return (symbol?.textOverlaps ?? false) ||
         !_textHits(spot, text.$1, text.$2);
   }
@@ -693,7 +705,10 @@ class PointLabels {
       if (hasIcon && k > 1) break;
       final fx = k == 1 ? ox : ox + shiftX;
       final fy = k == 1 ? oy : oy + shiftY;
-      if (_textHits(spot, fx, fy, except: ownBox)) continue;
+      if (_textOffGrid(spot, fx, fy) ||
+          _textHits(spot, fx, fy, except: ownBox)) {
+        continue;
+      }
       st
         ..dx = fx
         ..dy = fy;
@@ -701,6 +716,16 @@ class PointLabels {
     }
     return false;
   }
+
+  /// Whether the text, moved [fx], [fy] from its point, lies wholly
+  /// outside the collision grid, where nothing is placed.
+  bool _textOffGrid(_Spot spot, double fx, double fy) => _boxes.offGridAround(
+    spot.x + fx,
+    spot.y + fy,
+    spot.textW,
+    spot.textH,
+    pad: spot.textPad,
+  );
 
   /// Whether the text, moved [fx], [fy] from its point, runs into a box
   /// already taken.

@@ -212,6 +212,9 @@ class LabelState {
 
   /// Which of the layer's variable anchors the text took last.
   int side = 0;
+
+  /// Its turn in the last placement pass, for comparing with MapLibre's.
+  int placeOrder = -1;
   bool showIcon = false;
   bool showText = true;
 
