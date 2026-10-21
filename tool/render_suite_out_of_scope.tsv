@@ -83,6 +83,7 @@ regressions/mapbox-gl-js#4647	MapLibre's debug overlays
 regressions/mapbox-gl-js#5911	MapLibre's debug overlays
 regressions/mapbox-gl-js#5911a	MapLibre's debug overlays
 regressions/mapbox-gl-js#6919	MapLibre's debug overlays
+regressions/mapbox-gl-js#7302	an HTML canvas source
 regressions/mapbox-gl-js#7708	a custom layer drawn by JavaScript and WebGL
 sky/roll/roll45-with-text	MapLibre's debug overlays
 symbol-height-offset/collision-with-grounded-symbol	MapLibre's debug overlays

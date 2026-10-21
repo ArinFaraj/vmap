@@ -344,6 +344,9 @@ class StyleCompiler {
         nearest: nearest,
         adjust: adjust,
         resampling: resampling,
+        fadeMs: (asNumber(paint['raster-fade-duration']) ?? 300)
+            .toDouble()
+            .clamp(0, double.infinity),
       ),
       ('hillshade', 'raster-dem') => HillshadeLayer(
         minZoom: layer.minZoom,

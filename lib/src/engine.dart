@@ -1291,14 +1291,16 @@ class VmapEngine extends ChangeNotifier {
     }
     if (horizon > 0) canvas.restore();
 
-    var animating = sheet.dashed && _zoomHistory.fading;
+    var animating =
+        (sheet.dashed && _zoomHistory.fading) ||
+        _rasters.any((r) => r is TileDrawing && r.fading);
     final labelsStarted = _clock.elapsedMicroseconds;
     if (showLabels) {
       final shown = [
         for (final s in _sources) ...[...s.ideal, ...s.fallback],
       ];
       _labels.occlusion.update(view, shown, sheet, styleZoom);
-      animating = _labels.paint(
+      final labelsMoving = _labels.paint(
         canvas,
         sources: [_markerLabels]
             .followedBy(shown.map((d) => d.tile.labelsIn(_wrapOf(d, camera)))),
@@ -1330,6 +1332,7 @@ class VmapEngine extends ChangeNotifier {
             : 0,
         sdf: onGpu ? gpu.sdfText : null,
       );
+      animating = animating || labelsMoving;
     }
     if (sheet.labelsRun < sheet.runs.length) {
       // As MapLibre draws in the style's order: what the style puts after

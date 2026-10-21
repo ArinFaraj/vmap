@@ -245,10 +245,15 @@ final class PictureTileLayer extends TiledRasterLayer {
     this.nearest = false,
     this.adjust,
     this.resampling,
+    this.fadeMs = 300,
   });
 
   @override
   final Expr? resampling;
+
+  /// `raster-fade-duration`: how long a tile takes to fade in over what
+  /// stood in for it, in milliseconds.
+  final double fadeMs;
 
   @override
   bool nearestAt(EvalContext context) => nearest || super.nearestAt(context);

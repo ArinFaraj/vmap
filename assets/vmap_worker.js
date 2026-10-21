@@ -1,4 +1,4 @@
-// vmap web worker, built from lib af16014b
+// vmap web worker, built from lib eb90ccdb
 (function dartProgram(){function copyProperties(a,b){var s=Object.keys(a)
 for(var r=0;r<s.length;r++){var q=s[r]
 b[q]=a[q]}}function mixinPropertiesHard(a,b){var s=Object.keys(a)
@@ -15983,6 +15983,8 @@ else{s=m
 k=s
 j=!0}s="raster"===s}else s=!1
 if(s){A.eS(c)
+s=A.D(d.h(0,"raster-fade-duration"))
+B.c.D(s==null?300:s,0,1/0)
 s=new A.hk()
 break A}h="hillshade"===n
 g=e

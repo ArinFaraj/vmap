@@ -25,6 +25,10 @@ class _RasterTile {
   int failures = 0;
   bool loading = false;
 
+  /// When the tile was first drawn with its own picture, on its layer's
+  /// clock, which it fades in from.
+  int? shownAtMs;
+
   /// Whether the tile failed too lately to load again: five seconds after
   /// the first failure, twice as long after each one more, up to about five
   /// minutes.
@@ -526,6 +530,7 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
     final lap = _lap, ring = _ring;
     final (snapX, snapY) = _snap(origin, view);
     waiting = 0;
+    fading = false;
     for (final (z, x, y) in _inView(
       top,
       256.0 * math.pow(2, zoom - top),
@@ -549,6 +554,7 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
       );
       var image = tile.image;
       ui.Rect source;
+      final own = image != null;
       if (image != null) {
         source = ui.Rect.fromLTRB(
           ring,
@@ -569,16 +575,21 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
         if (stand == null) continue;
         (image, source) = stand;
       }
-      drawn.add((
-        image: image,
-        source: source,
-        target: target,
-        opacity: _paint.color.a,
-        filter: _paint.colorFilter,
-        smooth: _paint.filterQuality != ui.FilterQuality.none,
-      ));
-      if (!drape) canvas.drawImageRect(image, source, target, _paint);
+      final opacity = _paint.color.a;
+      var shown = 1.0;
+      if (own && _fadeMs > 0) {
+        final now = _clock.elapsedMilliseconds;
+        shown = (now - (tile.shownAtMs ??= now)) / _fadeMs;
+        if (shown < 1) {
+          fading = true;
+          _underlay(canvas, z, x % n, y, target, drape: drape);
+        }
+      }
+      _put(canvas, image, source, target, opacity * math.min(shown, 1), drape);
     }
+    final fadedNow = fading;
+    fading = fadedNow || _fadedBefore;
+    _fadedBefore = fadedNow;
     if (_tiles.length > _maxTiles) {
       final stale = [
         for (final e in _tiles.entries)
@@ -586,6 +597,78 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
       ];
       for (final key in stale) {
         _tiles.remove(key)?.image?.dispose();
+      }
+    }
+  }
+
+  /// Draws [image]'s [source] over [target] at [opacity], or keeps it for
+  /// the GPU with [drape].
+  void _put(
+    ui.Canvas canvas,
+    ui.Image image,
+    ui.Rect source,
+    ui.Rect target,
+    double opacity,
+    bool drape,
+  ) {
+    if (opacity <= 0) return;
+    drawn.add((
+      image: image,
+      source: source,
+      target: target,
+      opacity: opacity,
+      filter: _paint.colorFilter,
+      smooth: _paint.filterQuality != ui.FilterQuality.none,
+    ));
+    if (drape) return;
+    final color = _paint.color;
+    _paint.color = color.withValues(alpha: opacity);
+    canvas.drawImageRect(image, source, target, _paint);
+    _paint.color = color;
+  }
+
+  /// `raster-fade-duration`, in milliseconds; 0 for tiles that do not fade.
+  double get _fadeMs => switch (layer) {
+    PictureTileLayer(:final fadeMs) => fadeMs,
+    _ => 0,
+  };
+
+  /// A tile of the last frame or the one before drawn faded in: over
+  /// raised ground the GPU lays a frame's tiles the frame after.
+  bool fading = false;
+  bool _fadedBefore = false;
+
+  /// What tile [z]/[x]/[y], fading in over [target], stands over until it
+  /// is wholly there, as MapLibre keeps tiles for its cross-fade: the tile
+  /// above it, zooming in, and those under it, zooming out.
+  void _underlay(
+    ui.Canvas canvas,
+    int z,
+    int x,
+    int y,
+    ui.Rect target, {
+    required bool drape,
+  }) {
+    final opacity = _paint.color.a;
+    if (_standIn(z, x, y, ask: false) case (final image, final source)) {
+      _put(canvas, image, source, target, opacity, drape);
+    }
+    final ring = _ring;
+    final w = target.width / 2, h = target.height / 2;
+    for (var j = 0; j < 2; j++) {
+      for (var i = 0; i < 2; i++) {
+        final child = _tiles[tileKey(z + 1, x * 2 + i, y * 2 + j)];
+        final image = child?.image;
+        if (child == null || image == null) continue;
+        child.usedFrame = _frame;
+        _put(
+          canvas,
+          image,
+          ui.Rect.fromLTRB(ring, ring, image.width - ring, image.height - ring),
+          ui.Rect.fromLTWH(target.left + i * w, target.top + j * h, w, h),
+          opacity,
+          drape,
+        );
       }
     }
   }
