@@ -1,0 +1,39 @@
+name: MapLibre render tests
+
+on:
+  push:
+    branches: [main, engine]
+  workflow_dispatch:
+
+jobs:
+  render-suite:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: maplibre/maplibre-gl-js
+          ref: a49fea4eb8987c4ef4eb735730645913f2ed2400
+          path: maplibre-gl-js
+          sparse-checkout: test/integration
+      - name: MapLibre's vector tile fixtures
+        working-directory: maplibre-gl-js
+        run: npm install --no-save --ignore-scripts @mapbox/mvt-fixtures@4.0.0
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get --directory bench
+      - name: Run the suite on the GPU
+        run: tool/render_suite.sh "$GITHUB_WORKSPACE/maplibre-gl-js" "$RUNNER_TEMP/suite" "" --gpu | tee "$RUNNER_TEMP/summary.txt"
+      - name: No fewer tests pass than the floor
+        run: |
+          passed=$(sed -nE 's/.*must pass: ([0-9]+) of.*/\1/p' "$RUNNER_TEMP/summary.txt")
+          floor=$(cat tool/render_suite_floor.txt)
+          echo "must pass: $passed, floor: $floor"
+          test -n "$passed" && test "$passed" -ge "$floor"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: render-suite-report
+          path: ${{ runner.temp }}/suite
