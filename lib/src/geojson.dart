@@ -182,9 +182,17 @@ class GeoJsonTiles {
       final [lon, lat, ...] = p;
       if (lon is! num || lat is! num) continue;
       out[n++] = worldX(lon.toDouble());
-      out[n++] = worldY(lat.toDouble());
+      out[n++] = _projectY(lat.toDouble());
     }
     return n == out.length ? out : Float64List.sublistView(out, 0, n);
+  }
+
+  /// geojson-vt's `projectY`, which MapLibre cuts GeoJSON with: from the
+  /// latitude's sine, so one past a pole folds back over it.
+  static double _projectY(double latitude) {
+    final sin = math.sin(latitude * math.pi / 180);
+    final y = 0.5 - 0.25 * math.log((1 + sin) / (1 - sin)) / math.pi;
+    return y.isNaN ? (sin > 0 ? 0 : 1) : y.clamp(0.0, 1.0);
   }
 
   void _add(int type, Map<String, Object?> props, List<Float64List> rings) {

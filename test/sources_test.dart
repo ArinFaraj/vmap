@@ -142,4 +142,20 @@ void main() {
     expect(names(100, 100, 50, 50), isEmpty);
     expect(names(2048, 2100, 20, 20), isEmpty, reason: 'beside the line');
   });
+
+  test('GeoJSON past a pole folds back over it, as MapLibre cuts it', () {
+    final past = GeoJsonTiles({
+      'type': 'Point',
+      'coordinates': [0.0, 100.0],
+    }).tile(0, 0, 0).single.features.single;
+    final sink = GeometrySink();
+    past.readGeometry(sink);
+    final eighty = GeoJsonTiles({
+      'type': 'Point',
+      'coordinates': [0.0, 80.0],
+    }).tile(0, 0, 0).single.features.single;
+    final at80 = GeometrySink();
+    eighty.readGeometry(at80);
+    expect(sink.coords[1], closeTo(at80.coords[1], 1e-6));
+  });
 }
