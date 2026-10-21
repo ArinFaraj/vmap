@@ -1219,7 +1219,8 @@ class LabelEngine {
     final sy = _view.y + roadY;
     st
       ..keepUpright = layer?.keepUpright ?? true
-      ..onGround = layer?.textOnGround ?? false;
+      ..onGround = layer?.textOnGround ?? false
+      ..glyphsUpright = layer?.glyphsUpright ?? false;
     final turn = _view.uprightAngle(
       st.worldX,
       st.worldY,

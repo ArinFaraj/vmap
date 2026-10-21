@@ -573,6 +573,7 @@ class StyleCompiler {
         justifyAuto: layout['text-justify'] == 'auto',
         textPadding: asNumber(layout['text-padding']),
         textAlongMap: layout['text-rotation-alignment'] == 'map',
+        glyphsUpright: layout['text-rotation-alignment'] == 'viewport-glyph',
         iconAlongMap: layout['icon-rotation-alignment'] == 'map',
         iconPadding: asNumber(layout['icon-padding']),
         iconPaddings: _sides(layout['icon-padding']),
@@ -591,7 +592,7 @@ class StyleCompiler {
           'viewport' => false,
           _ => switch (layout['text-rotation-alignment']) {
             'map' => true,
-            'viewport' => false,
+            'viewport' || 'viewport-glyph' => false,
             _ => placement is String && placement.startsWith('line'),
           },
         },

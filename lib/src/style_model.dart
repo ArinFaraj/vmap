@@ -731,6 +731,7 @@ class SymbolLayer {
     this.justifyAuto = false,
     this.textPadding,
     this.textAlongMap = false,
+    this.glyphsUpright = false,
     this.iconAlongMap = false,
     this.iconPadding,
     this.iconPaddings,
@@ -875,6 +876,10 @@ class SymbolLayer {
 
   /// `text-rotation-alignment: map`: a point's text turns with the map.
   final bool textAlongMap;
+
+  /// `text-rotation-alignment: viewport-glyph`: a name along a line is laid
+  /// along it with each glyph upright on the screen.
+  final bool glyphsUpright;
 
   /// The icon turns with the map, as `icon-rotation-alignment: map` asks.
   final bool iconAlongMap;

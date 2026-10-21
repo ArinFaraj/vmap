@@ -1006,6 +1006,9 @@ class LabelPainter {
       TileLabel(:final tile) => tile.layer,
       _ => -1,
     };
+    // As MapLibre's text-rotation-alignment viewport-glyph: along the line,
+    // each glyph upright on the screen.
+    final upright = st.glyphsUpright;
     final haloColor = look.halo;
     final halo = haloColor == null || look.haloWidth <= 0
         ? null
@@ -1167,7 +1170,11 @@ class LabelPainter {
           _turnedInlineImage(sdf, sprite, g, i, cx, cy, lx, ly, c, s, em, st);
           continue;
         }
-        put(i, cx + c * lx - s * ly, cy + s * lx + c * ly, c, s);
+        if (upright) {
+          put(i, cx + lx, cy + ly, 1, 0);
+        } else {
+          put(i, cx + c * lx - s * ly, cy + s * lx + c * ly, c, s);
+        }
       }
       return;
     }
@@ -1179,6 +1186,13 @@ class LabelPainter {
     final left = -shaped.width * em / 2, top = -shaped.height * em / 2;
     for (var i = 0; i < g.length; i += 5) {
       final lx = left + g[i + 2] * em, ly = top + g[i + 3] * em;
+      if (upright && g[i] >= 0) {
+        // Each glyph's middle where the turned name puts it, the glyph
+        // itself upright about it.
+        final half = g[i + 4] * em / 2;
+        put(i, mx + c * (lx + half) - half, my + s * (lx + half) + ly, 1, 0);
+        continue;
+      }
       if (g[i] < 0) {
         // An image in a formatted label is drawn from the sprite sheet.
         if (turn == 0) {

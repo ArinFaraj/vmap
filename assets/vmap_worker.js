@@ -1,4 +1,4 @@
-// vmap web worker, built from lib ee7a951f
+// vmap web worker, built from lib fa1a0295
 (function dartProgram(){function copyProperties(a,b){var s=Object.keys(a)
 for(var r=0;r<s.length;r++){var q=s[r]
 b[q]=a[q]}}function mixinPropertiesHard(a,b){var s=Object.keys(a)
@@ -8223,8 +8223,8 @@ _.z=f
 _.at=g
 _.ax=h
 _.ay=i
-_.k1=j
-_.k2=k
+_.k2=j
+_.k3=k
 _.cA=l},
 lf:function lf(a,b,c){this.a=a
 this.b=b
@@ -17192,6 +17192,7 @@ break B}a1=B.f1
 break B}J.m(e2.h(0,d5),"auto")
 A.E(e2.h(0,"text-padding"))
 J.m(e2.h(0,c2),"map")
+J.m(e2.h(0,c2),"viewport-glyph")
 J.m(e2.h(0,c4),"map")
 A.E(e2.h(0,d8))
 A.we(e2.h(0,d8))
@@ -17208,7 +17209,7 @@ E:{if("map"===a5)break E
 if("viewport"===a5)break E
 a6=e2.h(0,c2)
 F:{if("map"===a6)break F
-if("viewport"===a6)break F
+if("viewport"===a6||"viewport-glyph"===a6)break F
 if(typeof l=="string")B.d.ap(l,"line")
 break F}break E}J.m(e2.h(0,"text-keep-upright"),!1)
 J.m(e2.h(0,"icon-ignore-placement"),!0)
@@ -18486,7 +18487,7 @@ i=o.f!=null
 n=A.q8(k,m.at)
 h=m.ax
 if(h==null)h=1.15
-g=i?60:m.k1
+g=i?60:m.k2
 f=m.ay
 A:{if(B.ak===f){e=j?1:-1
 break A}if(B.al===f){e=j?-1:1
@@ -18813,7 +18814,7 @@ if(j9.length===0)l8=0
 else{f9=m5.b.h(0,j9)
 f9=f9==null?m6:f9.a
 if(f9==null)f9=0
-g0=j5.k2.$1(a3)
+g0=j5.k3.$1(a3)
 if(!(typeof g0=="number"))if(typeof g0=="string")g0=A.P(g0)
 else if(A.H(g0))g0=g0?1:0
 else g0=m6

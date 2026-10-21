@@ -139,6 +139,10 @@ class LabelState {
   /// pixels: its `text-offset` at its size, as placement weighed it.
   double roadLift = 0;
 
+  /// A name along a line whose glyphs stand upright on the screen, as
+  /// `text-rotation-alignment: viewport-glyph` asks.
+  bool glyphsUpright = false;
+
   /// Hidden by a building, as last found.
   bool occluded = false;
 
