@@ -1,0 +1,140 @@
+# Roadmap
+
+vmap started as a flutter_map layer drawn with the canvas, because Flutter GPU
+did not run on the web. The WebGL2 shim taken from flutter_scene runs it
+there, Impeller is the default on every native platform as of Flutter 3.47,
+and the GPU renderer now passes about 91% of MapLibre's render tests. So the
+project becomes its own map engine for Flutter: GPU first, 3D, its own widget
+and camera, and a small adapter for apps that use flutter_map.
+
+Where each platform stands, with sources: [doc/platform-support.md](doc/platform-support.md).
+
+## Decided
+
+- **A new package replaces vmap.** It is the engine: the map widget, the
+  camera, styles, tiles, labels and the GPU renderer, built in rather than in
+  a second package. vmap on pub.dev is marked discontinued and points to it.
+- **GPU first.** All new work is on the GPU renderer. The canvas renderer is
+  frozen: kept so a map still draws on Android 9 and older, Vivante devices,
+  browsers without WebGL2 and in `flutter test`, but given no new features.
+  Tilt, 3D buildings, globe and terrain are GPU only.
+- **flutter_map is optional.** Its layers move to a separate adapter package
+  built on the engine, so apps that do not use flutter_map do not pull it in.
+- **Flutter 3.47.1 or newer**, the first release where Windows and Linux can
+  switch Flutter GPU on.
+- **MapLibre is the reference.** Its render tests and the real-style
+  comparison (`tool/compare_style.sh`) stay the measure of correctness.
+
+## Still to decide
+
+- **The name.** Free on pub.dev in October 2026: `mapscene`, `geoscene`,
+  `terra_map`, `orbit_map`. pub.dev can still refuse a name too close to an
+  existing one, which only shows when publishing. The adapter takes the name
+  plus `_flutter_map`.
+- **Whether the canvas renderer goes entirely**, once we know whether
+  `flutter test` can run Flutter GPU and how Impeller's OpenGL ES backend
+  copes on old phones.
+
+## 0.1: the first release
+
+The engine as it stands, packaged and run on every platform.
+
+Already in, from the work so far:
+
+- Any MapLibre style: about 1,399 of the 1,530 render tests that must pass,
+  and within a few percent of MapLibre on the OpenFreeMap styles.
+- GPU drawing: fills, lines, gradients, dashes and patterns in one draw per
+  tile; 3D buildings with a depth buffer; globe, terrain, sky and fog;
+  heatmaps; raster and hillshade layers.
+- Labels in every script, Arabic and Kurdish shaped correctly (MapLibre leaves
+  their letters unjoined), with MapLibre's placement and collision circles,
+  smooth motion while panning, zooming and tilting, and an old frame warped to
+  the new camera when the GPU falls behind.
+- Vector tiles in MVT and MLT, PMTiles archives, GeoJSON with clustering, a
+  disk cache and regions downloaded for offline use.
+- The `VMap` widget with its own gestures, `flyTo` and `easeTo`, pins and
+  markers, feature lookup under a tap, and feature state for highlighting.
+
+To do before publishing:
+
+1. Name the package and restructure: the engine package with the GPU renderer
+   inside, the flutter_map adapter beside it, the canvas renderer frozen.
+2. Example app targets for iOS, Windows and Linux, with Flutter GPU switched on
+   for each platform; the Android manifest and the Apple `Info.plist` already
+   have it.
+3. Packaging: a `.pubignore` so scratch files and the untracked `docs/` folder
+   are not published, `payv: ^0.1.2` instead of an exact pin, and a version and
+   changelog for the new name.
+4. CI that builds the web and Android example as well as running the checks on
+   Linux.
+5. Run it on an iPhone, a Windows PC, a Linux PC, Safari and Firefox, and fix
+   what breaks.
+6. A README written around the engine, an honest platform table, and a short
+   guide for moving from vmap.
+7. Publish, then mark vmap discontinued on pub.dev with the new package as its
+   replacement.
+
+## 0.2: steady on real devices
+
+- **Impeller's OpenGL ES backend.** Force it on an Android phone with
+  `io.flutter.embedding.android.ImpellerBackend=opengles` and run everything:
+  32 bit indices, depth and stencil, multisampling, buildings, terrain, globe.
+  Fix or work around what it lacks, and write down the limits.
+- **Old phones.** An Android 9 phone and a cheap Android 10+ phone, forced to
+  OpenGL ES and not.
+- **Phone benchmark.** The tour on a phone with peak memory and the count of
+  frames reused because the GPU fell behind (both already reported), and at
+  120 Hz.
+- **Labels that blink while turning.** Some labels fade in and back out while
+  the map rotates or tilts, as placement changes under motion. Make placement
+  keep what it shows unless something clearly wins the space.
+- **Building memory.** Pack the 13 floats of a building vertex tighter; a
+  dense tile still holds about 9 MB of building vertices.
+- **`flutter test`.** Find out whether the tester can run Flutter GPU. If it
+  can, golden tests draw the real renderer; if not, the canvas stays for tests.
+- **The flutter_map adapter**, brought up to date with the engine.
+
+## 0.3: your own 3D
+
+What makes the engine more than a MapLibre port: apps adding their own 3D
+content to the map.
+
+- **Custom GPU layers.** A layer that draws with Flutter GPU in the map's
+  render pass, between style layers, with the camera's matrices and the depth
+  buffer, as MapLibre's custom layers do in WebGL.
+- **3D models on the map.** Place glTF models from flutter_scene at a place,
+  with height, heading and scale, lit and depth tested with the buildings.
+- **Moving things.** Animated models and markers that follow a path, with the
+  camera able to follow them.
+- **Custom shaders** for a style layer or a whole tile, and styling hooks the
+  MapLibre spec does not have.
+
+## 0.4: the rest of MapLibre
+
+Render tests that still fail and could matter to some styles:
+
+- Vertical CJK names along steep roads (about 8 tests).
+- A gradient texture per tile for very fine steps on continent long lines.
+- Image sources that are not north up, draped on the globe and on terrain.
+- Patterned buildings drawn in MapLibre's two passes, depth then colour once
+  per pixel, so overlapping copies at tile edges do not stack.
+- Halos and glyphs drawn label by label for sort-key layers.
+- Which line names flip to stay upright, decided as MapLibre does.
+- Line label collisions that tie with MapLibre's to a fraction of a pixel.
+- The globe and terrain tests (about 47).
+
+## Later
+
+- Toward 1.0: an API we promise to keep, every platform run regularly, and
+  Flutter GPU out of preview.
+- Ideas raised but not planned yet: route and navigation lines, indoor maps,
+  more of what the MapLibre spec leaves out.
+
+## How this is measured
+
+- `tool/render_suite.sh ~/projects/maplibre-gl-js <out> "" --gpu`: MapLibre's
+  render tests, hidden, with the exceptions and out-of-scope lists in `tool/`.
+- `tool/compare_style.sh`: real OpenFreeMap styles over real places against
+  MapLibre GL JS with its right-to-left plugin.
+- The example app's tour on a phone for frame times and memory
+  ([doc/benchmark.md](doc/benchmark.md)).
