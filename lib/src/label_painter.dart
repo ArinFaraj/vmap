@@ -969,7 +969,11 @@ class LabelPainter {
       }
       final lift = _lift(sprite);
       final line = offsetPath(path, middle, lift * unit);
-      final look0 = lookOf(0, size / GlyphPbf.em, depth);
+      // As MapLibre's u_gamma_scale for text laid on the map: the clip w
+      // over the cosine of the pitch, which softens tilted text's edges.
+      final soften =
+          depth / math.cos((_view.tilted?.pitch ?? 0) * math.pi / 180);
+      final look0 = lookOf(0, size / GlyphPbf.em, soften);
       for (var i = 0; i < g.length; i += 5) {
         if (g[i] < 0) continue;
         final advance = g[i + 4] * unit;
@@ -999,7 +1003,7 @@ class LabelPainter {
           ay,
           bx,
           by,
-          colors == null ? look0 : lookOf(i, size / GlyphPbf.em, depth),
+          colors == null ? look0 : lookOf(i, size / GlyphPbf.em, soften),
           layer,
         );
       }

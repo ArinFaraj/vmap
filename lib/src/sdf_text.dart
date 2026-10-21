@@ -64,8 +64,9 @@ abstract class SdfText {
 
 /// How a run of glyphs is drawn: colours premultiplied and faded, halo
 /// width and blur in logical pixels, [fontScale] logical pixels a glyph
-/// pixel, and [gammaScale] how much farther than the screen's middle it
-/// lies, which softens its edge.
+/// pixel, and [gammaScale] how much its edge softens: 1 for text upright
+/// on the screen, more for text laid on a tilted map, as MapLibre's clip w
+/// over its u_gamma_scale.
 class SdfLook {
   SdfLook(
     this.ink,
