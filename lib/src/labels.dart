@@ -224,7 +224,7 @@ class LabelEngine {
 
   /// Every map label as last placed, for tools that compare placement with
   /// another renderer: its layer, text, icon, point as fractions of the
-  /// world and what of it shows.
+  /// world, what of it shows and its size against its image's.
   List<Map<String, Object?>> debugLabels(StyleSheet sheet) => [
     for (final st in _allStates)
       if (st.candidate case final TileLabel c)
@@ -239,6 +239,7 @@ class LabelEngine {
           'text_shown': st.placed && st.showText,
           'icon_shown': st.placed && st.showIcon,
           'order': st.placeOrder,
+          'scale': st.scale,
           'anchor': switch (sheet.symbols[c.tile.layer].anchors) {
             final sides when st.side < sides.length => sides[st.side],
             _ => null,
@@ -689,6 +690,7 @@ class LabelEngine {
     var textLayer = -1 << 30;
     for (final st in _drawn) {
       _stand(st.candidate);
+      _grow(st, styleZoom);
       final layer = _layerOf(st.candidate);
       final sprite = st.sprite;
       final wantsText = st.candidate.hasText && st.showText;
@@ -1069,7 +1071,11 @@ class LabelEngine {
         ..spriteKey = key;
     }
     final sprite = st.sprite;
-    st.scale = sprite == null ? 1 : fontSize / sprite.fontSize;
+    st
+      ..scale = sprite == null ? 1 : fontSize / sprite.fontSize
+      ..placedSize = fontSize
+      ..moveX = 0
+      ..moveY = 0;
     st.resize = sprite is GlyphSprite
         ? false
         : _zooming
@@ -1200,13 +1206,14 @@ class LabelEngine {
         : fontSize <= 12.5
         ? _minorRoadRoom
         : _majorRoadRoom;
-    var (roadX, roadY) = layer == null
+    final (translateX, translateY) = layer == null
         ? (0.0, 0.0)
         : _view.moved(
             layer.textTranslate,
             layer.textTranslateOnScreen,
             _context..zoom = styleZoom,
           );
+    var (roadX, roadY) = (translateX, translateY);
     _view.project(st.worldX, st.worldY);
     final sx = _view.x + roadX;
     final sy = _view.y + roadY;
@@ -1265,7 +1272,9 @@ class LabelEngine {
     }
     st
       ..dx = roadX
-      ..dy = roadY;
+      ..dy = roadY
+      ..moveX = translateX
+      ..moveY = translateY;
     if (mapLibre) {
       st.showIcon =
           _points.sizeLineIcon(
@@ -1279,6 +1288,35 @@ class LabelEngine {
     }
     _showPlaced(st, sprite);
     _roads.placed(st);
+  }
+
+  /// Grows or shrinks [st] to its text size in this frame, as MapLibre's
+  /// shaders size labels by the zoom and the distance in each frame, where
+  /// placement weighed it at the size of its last pass: its text, the part
+  /// of its offset that grows with the text, and its icon, with the text
+  /// when fitted to it and else with the distance.
+  void _grow(LabelState st, double styleZoom) {
+    if (st.placedSize <= 0) return;
+    _view.project(st.worldX, st.worldY);
+    final perspective = _view.tilted == null ? 1.0 : _view.ratio;
+    _bind(st.candidate);
+    final size = _size(st.candidate, styleZoom) * perspective;
+    if (size == st.placedSize || size <= 0) return;
+    final k = size / st.placedSize;
+    final fitted = _symbolOf(st.candidate)?.textFit ?? false;
+    final i = fitted ? k : perspective / st.perspective;
+    st
+      ..scale *= k
+      ..dx = st.moveX + (st.dx - st.moveX) * k
+      ..dy = st.moveY + (st.dy - st.moveY) * k
+      ..roadLift *= k
+      ..iconScale *= i
+      ..iconW *= i
+      ..iconH *= i
+      ..iconDx *= i
+      ..iconDy *= i
+      ..placedSize = size
+      ..perspective = perspective;
   }
 
   /// Marks [st] placed in this pass, and keeps it and its image in use.

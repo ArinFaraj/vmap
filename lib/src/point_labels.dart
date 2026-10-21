@@ -144,6 +144,9 @@ class PointLabels {
             context,
             at: (st.worldX, st.worldY),
           );
+    st
+      ..moveX = moved.$1
+      ..moveY = moved.$2;
     // As MapLibre, a radial offset without variable anchors moves the text
     // from its anchor in place of text-offset.
     final radial = symbol?.radialOffset ?? 0;

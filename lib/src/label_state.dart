@@ -191,6 +191,13 @@ class LabelState {
   /// How much a tilted map shrinks the label where it stands.
   double perspective = 1;
 
+  /// The text size placement last weighed the label at, in pixels with its
+  /// perspective, and the part of [dx] and [dy] that is its translate,
+  /// which does not grow with the text. Between placements the label is
+  /// grown to its size in each frame from these.
+  double placedSize = 0;
+  double moveX = 0, moveY = 0;
+
   /// The image is too far from the label's size and wants drawing again.
   bool resize = false;
 

@@ -182,6 +182,74 @@ void main() {
       );
     },
   );
+
+  test('a label grows with the zoom between placements', () async {
+    final sheet = StyleSheet.compile({
+      'version': 8,
+      'sources': {
+        'places': {'type': 'vector', 'url': 'https://example.org/planet'},
+      },
+      'layers': [
+        {
+          'id': 'names',
+          'type': 'symbol',
+          'source': 'places',
+          'source-layer': 'place',
+          'layout': {
+            'text-field': ['get', 'name'],
+            'text-size': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              0,
+              10,
+              4,
+              30,
+            ],
+          },
+        },
+      ],
+    });
+    final labels = LabelEngine(const VmapTextStyle())
+      ..symbols = sheet.symbols
+      ..zoomOffset = 0;
+    final sources = [
+      [
+        TileLabel(
+          'city',
+          BuiltLabel(0, 1, 'City', 0, 0, null),
+          200 / _world,
+          200 / _world,
+          1,
+        ),
+      ],
+    ];
+    await _settle(labels, sources);
+    double scale() => labels.debugLabels(sheet).single['scale']! as double;
+    void frame(double zoom) {
+      final recorder = ui.PictureRecorder();
+      labels.paint(
+        ui.Canvas(recorder),
+        sources: sources,
+        sourcesKey: 1,
+        background: 0xFFFFFFFF,
+        zoom: zoom,
+        origin: ui.Offset.zero,
+        size: _size,
+        rotation: 0,
+        devicePixelRatio: 1,
+        dt: 0.016,
+        rasterBudgetMicros: 1000000,
+        zooming: true,
+      );
+      recorder.endRecording().dispose();
+    }
+
+    frame(_zoom + 0.05);
+    final placed = scale();
+    frame(_zoom + 0.1);
+    expect(scale() / placed, closeTo((10 + 5 * 1.1) / (10 + 5 * 1.05), 1e-6));
+  });
 }
 
 double _sinh(double x) => (math.exp(x) - math.exp(-x)) / 2;
