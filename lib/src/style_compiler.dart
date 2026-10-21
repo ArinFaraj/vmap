@@ -1210,6 +1210,17 @@ class StyleCompiler {
     final otherwise = compileExpr(fallback);
     if (json == null) return otherwise;
     final expr = compileExpr(json);
+    if (fallback is String && Rgba.of(fallback) != null) {
+      // As MapLibre: a colour that does not parse falls back to a legacy
+      // function's default, then to the property's.
+      final given = json is Map ? json['default'] : null;
+      final second = Rgba.of(given) != null ? given : null;
+      return (c) {
+        final value = expr(c);
+        if (Rgba.of(value) != null) return value;
+        return second ?? otherwise(c);
+      };
+    }
     return (c) => expr(c) ?? otherwise(c);
   }
 
