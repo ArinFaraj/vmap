@@ -2,8 +2,8 @@ import 'dart:ui' as ui;
 
 import 'view.dart';
 
-class VmapCamera {
-  const VmapCamera({
+class MapFrame {
+  const MapFrame({
     required this.zoom,
     required this.origin,
     required this.size,

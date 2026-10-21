@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/engine.dart';
+import 'package:vmap/src/errors.dart';
 import 'package:vmap/src/net.dart';
 import 'package:vmap/src/style.dart';
 import 'package:vmap/src/source_config.dart';
@@ -118,13 +119,14 @@ void main() {
               ),
             )
             ..onError = (e) {
+              if (e.kind != VmapErrorKind.style) return;
               errors.add(e);
               if (!loaded.isCompleted) loaded.complete();
             };
       addTearDown(engine.dispose);
       await loaded.future.timeout(const Duration(seconds: 5));
       expect(keys, ['Bearer token']);
-      expect(errors.single, isA<HttpFailure>());
+      expect((errors.single as VmapError).cause, isA<HttpFailure>());
       expect(engine.error, isNotNull);
 
       fail = false;

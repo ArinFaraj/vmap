@@ -76,6 +76,20 @@ abstract class MapRenderer {
   /// Lets go of the memory of tiles not drawn in the last frame.
   void trimMemory() {}
 
+  /// Told of what failed on the device: a texture or pipeline that could
+  /// not be made. Where it can no longer draw, [supports] answers false and
+  /// the canvas draws instead.
+  void Function(Object error)? onFailure;
+
+  /// Whether it is still getting ready, its shaders loading. The engine
+  /// draws only the background meanwhile, rather than the canvas for a
+  /// moment and then this.
+  bool get loading => false;
+
+  /// Frames it showed its last picture again because the GPU had not
+  /// caught up.
+  int get framesReused => 0;
+
   /// Draws text from a style's glyph ranges as distance fields, as MapLibre
   /// does; null when this renderer cannot.
   SdfText? get sdfText => null;

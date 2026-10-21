@@ -367,7 +367,7 @@ class TileSource {
   /// Works out which of the source's tiles cover the view, asks for the
   /// missing ones, and returns whether a tile is still being prepared.
   bool cover(
-    VmapCamera camera,
+    MapFrame camera,
     double dataZoom, {
     required int frame,
     required int nowMs,
@@ -443,7 +443,7 @@ class TileSource {
   /// farther ones a level or more coarser.
   bool _coverView(
     MapView view,
-    VmapCamera camera, {
+    MapFrame camera, {
     required int frame,
     required int nowMs,
     required void Function(LoadedTile tile, double scale) prepare,
@@ -638,7 +638,7 @@ class TileSource {
 
   void _updateWanted(
     int tz,
-    VmapCamera camera,
+    MapFrame camera,
     ui.Size size,
     int frame,
     int nowMs,
@@ -696,7 +696,7 @@ class TileSource {
   }
 
   /// The tiles of zoom [z], [span] logical pixels wide, that cover the view.
-  static TileRange _inView(VmapCamera camera, int z, double span) => TileRange(
+  static TileRange _inView(MapFrame camera, int z, double span) => TileRange(
     z,
     camera.origin.dx,
     camera.origin.dy,

@@ -16,7 +16,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "..", "doc", "images")
-FONT = os.path.join(HERE, "..", "example", "assets", "fonts", "GoogleSansFlex.ttf")
+FONT = os.path.join(HERE, "..", "bench", "assets", "fonts", "GoogleSansFlex.ttf")
 
 PAPER = (246, 247, 249)
 INK = (23, 26, 31)

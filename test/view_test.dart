@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/mercator.dart';
-import 'package:vmap/src/map_camera.dart' show MapCameraPosition;
+import 'package:latlong2/latlong.dart';
+import 'package:vmap/src/map_camera.dart';
 import 'package:vmap/src/view.dart' show EdgeInsets2, MapView;
 
 MapView _view({
@@ -265,9 +266,8 @@ void main() {
       double zoom,
       double bearing,
       double pitch,
-    ) => MapCameraPosition(
-      latitude: lat,
-      longitude: lon,
+    ) => VmapCamera(
+      center: LatLng(lat, lon),
       zoom: zoom,
       bearing: bearing,
       pitch: pitch,

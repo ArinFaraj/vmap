@@ -229,34 +229,42 @@ class VmapLayerState extends State<VmapLayer> with WidgetsBindingObserver {
     if (camera.zoom < widget.minZoom || camera.zoom > widget.maxZoom) {
       return const SizedBox.shrink();
     }
-    return MobileLayerTransformer(
-      child: RepaintBoundary(
-        child: CustomPaint(
-          size: camera.size,
-          painter: _VmapPainter(
-            engine,
-            VmapCamera(
-              zoom: camera.zoom,
-              origin: camera.pixelOrigin,
-              size: camera.size,
-              rotation: camera.rotationRad,
-              devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-            ),
-          ),
+    return RepaintBoundary(
+      child: CustomPaint(
+        size: camera.nonRotatedSize,
+        painter: _VmapPainter(
+          engine,
+          cameraOf(camera),
+          MediaQuery.devicePixelRatioOf(context),
         ),
       ),
     );
   }
 }
 
+/// What flutter_map's [camera] shows, as vmap's camera. flutter_map's tiles
+/// are 256 pixels across and MapLibre's 512, so its zoom is one higher, and
+/// it turns the map the other way.
+@visibleForTesting
+VmapCamera cameraOf(MapCamera camera) => VmapCamera(
+  center: camera.center,
+  zoom: camera.zoom - 1,
+  bearing: -camera.rotation,
+);
+
 class _VmapPainter extends CustomPainter {
-  _VmapPainter(this.engine, this.camera) : super(repaint: engine);
+  _VmapPainter(this.engine, this.camera, this.devicePixelRatio)
+    : super(repaint: engine);
 
   final VmapEngine engine;
   final VmapCamera camera;
+  final double devicePixelRatio;
 
   @override
-  void paint(Canvas canvas, Size size) => engine.paint(canvas, camera);
+  void paint(Canvas canvas, Size size) {
+    canvas.clipRect(Offset.zero & size);
+    engine.paint(canvas, size, camera, devicePixelRatio: devicePixelRatio);
+  }
 
   @override
   bool shouldRepaint(_VmapPainter oldDelegate) => true;

@@ -18,9 +18,11 @@ void main() {
         gpu: query['gpu'] != 'off',
         terrain: query['terrain'] == 'on',
         tour: query['tour'] != 'off',
-        start: MapCameraPosition(
-          latitude: double.tryParse(query['lat'] ?? '') ?? _erbil.latitude,
-          longitude: double.tryParse(query['lon'] ?? '') ?? _erbil.longitude,
+        start: VmapCamera(
+          center: LatLng(
+            double.tryParse(query['lat'] ?? '') ?? _erbil.center.latitude,
+            double.tryParse(query['lon'] ?? '') ?? _erbil.center.longitude,
+          ),
           zoom: double.tryParse(query['zoom'] ?? '') ?? _erbil.zoom,
         ),
       ),
@@ -28,7 +30,7 @@ void main() {
   );
 }
 
-const _erbil = MapCameraPosition(latitude: 36.19, longitude: 44.01, zoom: 14);
+const _erbil = VmapCamera(center: LatLng(36.19, 44.01), zoom: 14);
 
 class _Bench extends StatefulWidget {
   const _Bench({
@@ -41,14 +43,14 @@ class _Bench extends StatefulWidget {
   final bool gpu;
   final bool terrain;
   final bool tour;
-  final MapCameraPosition start;
+  final VmapCamera start;
 
   @override
   State<_Bench> createState() => _BenchState();
 }
 
 class _BenchState extends State<_Bench> {
-  late final controller = VMapController(widget.start);
+  late final controller = VmapController(widget.start);
   late final VmapEngine engine = VmapEngine(
     style: VmapStyle.url('https://tiles.openfreemap.org/styles/liberty'),
     maxCachedTiles: 400,
@@ -67,7 +69,7 @@ class _BenchState extends State<_Bench> {
             terrain: {'source': 'dem', 'exaggeration': 1.5},
           )
         : null,
-    renderer: widget.gpu ? GpuMap.create() : null,
+    renderer: widget.gpu ? VmapRenderer.gpu : VmapRenderer.canvas,
   );
   final List<ui.FrameTiming> _timings = [];
   String _status = 'loading';
@@ -94,17 +96,15 @@ class _BenchState extends State<_Bench> {
 
     SchedulerBinding.instance.scheduleFrameCallback(count);
     for (final to in const [
-      MapCameraPosition(latitude: 36.20, longitude: 44.03, zoom: 15.5),
-      MapCameraPosition(
-        latitude: 36.19,
-        longitude: 44.00,
+      VmapCamera(center: LatLng(36.20, 44.03), zoom: 15.5),
+      VmapCamera(
+        center: LatLng(36.19, 44.00),
         zoom: 15,
         pitch: 55,
         bearing: 40,
       ),
-      MapCameraPosition(
-        latitude: 36.17,
-        longitude: 44.02,
+      VmapCamera(
+        center: LatLng(36.17, 44.02),
         zoom: 13,
         pitch: 30,
         bearing: -20,
@@ -121,7 +121,7 @@ class _BenchState extends State<_Bench> {
     int p(List<int> v, double q) =>
         v.isEmpty ? 0 : v[((v.length - 1) * q).round()];
     final line =
-        'VMAPBENCH renderer=${widget.gpu && engine.renderer != null ? 'gpu' : 'canvas'} '
+        'VMAPBENCH renderer=${engine.drawingWith.name} '
         'frames=$frames seconds=${seconds.toStringAsFixed(1)} '
         'fps=${(frames / seconds).toStringAsFixed(1)} '
         'build_p50=${p(builds, 0.5)} build_p99=${p(builds, 0.99)} '
@@ -134,7 +134,7 @@ class _BenchState extends State<_Bench> {
   Widget build(BuildContext context) => Scaffold(
     body: Stack(
       children: [
-        VMap(controller: controller, engine: engine),
+        Vmap(controller: controller, engine: engine),
         Positioned(
           left: 8,
           top: 8,

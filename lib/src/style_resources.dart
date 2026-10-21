@@ -4,6 +4,7 @@ import 'package:flutter/services.dart' show rootBundle;
 
 import 'glyphs/glyph_layout.dart';
 import 'glyphs/vmap_font.dart';
+import 'errors.dart';
 import 'labels.dart';
 import 'source_config.dart';
 import 'sprites.dart';
@@ -26,7 +27,7 @@ class StyleResources {
   /// Called with the sprite sheet whenever it changes, null while none.
   final void Function(SpriteSheet? sheet) onSprites;
   final void Function() onChange;
-  final void Function(Object error) onError;
+  final void Function(VmapError error) onError;
 
   /// The font labels are shaped with when the app gives none: Vazirmatn,
   /// one variable font with every weight, for Arabic script and Latin.
@@ -83,7 +84,7 @@ class StyleResources {
       _labels.useGlyphs(GlyphFonts(faces, families: names));
       onChange();
     } catch (e) {
-      onError(e);
+      onError(VmapError(VmapErrorKind.fonts, e));
     }
   }
 
@@ -91,7 +92,7 @@ class StyleResources {
   /// it is null.
   void useGlyphRanges(String? url) => _labels.useRanges(url, _config, () {
     if (!_closed) onChange();
-  });
+  }, onError: (e) => onError(VmapError(VmapErrorKind.fonts, e)));
 
   /// Loads the sprite [sheets], each its images' prefix and its address,
   /// when they are not the ones in use.
@@ -156,7 +157,7 @@ class StyleResources {
                 if (each[i] case final sheet?) (sheets[i].$1, sheet),
             ]);
     } catch (e) {
-      onError(e);
+      onError(VmapError(VmapErrorKind.sprite, e));
     } finally {
       _spritesLoading--;
     }

@@ -73,7 +73,7 @@ class MeshPainter {
   void drawBackground(
     ui.Canvas canvas,
     BackgroundLayer layer,
-    VmapCamera camera,
+    MapFrame camera,
   ) {
     if (_context.zoom < layer.minZoom || _context.zoom >= layer.maxZoom) return;
     final pattern = layer.pattern?.call(_context);

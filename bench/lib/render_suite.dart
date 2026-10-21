@@ -1,3 +1,5 @@
+// ignore_for_file: implementation_imports
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -6,6 +8,8 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
+import 'package:vmap/src/map_camera.dart';
+import 'package:vmap/src/view.dart';
 import 'package:vmap/vmap.dart';
 
 import 'render_suite/pixelmatch.dart';
@@ -60,7 +64,7 @@ class _Camera {
 
   /// Space kept free around the drawn area, in pixels, as the style's
   /// operations ask for it.
-  EdgeInsets2 pad = EdgeInsets2.zero;
+  EdgeInsets pad = EdgeInsets.zero;
 
   /// The vertical field of view the last `setVerticalFieldOfView` asked
   /// for, in degrees: MapLibre's default is about 36.87.
@@ -72,36 +76,30 @@ class _Camera {
   /// The test's `maxPitch`, else MapLibre's default.
   double maxPitch = 60;
 
-  MapCameraPosition positionFor(double height) {
-    final position = MapCameraPosition(
-      latitude: latitude,
-      longitude: longitude,
+  VmapCamera positionFor(double height) {
+    final position = VmapCamera(
+      center: LatLng(latitude, longitude),
       zoom: zoomFor(height),
       bearing: bearing,
       pitch: math.min(pitch, maxPitch),
       roll: roll,
-      pad: pad,
-      fov: fovDegrees * math.pi / 180,
+      padding: pad,
+      fieldOfView: fovDegrees,
     );
     return globe ? position : position.constrained(height);
   }
 }
 
 /// MapLibre's padding from a `setPadding` or `easeTo` argument.
-EdgeInsets2 _padOf(Object? value) => switch (value) {
-  final num n => EdgeInsets2(
-    top: n.toDouble(),
-    bottom: n.toDouble(),
-    left: n.toDouble(),
-    right: n.toDouble(),
-  ),
-  final Map m => EdgeInsets2(
+EdgeInsets _padOf(Object? value) => switch (value) {
+  final num n => EdgeInsets.all(n.toDouble()),
+  final Map m => EdgeInsets.only(
     top: (m['top'] as num? ?? 0).toDouble(),
     bottom: (m['bottom'] as num? ?? 0).toDouble(),
     left: (m['left'] as num? ?? 0).toDouble(),
     right: (m['right'] as num? ?? 0).toDouble(),
   ),
-  _ => EdgeInsets2.zero,
+  _ => EdgeInsets.zero,
 };
 
 class _Result {
@@ -327,7 +325,8 @@ class _Session {
           maxCachedTiles: 200,
           source: TileSourceConfig(spritePixelRatio: ratio),
           styleGlyphs: true,
-          renderer: _gpu ? GpuMap.create(multisample: _multisample) : null,
+          renderer: _gpu ? VmapRenderer.gpu : VmapRenderer.canvas,
+          antialias: _multisample,
         )
         ..onError = onError
         ..showCollisionBoxes = collisionBoxes
@@ -627,22 +626,12 @@ ui.Image? _paint(
   final recorder = ui.PictureRecorder();
   final canvas = ui.Canvas(recorder)..scale(ratio);
   final size = ui.Size(width.toDouble(), height.toDouble());
-  final view = camera.positionFor(size.height).view(size.width, size.height);
-  final center = view.center;
-  final screen = view.screenCenter;
+  final position = camera.positionFor(size.height);
   canvas.clipRect(ui.Offset.zero & size);
-  engine.paint(
-    canvas,
-    VmapCamera(
-      zoom: view.zoom + 1,
-      origin: ui.Offset(center.x - screen.x, center.y - screen.y),
-      size: size,
-      rotation: camera.bearing * math.pi / 180,
-      devicePixelRatio: ratio,
-      view: view,
-    ),
-  );
-  if (camera.showPadding) _paintPadding(canvas, size, view);
+  engine.paint(canvas, size, position, devicePixelRatio: ratio);
+  if (camera.showPadding) {
+    _paintPadding(canvas, size, position.view(size.width, size.height));
+  }
   final picture = recorder.endRecording();
   if (capture != true) {
     picture.dispose();

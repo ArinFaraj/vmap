@@ -37,8 +37,7 @@ class GpuMap implements MapRenderer {
     try {
       gpu.gpuContext;
       return GpuMap._(multisample);
-    } catch (e) {
-      debugPrint('vmap: no Flutter GPU, the canvas draws the map: $e');
+    } catch (_) {
       return null;
     }
   }
@@ -114,6 +113,7 @@ class GpuMap implements MapRenderer {
 
   /// How many frames showed the last one again because the GPU had not
   /// caught up.
+  @override
   int framesReused = 0;
 
   /// Shows the last frame again every other frame, as a GPU that cannot
@@ -151,7 +151,7 @@ class GpuMap implements MapRenderer {
 
   /// One layer's paint this frame, in screen pixels, before a tile's scale.
   final Map<int, LayerPaint> _layerPaint = {};
-  final _ramps = LineRamps();
+  late final _ramps = LineRamps((e) => onFailure?.call(e));
 
   @override
   Terrain? terrain;
@@ -177,13 +177,21 @@ class GpuMap implements MapRenderer {
   Future<void> _load() async {
     try {
       _library = await gpu.loadShaderLibraryAsync(_bundle);
+      if (_library == null) throw StateError('no shader bundle at $_bundle');
     } catch (e) {
-      debugPrint('vmap: shaders did not load: $e');
+      _failed = true;
+      onFailure?.call(e);
     }
   }
 
   @override
   bool supports(StyleSheet sheet) => _library != null && !_failed;
+
+  @override
+  bool get loading => _library == null && !_failed;
+
+  @override
+  void Function(Object error)? onFailure;
 
   /// Set when the shaders or pipelines could not be made on this device,
   /// so the canvas draws the map.
@@ -199,7 +207,7 @@ class GpuMap implements MapRenderer {
     try {
       return _makePipelines(library);
     } catch (e) {
-      debugPrint('vmap: no pipelines on this device, the canvas draws: $e');
+      onFailure?.call(e);
       _flat = _buildings = _stencil = null;
       _failed = true;
       return false;
@@ -1077,7 +1085,7 @@ class GpuMap implements MapRenderer {
         format: gpu.PixelFormat.r8g8b8a8UNormInt,
       )..overwrite(pixels);
     } catch (e) {
-      debugPrint('vmap: the sprite sheet is not on the GPU: $e');
+      onFailure?.call(e);
     } finally {
       _spritesLoading = false;
     }

@@ -22,6 +22,10 @@ class VmapStats {
   int labelStates = 0;
   int labelSprites = 0;
 
+  /// Frames the GPU renderer showed its last picture again, warped to the
+  /// new camera, because the GPU had not caught up.
+  int gpuFramesReused = 0;
+
   /// Running totals and longest single costs, in microseconds unless named
   /// otherwise.
   VmapTimings timings = VmapTimings();

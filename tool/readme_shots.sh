@@ -10,7 +10,7 @@ set -euo pipefail
 out=${1:?usage: tool/readme_shots.sh <out dir> [name ...]}
 shift
 mkdir -p "$out"
-cd "$(dirname "$0")/../example"
+cd "$(dirname "$0")/../bench"
 
 shots=(
   "hero-default|"

@@ -46,19 +46,15 @@ void main() {
     tester,
   ) async {
     final renderer = _Renderer();
-    final engine = VmapEngine(style: empty, renderer: renderer);
+    final engine = VmapEngine(style: empty, debugRenderer: renderer);
     addTearDown(engine.dispose);
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: VMap(
+        child: Vmap(
           engine: engine,
-          controller: VMapController(
-            const MapCameraPosition(
-              latitude: 36.19,
-              longitude: 44.01,
-              zoom: 10,
-            ),
+          controller: VmapController(
+            const VmapCamera(center: LatLng(36.19, 44.01), zoom: 10),
           ),
         ),
       ),

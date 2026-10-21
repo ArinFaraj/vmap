@@ -56,8 +56,8 @@ void main() {
       south: 1,
       east: 60,
       north: 60,
-      minZoom: 1,
-      maxZoom: 9,
+      minZoom: 0,
+      maxZoom: 8,
       onProgress: (done, total) => steps.add(done),
     );
     // One tile at each of the source's three zooms, the deepest of which
@@ -74,8 +74,8 @@ void main() {
       south: 1,
       east: 60,
       north: 60,
-      minZoom: 1,
-      maxZoom: 3,
+      minZoom: 0,
+      maxZoom: 2,
     );
     expect(again.fetched, 0);
     expect(asked, ['/2/2/1']);

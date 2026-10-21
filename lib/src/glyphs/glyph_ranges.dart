@@ -7,6 +7,7 @@ class GlyphRanges {
   GlyphRanges(
     this.template, {
     required this.onLoaded,
+    this.onError,
     this.userAgent = 'vmap',
     this.headers = const {},
   });
@@ -18,6 +19,11 @@ class GlyphRanges {
 
   /// Called with each range as it arrives.
   final void Function(int face, List<PbfGlyph> glyphs) onLoaded;
+
+  /// Told of a range that could not be fetched. A range the server does not
+  /// have (404) is not an error: its characters are left out, as MapLibre
+  /// leaves them.
+  final void Function(Object error)? onError;
 
   final List<String> _stacks = [];
   final Map<String, int> _faces = {};
@@ -69,8 +75,14 @@ class GlyphRanges {
       final reply = await (_net ??= Net(
         userAgent: userAgent,
       )).get(url, headers);
-      if (reply.status == 200) glyphs = GlyphPbf.parse(reply.bytes);
-    } catch (_) {}
+      if (reply.status == 200) {
+        glyphs = GlyphPbf.parse(reply.bytes);
+      } else if (reply.status != 404 && !_closed) {
+        onError?.call(HttpFailure(reply.status, url));
+      }
+    } catch (e) {
+      if (!_closed) onError?.call(e);
+    }
     if (_closed) return;
     final known = _glyphs[face - GlyphPbf.firstFace];
     for (final g in glyphs) {

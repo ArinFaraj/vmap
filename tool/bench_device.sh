@@ -12,7 +12,7 @@ SERIAL="$1"; MODE="$2"; shift 2
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 PKG=dev.vmap.bench
 OUT="/sdcard/Android/data/$PKG/files/bench.json"
-cd "$HERE/example"
+cd "$HERE/bench"
 fvm flutter build apk --profile --dart-define=MODE="$MODE" --dart-define=TOUR=true "$@" >/dev/null
 adb -s "$SERIAL" uninstall "$PKG" >/dev/null 2>&1 || true
 adb -s "$SERIAL" install -r build/app/outputs/flutter-apk/app-profile.apk >/dev/null

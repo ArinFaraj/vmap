@@ -10,6 +10,7 @@ import 'package:vmap/src/style_model.dart';
 import 'package:vmap/src/tile_builder.dart';
 import 'package:vmap/src/view.dart';
 import 'package:vmap/src/map_camera.dart';
+import 'package:latlong2/latlong.dart';
 
 const _size = ui.Size(400, 400);
 
@@ -160,9 +161,8 @@ void main() {
       MapView view(double pitch) {
         const x = 200 / _world, y = 200 / _world;
         final lat = math.atan(_sinh(math.pi * (1 - 2 * y))) * 180 / math.pi;
-        return MapCameraPosition(
-          latitude: lat,
-          longitude: x * 360 - 180,
+        return VmapCamera(
+          center: LatLng(lat, x * 360 - 180),
           zoom: _zoom - 1,
           pitch: pitch,
         ).view(_size.width, _size.height);

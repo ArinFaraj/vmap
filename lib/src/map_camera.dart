@@ -1,39 +1,31 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
+import 'package:latlong2/latlong.dart';
+
 import 'mercator.dart' as mercator;
 import 'view.dart';
 
-/// Where the map looks: a centre, a zoom in MapLibre's convention (512
-/// pixel tiles), a bearing in degrees clockwise and a pitch in degrees from
-/// straight down.
-class MapCameraPosition {
-  const MapCameraPosition({
-    required this.latitude,
-    required this.longitude,
+/// Where the map looks: a [center], a [zoom] in MapLibre's convention (the
+/// world is `512 * 2^zoom` logical pixels wide), a [bearing] in degrees
+/// clockwise from north, and a [pitch] in degrees from straight down.
+@immutable
+class VmapCamera {
+  const VmapCamera({
+    required this.center,
     required this.zoom,
     this.bearing = 0,
     this.pitch = 0,
     this.roll = 0,
-    this.pad = EdgeInsets2.zero,
-    double? fov,
-  }) : fov = fov ?? MapView.defaultFov;
+    this.padding = EdgeInsets.zero,
+    this.fieldOfView = defaultFieldOfView,
+  });
 
-  /// The same place at fractions [x], [y] of the world.
-  MapCameraPosition.world({
-    required double x,
-    required double y,
-    required this.zoom,
-    this.bearing = 0,
-    this.pitch = 0,
-    this.roll = 0,
-    this.pad = EdgeInsets2.zero,
-    double? fov,
-  }) : latitude = mercator.latitudeAt(y.clamp(0, 1)),
-       longitude = mercator.longitudeAt(x - x.floorToDouble()),
-       fov = fov ?? MapView.defaultFov;
+  /// MapLibre's vertical field of view, in degrees.
+  static const double defaultFieldOfView = 36.86989764584402;
 
-  final double latitude;
-  final double longitude;
+  final LatLng center;
   final double zoom;
   final double bearing;
   final double pitch;
@@ -41,16 +33,92 @@ class MapCameraPosition {
   /// Degrees the camera turns about its line of sight, as MapLibre's roll.
   final double roll;
 
-  /// Space kept free around the drawn area, in pixels: the camera looks at
-  /// the middle of what it leaves.
-  final EdgeInsets2 pad;
+  /// Space kept free at each edge of the map, in logical pixels: the camera
+  /// looks at the middle of what is left, as MapLibre's padding.
+  final EdgeInsets padding;
 
-  /// The camera's vertical field of view, in radians. MapLibre's default is
-  /// about 37 degrees; a wider one looks through a wider lens.
-  final double fov;
+  /// The camera's vertical field of view, in degrees. A wider one looks
+  /// through a wider lens.
+  final double fieldOfView;
 
-  double get worldX => mercator.worldX(longitude);
-  double get worldY => mercator.worldY(latitude);
+  VmapCamera copyWith({
+    LatLng? center,
+    double? zoom,
+    double? bearing,
+    double? pitch,
+    double? roll,
+    EdgeInsets? padding,
+    double? fieldOfView,
+  }) => VmapCamera(
+    center: center ?? this.center,
+    zoom: zoom ?? this.zoom,
+    bearing: bearing ?? this.bearing,
+    pitch: pitch ?? this.pitch,
+    roll: roll ?? this.roll,
+    padding: padding ?? this.padding,
+    fieldOfView: fieldOfView ?? this.fieldOfView,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is VmapCamera &&
+      other.center == center &&
+      other.zoom == zoom &&
+      other.bearing == bearing &&
+      other.pitch == pitch &&
+      other.roll == roll &&
+      other.padding == padding &&
+      other.fieldOfView == fieldOfView;
+
+  @override
+  int get hashCode =>
+      Object.hash(center, zoom, bearing, pitch, roll, padding, fieldOfView);
+
+  @override
+  String toString() =>
+      'VmapCamera(${center.latitude.toStringAsFixed(5)}, '
+      '${center.longitude.toStringAsFixed(5)}, zoom ${zoom.toStringAsFixed(2)}, '
+      'bearing ${bearing.toStringAsFixed(1)}, pitch ${pitch.toStringAsFixed(1)})';
+}
+
+/// The camera at fractions [x], [y] of the world.
+VmapCamera cameraAt({
+  required double x,
+  required double y,
+  required double zoom,
+  double bearing = 0,
+  double pitch = 0,
+  double roll = 0,
+  EdgeInsets padding = EdgeInsets.zero,
+  double fieldOfView = VmapCamera.defaultFieldOfView,
+}) => VmapCamera(
+  center: LatLng(
+    mercator.latitudeAt(y.clamp(0, 1)),
+    mercator.longitudeAt(x - x.floorToDouble()),
+  ),
+  zoom: zoom,
+  bearing: bearing,
+  pitch: pitch,
+  roll: roll,
+  padding: padding,
+  fieldOfView: fieldOfView,
+);
+
+/// The projection and gesture arithmetic of a camera, kept out of the public
+/// type.
+extension CameraGeometry on VmapCamera {
+  double get worldX => mercator.worldX(center.longitude);
+  double get worldY => mercator.worldY(center.latitude);
+
+  EdgeInsets2 get pad => EdgeInsets2(
+    top: padding.top,
+    bottom: padding.bottom,
+    left: padding.left,
+    right: padding.right,
+  );
+
+  /// [fieldOfView] in radians.
+  double get fov => fieldOfView * math.pi / 180;
 
   MapView view(double width, double height) => MapView(
     centerX: worldX,
@@ -63,32 +131,24 @@ class MapCameraPosition {
     roll: roll,
     pad: pad,
     fov: fov,
-    latitude: latitude,
+    latitude: center.latitude,
   );
 
-  MapCameraPosition copyWith({
-    double? latitude,
-    double? longitude,
-    double? zoom,
-    double? bearing,
-    double? pitch,
-    double? roll,
-    EdgeInsets2? pad,
-    double? fov,
-  }) => MapCameraPosition(
-    latitude: latitude ?? this.latitude,
-    longitude: longitude ?? this.longitude,
-    zoom: zoom ?? this.zoom,
-    bearing: bearing ?? this.bearing,
-    pitch: pitch ?? this.pitch,
-    roll: roll ?? this.roll,
-    pad: pad ?? this.pad,
-    fov: fov ?? this.fov,
-  );
+  VmapCamera _at(double x, double y, {double? zoom, double? bearing}) =>
+      cameraAt(
+        x: x,
+        y: y,
+        zoom: zoom ?? this.zoom,
+        bearing: bearing ?? this.bearing,
+        pitch: pitch,
+        roll: roll,
+        padding: padding,
+        fieldOfView: fieldOfView,
+      );
 
   /// Moves the map so the ground under screen point [fromX], [fromY] comes
   /// to [toX], [toY], as a finger dragging the map does.
-  MapCameraPosition panned(
+  VmapCamera panned(
     MapView view,
     double fromX,
     double fromY,
@@ -99,21 +159,12 @@ class MapCameraPosition {
     final b = view.unproject(toX, toY);
     if (a == null || b == null) return this;
     final size = view.worldSize;
-    return MapCameraPosition.world(
-      x: worldX + (a.x - b.x) / size,
-      y: worldY + (a.y - b.y) / size,
-      zoom: zoom,
-      bearing: bearing,
-      pitch: pitch,
-      roll: roll,
-      pad: pad,
-      fov: fov,
-    );
+    return _at(worldX + (a.x - b.x) / size, worldY + (a.y - b.y) / size);
   }
 
   /// Zooms to [newZoom] and turns by [turn] degrees about screen point [x],
   /// [y], keeping the ground under it in place.
-  MapCameraPosition around(
+  VmapCamera around(
     MapView view,
     double x,
     double y, {
@@ -123,72 +174,47 @@ class MapCameraPosition {
     final anchor = view.unproject(x, y);
     final next = copyWith(
       zoom: newZoom ?? zoom,
-      bearing: _normal(bearing + turn),
+      bearing: normalBearing(bearing + turn),
     );
     if (anchor == null) return next;
     final moved = next.view(view.width, view.height);
     final now = moved.unproject(x, y);
     if (now == null) return next;
     final size = moved.worldSize;
-    return MapCameraPosition.world(
-      x: next.worldX + (anchor.x / view.worldSize - now.x / size),
-      y: next.worldY + (anchor.y / view.worldSize - now.y / size),
-      zoom: next.zoom,
-      bearing: next.bearing,
-      pitch: pitch,
-      roll: roll,
-      pad: pad,
-      fov: fov,
+    return next._at(
+      next.worldX + (anchor.x / view.worldSize - now.x / size),
+      next.worldY + (anchor.y / view.worldSize - now.y / size),
     );
   }
 
   /// This camera kept to the world on a flat map [height] pixels tall, as
-  /// MapLibre's mercator camera keeps it: zoomed in until the
-  /// world is as tall as the screen inside [pad], else moved north or
-  /// south so nothing past the world's edge shows.
-  MapCameraPosition constrained(double height) {
-    final screen = height - pad.top - pad.bottom;
+  /// MapLibre's mercator camera keeps it: zoomed in until the world is as
+  /// tall as the screen inside the padding, else moved north or south so
+  /// nothing past the world's edge shows.
+  VmapCamera constrained(double height) {
+    final screen = height - padding.top - padding.bottom;
     if (screen <= 0) return this;
     final worldSize = 512 * math.pow(2, zoom).toDouble();
     if (worldSize < screen) {
       return copyWith(
         zoom: zoom + math.log(screen / worldSize) / math.ln2,
-        latitude: 0,
+        center: LatLng(0, center.longitude),
       );
     }
     final y = worldY * worldSize;
     final half = screen / 2;
     final kept = y.clamp(half, worldSize - half);
     if (kept == y) return this;
-    return copyWith(latitude: mercator.latitudeAt(kept / worldSize));
+    return copyWith(
+      center: LatLng(mercator.latitudeAt(kept / worldSize), center.longitude),
+    );
   }
+}
 
-  static double _normal(double degrees) {
-    final d = degrees % 360;
-    return d > 180 ? d - 360 : d;
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      other is MapCameraPosition &&
-      other.latitude == latitude &&
-      other.longitude == longitude &&
-      other.zoom == zoom &&
-      other.bearing == bearing &&
-      other.pitch == pitch &&
-      other.roll == roll &&
-      other.pad == pad &&
-      other.fov == fov;
-
-  @override
-  int get hashCode =>
-      Object.hash(latitude, longitude, zoom, bearing, pitch, roll, pad, fov);
-
-  @override
-  String toString() =>
-      'MapCameraPosition(${latitude.toStringAsFixed(5)}, '
-      '${longitude.toStringAsFixed(5)}, zoom ${zoom.toStringAsFixed(2)}, '
-      'bearing ${bearing.toStringAsFixed(1)}, pitch ${pitch.toStringAsFixed(1)})';
+/// [degrees] turned into -180 to 180.
+double normalBearing(double degrees) {
+  final d = degrees % 360;
+  return d > 180 ? d - 360 : d;
 }
 
 /// The flight from one camera to another along the path of van Wijk and
@@ -233,8 +259,8 @@ class FlyPath {
     duration = Duration(milliseconds: (1000 * s / speed).round());
   }
 
-  final MapCameraPosition from;
-  final MapCameraPosition to;
+  final VmapCamera from;
+  final VmapCamera to;
   final double _w0;
   late final double _w1, _u1, _rho, _r0, _dx, _dy;
   bool _straight = false;
@@ -251,7 +277,7 @@ class FlyPath {
   static double _tanh(double n) => _sinh(n) / _cosh(n);
 
   /// The camera at fraction [t] of the flight, already eased.
-  MapCameraPosition at(double t) {
+  VmapCamera at(double t) {
     if (t >= 1 || length == 0) return to;
     final s = t * length;
     final double w, u;
@@ -267,36 +293,16 @@ class FlyPath {
     }
     final world = 512 * math.pow(2, from.zoom).toDouble();
     final zoom = from.zoom + math.log(1 / w) / math.ln2;
-    final turn = MapCameraPosition._normal(to.bearing - from.bearing);
-    return MapCameraPosition.world(
+    final turn = normalBearing(to.bearing - from.bearing);
+    return cameraAt(
       x: from.worldX + u * _dx / world,
       y: from.worldY + u * _dy / world,
       zoom: zoom,
-      bearing: MapCameraPosition._normal(from.bearing + turn * t),
+      bearing: normalBearing(from.bearing + turn * t),
       pitch: from.pitch + (to.pitch - from.pitch) * t,
       roll: from.roll + (to.roll - from.roll) * t,
-      pad: EdgeInsets2.lerp(from.pad, to.pad, t),
-      fov: from.fov + (to.fov - from.fov) * t,
+      padding: EdgeInsets.lerp(from.padding, to.padding, t)!,
+      fieldOfView: from.fieldOfView + (to.fieldOfView - from.fieldOfView) * t,
     );
   }
-}
-
-/// MapLibre's default easing, `bezier(0.25, 0.1, 0.25, 1)`.
-double defaultEasing(double t) => _bezier(0.25, 0.1, 0.25, 1, t);
-
-double _bezier(double x1, double y1, double x2, double y2, double t) {
-  double sample(double a, double b, double s) =>
-      ((1 - 3 * b + 3 * a) * s + (3 * b - 6 * a)) * s * s + 3 * a * s;
-  var lo = 0.0, hi = 1.0, s = t;
-  for (var i = 0; i < 30; i++) {
-    final x = sample(x1, x2, s);
-    if ((x - t).abs() < 1e-7) break;
-    if (x < t) {
-      lo = s;
-    } else {
-      hi = s;
-    }
-    s = (lo + hi) / 2;
-  }
-  return sample(y1, y2, s);
 }

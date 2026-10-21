@@ -3,7 +3,6 @@ import 'dart:ui' as ui;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:vmap/renderer.dart';
 import 'package:vmap/vmap.dart';
 import 'package:vmap_flutter_map/vmap_flutter_map.dart';
@@ -49,7 +48,7 @@ void main() {
     tester,
   ) async {
     final renderer = _Renderer();
-    final engine = VmapEngine(style: empty, renderer: renderer);
+    final engine = VmapEngine(style: empty, debugRenderer: renderer);
     addTearDown(engine.dispose);
     await tester.pumpWidget(
       Directionality(

@@ -9,7 +9,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart' as vmt;
 import 'package:vmap/vmap.dart';
@@ -175,7 +174,7 @@ class _BenchAppState extends State<BenchApp>
       fontFamilyFallback: ['Vazirmatn'],
     ),
     showLabels: flags['labels'] != 'off',
-    renderer: gpuRenderer ? GpuMap.create() : null,
+    renderer: gpuRenderer ? VmapRenderer.gpu : VmapRenderer.canvas,
   );
   late final Ticker ticker;
   final laps = <List<FrameTiming>>[
@@ -256,10 +255,7 @@ class _BenchAppState extends State<BenchApp>
         'unpack_max_us': engine.stats.timings.maxUnpackMicros,
         'rss_mb': kIsWeb ? 0 : ProcessInfo.currentRss >> 20,
         'max_rss_mb': kIsWeb ? 0 : ProcessInfo.maxRss >> 20,
-        'gpu_frames_reused': switch (engine.renderer) {
-          final GpuMap gpu => gpu.framesReused,
-          _ => 0,
-        },
+        'gpu_frames_reused': engine.stats.gpuFramesReused,
         'slow':
             (engine.stats.timings.slowPaints.toList()..sort(
                   (a, b) =>

@@ -1,12 +1,13 @@
-export 'src/camera.dart' show VmapCamera;
-export 'src/engine.dart' show VmapEngine;
+export 'src/engine.dart' show VmapEngine, VmapRenderer;
+export 'src/errors.dart' show VmapError, VmapErrorKind;
 export 'src/glyphs/vmap_font.dart' show VmapFont;
-export 'src/gpu/gpu_map.dart' show GpuMap;
 export 'src/text_style.dart' show VmapTextStyle;
-export 'src/view.dart' show EdgeInsets2, MapView;
-export 'src/map_camera.dart' show FlyPath, MapCameraPosition, defaultEasing;
-export 'src/vmap_widget.dart' show VMap, VMapController;
+export 'src/map_camera.dart' show VmapCamera;
+export 'src/vmap_widget.dart' show Vmap, VmapController;
 export 'src/marker.dart' show VmapMarker;
+
+export 'package:latlong2/latlong.dart' show LatLng;
+
 export 'src/query.dart'
     show VmapClusterMember, VmapDownload, VmapFeature, VmapFeatureState;
 export 'src/pins.dart' show VmapPin, VmapPins, standardPins;

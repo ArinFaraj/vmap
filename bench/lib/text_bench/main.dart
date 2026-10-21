@@ -12,7 +12,9 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:vmap/src/map_camera.dart';
 import 'package:vmap/src/mercator.dart';
+import 'package:vmap/src/view.dart';
 import 'package:vmap/vmap.dart';
 
 import 'glyph_atlas.dart';
@@ -106,13 +108,12 @@ class _Bench extends StatefulWidget {
 }
 
 class _BenchState extends State<_Bench> with SingleTickerProviderStateMixin {
-  static const _erbil = MapCameraPosition(
-    latitude: 36.1912,
-    longitude: 44.0092,
+  static const _erbil = VmapCamera(
+    center: LatLng(36.1912, 44.0092),
     zoom: 15.3,
     pitch: 55,
   );
-  final controller = VMapController(_erbil);
+  final controller = VmapController(_erbil);
   final engine = VmapEngine(
     style: const VmapStyle.builtIn(),
     showLabels: false,
@@ -232,7 +233,7 @@ class _BenchState extends State<_Bench> with SingleTickerProviderStateMixin {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          VMap(controller: controller, engine: engine),
+          Vmap(controller: controller, engine: engine),
           IgnorePointer(
             child: CustomPaint(
               painter: switch (arm) {
@@ -308,7 +309,7 @@ class _AtlasPainter extends CustomPainter {
 
   final GlyphAtlas atlas;
   final List<_Label> labels;
-  final VMapController controller;
+  final VmapController controller;
   final _Counters counters;
 
   static Paint _pass(double s, Color color, double edge) {
@@ -413,7 +414,7 @@ class _BakedPainter extends CustomPainter {
     : super(repaint: controller);
 
   final List<_Label> labels;
-  final VMapController controller;
+  final VmapController controller;
   final _Counters counters;
 
   static final _buckets = <int, _Buffers>{};
@@ -489,7 +490,7 @@ class _ParagraphPainter extends CustomPainter {
     : super(repaint: controller);
 
   final List<_Label> labels;
-  final VMapController controller;
+  final VmapController controller;
   final _Counters counters;
   final double dpr;
 

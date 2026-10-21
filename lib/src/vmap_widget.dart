@@ -3,8 +3,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
+import 'package:latlong2/latlong.dart';
 
-import 'camera.dart';
 import 'engine.dart';
 import 'frame_rate.dart';
 import 'map_camera.dart';
@@ -31,18 +31,18 @@ double _turn(double from, double to) {
   return d > 180 ? d - 360 : d;
 }
 
-/// Moves a [VMap] and reads where it looks.
-class VMapController extends ChangeNotifier {
-  VMapController(MapCameraPosition initial) : _camera = initial;
+/// Moves a [Vmap] and reads where it looks.
+class VmapController extends ChangeNotifier {
+  VmapController(VmapCamera initial) : _camera = initial;
 
-  MapCameraPosition _camera;
+  VmapCamera _camera;
   _Motion? _motion;
   Ticker? _ticker;
   Size _size = Size.zero;
   bool _flat = true;
   double minZoom = 0, maxZoom = 22, maxPitch = 60;
   final _clock = Stopwatch()..start();
-  final _samples = <(int, MapCameraPosition)>[];
+  final _samples = <(int, VmapCamera)>[];
 
   /// How long a released gesture or an interrupted animation keeps its
   /// speed: the speed falls to a third in this time.
@@ -51,10 +51,10 @@ class VMapController extends ChangeNotifier {
   /// Zoom, turn and tilt settle a little sooner than a slide does.
   static const _zoomSeconds = 0.24, _turnSeconds = 0.28, _tiltSeconds = 0.22;
 
-  MapCameraPosition get camera => _camera;
+  VmapCamera get camera => _camera;
 
   /// Jumps to [to] at once, stopping any animation.
-  set camera(MapCameraPosition to) {
+  set camera(VmapCamera to) {
     stop();
     _set(to);
   }
@@ -81,7 +81,7 @@ class VMapController extends ChangeNotifier {
     );
   }
 
-  void _set(MapCameraPosition to) {
+  void _set(VmapCamera to) {
     var clamped = to.copyWith(
       zoom: to.zoom.clamp(minZoom, maxZoom),
       pitch: to.pitch.clamp(0, math.min(maxPitch, MapView.maxPitch)),
@@ -102,7 +102,7 @@ class VMapController extends ChangeNotifier {
   /// MapLibre's `flyTo` does. A camera already moving carries its speed
   /// into the flight. Completes when the camera arrives or another move or
   /// a touch stops it.
-  Future<void> flyTo(MapCameraPosition to, {Duration? duration}) {
+  Future<void> flyTo(VmapCamera to, {Duration? duration}) {
     final path = FlyPath(
       _camera,
       to,
@@ -110,31 +110,35 @@ class VMapController extends ChangeNotifier {
       height: math.max(_size.height, 1),
     );
     return _run(
-      _Motion(duration ?? path.duration, (t) => path.at(defaultEasing(t))),
+      _Motion(
+        duration ?? path.duration,
+        (t) => path.at(Curves.ease.transform(t)),
+      ),
     );
   }
 
-  /// Eases straight to [to]: centre, zoom, bearing and pitch together.
+  /// Eases straight to [to]: every part of the camera together, along
+  /// [curve], MapLibre's default easing unless given.
   Future<void> easeTo(
-    MapCameraPosition to, {
+    VmapCamera to, {
     Duration duration = const Duration(milliseconds: 500),
-    double Function(double t) curve = defaultEasing,
+    Curve curve = Curves.ease,
   }) {
     final from = _camera;
     final turn = _turn(from.bearing, to.bearing);
     return _run(
       _Motion(duration, (t) {
-        final k = curve(t);
+        final k = curve.transform(t);
         double mix(double a, double b) => a + (b - a) * k;
-        return MapCameraPosition.world(
+        return cameraAt(
           x: mix(from.worldX, to.worldX),
           y: mix(from.worldY, to.worldY),
           zoom: mix(from.zoom, to.zoom),
           bearing: from.bearing + turn * k,
           pitch: mix(from.pitch, to.pitch),
           roll: mix(from.roll, to.roll),
-          pad: EdgeInsets2.lerp(from.pad, to.pad, k),
-          fov: mix(from.fov, to.fov),
+          padding: EdgeInsets.lerp(from.padding, to.padding, k)!,
+          fieldOfView: mix(from.fieldOfView, to.fieldOfView),
         );
       }),
     );
@@ -201,7 +205,7 @@ class VMapController extends ChangeNotifier {
   }
 
   /// Where the running camera animation ends, while one runs.
-  MapCameraPosition? get destination => _motion?.at(1);
+  VmapCamera? get destination => _motion?.at(1);
 
   /// Stops any animation where it is.
   void stop() {
@@ -249,7 +253,7 @@ class _Motion {
   _Motion(this.duration, this.at);
 
   final Duration duration;
-  final MapCameraPosition Function(double t) at;
+  final VmapCamera Function(double t) at;
   final done = Completer<void>();
 
   /// The same motion, with the speed the camera had when it began fading
@@ -260,16 +264,16 @@ class _Motion {
     return _Motion(duration, (t) {
       final base = at(t);
       final s = t * seconds;
-      final k = s * math.exp(-s / VMapController.glideSeconds) * (1 - t);
-      return MapCameraPosition.world(
+      final k = s * math.exp(-s / VmapController.glideSeconds) * (1 - t);
+      return cameraAt(
         x: base.worldX + v.x * k,
         y: base.worldY + v.y * k,
         zoom: base.zoom + v.zoom * k,
         bearing: base.bearing + v.bearing * k,
         pitch: base.pitch + v.pitch * k,
         roll: base.roll,
-        pad: base.pad,
-        fov: base.fov,
+        padding: base.padding,
+        fieldOfView: base.fieldOfView,
       );
     });
   }
@@ -279,8 +283,8 @@ class _Motion {
 /// turn, and tilt when dragged up or down together; a double tap zooms in;
 /// a double tap held and dragged zooms in or out. Released gestures and
 /// interrupted animations keep their speed and slow down naturally.
-class VMap extends StatefulWidget {
-  const VMap({
+class Vmap extends StatefulWidget {
+  const Vmap({
     required this.controller,
     this.style = VmapStyle.light,
     this.engine,
@@ -293,7 +297,7 @@ class VMap extends StatefulWidget {
     super.key,
   });
 
-  final VMapController controller;
+  final VmapController controller;
 
   /// Used when no [engine] is given.
   final VmapStyle style;
@@ -308,11 +312,11 @@ class VMap extends StatefulWidget {
   final bool rotate;
   final bool tilt;
 
-  /// Called with the latitude and longitude tapped.
-  final void Function(double latitude, double longitude)? onTap;
+  /// Called with the place tapped.
+  final void Function(LatLng point)? onTap;
 
   @override
-  State<VMap> createState() => _VMapState();
+  State<Vmap> createState() => _VmapState();
 }
 
 enum _Gesture { undecided, pan, pinch, tilt, quickZoom }
@@ -358,7 +362,7 @@ class _Rate {
   }
 }
 
-class _VMapState extends State<VMap>
+class _VmapState extends State<Vmap>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   VmapEngine? _owned;
   late final Ticker _ticker = createTicker(
@@ -369,7 +373,7 @@ class _VMapState extends State<VMap>
       widget.engine ??
       (_owned ??= VmapEngine(style: widget.style, glyphText: true));
 
-  VMapController get _c => widget.controller;
+  VmapController get _c => widget.controller;
   MapView get _view => _c.camera.view(_c._size.width, _c._size.height);
 
   /// Where each finger on the map is, by pointer.
@@ -426,7 +430,7 @@ class _VMapState extends State<VMap>
   /// labels again; those drawn before it keep their boxes otherwise.
   void _fontsChanged() => _engine.fontsChanged();
 
-  void _attach(VMapController c) {
+  void _attach(VmapController c) {
     c
       .._ticker = _ticker
       ..minZoom = widget.minZoom
@@ -435,7 +439,7 @@ class _VMapState extends State<VMap>
   }
 
   @override
-  void didUpdateWidget(VMap old) {
+  void didUpdateWidget(Vmap old) {
     super.didUpdateWidget(old);
     if (old.controller != widget.controller) {
       old.controller
@@ -741,12 +745,13 @@ class _VMapState extends State<VMap>
     final view = _view;
     final g = view.unproject(at.dx, at.dy);
     if (g == null) return;
-    final p = MapCameraPosition.world(
-      x: g.x / view.worldSize,
-      y: g.y / view.worldSize,
-      zoom: 0,
+    onTap(
+      cameraAt(
+        x: g.x / view.worldSize,
+        y: g.y / view.worldSize,
+        zoom: 0,
+      ).center,
     );
-    onTap(p.latitude, p.longitude);
   }
 
   @override
@@ -769,7 +774,7 @@ class _VMapState extends State<VMap>
             child: RepaintBoundary(
               child: CustomPaint(
                 size: constraints.biggest,
-                painter: _VMapPainter(_engine, _c, dpr),
+                painter: _VmapPainter(_engine, _c, dpr),
               ),
             ),
           ),
@@ -779,35 +784,27 @@ class _VMapState extends State<VMap>
   }
 }
 
-class _VMapPainter extends CustomPainter {
-  _VMapPainter(this.engine, this.controller, this.dpr)
+class _VmapPainter extends CustomPainter {
+  _VmapPainter(this.engine, this.controller, this.dpr)
     : super(repaint: Listenable.merge([engine, controller]));
 
   final VmapEngine engine;
-  final VMapController controller;
+  final VmapController controller;
   final double dpr;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final camera = controller.camera;
-    final view = camera.view(size.width, size.height);
-    final center = view.center;
     canvas.clipRect(Offset.zero & size);
     engine.paint(
       canvas,
-      VmapCamera(
-        zoom: camera.zoom + 1,
-        origin: Offset(center.x - size.width / 2, center.y - size.height / 2),
-        size: size,
-        rotation: camera.bearing * math.pi / 180,
-        devicePixelRatio: dpr,
-        view: view,
-        ahead: controller.destination?.view(size.width, size.height),
-      ),
+      size,
+      controller.camera,
+      devicePixelRatio: dpr,
+      ahead: controller.destination,
     );
   }
 
   @override
-  bool shouldRepaint(_VMapPainter old) =>
+  bool shouldRepaint(_VmapPainter old) =>
       old.engine != engine || old.controller != controller || old.dpr != dpr;
 }

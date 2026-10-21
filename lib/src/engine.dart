@@ -9,6 +9,9 @@ import 'package:latlong2/latlong.dart' show LatLng;
 
 import 'atmosphere.dart';
 import 'camera.dart';
+import 'errors.dart';
+import 'gpu/gpu_map.dart';
+import 'map_camera.dart';
 import 'expr.dart';
 import 'extrusion.dart';
 import 'map_renderer.dart';
@@ -41,6 +44,17 @@ import 'protocol.dart';
 import 'tile_id.dart';
 import 'net.dart' show cacheKey;
 
+/// What draws the map.
+enum VmapRenderer {
+  /// Flutter GPU, through WebGL2 on the web: buildings with depth, terrain
+  /// and the globe. Where it does not run, the canvas draws instead.
+  gpu,
+
+  /// Flutter's canvas, which runs everywhere: a tilted map with flat
+  /// buildings, and no terrain or globe.
+  canvas,
+}
+
 /// Owns the tiles and labels and draws one frame of the map for a camera.
 class VmapEngine extends ChangeNotifier {
   /// In a browser, the address of the script that builds tiles off the
@@ -64,12 +78,23 @@ class VmapEngine extends ChangeNotifier {
     bool glyphText = false,
     this.styleGlyphs = false,
     List<VmapFont> fonts = const [],
-    this.renderer,
+    VmapRenderer renderer = VmapRenderer.gpu,
+    bool antialias = true,
+    @visibleForTesting MapRenderer? debugRenderer,
   }) : _labels = LabelEngine(text)
          ..pins = pins
-         ..curvedRoads = curvedLabels {
+         ..curvedRoads = curvedLabels,
+       _renderer =
+           debugRenderer ??
+           (renderer == VmapRenderer.gpu
+               ? GpuMap.create(multisample: antialias)
+               : null) {
     _labels.stateOf = (source, id) =>
         _states[_sources[source].def.name]?[featureStateKey(id)];
+    if (renderer == VmapRenderer.gpu && _renderer == null) {
+      scheduleMicrotask(() => _gpuFailed(_gpuOff));
+    }
+    _renderer?.onFailure = _gpuFailed;
     if (glyphText || styleGlyphs) {
       _resources.loadFonts(fonts, shapeInWorkers: !styleGlyphs).whenComplete(
         () {
@@ -81,10 +106,40 @@ class VmapEngine extends ChangeNotifier {
     }
   }
 
-  /// Draws fill and line layers and buildings on the GPU on a tilted map,
-  /// or null to draw them with the canvas. Fixed when the engine is made,
-  /// since the tile workers build its streams.
-  final MapRenderer? renderer;
+  /// Draws the vector layers and buildings on the GPU, or null where the
+  /// canvas draws them. Fixed when the engine is made, since the tile
+  /// workers build its streams.
+  final MapRenderer? _renderer;
+
+  /// What draws the map now. [VmapRenderer.gpu] is asked for by default and
+  /// used where Flutter GPU runs; elsewhere, or after the GPU failed, the
+  /// canvas draws, and [onError] was told why with a
+  /// [VmapErrorKind.gpu] error.
+  VmapRenderer get drawingWith =>
+      _onGpu ? VmapRenderer.gpu : VmapRenderer.canvas;
+
+  static const _gpuOff =
+      'Flutter GPU is off, so the map is drawn with the canvas. Switch it on '
+      'with io.flutter.embedding.android.EnableFlutterGPU in the Android '
+      'manifest, FLTEnableFlutterGPU in the iOS and macOS Info.plist, '
+      'set_enable_flutter_gpu in the Windows and Linux runners, or '
+      '--enable-flutter-gpu for one run.';
+
+  static bool _gpuReported = false;
+
+  void _gpuFailed(Object error) {
+    if (_disposed) return;
+    final report = VmapError(VmapErrorKind.gpu, error);
+    if (!_gpuReported) {
+      _gpuReported = true;
+      assert(() {
+        debugPrint('vmap: $report');
+        return true;
+      }());
+    }
+    onError?.call(report);
+    notifyListeners();
+  }
 
   /// Labels are laid out and drawn from the style's `glyphs` ranges, as
   /// MapLibre draws them, instead of from font files. The ranges place
@@ -105,6 +160,9 @@ class VmapEngine extends ChangeNotifier {
     },
     onError: (e) => onError?.call(e),
   );
+
+  void _report(VmapErrorKind kind, Object error) =>
+      onError?.call(error is VmapError ? error : VmapError(kind, error));
 
   final _zoomOutHold = ZoomOutHold();
   final ui.Paint _layerPaint = ui.Paint();
@@ -150,20 +208,24 @@ class VmapEngine extends ChangeNotifier {
   /// Whether the style draws the map as a globe at some zoom.
   bool get drawsGlobe => _sheet?.projection.isGlobe ?? false;
 
-  /// What went wrong loading the style or the tile source, if anything.
-  Object? get error {
+  /// What keeps the map from showing, if anything: a style that could not
+  /// be loaded, or a source whose tiles cannot be read at all.
+  VmapError? get error {
     if (_styleError != null) return _styleError;
     for (final s in _sources) {
-      if (s.pool.startError != null) return s.pool.startError;
+      if (s.pool.startError case final e?) {
+        return VmapError(VmapErrorKind.tiles, e);
+      }
     }
     return null;
   }
 
-  Object? _styleError;
+  VmapError? _styleError;
 
-  /// Told of every style, tile or sprite that could not be loaded. The map
-  /// keeps trying on its own; this is for the app to log or show.
-  void Function(Object error)? onError;
+  /// Told of everything that could not be loaded or drawn: the style, a
+  /// tile, the sprite sheet, fonts, or the GPU. The map keeps trying where
+  /// trying again can help; this is for the app to log or show.
+  void Function(VmapError error)? onError;
 
   /// Loads the style and every tile again, from the cache where it has them.
   void reload() {
@@ -195,8 +257,8 @@ class VmapEngine extends ChangeNotifier {
   }
 
   /// Fetches into the cache directory every tile the style draws between
-  /// [west], [south], [east] and [north] at map zooms [minZoom] to
-  /// [maxZoom], so that part of the map shows without a network. Call it
+  /// [west], [south], [east] and [north] at zooms [minZoom] to [maxZoom],
+  /// so that part of the map shows without a network. Call it
   /// once the style has loaded. [onProgress] is told how many tiles are
   /// dealt with out of how many, and the download stops early once
   /// [cancelled] answers true.
@@ -224,8 +286,8 @@ class VmapEngine extends ChangeNotifier {
       south: south,
       east: east,
       north: north,
-      minZoom: minZoom,
-      maxZoom: maxZoom,
+      minZoom: minZoom + 1,
+      maxZoom: maxZoom + 1,
       onProgress: onProgress,
       cancelled: cancelled,
     );
@@ -292,9 +354,10 @@ class VmapEngine extends ChangeNotifier {
       _apply(jsonDecode(body) as Map<String, Object?>, wanted);
       if (file != null) await writeFile(file, reply.bytes);
     } catch (e) {
-      if (wanted == _style && !_disposed) onError?.call(e);
+      final error = VmapError(VmapErrorKind.style, e, url: url);
+      if (wanted == _style && !_disposed) onError?.call(error);
       if (remembered == null && wanted == _style && !_disposed) {
-        _styleError = e;
+        _styleError = error;
         notifyListeners();
       }
     } finally {
@@ -461,7 +524,7 @@ class VmapEngine extends ChangeNotifier {
               layer,
               config: source,
               onLoaded: _requestFrame,
-              onError: (e) => onError?.call(e),
+              onError: (e) => _report(VmapErrorKind.tiles, e),
             ),
         ]);
     } else {
@@ -510,12 +573,12 @@ class VmapEngine extends ChangeNotifier {
             _clock.elapsedMilliseconds,
             corrupt: '$error'.startsWith('FormatException'),
           );
-          onError?.call(error);
+          _report(VmapErrorKind.tiles, error);
         },
         script: webWorker,
         fonts: _resources.fontBytes,
         families: _resources.families,
-        gpu: renderer != null,
+        gpu: _renderer != null,
       );
       if (sheet.stateBuiltSources.contains(i) && _states[def.name] != null) {
         made.pool.useStates(_statePairs(def.name));
@@ -557,7 +620,7 @@ class VmapEngine extends ChangeNotifier {
             layer,
             config: source,
             onLoaded: _requestFrame,
-            onError: (e) => onError?.call(e),
+            onError: (e) => _report(VmapErrorKind.tiles, e),
           ) as TerrainTiles;
   }
 
@@ -576,7 +639,7 @@ class VmapEngine extends ChangeNotifier {
   /// The ground's height in world pixels under a point of the world, for
   /// labels to stand on, when the renderer draws raised ground.
   double Function(double wx, double wy)? _groundOf(MapView? view) {
-    final terrain = renderer?.terrain;
+    final terrain = _renderer?.terrain;
     if (view == null || terrain == null || !_onGpu) return null;
     final perMetre =
         view.worldSize /
@@ -589,7 +652,7 @@ class VmapEngine extends ChangeNotifier {
   /// Returns the view over that ground, and whether the ground is still
   /// easing to its height, when the map is not settled.
   ({MapView view, bool easing}) _raiseGround(MapView view) {
-    final terrain = _terrain, gpu = renderer;
+    final terrain = _terrain, gpu = _renderer;
     if (gpu == null) return (view: view, easing: false);
     if (terrain == null) {
       gpu.terrain = null;
@@ -826,7 +889,7 @@ class VmapEngine extends ChangeNotifier {
       s.evict(0, _frame);
     }
     _labels.trimMemory();
-    renderer?.trimMemory();
+    _renderer?.trimMemory();
   }
 
   /// Draws every label again. Call it when a font has finished loading: a
@@ -852,7 +915,7 @@ class VmapEngine extends ChangeNotifier {
     notifyListeners();
   }
 
-  VmapCamera? _camera;
+  MapFrame? _camera;
 
   /// What the map shows at [point]: the features the style draws within
   /// [radius] logical pixels of it, topmost first. It reads the tiles again
@@ -989,12 +1052,12 @@ class VmapEngine extends ChangeNotifier {
     return null;
   }
 
-  /// The map zoom at which cluster [clusterId] of the clustered GeoJSON
-  /// source named [source] comes apart, for zooming in on a tapped cluster.
-  /// Null when there is no such cluster.
+  /// The zoom at which cluster [clusterId] of the clustered GeoJSON source
+  /// named [source] comes apart, for zooming in on a tapped cluster. Null
+  /// when there is no such cluster.
   Future<double?> clusterExpansionZoom(String source, int clusterId) async {
     final zoom = await _clustered(source)?.clusterZoom(clusterId);
-    return zoom == null ? null : zoom + 1.0;
+    return zoom?.toDouble();
   }
 
   /// What cluster [clusterId] comes apart into at its expansion zoom.
@@ -1044,7 +1107,36 @@ class VmapEngine extends ChangeNotifier {
     });
   }
 
-  void paint(ui.Canvas canvas, VmapCamera flatCamera) {
+  /// Draws one frame of the map, [size] logical pixels, as [camera] sees
+  /// it. This is what a widget hosting the engine calls from its painter:
+  /// [Vmap] does, and so does the flutter_map layer in `vmap_flutter_map`.
+  /// [ahead] is where the camera is headed while an animation moves it, so
+  /// the tiles there load on the way.
+  void paint(
+    ui.Canvas canvas,
+    ui.Size size,
+    VmapCamera camera, {
+    double devicePixelRatio = 1,
+    VmapCamera? ahead,
+  }) {
+    final view = camera.view(size.width, size.height);
+    final center = view.center;
+    final screen = view.screenCenter;
+    _paint(
+      canvas,
+      MapFrame(
+        zoom: view.zoom + 1,
+        origin: ui.Offset(center.x - screen.x, center.y - screen.y),
+        size: size,
+        rotation: camera.bearing * math.pi / 180,
+        devicePixelRatio: devicePixelRatio,
+        view: view,
+        ahead: ahead?.view(size.width, size.height),
+      ),
+    );
+  }
+
+  void _paint(ui.Canvas canvas, MapFrame flatCamera) {
     _frame++;
     var camera = flatCamera;
     _camera = camera;
@@ -1057,6 +1149,19 @@ class VmapEngine extends ChangeNotifier {
     final size = camera.size;
     final sheet = _sheet;
     if (sheet == null) return;
+    if (_renderer?.loading ?? false) {
+      if (backgroundColor case final color?) {
+        canvas.drawRect(
+          ui.Offset.zero & camera.size,
+          ui.Paint()..color = color,
+        );
+      }
+      stats
+        ..busy = true
+        ..preparing = true;
+      _requestFrame();
+      return;
+    }
     final dataZoom = camera.zoom - 1;
     final styleZoom = dataZoom + sheet.zoomOffset;
     _context
@@ -1071,7 +1176,7 @@ class VmapEngine extends ChangeNotifier {
       dashFade: _zoomHistory.fade,
     );
     _budget.start(zooming: (camera.zoom - _lastZoom).abs() > 0.002);
-    final gpu = renderer;
+    final gpu = _renderer;
     final onGpu = camera.view != null && gpu != null && gpu.supports(sheet);
     if (!onGpu && _onGpu) {
       // Tiles made ready for the renderer have no canvas meshes, and the
@@ -1095,7 +1200,7 @@ class VmapEngine extends ChangeNotifier {
     // Only the GPU tier draws the globe; the canvas draws such a style flat.
     final globeness = onGpu ? sheet.projection.globeAt(styleZoom) : 0.0;
     if (globeness > 0 && camera.view != null) {
-      camera = VmapCamera(
+      camera = MapFrame(
         zoom: camera.zoom,
         origin: camera.origin,
         size: camera.size,
@@ -1113,7 +1218,7 @@ class VmapEngine extends ChangeNotifier {
       final (view: raised, :easing) = _raiseGround(view);
       if (easing) waiting = true;
       if (!identical(raised, view)) {
-        camera = VmapCamera(
+        camera = MapFrame(
           zoom: camera.zoom,
           origin: camera.origin,
           size: camera.size,
@@ -1475,7 +1580,8 @@ class VmapEngine extends ChangeNotifier {
           ) +
           (_terrain?.waiting ?? 0)
       ..resourcesLoading = _resources.loading + _labels.glyphsLoading
-      ..drawCalls = draws;
+      ..drawCalls = draws
+      ..gpuFramesReused = _renderer?.framesReused ?? 0;
     for (final s in _sources) {
       s.evict(maxCachedTiles, _frame);
     }
@@ -1484,7 +1590,7 @@ class VmapEngine extends ChangeNotifier {
   bool _retryPending = false;
 
   /// How many worlds east of the first the copy [d] is drawn in lies.
-  static int _wrapOf(TileDraw d, VmapCamera camera) {
+  static int _wrapOf(TileDraw d, MapFrame camera) {
     final n = 1 << d.tile.id.z;
     final column = ((d.left + camera.origin.dx) / d.size).round();
     return ((column - d.tile.id.x) / n).floor();
@@ -1518,7 +1624,7 @@ class VmapEngine extends ChangeNotifier {
       scale,
       _clock,
       started + FrameBudget.micros - _budget.spent,
-      renderer: _onGpu ? renderer : null,
+      renderer: _onGpu ? _renderer : null,
     );
     final spent = _clock.elapsedMicroseconds - started;
     _budget.spent += spent;
@@ -1548,7 +1654,7 @@ class VmapEngine extends ChangeNotifier {
       ..clear()
       ..disposeGlyphs();
     _buildings.dispose();
-    renderer?.dispose();
+    _renderer?.dispose();
     _resources.dispose();
     _meshes.dispose();
     for (final r in _rasters) {

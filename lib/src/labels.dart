@@ -438,8 +438,9 @@ class LabelEngine {
   void useRanges(
     String? url,
     TileSourceConfig config,
-    void Function() onArrived,
-  ) {
+    void Function() onArrived, {
+    void Function(Object error)? onError,
+  }) {
     if (url == _rangesUrl) return;
     _rangesUrl = url;
     _sprites.ranges?.close();
@@ -453,6 +454,7 @@ class LabelEngine {
               _glyphPages?.addPbf(face, glyphs);
               onArrived();
             },
+            onError: onError,
           );
     _painter.rules = _points.rules = _rules = url == null
         ? LabelRules.vmap

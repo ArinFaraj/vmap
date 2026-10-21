@@ -54,7 +54,7 @@ mkdir -p "$out"
 printf '%s\n' "$filter" >"$out/filter"
 scope="$(cd "$(dirname "$0")" && pwd)/render_suite_out_of_scope.tsv"
 exceptions="$(cd "$(dirname "$0")" && pwd)/render_suite_exceptions.tsv"
-cd "$(dirname "$0")/../example"
+cd "$(dirname "$0")/../bench"
 # Built, then started as a plain process rather than through `open`, which
 # drops the environment: VMAP_BACKGROUND keeps the app hidden, out of the
 # Dock and from taking focus.

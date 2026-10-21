@@ -12,6 +12,10 @@ import 'package:vmap/renderer.dart';
 /// density to full, and a dashed layer's pattern as the signed distance to
 /// the nearest dash end.
 class LineRamps {
+  LineRamps(this._onFailure);
+
+  final void Function(Object error) _onFailure;
+
   /// Texels a row, as MapLibre's ramp: 256, or for a stepped gradient as
   /// many as a long line's short steps need, which MapLibre takes up to the
   /// GPU's limit.
@@ -144,7 +148,7 @@ class LineRamps {
     } catch (e) {
       _gradients.clear();
       _dashes.clear();
-      debugPrint('vmap: the line ramps are not on the GPU: $e');
+      _onFailure(e);
     }
   }
 
