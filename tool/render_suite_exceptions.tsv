@@ -145,7 +145,6 @@ text-local-glyphs/cjk	equal	CJK drawn with a local font, which differs by machin
 text-local-glyphs/missing	equal	CJK drawn with a local font, which differs by machine
 text-local-glyphs/no-glyphs	equal	CJK drawn with a local font, which differs by machine
 text-local-ideographs/cjk-symbols	equal	CJK drawn with a local font, which differs by machine
-text-size/composite-function-line-placement	equal	edge pixels
 text-translate-anchor/rotation-alignment-map/pitch-alignment-map/text-translate-anchor-viewport	equal	edge pixels
 text-translate-anchor/rotation-alignment-map/pitch-alignment-viewport/text-translate-anchor-viewport	equal	edge pixels
 text-translate-anchor/rotation-alignment-viewport/pitch-alignment-map/text-translate-anchor-map	equal	edge pixels
