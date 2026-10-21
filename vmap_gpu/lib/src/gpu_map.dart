@@ -67,6 +67,10 @@ class GpuMap implements MapRenderer {
   SpriteSheet? _sheet;
   ui.Image? _sheetImage;
   gpu.Texture? _sheetTexture;
+
+  /// The sprite sheet's pixels once they are read, which a background's
+  /// pattern on the drape is cut from.
+  ByteData? _sheetPixels;
   late final gpu.Texture _blank = gpu.gpuContext.createTexture(
     gpu.StorageMode.hostVisible,
     1,
@@ -1029,6 +1033,7 @@ class GpuMap implements MapRenderer {
     try {
       final pixels = await image.toByteData();
       if (pixels == null || !identical(image, _sheetImage)) return;
+      _sheetPixels = pixels;
       _sheetTexture = gpu.gpuContext.createTexture(
         gpu.StorageMode.hostVisible,
         image.width,
@@ -1051,6 +1056,7 @@ class GpuMap implements MapRenderer {
     if (!identical(image, _sheetImage)) {
       _sheetImage = image;
       _sheetTexture = null;
+      _sheetPixels = null;
       if (image != null) _loadSprites(image);
     }
     final texture = _sheetTexture ?? _blank;

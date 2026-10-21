@@ -291,6 +291,9 @@ class _Drape {
                 span,
                 sheet.backgrounds[run.background],
                 context,
+                worldLeft: left + origin.dx,
+                worldTop: top + origin.dy,
+                zoom: view.zoom,
               );
             } else if (run.raster >= 0 && run.raster < _map.rasters.length) {
               _drawPictures(p, _map.rasters[run.raster], clip, left, top, span);
@@ -449,9 +452,47 @@ class _Drape {
   /// One pixel textures of the background colours drawn, by colour.
   final Map<int, gpu.Texture> _colours = {};
 
+  /// Each background pattern on its own, by name, cut from the sprite
+  /// sheet's pixels [_patternPixels] held.
+  final Map<String, gpu.Texture?> _patterns = {};
+  ByteData? _patternPixels;
+
+  /// Background pattern [name] as a texture of its own, which repeats.
+  gpu.Texture? _patternTexture(String name) {
+    final pixels = _map._sheetPixels;
+    final entry = _map._sheet?.entries[name];
+    if (pixels == null || entry == null) return null;
+    if (!identical(pixels, _patternPixels)) {
+      _patternPixels = pixels;
+      _patterns.clear();
+    }
+    return _patterns.putIfAbsent(name, () {
+      final sheetWidth = _map._sheetImage!.width;
+      final source = entry.source;
+      final x0 = source.left.round(), y0 = source.top.round();
+      final w = source.width.round(), h = source.height.round();
+      if (w <= 0 || h <= 0) return null;
+      final cut = Uint8List(w * h * 4);
+      final from = pixels.buffer.asUint8List(pixels.offsetInBytes);
+      for (var y = 0; y < h; y++) {
+        final at = ((y0 + y) * sheetWidth + x0) * 4;
+        cut.setRange(y * w * 4, (y + 1) * w * 4, from, at);
+      }
+      return gpu.gpuContext.createTexture(
+        gpu.StorageMode.hostVisible,
+        w,
+        h,
+        format: gpu.PixelFormat.r8g8b8a8UNormInt,
+      )..overwrite(ByteData.sublistView(cut));
+    });
+  }
+
   /// Fills the slot whose clip matrix is [clip] and whose tile spans [span]
   /// from [left], [top] with background [layer]'s colour, as the canvas
-  /// fills the flat map's.
+  /// fills the flat map's, or its pattern laid from the world's corner,
+  /// [worldLeft], [worldTop] the tile's, as MapLibre's
+  /// `background_pattern`: each image its size at the whole [zoom] below,
+  /// grown with the map until the next.
   void _drawBackground(
     gpu.RenderPass pass,
     Float64List clip,
@@ -459,9 +500,50 @@ class _Drape {
     double top,
     double span,
     BackgroundLayer layer,
-    EvalContext context,
-  ) {
+    EvalContext context, {
+    required double worldLeft,
+    required double worldTop,
+    required double zoom,
+  }) {
     final map = _map;
+    if (layer.pattern?.call(context) case final Object name) {
+      if (context.zoom < layer.minZoom || context.zoom >= layer.maxZoom) return;
+      final entry = map._sheet?.entries['$name'];
+      final texture = _patternTexture('$name');
+      if (entry == null || texture == null) return;
+      final growth = math.pow(2, zoom - zoom.floorToDouble()).toDouble();
+      final w = entry.source.width / entry.pixelRatio * growth;
+      final h = entry.source.height / entry.pixelRatio * growth;
+      double frac(double v) => v - v.floorToDouble();
+      _bindFlatGround(pass);
+      _demInfo
+        ..[8] = -1e4
+        ..[9] = -1e4
+        ..[10] = 1e4
+        ..[11] = 1e4;
+      map._times(clip, span / tileExtent, 0, left, top, 0);
+      map._frameInfo
+        ..[16] = frac(worldLeft / w)
+        ..[17] = frac(worldTop / h)
+        ..[18] = span / w
+        ..[19] = span / h
+        ..[27] = (asNumber(layer.opacity(context)) ?? 1).clamp(0.0, 1.0);
+      pass
+        ..bindTexture(
+          map._groundDrape!,
+          texture,
+          sampler: gpu.SamplerOptions(
+            minFilter: gpu.MinMagFilter.linear,
+            magFilter: gpu.MinMagFilter.linear,
+            widthAddressMode: gpu.SamplerAddressMode.repeat,
+            heightAddressMode: gpu.SamplerAddressMode.repeat,
+          ),
+        )
+        ..bindUniform(map._groundFrame!, map._host!.emplace(map._frameBytes))
+        ..bindUniform(map._groundDem!, map._host!.emplace(_demBytes))
+        ..drawIndexed(_indexCount);
+      return;
+    }
     final color = layer.colorAt(context);
     if (color == null || color.a <= 0) return;
     final argb = color.toArgb();
