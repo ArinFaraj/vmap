@@ -160,16 +160,32 @@ class PointLabels {
     final sides = symbol?.anchors ?? const <String>[];
     final fitted = pin == null && (symbol?.textFit ?? false);
     final pads = symbol?.iconPaddings;
+    // As MapLibre's collisionPadding: a picture fitted by its content
+    // collides with the whole of it, past the content box the text fills.
+    final (ml, mt, mr, mb) = switch (icon) {
+      SpriteImage(
+        content: [final l, final t, final r, final b],
+        :final pixelRatio,
+      )
+          when fitted =>
+        (
+          l / pixelRatio * st.iconScale,
+          t / pixelRatio * st.iconScale,
+          (icon.width - r / pixelRatio) * st.iconScale,
+          (icon.height - b / pixelRatio) * st.iconScale,
+        ),
+      _ => (0.0, 0.0, 0.0, 0.0),
+    };
     // As MapLibre's attemptAnchorPlacement: an icon fitted to the text
     // moves with it, and a side where it collides is passed over.
     bool fittedIconClear(double dx, double dy) {
       final ix = spot.x + st.iconDx + dx * st.iconScale;
       final iy = spot.y + st.iconDy + dy * st.iconScale;
       return !_boxes.hits(
-        ix - st.iconW / 2 - (pads?[3] ?? iconPad),
-        iy - st.iconH / 2 - (pads?[0] ?? iconPad),
-        ix + st.iconW / 2 + (pads?[1] ?? iconPad),
-        iy + st.iconH / 2 + (pads?[2] ?? iconPad),
+        ix - st.iconW / 2 - (pads?[3] ?? iconPad) - ml,
+        iy - st.iconH / 2 - (pads?[0] ?? iconPad) - mt,
+        ix + st.iconW / 2 + (pads?[1] ?? iconPad) + mr,
+        iy + st.iconH / 2 + (pads?[2] ?? iconPad) + mb,
         cooperative: symbol?.iconCooperative ?? false,
       );
     }
@@ -202,10 +218,10 @@ class PointLabels {
       _keepContentShape(st, icon);
     }
     final ix = spot.x + st.iconDx, iy = spot.y + st.iconDy;
-    final il = ix - st.iconW / 2 - (pads?[3] ?? iconPad);
-    final it = iy - st.iconH / 2 - (pads?[0] ?? iconPad);
-    final ir = ix + st.iconW / 2 + (pads?[1] ?? iconPad);
-    final ib = iy + st.iconH / 2 + (pads?[2] ?? iconPad);
+    final il = ix - st.iconW / 2 - (pads?[3] ?? iconPad) - ml;
+    final it = iy - st.iconH / 2 - (pads?[0] ?? iconPad) - mt;
+    final ir = ix + st.iconW / 2 + (pads?[1] ?? iconPad) + mr;
+    final ib = iy + st.iconH / 2 + (pads?[2] ?? iconPad) + mb;
     final iconFits =
         hasIcon &&
         ((symbol?.iconOverlaps ?? false) ||
