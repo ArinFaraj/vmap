@@ -84,7 +84,7 @@ package name, once chosen.
   (the style, the app's fonts, or the style with the app's fonts as fallback)
   in place of `glyphText` and `styleGlyphs`.
 - **A style is required**, or an explicit choice of the built in one, so a
-  blank map never surprises.
+  blank map never surprises. (Dropped in the second pass, below.)
 - **Loading and state on the widget**: an optional builder shown until the
   first frame with tiles, and callbacks for style loaded, idle, camera moved
   and errors, on the widget as well as the engine.
@@ -99,6 +99,42 @@ package name, once chosen.
   and a debug message naming the missing switch when Flutter GPU is off.
 - **The description and README** rewritten around the engine: 3D, MapLibre
   styles, every platform, flutter_map as an adapter.
+
+## Second pass: each proposal checked
+
+Read again against the code and the platform facts, on 2026-10-21. A verdict
+for each proposal, then what the second pass added.
+
+| Proposal | Verdict | Why |
+|---|---|---|
+| One prefix | keep | Three spellings and bare names that collide are the first thing a user trips on. |
+| GPU by default, canvas fallback | keep, with a warning | An app must switch Flutter GPU on per platform; a silent fallback looks like a broken map. In debug builds, say which switch is missing. |
+| Glyphs from the style by default | keep, with a fix | The style path is the MapLibre accurate one. On the canvas fallback it draws through glyph cells per subpixel position, which drop letters for a few frames while a cell is made; give that path the nearest ready cell, the one change the frozen canvas gets. Arabic and Kurdish keep shaping through the app's fonts, as now. |
+| A style is required | drop | A map that works with no URL and no key is the best first impression. Keep the built in style as the default and say so in the README. |
+| Loading builder and state callbacks | keep, sharpened | Show the builder until the first frame with tiles, not until idle, or it hides the map for seconds. Callbacks: style loaded, camera moved, camera settled, idle, and typed errors that name the style, tile, glyph or sprite URL. |
+| `onTap` with the features | keep, reshaped | Finding features reads the tiles off the UI thread, so a tap cannot wait for them. Give the tap its position at once and a method that finds the features when asked. |
+| Grouped options | keep, small | Tiles and cache, text and labels, rendering. Three small value classes, no more. |
+| Web worker into the engine options | revise | One worker serves every map on the page, so it is a process wide setting. Move it to one explicit setup call made before the first map, not a mutable static on the engine class. |
+| Statistics in a debug library | keep | They are for benchmarks, not apps. |
+| Setup docs and a debug check | keep | See the warning above. |
+| Description and README | keep | |
+
+Added by the second pass:
+
+- **Fit the camera to bounds.** There is no way to frame a set of points or a
+  box with padding (`VMapController` has `flyTo`, `easeTo`, `stop` and a
+  camera setter). Every map app needs it.
+- **One coordinate type.** `LatLng` from latlong2 in queries
+  (`engine.featuresAt`), bare `latitude` and `longitude` doubles in `onTap`
+  and the camera. Use `LatLng` everywhere a point is taken or given.
+- **Shader delivery.** The GPU shaders are compiled by a native assets build
+  hook when the app builds (`vmap_gpu/hook/build.dart`, flutter_gpu_shaders),
+  which Flutter's Flutter-GPU.md calls experimental. It works for macOS builds
+  on stable 3.47.7; check web, Android, iOS, Windows and Linux builds before
+  release, and if any fail, ship the compiled `.shaderbundle` in the package.
+- **A setup command, later.** A `dart run` command that adds the Flutter GPU
+  switch to the manifest, `Info.plist` and the Windows and Linux runners.
+  Useful, but it edits the app's files, so it waits until after 0.1.
 
 ## Not proposed
 

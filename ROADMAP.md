@@ -14,10 +14,12 @@ What the API looks like and what should change before release:
 
 ## Status
 
-- **Now:** 0.1, step 1. Waiting on the package name; nothing can be renamed
-  or restructured without it.
-- **Next:** the API polish in [doc/api-review.md](doc/api-review.md), once
-  its proposals are approved.
+- **Now:** 0.1, step 1. Waiting on the package name
+  ([doc/naming.md](doc/naming.md): shortlist and checks, `mappa`
+  recommended); nothing can be renamed or restructured without it.
+- **Next:** the API polish in [doc/api-review.md](doc/api-review.md). Its
+  proposals have been reviewed twice (verdicts in its second pass section);
+  Arin asked for that review rather than approving item by item.
 - Work happens on the `engine` branch of `ArinFaraj/vmap`. Merging to `main`
   and tagging (which publishes to pub.dev) waits for Arin's yes.
 
@@ -42,10 +44,9 @@ Keep this section current: update it whenever a step starts or finishes.
 
 ## Still to decide
 
-- **The name.** Free on pub.dev in October 2026: `mapscene`, `geoscene`,
-  `terra_map`, `orbit_map`. pub.dev can still refuse a name too close to an
-  existing one, which only shows when publishing. The adapter takes the name
-  plus `_flutter_map`.
+- **The name.** Shortlist, criteria and pub.dev checks in
+  [doc/naming.md](doc/naming.md). vmap's slot may be reused or left behind.
+  The adapter takes the name plus `_flutter_map`.
 - **Whether the canvas renderer goes entirely**, once we know whether
   `flutter test` can run Flutter GPU and how Impeller's OpenGL ES backend
   copes on old phones.
