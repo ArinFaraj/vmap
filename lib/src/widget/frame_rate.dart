@@ -41,7 +41,7 @@ class FrameRateVote {
   /// The map is moving or being touched: draw it fast. Called every frame
   /// the camera moves, so it only notes the time; one timer looks at it.
   static void moving() {
-    if (!_supported) return;
+    if (!_supported || _users == 0) return;
     _lastMove = _clock.elapsedMilliseconds;
     if (!_fast) _send(true);
     _release ??= Timer(_rest, _check);

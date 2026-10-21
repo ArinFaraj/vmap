@@ -107,7 +107,7 @@ class PointLabels {
     st
       ..onGround =
           (symbol?.textOnGround ?? false) &&
-          ((_view.tilted?.pitch ?? 0) > 0 || _view.tilted?.globe != null)
+          (_view.tilted.pitch > 0 || _view.tilted.globe != null)
       ..keepUpright = false;
     if (st.onGround) st.angle = spin - _view.mapTurn;
     _view.project(st.worldX, st.worldY);

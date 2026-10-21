@@ -4,6 +4,8 @@ import 'package:vmap/src/style/raster_style.dart';
 import 'package:vmap/src/style/style.dart';
 import 'package:vmap/src/style/style_model.dart';
 
+import 'support/mvt_fixture.dart';
+
 EvalContext at(double zoom, [Map<String, Object?> props = const {}]) =>
     EvalContext()
       ..zoom = zoom
@@ -488,5 +490,95 @@ void main() {
     expect(light.symbols, hasLength(14));
     final casing = light.layers.whereType<LineLayer>().first;
     expect(casing.width(at(14)), isA<double>());
+  });
+
+  test('a polygon is named at a point inside it', () {
+    final built = build(
+      [
+        {
+          'type': 'symbol',
+          'source-layer': 'parks',
+          'layout': {'text-field': '{name}'},
+        },
+      ],
+      tile('parks', [
+        (
+          3,
+          {'name': 'Park'},
+          [
+            [
+              1000,
+              1000,
+              3000,
+              1000,
+              3000,
+              1400,
+              1400,
+              1400,
+              1400,
+              3000,
+              1000,
+              3000,
+            ],
+          ],
+        ),
+      ]),
+    );
+    final label = built.labels.single;
+    expect(label.text, 'Park');
+    final inArm =
+        (label.y < 1400 && label.x > 1000 && label.x < 3000) ||
+        (label.x < 1400 && label.y > 1000 && label.y < 3000);
+    expect(inArm, isTrue);
+  });
+
+  test('a patterned line keeps where each vertex sits across it', () {
+    final built = build(
+      [
+        {
+          'type': 'line',
+          'source-layer': 'roads',
+          'paint': {'line-pattern': 'rail'},
+        },
+      ],
+      tile('roads', [
+        (
+          2,
+          <String, String>{},
+          [
+            [0, 100, 1000, 100],
+          ],
+        ),
+      ]),
+    );
+    final across = [
+      for (var i = 1; i < built.meshes.single.chunk.distances!.length; i += 2)
+        built.meshes.single.chunk.distances![i],
+    ];
+    expect(across.toSet(), {0, 1});
+  });
+
+  test('hillshade and heatmap layers are read', () {
+    final sheet = StyleSheet.compile({
+      'version': 8,
+      'sources': {
+        'dem': {
+          'type': 'raster-dem',
+          'tiles': ['https://example.org/{z}/{x}/{y}.png'],
+          'encoding': 'terrarium',
+        },
+        'points': {
+          'type': 'geojson',
+          'data': {'type': 'FeatureCollection', 'features': <Object>[]},
+        },
+      },
+      'layers': [
+        {'id': 'hills', 'type': 'hillshade', 'source': 'dem'},
+        {'id': 'heat', 'type': 'heatmap', 'source': 'points'},
+      ],
+    });
+    expect((sheet.rasters.single as HillshadeLayer).relief.terrarium, isTrue);
+    expect(sheet.layers.single, isA<HeatmapLayer>());
+    expect(sheet.runs.map((r) => r.raster), [0, -1]);
   });
 }

@@ -65,6 +65,18 @@ LabelEngine _engine() => LabelEngine(const VmapTextStyle())
 
 /// Paints until placing and drawing the labels has settled, and returns the
 /// keys of the labels showing.
+/// The screen of the tests looking straight down at [zoom], in the
+/// labels' convention, centred where it is at [_zoom] with its top left at
+/// the world's.
+MapView _flat([double zoom = _zoom]) {
+  final x = _size.width / 2 / _world, y = _size.height / 2 / _world;
+  final lat = math.atan(_sinh(math.pi * (1 - 2 * y))) * 180 / math.pi;
+  return VmapCamera(
+    center: LatLng(lat, x * 360 - 180),
+    zoom: zoom - 1,
+  ).view(_size.width, _size.height);
+}
+
 Future<Set<String>> _settle(
   LabelEngine labels,
   List<List<LabelCandidate>> sources, {
@@ -80,12 +92,11 @@ Future<Set<String>> _settle(
       zoom: _zoom,
       origin: ui.Offset.zero,
       size: _size,
-      rotation: 0,
       devicePixelRatio: 1,
       dt: 1,
       rasterBudgetMicros: 1000000,
       zooming: false,
-      view: view,
+      view: view ?? _flat(),
     );
     recorder.endRecording().dispose();
     await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -236,11 +247,11 @@ void main() {
         zoom: zoom,
         origin: ui.Offset.zero,
         size: _size,
-        rotation: 0,
         devicePixelRatio: 1,
         dt: 0.016,
         rasterBudgetMicros: 1000000,
         zooming: true,
+        view: _flat(zoom),
       );
       recorder.endRecording().dispose();
     }

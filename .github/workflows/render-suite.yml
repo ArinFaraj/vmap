@@ -5,6 +5,10 @@ on:
     branches: [main, engine]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   render-suite:
     runs-on: macos-latest

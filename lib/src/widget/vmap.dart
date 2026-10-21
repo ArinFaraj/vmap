@@ -55,6 +55,7 @@ class Vmap extends StatefulWidget {
     this.tilt = true,
     this.keyboard = true,
     this.attribution = true,
+    this.highRefreshRate = true,
     this.loadingBuilder,
     this.onTap,
     this.onLongPress,
@@ -136,6 +137,11 @@ class Vmap extends StatefulWidget {
   /// terms require. Off, the app must show it some other way: see
   /// [VmapEngine.attributions].
   final bool attribution;
+
+  /// On Android, asks for the display's fastest refresh rate while the map
+  /// moves and gives it back a few seconds after it rests. Many Android 15
+  /// phones draw an app at 60 Hz otherwise, whatever its window prefers.
+  final bool highRefreshRate;
 
   /// Shown over the map until it first draws tiles, or until it fails.
   final WidgetBuilder? loadingBuilder;
@@ -304,7 +310,7 @@ class _VmapState extends State<Vmap>
   @override
   void initState() {
     super.initState();
-    FrameRateVote.attach();
+    if (widget.highRefreshRate) FrameRateVote.attach();
     _attach();
     _lastCamera = _c.camera;
     _c.addListener(_cameraChanged);
@@ -331,6 +337,9 @@ class _VmapState extends State<Vmap>
   @override
   void didUpdateWidget(Vmap old) {
     super.didUpdateWidget(old);
+    if (old.highRefreshRate != widget.highRefreshRate) {
+      widget.highRefreshRate ? FrameRateVote.attach() : FrameRateVote.detach();
+    }
     final oldController = old.controller ?? _ownController;
     if (widget.controller != null && oldController != widget.controller) {
       oldController
@@ -370,7 +379,7 @@ class _VmapState extends State<Vmap>
     _focus.dispose();
     WidgetsBinding.instance.removeObserver(this);
     PaintingBinding.instance.systemFonts.removeListener(_fontsChanged);
-    FrameRateVote.detach();
+    if (widget.highRefreshRate) FrameRateVote.detach();
     _c
       ..removeListener(_cameraChanged)
       ..detach();

@@ -3,8 +3,8 @@
 vmap started as a flutter_map layer drawn with the canvas, because Flutter GPU
 did not run on the web. The WebGL2 shim taken from flutter_scene runs it
 there, Impeller is the default on every native platform as of Flutter 3.47,
-and the GPU renderer now passes 1,399 of the 1,530 MapLibre render tests in
-scope (91%; 1,394 of all 1,730, including ones out of scope). So the
+and the GPU renderer now passes 1,394 of the 1,519 MapLibre render tests in
+scope (92%; 1,401 of all 1,730, including ones out of scope). So the
 project becomes its own map engine for Flutter: GPU first, 3D, its own widget
 and camera, and a small adapter for apps that use flutter_map.
 
@@ -61,7 +61,7 @@ The engine as it stands, packaged and run on every platform.
 
 Already in, from the work so far:
 
-- Any MapLibre style: 1,399 of the 1,530 render tests that must pass, and at
+- Any MapLibre style: 1,394 of the 1,519 render tests that must pass, and at
   most 4.3% of pixels different from MapLibre over 21 views of the
   OpenFreeMap liberty, bright and positron styles.
 - GPU drawing: fills, lines, gradients, dashes and patterns in one draw per

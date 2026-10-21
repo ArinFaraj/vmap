@@ -12,7 +12,6 @@ import '../style/style_model.dart';
 import 'tessellate.dart';
 import 'tile_builder.dart';
 import 'worker.dart';
-import '../camera/mercator.dart';
 import 'tile_id.dart';
 import '../camera/view.dart';
 
@@ -377,66 +376,17 @@ class TileSource {
     bool standing = false,
   }) {
     retrying = false;
-    final size = camera.size;
     maxDataZoom = pool.coverMaxZoom;
-    final view = camera.view;
-    if (view != null) {
-      return _coverView(
-        view,
-        camera,
-        frame: frame,
-        nowMs: nowMs,
-        prepare: prepare,
-        hold: hold,
-        variableZoom: variableZoom,
-        standing: standing,
-      );
-    }
-    final tz = dataZoom.floor().clamp(0, maxDataZoom);
-    final over = dataZoom.floor();
-    final tileSize = 256.0 * math.pow(2, camera.zoom - tz);
-    final TileRange(:n, :x0, :x1, :y0, :y1) = _inView(camera, tz, tileSize);
-    final centerX = (camera.origin.dx + size.width / 2) / tileSize - 0.5;
-    final centerY = (camera.origin.dy + size.height / 2) / tileSize - 0.5;
-
-    ideal.clear();
-    fallback.clear();
-    fallbackByKey.clear();
-    uncovered = 0;
-    missing.clear();
-    var waiting = false;
-    var covered = true;
-    for (var y = y0; y <= y1; y++) {
-      for (var x = x0; x <= x1; x++) {
-        final id = TileId(tz, x % n, y, over: over);
-        final left = x * tileSize - camera.origin.dx;
-        final top = y * tileSize - camera.origin.dy;
-        final tile = tiles[id];
-        if (tile != null) {
-          tile.usedFrame = frame;
-          if (!tile.prepared) prepare(tile, tileSize / tileExtent);
-          if (tile.prepared) {
-            ideal.add(TileDraw(tile, left, top, tileSize));
-            continue;
-          }
-          waiting = true;
-        } else {
-          covered = false;
-          final dx = x - centerX;
-          final dy = y - centerY;
-          missing.add((id, dx * dx + dy * dy));
-        }
-        final before = previous[id];
-        if (before != null && before.prepared) {
-          ideal.add(TileDraw(before, left, top, tileSize));
-          continue;
-        }
-        _addFallback(frame, id, x, y, left, top, tileSize, camera.origin);
-      }
-    }
-    if (covered && !waiting) dropPrevious();
-    _updateWanted(tz, camera, size, frame, nowMs);
-    return waiting;
+    return _coverView(
+      camera.view,
+      camera,
+      frame: frame,
+      nowMs: nowMs,
+      prepare: prepare,
+      hold: hold,
+      variableZoom: variableZoom,
+      standing: standing,
+    );
   }
 
   /// [cover] for a tilted view: tiles nearer the camera at the view's zoom,
@@ -636,53 +586,6 @@ class TileSource {
     return any;
   }
 
-  void _updateWanted(
-    int tz,
-    MapFrame camera,
-    ui.Size size,
-    int frame,
-    int nowMs,
-  ) {
-    wanted.clear();
-    missing.sort((a, b) => a.$2.compareTo(b.$2));
-    for (final (id, _) in missing) {
-      if (resting(id, nowMs)) {
-        retrying = true;
-        continue;
-      }
-      wanted.add(id);
-    }
-    void cover(int z, {required bool fetch}) {
-      final span = 256.0 * math.pow(2, camera.zoom - z);
-      final TileRange(:n, :x0, :x1, :y0, :y1) = _inView(camera, z, span);
-      for (var y = y0; y <= y1; y++) {
-        for (var x = x0; x <= x1; x++) {
-          final id = TileId(z, x % n, y);
-          final tile = tiles[id];
-          if (tile != null) {
-            tile.usedFrame = frame;
-          } else if (fetch && !wanted.contains(id)) {
-            wanted.add(id);
-          }
-        }
-      }
-    }
-
-    final bz = math.max(0, tz - 3);
-    if (bz < tz) cover(bz, fetch: true);
-    // The level above the view is kept alive and, past the middle of a zoom
-    // level, the level below is fetched, so crossing into the next level in
-    // either direction finds its tiles ready.
-    if (tz > 0) cover(tz - 1, fetch: false);
-    if (tz < maxDataZoom && camera.zoom - 1 - tz > 0.55) {
-      cover(tz + 1, fetch: true);
-    }
-    if (wanted.isNotEmpty || hadWanted) {
-      pool.want(List.of(wanted));
-    }
-    hadWanted = wanted.isNotEmpty;
-  }
-
   /// Drops the tiles longest out of use until at most [keep] are held.
   void evict(int keep, int frame) {
     if (tiles.length <= keep) return;
@@ -694,16 +597,6 @@ class TileSource {
       t.dispose();
     }
   }
-
-  /// The tiles of zoom [z], [span] logical pixels wide, that cover the view.
-  static TileRange _inView(MapFrame camera, int z, double span) => TileRange(
-    z,
-    camera.origin.dx,
-    camera.origin.dy,
-    camera.origin.dx + camera.size.width,
-    camera.origin.dy + camera.size.height,
-    tileSpan: span,
-  );
 }
 
 /// How far above the camera's zoom tiles are picked. Zooming out past a

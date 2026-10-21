@@ -128,7 +128,7 @@ class LabelPainter {
       -math.sin(turn),
       math.cos(turn),
     );
-    if (st.iconOnGround && _view.tilted != null) {
+    if (st.iconOnGround) {
       final onMap = switch (st.candidate) {
         TileLabel(tile: BuiltLabel(line: _?)) => st.angle,
         TileLabel(tile: BuiltLabel(:final angle, :final turns)) =>
@@ -165,7 +165,7 @@ class LabelPainter {
         still &&
         turn == 0 &&
         !icon.sdf &&
-        (_view.tilted?.pitch ?? 0) == 0 &&
+        _view.tilted.pitch == 0 &&
         !(symbol?.iconSizeByFeature ?? false) &&
         pieces.length == 1 &&
         to0.width * devicePixelRatio == from0.width &&
@@ -177,7 +177,7 @@ class LabelPainter {
         !moving &&
         turn == 0 &&
         !icon.sdf &&
-        (_view.tilted?.pitch ?? 0) == 0 &&
+        _view.tilted.pitch == 0 &&
         st.iconScale == 1 &&
         !(symbol?.iconSizeByFeature ?? false) &&
         icon.pixelRatio == devicePixelRatio;
@@ -196,7 +196,7 @@ class LabelPainter {
         )) {
       return;
     }
-    final onGround = st.iconOnGround && _view.tilted != null;
+    final onGround = st.iconOnGround;
     for (final filter in [?rim, fill]) {
       _imagePaint.colorFilter = filter;
       if (onGround) {
@@ -425,7 +425,7 @@ class LabelPainter {
       return;
     }
     switch (sprite) {
-      case GlyphSprite() when st.onGround && _view.tilted != null:
+      case GlyphSprite() when st.onGround:
         _glyphsGround(st, sprite, devicePixelRatio);
       case RangeSprite() when st.curve == null && _turnOf(st) == 0:
         _rangeGlyphs(st, sprite, devicePixelRatio, canvas: canvas);
@@ -851,10 +851,7 @@ class LabelPainter {
   /// placements, so the name would lag and jump while the map turns.
   double _turnOf(LabelState st) {
     final c = st.candidate;
-    if (_view.tilted == null ||
-        st.curve != null ||
-        c is! TileLabel ||
-        c.tile.line == null) {
+    if (st.curve != null || c is! TileLabel || c.tile.line == null) {
       return st.screenAngle;
     }
     return _view.uprightAngle(
@@ -1028,7 +1025,7 @@ class LabelPainter {
       );
     }
 
-    if (st.onGround && _view.tilted != null) {
+    if (st.onGround) {
       _view.project(st.worldX, st.worldY);
       final depth = _view.depth;
       final flip =
@@ -1061,8 +1058,7 @@ class LabelPainter {
       final line = offsetPath(path, middle, lift * unit);
       // As MapLibre's u_gamma_scale for text laid on the map: the clip w
       // over the cosine of the pitch, which softens tilted text's edges.
-      final soften =
-          depth / math.cos((_view.tilted?.pitch ?? 0) * math.pi / 180);
+      final soften = depth / math.cos(_view.tilted.pitch * math.pi / 180);
       final look0 = lookOf(0, size / GlyphPbf.em, soften);
       for (var i = 0; i < g.length; i += 5) {
         final advance = g[i + 4] * unit;

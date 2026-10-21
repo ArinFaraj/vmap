@@ -1,6 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/style/expr.dart';
 
+Object? _eval(Object? json, [Map<String, Object?> props = const {}]) =>
+    compileExpr(json)(EvalContext()..props = props);
+
 Object? _run(Object? json) => compileExpr(json)(EvalContext());
 
 void main() {
@@ -224,5 +227,58 @@ void main() {
       ])(c),
       isNull,
     );
+  });
+
+  test('let binds a value that var reads', () {
+    expect(
+      _eval(
+        [
+          'let',
+          'a',
+          ['get', 'n'],
+          [
+            '+',
+            ['var', 'a'],
+            ['var', 'a'],
+          ],
+        ],
+        {'n': 4},
+      ),
+      8,
+    );
+  });
+
+  test('slice and index-of work on strings and lists', () {
+    expect(_eval(['slice', 'vector', 1, 4]), 'ect');
+    expect(_eval(['slice', 'vector', -3]), 'tor');
+    expect(_eval(['index-of', 'c', 'abc']), 2);
+    expect(
+      _eval([
+        'index-of',
+        2,
+        [
+          'literal',
+          [1, 2, 3],
+        ],
+      ]),
+      1,
+    );
+  });
+
+  test('a cubic-bezier interpolation is eased', () {
+    final at = _eval(
+      [
+        'interpolate',
+        ['cubic-bezier', 0.42, 0, 1, 1],
+        ['get', 'x'],
+        0,
+        0,
+        10,
+        100,
+      ],
+      {'x': 2.5},
+    );
+    expect(at, lessThan(25));
+    expect(at, greaterThan(0));
   });
 }

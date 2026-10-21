@@ -137,7 +137,7 @@ sealed class RasterDrawing<L extends RasterLayer> {
     double zoom,
     ui.Offset origin,
     ui.Size size, {
-    MapView? view,
+    required MapView view,
     bool drape = false,
   }) {
     drawn.clear();
@@ -155,7 +155,7 @@ sealed class RasterDrawing<L extends RasterLayer> {
     double zoom,
     ui.Offset origin,
     ui.Size size,
-    MapView? view, {
+    MapView view, {
     required bool drape,
   });
 
@@ -221,7 +221,7 @@ final class PictureDrawing extends RasterDrawing<ImageLayer> {
     double zoom,
     ui.Offset origin,
     ui.Size size,
-    MapView? view, {
+    MapView view, {
     required bool drape,
   }) {
     final image = _picture;
@@ -481,39 +481,23 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
     double span,
     ui.Offset origin,
     ui.Size size,
-    MapView? view, {
+    MapView view, {
     bool variable = false,
   }) sync* {
-    if (view != null) {
-      final spread = variable || view.pitch > 60;
-      // The hold takes the cover to [z] whatever the view's own zoom; spread
-      // out, each tile's zoom is rounded from the source's own, as
-      // MapLibre's raster tiles, tiles nearer the camera going deeper.
-      for (final t in view.cover(
-        maxZoom: spread ? _maxZoom : z,
-        minZoom: spread ? math.min(layer.cover.minZoom, z) : z,
-        hold: spread
-            ? math.log(512 / layer.tileSize) / math.ln2 + 0.5
-            : z + 0.5 - view.zoom,
-        variableZoom: spread,
-        beyond: variable ? view.height : 0,
-      )) {
-        yield (t.z, t.x, t.y);
-      }
-      return;
-    }
-    final TileRange(:x0, :x1, :y0, :y1) = TileRange(
-      z,
-      origin.dx,
-      origin.dy,
-      origin.dx + size.width,
-      origin.dy + size.height,
-      tileSpan: span,
-    );
-    for (var y = y0; y <= y1; y++) {
-      for (var x = x0; x <= x1; x++) {
-        yield (z, x, y);
-      }
+    final spread = variable || view.pitch > 60;
+    // The hold takes the cover to [z] whatever the view's own zoom; spread
+    // out, each tile's zoom is rounded from the source's own, as MapLibre's
+    // raster tiles, tiles nearer the camera going deeper.
+    for (final t in view.cover(
+      maxZoom: spread ? _maxZoom : z,
+      minZoom: spread ? math.min(layer.cover.minZoom, z) : z,
+      hold: spread
+          ? math.log(512 / layer.tileSize) / math.ln2 + 0.5
+          : z + 0.5 - view.zoom,
+      variableZoom: spread,
+      beyond: variable ? view.height : 0,
+    )) {
+      yield (t.z, t.x, t.y);
     }
   }
 
@@ -524,7 +508,7 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
     double zoom,
     ui.Offset origin,
     ui.Size size,
-    MapView? view, {
+    MapView view, {
     required bool drape,
   }) {
     if (_template == null) return;
@@ -718,9 +702,7 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
   /// turned a quarter or a half included. The centre is rounded to a whole
   /// world pixel, plus half of one turned with the map along a side of the
   /// screen an odd number of pixels long.
-  static (double, double) _snap(ui.Offset origin, MapView? view) {
-    double nearest(double v) => v.roundToDouble() - v;
-    if (view == null) return (nearest(-origin.dx), nearest(-origin.dy));
+  static (double, double) _snap(ui.Offset origin, MapView view) {
     final b = -view.bearing * math.pi / 180;
     final cos = math.cos(b), sin = math.sin(b);
     final xShift = (view.width % 2) / 2, yShift = (view.height % 2) / 2;
@@ -1397,7 +1379,7 @@ final class TerrainTiles extends TileDrawing<TerrainLayer> {
     double zoom,
     ui.Offset origin,
     ui.Size size,
-    MapView? view, {
+    MapView view, {
     required bool drape,
   }) {}
 

@@ -95,4 +95,30 @@ void main() {
       isFalse,
     );
   });
+
+  test('an overlay adds its layers on top, or under a named layer', () {
+    const overlay = VmapOverlay(
+      sources: {
+        'mine': {'type': 'geojson', 'data': <String, Object?>{}},
+      },
+      layers: [
+        {'id': 'top', 'type': 'line', 'source': 'mine'},
+        {'id': 'under', 'type': 'line', 'source': 'mine', 'before': 'b'},
+      ],
+    );
+    final merged = overlay.applyTo({
+      'sources': {
+        'base': {'type': 'vector'},
+      },
+      'layers': [
+        {'id': 'a'},
+        {'id': 'b'},
+      ],
+    });
+    expect((merged['sources']! as Map).keys, ['base', 'mine']);
+    expect(
+      [for (final l in merged['layers']! as List) (l as Map)['id']],
+      ['a', 'under', 'b', 'top'],
+    );
+  });
 }

@@ -7,13 +7,9 @@ import 'label_path.dart';
 import '../camera/mercator.dart';
 import '../camera/view.dart';
 
-/// Where points of the world land on the screen for one frame, with the
-/// map's rotation undone so labels can be laid out upright.
+/// Where points of the world land on the screen for one frame, through the
+/// camera's view, so labels can be laid out upright on the screen.
 class LabelView {
-  double rotation = 0;
-  double cos = 1;
-  double sin = 0;
-
   /// The middle of the screen, which the map turns around.
   double cx = 0;
   double cy = 0;
@@ -23,9 +19,8 @@ class LabelView {
   double world = 256;
   ui.Offset origin = ui.Offset.zero;
 
-  /// Set when the map is tilted: points are projected through it, and the
-  /// frame is already upright.
-  MapView? tilted;
+  /// What the camera sees: points are projected through it.
+  late MapView tilted;
 
   /// The ground's height in world pixels at a point of the world, when the
   /// style raises it: points are projected standing on it.
@@ -59,16 +54,12 @@ class LabelView {
   double depth = 1;
 
   void frame({
-    required double rotation,
     required ui.Size size,
     required double world,
     required ui.Offset origin,
-    MapView? tilted,
+    required MapView tilted,
   }) {
     this.tilted = tilted;
-    this.rotation = rotation;
-    cos = math.cos(rotation);
-    sin = math.sin(rotation);
     cx = size.width / 2;
     cy = size.height / 2;
     this.world = world;
@@ -82,8 +73,9 @@ class LabelView {
   /// terrain depth. Its last tenth is left out, or a label on a slope would
   /// hide behind the slope it stands on.
   bool behindHill(double wx, double wy) {
-    final view = tilted, height = ground;
-    if (view == null || height == null) return false;
+    final height = ground;
+    if (height == null) return false;
+    final view = tilted;
     final w = view.worldSize;
     final (x: ex, y: ey, height: eh) = view.eye;
     final px = wx * w, py = wy * w, ph = heightAt(wx, wy);
@@ -103,8 +95,8 @@ class LabelView {
   /// the sphere by the cosine of its latitude, against the centre's.
   double groundScale(double wy) {
     final view = tilted;
-    final globe = view?.globe;
-    if (view == null || globe == null) return 1;
+    final globe = view.globe;
+    if (globe == null) return 1;
     double cosine(double y) =>
         math.cos(math.min(latitudeAt(y).abs(), 85.051129) * math.pi / 180);
     final full = cosine(view.centerY) / math.max(cosine(wy), 1e-6);
@@ -115,40 +107,19 @@ class LabelView {
   /// fractions of it, is on the upright screen.
   void project(double wx, double wy) {
     final view = tilted;
-    if (view != null) {
-      view.projectTo(
-        wx * view.worldSize,
-        wy * view.worldSize,
-        heightAt(wx, wy),
-      );
-      x = view.outX;
-      y = view.outY;
-      ratio = 0.5 + 0.5 / view.outDepth;
-      depth = view.outDepth;
-      return;
-    }
-    ratio = 1;
-    depth = 1;
-    final px = wx * world - origin.dx;
-    final py = wy * world - origin.dy;
-    if (rotation == 0) {
-      x = px;
-      y = py;
-      return;
-    }
-    final dx = px - cx;
-    final dy = py - cy;
-    x = cx + dx * cos - dy * sin;
-    y = cy + dx * sin + dy * cos;
+    view.projectTo(wx * view.worldSize, wy * view.worldSize, heightAt(wx, wy));
+    x = view.outX;
+    y = view.outY;
+    ratio = 0.5 + 0.5 / view.outDepth;
+    depth = view.outDepth;
   }
 
   /// The direction on screen of a line through the point [wx], [wy] of the
-  /// world that runs at [angle] on the flat map. On a tilted map that is
-  /// measured between two projected points, since perspective and the
-  /// bearing both bend it. Leaves [x] and [y] where they were.
+  /// world that runs at [angle] on the flat map, measured between two
+  /// projected points, since perspective and the bearing both bend it.
+  /// Leaves [x] and [y] where they were.
   double screenAngle(double wx, double wy, double angle) {
     final view = tilted;
-    if (view == null) return angle + rotation;
     final keepX = x, keepY = y, keepRatio = ratio, keepDepth = depth;
     final step = 8 / view.worldSize;
     final dx = math.cos(angle) * step, dy = math.sin(angle) * step;
@@ -194,14 +165,9 @@ class LabelView {
     return (points, screenDistance(path, points, at));
   }
 
-  /// How far the map is turned on the upright screen: a projected frame
-  /// is upright, its turn in the view's bearing.
-  double get mapTurn {
-    final view = tilted;
-    return view == null
-        ? rotation
-        : -(view.bearing + view.roll) * math.pi / 180;
-  }
+  /// How far the map is turned on the upright screen: the view's bearing
+  /// and roll.
+  double get mapTurn => -(tilted.bearing + tilted.roll) * math.pi / 180;
 
   /// A style's translate read in [context], as the upright label frame
   /// sees it: a move along the map's sides turns with the map, one along
@@ -222,7 +188,7 @@ class LabelView {
     final x = asNumber(by[0]) ?? 0, y = asNumber(by[1]) ?? 0;
     final turn = mapTurn;
     final view = tilted;
-    if (at != null && view != null && (view.pitch > 0 || view.globe != null)) {
+    if (at != null && (view.pitch > 0 || view.globe != null)) {
       var mx = x.toDouble(), my = y.toDouble();
       if (onScreen && turn != 0) {
         final c = math.cos(-turn), s = math.sin(-turn);

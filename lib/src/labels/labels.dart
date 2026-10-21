@@ -216,7 +216,6 @@ class LabelEngine {
     clear();
   }
 
-  double _placedRotation = 0;
   double _placedTilt = 0;
 
   /// While the zoom is changing a label's image is stretched further before
@@ -470,7 +469,7 @@ class LabelEngine {
   List<double>? _debugCircles;
 
   /// The camera of the frame before, which [LabelPainter.still] compares.
-  (double, ui.Offset, double, double)? _frameCamera;
+  (double, ui.Offset, double)? _frameCamera;
 
   int get rangesPending => _sprites.ranges?.pending ?? 0;
 
@@ -513,12 +512,11 @@ class LabelEngine {
     required double zoom,
     required ui.Offset origin,
     required ui.Size size,
-    required double rotation,
     required double devicePixelRatio,
     required double dt,
     required int rasterBudgetMicros,
     required bool zooming,
-    MapView? view,
+    required MapView view,
     double Function(double wx, double wy)? ground,
     double perMetre = 0,
     double seaLevel = 0,
@@ -530,36 +528,26 @@ class LabelEngine {
     // Text from glyph ranges is drawn by the renderer as distance fields
     // where it can, on the unturned screen of a projected view.
     final ranges = _sprites.ranges;
-    final sdfText = view != null && ranges != null ? sdf : null;
+    final sdfText = ranges != null ? sdf : null;
     sdfText?.begin(size, devicePixelRatio, ranges!.glyph);
     _painter.sdfText = sdfText;
-    if (view != null) rotation = 0;
     final world = 256.0 * math.pow(2, zoom);
-    _view.frame(
-      rotation: rotation,
-      size: size,
-      world: world,
-      origin: origin,
-      tilted: view,
-    );
+    _view.frame(size: size, world: world, origin: origin, tilted: view);
     _view
       ..ground = ground
       ..perMetre = perMetre
       ..seaLevel = seaLevel
       ..standAt(0);
-    final tilt = view == null
-        ? 0.0
-        : Object.hash(view.pitch, view.bearing, view.roll).toDouble();
+    final tilt = Object.hash(view.pitch, view.bearing, view.roll).toDouble();
     if (_zooming && !zooming) _placeAgain = true;
     _zooming = _painter.moving = zooming;
-    final camera = (zoom, origin, rotation, tilt);
+    final camera = (zoom, origin, tilt);
     _painter.still = camera == _frameCamera;
     _frameCamera = camera;
     final nowMs = _clock.elapsedMilliseconds;
     final moved =
         zoom != _placedZoom ||
         origin != _placedOrigin ||
-        rotation != _placedRotation ||
         tilt != _placedTilt ||
         sourcesKey != _placedSourcesKey;
     // A frame after the camera stops puts the labels back on the pixels.
@@ -571,12 +559,11 @@ class LabelEngine {
           : _zoomingIntervalMs;
       if (nowMs - _placedAtMs >= interval) {
         final t0 = _clock.elapsedMicroseconds;
-        _place(sources, zoom, world, origin, size, rotation);
+        _place(sources, zoom, world, origin, size);
         lastPlaceMicros = _clock.elapsedMicroseconds - t0;
         _placedAtMs = nowMs;
         _placedZoom = zoom;
         _placedOrigin = origin;
-        _placedRotation = rotation;
         _placedTilt = tilt;
         _placedSourcesKey = sourcesKey;
         if (_placeAgain) pending = true;
@@ -656,13 +643,6 @@ class LabelEngine {
     var animating = pending;
     final step = dt / _fadeSeconds;
     work.statesWalked += _live.length;
-    if (rotation != 0) {
-      canvas
-        ..save()
-        ..translate(_view.cx, _view.cy)
-        ..rotate(-rotation)
-        ..translate(-_view.cx, -_view.cy);
-    }
     var kept = 0;
     for (var i = 0; i < _live.length; i++) {
       final st = _live[i];
@@ -695,7 +675,7 @@ class LabelEngine {
       _drawn.add(st);
     }
     _live.length = kept;
-    _drawOrder(rotation);
+    _drawOrder();
     final pages = _glyphPages;
     var textLayer = -1 << 30;
     for (final st in _drawn) {
@@ -744,7 +724,6 @@ class LabelEngine {
         ..paintCollisionBoxes(canvas, debugBoxes, devicePixelRatio)
         ..paintCollisionCircles(canvas, _debugCircles ?? const []);
     }
-    if (rotation != 0) canvas.restore();
     return animating;
   }
 
@@ -758,10 +737,9 @@ class LabelEngine {
   /// Puts [_drawn] in MapLibre's drawing order: layer by layer, and within
   /// a layer in placement order, or top to bottom on the screen for a
   /// layer drawn by screen y, the later feature first on a tie.
-  void _drawOrder(double rotation) {
-    final bearing = _view.tilted != null ? -_view.mapTurn : rotation;
+  void _drawOrder() {
+    final bearing = -_view.mapTurn;
     final ts = math.sin(bearing), tc = math.cos(bearing);
-    final s = -math.sin(rotation), c = math.cos(rotation);
     for (final st in _drawn) {
       final candidate = st.candidate;
       if (_symbolOf(candidate)?.drawnByScreenY != true) continue;
@@ -776,7 +754,7 @@ class LabelEngine {
       _stand(candidate);
       _view.project(st.worldX, st.worldY);
       _view.standAt(0);
-      st.drawY = (s * _view.x + c * _view.y).roundToDouble();
+      st.drawY = _view.y.roundToDouble();
     }
     _drawn.sort((a, b) {
       final byLayer = _layerOf(a.candidate) - _layerOf(b.candidate);
@@ -860,7 +838,6 @@ class LabelEngine {
     double world,
     ui.Offset origin,
     ui.Size size,
-    double rotation,
   ) {
     _pass++;
     _placeAgain = false;
@@ -883,7 +860,6 @@ class LabelEngine {
         // A road name drawn as an image is not laid on tilted ground.
         final tilted = _view.tilted;
         if (!_glyphText &&
-            tilted != null &&
             (tilted.pitch > 0 || tilted.globe != null) &&
             c is TileLabel &&
             c.tile.line != null) {
@@ -916,7 +892,7 @@ class LabelEngine {
       }
     }
     if (identical(_rules, LabelRules.mapLibre)) {
-      final bearing = _view.tilted != null ? -_view.mapTurn : rotation;
+      final bearing = -_view.mapTurn;
       final ts = math.sin(bearing), tc = math.cos(bearing);
       for (final st in states) {
         final c = st.candidate;
@@ -1377,8 +1353,7 @@ class LabelEngine {
     // MapLibre lays it in its label plane, else along the road on screen.
     final path = <double>[];
     const samples = 8;
-    final tilted = _view.tilted;
-    if (st.onGround && tilted != null) {
+    if (st.onGround) {
       _view.project(st.worldX, st.worldY);
       final k =
           (0.5 + 0.5 * _view.depth) /
@@ -1539,7 +1514,7 @@ class LabelEngine {
   void _grow(LabelState st, double styleZoom) {
     if (st.placedSize <= 0) return;
     _view.project(st.worldX, st.worldY);
-    final perspective = _view.tilted == null ? 1.0 : _view.ratio;
+    final perspective = _view.ratio;
     _bind(st.candidate);
     final size = _size(st.candidate, styleZoom) * perspective;
     if (size == st.placedSize || size <= 0) return;

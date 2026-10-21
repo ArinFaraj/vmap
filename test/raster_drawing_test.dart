@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vmap/src/camera/view.dart';
 import 'package:vmap/src/style/expr.dart';
 import 'package:vmap/src/options.dart';
 import 'package:vmap/src/canvas/raster.dart';
@@ -47,6 +48,13 @@ Future<int> _paintUntilLoaded(
       0,
       ui.Offset.zero,
       const ui.Size(256, 256),
+      view: MapView(
+        centerX: 0.5,
+        centerY: 0.5,
+        zoom: -1,
+        width: 256,
+        height: 256,
+      ),
     );
     recorder.endRecording().dispose();
     await Future<void>.delayed(const Duration(milliseconds: 50));

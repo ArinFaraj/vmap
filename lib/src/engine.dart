@@ -14,25 +14,26 @@ import 'gpu/gpu_map.dart';
 import 'camera/map_camera.dart';
 import 'style/expr.dart';
 import 'tiles/extrusion.dart';
+import 'tiles/feature_queries.dart';
 import 'gpu/map_renderer.dart';
 import 'labels/glyphs/vmap_font.dart';
 import 'labels/label_state.dart';
 import 'labels/labels.dart';
 import 'labels/text_style.dart';
-import 'style/paint_defaults.dart';
 import 'style/pins.dart';
 import 'tiles/query.dart';
 import 'widget/marker.dart';
 import 'canvas/raster.dart';
 import 'style/raster_style.dart';
 import 'style/style_resources.dart';
-import 'terrain/terrain.dart';
+import 'terrain/raised_ground.dart';
 import 'camera/view.dart' show MapView;
 import 'canvas/mesh_painter.dart';
 import 'tiles/offline.dart';
 import 'options.dart';
 import 'stats.dart';
 import 'style/style.dart';
+import 'style/transitions.dart';
 import 'style/style_model.dart';
 import 'tiles/tile_builder.dart';
 import 'tiles/tiles.dart';
@@ -40,7 +41,6 @@ import 'tiles/worker.dart';
 import 'canvas/zoom_history.dart';
 import 'platform.dart';
 import 'camera/mercator.dart';
-import 'tiles/protocol.dart';
 import 'tiles/tile_id.dart';
 import 'tiles/net.dart' show cacheKey;
 
@@ -398,88 +398,7 @@ class VmapEngine extends ChangeNotifier {
     _apply(base, _style, keepLabels: sameSymbols);
   }
 
-  /// The document last applied, before its transitions were written in.
-  Map<String, Object?>? _applied;
-
-  /// Paint properties on their way from one value to another, by layer id
-  /// and property name.
-  final Map<String, _Transition> _transitions = {};
-
-  /// [document] with each paint property that changed since the last
-  /// document passing from its old value to its new one, over its
-  /// `-transition` or the style's `transition`, 300 ms by default, as
-  /// MapLibre animates a changed paint property.
-  Map<String, Object?> _transitioned(Map<String, Object?> document) {
-    final before = _applied;
-    _applied = document;
-    final now = _clock.elapsedMilliseconds.toDouble();
-    _transitions.removeWhere((_, t) => t.over(now));
-    if (before != null) {
-      final old = {
-        for (final l in (before['layers'] as List?) ?? const [])
-          if (l is Map) '${l['id']}': l,
-      };
-      final style = document['transition'];
-      for (final l in (document['layers'] as List?) ?? const []) {
-        if (l is! Map) continue;
-        final id = '${l['id']}';
-        final was = old[id];
-        if (was == null) continue;
-        final paint = l['paint'] is Map ? l['paint'] as Map : const {};
-        final prior = was['paint'] is Map ? was['paint'] as Map : const {};
-        for (final key in {...paint.keys, ...prior.keys}) {
-          if ('$key'.endsWith('-transition')) continue;
-          final a = prior[key] ?? paintDefaults[key];
-          final b = paint[key] ?? paintDefaults[key];
-          if (a == null || b == null || _sameJson(a, b)) continue;
-          final own = paint['$key-transition'];
-          double timing(String name, double fallback) =>
-              asNumber(own is Map ? own[name] : null) ??
-              asNumber(style is Map ? style[name] : null) ??
-              fallback;
-          final duration = timing('duration', 300);
-          final delay = timing('delay', 0);
-          if (duration <= 0 && delay <= 0) continue;
-          _transitions['$id\u0000$key'] = _Transition(
-            id,
-            '$key',
-            a,
-            b,
-            now,
-            duration,
-            delay,
-          );
-        }
-      }
-    }
-    if (_transitions.isEmpty) return document;
-    return {
-      ...document,
-      'layers': [
-        for (final l in (document['layers'] as List?) ?? const [])
-          if (l is Map &&
-              _transitions.values.any((t) => t.layer == '${l['id']}'))
-            {
-              ...l,
-              'paint': {
-                ...?(l['paint'] as Map?),
-                for (final t in _transitions.values)
-                  if (t.layer == '${l['id']}') t.key: t.expression,
-              },
-            }
-          else
-            l,
-      ],
-    };
-  }
-
-  static bool _sameJson(Object? a, Object? b) {
-    try {
-      return jsonEncode(a) == jsonEncode(b);
-    } on JsonUnsupportedObjectError {
-      return identical(a, b);
-    }
-  }
+  final PaintTransitions _transitions = PaintTransitions();
 
   void _apply(
     Map<String, Object?> base,
@@ -488,8 +407,9 @@ class VmapEngine extends ChangeNotifier {
   }) {
     base = derefLayers(base);
     _base = base;
-    final document = _transitioned(
+    final document = _transitions.apply(
       VmapStyleEdit.applyAll(_edits, _overlay?.applyTo(base) ?? base),
+      _clock.elapsedMilliseconds.toDouble(),
     );
     final sheet = StyleSheet.compile(
       document,
@@ -522,7 +442,7 @@ class VmapEngine extends ChangeNotifier {
         _rasters[i].restyle(sheet.rasters[i]);
       }
     }
-    _useTerrain(sheet.terrain);
+    _ground.use(sheet.terrain);
     _resources.useSprites(sheet.spriteSheets);
     _meshes.resize(sheet.layers.length);
     _labels
@@ -594,131 +514,19 @@ class VmapEngine extends ChangeNotifier {
 
   String? _rasterKey;
 
-  /// The heights the style's root `terrain` raises the ground by, drawn by
-  /// a renderer that draws terrain.
-  TerrainTiles? _terrain;
-
-  void _useTerrain(TerrainLayer? layer) {
-    if (layer?.signature == _terrain?.layer.signature) {
-      if (layer != null) _terrain!.restyle(layer);
-      return;
-    }
-    _terrain?.close();
-    _terrain = layer == null
-        ? null
-        : RasterDrawing.of(
-            layer,
-            config: network,
-            onLoaded: _requestFrame,
-            onError: (e) => _report(VmapErrorKind.tiles, e),
-          ) as TerrainTiles;
-  }
-
-  /// World pixels in a metre of height for labels raised by
-  /// `symbol-height-offset`: at the middle's latitude on the flat map, as
-  /// MapLibre's pixels per meter, and at the equator's on the globe, whose
-  /// sphere is the world's width around.
-  static double _labelPerMetre(MapView? view) {
-    if (view == null) return 0;
-    const circumference = 40075016.686;
-    if (view.globe != null) return view.worldSize / circumference;
-    return view.worldSize /
-        (circumference * math.cos(latitudeAt(view.centerY) * math.pi / 180));
-  }
-
-  /// The ground's height in world pixels under a point of the world, for
-  /// labels to stand on, when the renderer draws raised ground.
-  double Function(double wx, double wy)? _groundOf(MapView? view) {
-    final terrain = _renderer?.terrain;
-    if (view == null || terrain == null || !_onGpu) return null;
-    final perMetre =
-        view.worldSize /
-        (40075016.686 * math.cos(latitudeAt(view.centerY) * math.pi / 180));
-    final zoom = view.zoom.floor();
-    return (wx, wy) => terrain.at(wx, wy, zoom) * perMetre;
-  }
-
-  /// Asks for the heights under [view] and hands them to the renderer.
-  /// Returns the view over that ground, and whether the ground is still
-  /// easing to its height, when the map is not settled.
-  ({MapView view, bool easing}) _raiseGround(MapView view) {
-    final terrain = _terrain, gpu = _renderer;
-    if (gpu == null) return (view: view, easing: false);
-    if (terrain == null) {
-      gpu.terrain = null;
-      return (view: view, easing: false);
-    }
-    final exaggeration = terrain.layer.exaggeration;
-    final shallower = terrain.shallower;
-    final zoom = math.max(
-      0,
-      math.min(view.zoom.floor() - shallower, terrain.maxZoom),
-    );
-    final perMetre =
-        view.worldSize /
-        (40075016.686 * math.cos(latitudeAt(view.centerY) * math.pi / 180));
-    final eye = view.eye;
-    final belowEye =
-        terrain.heights.heightAt(
-          eye.x / view.worldSize,
-          eye.y / view.worldSize,
-          zoom,
-        ) *
-        exaggeration;
-    // The ground under the map's middle, raised further when a hill would
-    // otherwise reach the camera's near plane: everything sinks instead, as
-    // MapLibre lifts its camera over terrain.
-    final near = view.height / 50;
-    final under = math.max(
-      terrain.heights.heightAt(view.centerX, view.centerY, zoom) * exaggeration,
-      belowEye + (near - eye.height) / perMetre,
-    );
-    // Eased, so an arriving tile of heights does not make the map jump.
-    final centre = centerElevation != null
-        ? _groundCentre = centerElevation!
-        : _groundCentre += (under - _groundCentre) * 0.15;
-    final easing = centerElevation == null && (under - centre).abs() > 0.5;
-    if (easing) _requestFrame();
-    final centreTile = terrain.heights.locate(view.centerX, view.centerY, zoom);
-    final raised = view.withGround(
-      centre,
-      (centreTile?.$1.min ?? 0) * exaggeration,
-    );
-    terrain.want(
-      {
-        for (final t in raised.cover(
-          maxZoom: terrain.maxZoom + shallower,
-          variableZoom: true,
-          beyond: view.height,
-        ))
-          if (t.z >= shallower)
-            TileId(
-              t.z - shallower,
-              (t.x % (1 << t.z)) >> shallower,
-              t.y >> shallower,
-            ),
-      }.toList(),
-    );
-    gpu.terrain = Terrain(
-      terrain.heights,
-      exaggeration,
-      terrain.maxZoom,
-      centre,
-      shallower: shallower,
-    );
-    return (view: raised, easing: easing);
-  }
-
-  double _groundCentre = 0;
+  late final RaisedGround _ground = RaisedGround(
+    network,
+    onLoaded: _requestFrame,
+    onError: (e) => _report(VmapErrorKind.tiles, e),
+  );
 
   /// Over raised ground, the height in metres the map's middle stands at,
   /// as MapLibre's center elevation with centerClampedToGround off; null
   /// keeps it on the ground under it.
-  double? get centerElevation => _centerElevation;
-  double? _centerElevation;
+  double? get centerElevation => _ground.centerElevation;
   set centerElevation(double? value) {
-    if (value == _centerElevation) return;
-    _centerElevation = value;
+    if (value == _ground.centerElevation) return;
+    _ground.centerElevation = value;
     _requestFrame();
   }
 
@@ -894,174 +702,39 @@ class VmapEngine extends ChangeNotifier {
 
   MapFrame? _camera;
 
+  late final FeatureQueries _queries = FeatureQueries(
+    () => _sources,
+    () => _camera,
+    () => _sheet,
+  );
+
   /// What the map shows at [point]: the features the style draws within
   /// [radius] logical pixels of it, topmost first. It reads the tiles again
   /// off the UI thread, so it answers a moment later.
-  Future<List<VmapFeature>> featuresAt(
-    LatLng point, {
-    double radius = 6,
-  }) async {
-    final camera = _camera;
-    final sheet = _sheet;
-    if (camera == null || sheet == null) return const [];
-    final wx = worldX(point.longitude);
-    final wy = worldY(point.latitude);
-    final styleZoom = camera.zoom - 1 + sheet.zoomOffset;
-    final found = <(int, VmapFeature)>[];
-    await Future.wait([
-      for (final s in List.of(_sources))
-        () async {
-          final z = tileZoomAt(camera.zoom, s.pool.maxZoom);
-          final n = 1 << z;
-          final x = (wx * n).floor().clamp(0, n - 1);
-          final y = (wy * n).floor().clamp(0, n - 1);
-          final unit = tileExtent / (256.0 * math.pow(2, camera.zoom - z));
-          final hits = await s.pool.query(
-            TileId(z, x, y),
-            (wx * n - x) * tileExtent,
-            (wy * n - y) * tileExtent,
-            radius * unit,
-            styleZoom,
-          );
-          for (final hit in hits) {
-            found.add(_feature(s.def.name, TileId(z, x, y), hit));
-          }
-        }(),
-    ]);
-    found.sort((a, b) => b.$1 - a.$1);
-    return [for (final f in found) f.$2];
-  }
-
-  static (int, VmapFeature) _feature(String source, TileId tile, TileHit hit) {
-    final n = 1 << tile.z;
-    return (
-      hit.order,
-      VmapFeature(
-        source: source,
-        sourceLayer: hit.sourceLayer,
-        geometryType: hit.geometryType,
-        layers: hit.layers,
-        geometry: [
-          for (final ring in hit.rings)
-            [
-              for (var i = 0; i + 1 < ring.length; i += 2)
-                LatLng(
-                  latitudeAt((tile.y + ring[i + 1] / 4096) / n),
-                  longitudeAt((tile.x + ring[i] / 4096) / n),
-                ),
-            ],
-        ],
-        id: hit.properties[r'$id'],
-        properties: {
-          for (final e in hit.properties.entries)
-            if (e.key != r'$id') e.key: e.value,
-        },
-      ),
-    );
-  }
+  Future<List<VmapFeature>> featuresAt(LatLng point, {double radius = 6}) =>
+      _queries.featuresAt(point, radius: radius);
 
   /// What the map shows between [southWest] and [northEast]: the features
   /// the style draws that touch the box, topmost first. It reads the tiles
   /// again off the UI thread, so it answers a moment later.
   ///
   /// A feature with an id comes once. One without, lying over the edge of a
-  /// tile, comes once for each tile it is in. A
-  /// box much larger than the screen is read from shallower tiles, which
-  /// carry less.
-  Future<List<VmapFeature>> featuresIn(
-    LatLng southWest,
-    LatLng northEast,
-  ) async {
-    final camera = _camera;
-    final sheet = _sheet;
-    if (camera == null || sheet == null) return const [];
-    final west = worldX(southWest.longitude);
-    final east = worldX(northEast.longitude);
-    final north = worldY(northEast.latitude);
-    final south = worldY(southWest.latitude);
-    if (east < west || south < north) return const [];
-    final styleZoom = camera.zoom - 1 + sheet.zoomOffset;
-    final found = <String, (int, VmapFeature)>{};
-    await Future.wait([
-      for (final s in List.of(_sources))
-        () async {
-          TileRange at(int z) =>
-              TileRange(z, west, north, east, south, tileSpan: 1 / (1 << z));
-          var range = at(tileZoomAt(camera.zoom, s.pool.maxZoom));
-          while (range.z > 0 && range.count > _maxQueryTiles) {
-            range = at(range.z - 1);
-          }
-          final TileRange(:z, :n, :x0, :x1, :y0, :y1) = range;
-          final asked = <Future<void>>[];
-          for (var y = y0; y <= y1; y++) {
-            for (var x = x0; x <= x1; x++) {
-              if (x < 0 || x >= n) continue;
-              asked.add(() async {
-                final hits = await s.pool.query(
-                  TileId(z, x, y),
-                  ((west + east) / 2 * n - x) * tileExtent,
-                  ((north + south) / 2 * n - y) * tileExtent,
-                  0,
-                  styleZoom,
-                  box: (
-                    (east - west) / 2 * n * tileExtent,
-                    (south - north) / 2 * n * tileExtent,
-                  ),
-                );
-                for (final hit in hits) {
-                  final (order, feature) = _feature(
-                    s.def.name,
-                    TileId(z, x, y),
-                    hit,
-                  );
-                  // A feature lying over a tile edge is in both tiles, and
-                  // only an id tells its two halves from two features.
-                  final key = feature.id == null
-                      ? '${found.length}'
-                      : '${feature.source}|${feature.sourceLayer}|${feature.id}';
-                  final before = found[key];
-                  if (before == null || before.$1 < order) {
-                    found[key] = (order, feature);
-                  }
-                }
-              }());
-            }
-          }
-          await Future.wait(asked);
-        }(),
-    ]);
-    final sorted = found.values.toList()..sort((a, b) => b.$1 - a.$1);
-    return [for (final f in sorted) f.$2];
-  }
-
-  static const int _maxQueryTiles = 16;
-
-  TilePool? _clustered(String source) {
-    for (final s in _sources) {
-      if (s.def case GeoJsonSource(:final name, cluster: _?)
-          when name == source) {
-        return s.pool;
-      }
-    }
-    return null;
-  }
+  /// tile, comes once for each tile it is in. A box much larger than the
+  /// screen is read from shallower tiles, which carry less.
+  Future<List<VmapFeature>> featuresIn(LatLng southWest, LatLng northEast) =>
+      _queries.featuresIn(southWest, northEast);
 
   /// The zoom at which cluster [clusterId] of the clustered GeoJSON source
   /// named [source] comes apart, for zooming in on a tapped cluster. Null
   /// when there is no such cluster.
-  Future<double?> clusterExpansionZoom(String source, int clusterId) async {
-    final zoom = await _clustered(source)?.clusterZoom(clusterId);
-    return zoom?.toDouble();
-  }
+  Future<double?> clusterExpansionZoom(String source, int clusterId) =>
+      _queries.clusterExpansionZoom(source, clusterId);
 
   /// What cluster [clusterId] comes apart into at its expansion zoom.
   Future<List<VmapClusterMember>> clusterChildren(
     String source,
     int clusterId,
-  ) async => _members(
-    await _clustered(source)
-        ?.clusterMembers(ClusterQuestion.children, clusterId),
-  );
+  ) => _queries.clusterChildren(source, clusterId);
 
   /// The points of the data inside cluster [clusterId], [limit] of them
   /// starting at [offset].
@@ -1070,26 +743,7 @@ class VmapEngine extends ChangeNotifier {
     int clusterId, {
     int limit = 10,
     int offset = 0,
-  }) async => _members(
-    await _clustered(source)?.clusterMembers(
-      ClusterQuestion.leaves,
-      clusterId,
-      limit: limit,
-      offset: offset,
-    ),
-  );
-
-  static List<VmapClusterMember> _members(List<ClusterMember>? found) => [
-    for (final member in found ?? const <ClusterMember>[])
-      VmapClusterMember(
-        point: LatLng(latitudeAt(member.y), longitudeAt(member.x)),
-        id: member.properties[r'$id'],
-        properties: {
-          for (final e in member.properties.entries)
-            if (e.key != r'$id') e.key: e.value,
-        },
-      ),
-  ];
+  }) => _queries.clusterLeaves(source, clusterId, limit: limit, offset: offset);
 
   void _requestFrame() {
     if (_framePending || _disposed) return;
@@ -1129,32 +783,51 @@ class VmapEngine extends ChangeNotifier {
     );
   }
 
-  void _paint(ui.Canvas canvas, MapFrame flatCamera) {
+  void _paint(ui.Canvas canvas, MapFrame camera) {
     _frame++;
-    var camera = flatCamera;
     _camera = camera;
     final now = _clock.elapsedMicroseconds;
     final dt = _lastPaintMicros == 0
         ? 0.0
         : math.min(0.1, (now - _lastPaintMicros) / 1e6);
     _lastPaintMicros = now;
-
-    final size = camera.size;
     final sheet = _sheet;
     if (sheet == null) return;
     if (_renderer?.loading ?? false) {
-      if (backgroundColor case final color?) {
-        canvas.drawRect(
-          ui.Offset.zero & camera.size,
-          ui.Paint()..color = color,
-        );
-      }
-      stats
-        ..busy = true
-        ..preparing = true;
-      _requestFrame();
+      _paintWhileLoading(canvas, camera.size);
       return;
     }
+    final f = _startFrame(canvas, camera, sheet, now, dt);
+    _coverTiles(f);
+    _drawSky(f);
+    _drawBelowLabels(f);
+    _drawLabels(f);
+    _drawAboveLabels(f);
+    _drawAtmosphere(f);
+    _finishFrame(f);
+  }
+
+  /// The background alone, while the GPU's shaders load.
+  void _paintWhileLoading(ui.Canvas canvas, ui.Size size) {
+    if (backgroundColor case final color?) {
+      canvas.drawRect(ui.Offset.zero & size, ui.Paint()..color = color);
+    }
+    stats
+      ..busy = true
+      ..preparing = true;
+    _requestFrame();
+  }
+
+  /// Sets the frame's zoom and time, switches between the GPU and the
+  /// canvas when that changed, and puts the view on the globe or on raised
+  /// ground.
+  _Frame _startFrame(
+    ui.Canvas canvas,
+    MapFrame camera,
+    StyleSheet sheet,
+    int now,
+    double dt,
+  ) {
     final dataZoom = camera.zoom - 1;
     final styleZoom = dataZoom + sheet.zoomOffset;
     _context
@@ -1165,12 +838,12 @@ class VmapEngine extends ChangeNotifier {
       sheet,
       styleZoom,
       camera.rotation,
-      standing: camera.view != null && sheet.extrusions.isNotEmpty,
+      standing: sheet.extrusions.isNotEmpty,
       dashFade: _zoomHistory.fade,
     );
     _budget.start(zooming: (camera.zoom - _lastZoom).abs() > 0.002);
     final gpu = _renderer;
-    final onGpu = camera.view != null && gpu != null && gpu.supports(sheet);
+    final onGpu = gpu != null && gpu.supports(sheet);
     if (!onGpu && _onGpu) {
       // Tiles made ready for the renderer have no canvas meshes, and the
       // data to make them is gone; they are built again.
@@ -1190,314 +863,333 @@ class VmapEngine extends ChangeNotifier {
       }
     }
     _onGpu = onGpu;
+    var waiting = false;
     // Only the GPU tier draws the globe; the canvas draws such a style flat.
     final globeness = onGpu ? sheet.projection.globeAt(styleZoom) : 0.0;
-    if (globeness > 0 && camera.view != null) {
-      camera = MapFrame(
-        zoom: camera.zoom,
-        origin: camera.origin,
-        size: camera.size,
-        rotation: camera.rotation,
-        devicePixelRatio: camera.devicePixelRatio,
-        view: camera.view!.withGlobe(globeness),
-        ahead: camera.ahead?.withGlobe(globeness),
+    if (globeness > 0) {
+      camera = camera.withView(
+        camera.view.withGlobe(globeness),
+        camera.ahead?.withGlobe(globeness),
       );
-      _camera = camera;
     }
-    var waiting = false;
     _lastZoom = camera.zoom;
-    final hold = _zoomOutHold.at(camera.view?.zoom, _clock.elapsedMilliseconds);
-    if (camera.view case final view? when onGpu) {
-      final (view: raised, :easing) = _raiseGround(view);
-      if (easing) waiting = true;
+    final hold = _zoomOutHold.at(camera.view.zoom, _clock.elapsedMilliseconds);
+    if (onGpu) {
+      final view = camera.view;
+      final (view: raised, :easing) = _ground.raise(view, gpu);
+      if (easing) {
+        waiting = true;
+        _requestFrame();
+      }
       if (!identical(raised, view)) {
-        camera = MapFrame(
-          zoom: camera.zoom,
-          origin: camera.origin,
-          size: camera.size,
-          rotation: camera.rotation,
-          devicePixelRatio: camera.devicePixelRatio,
-          view: raised,
-          ahead: camera.ahead?.withGround(
-            raised.groundElevation,
-            raised.groundLowest,
-          ),
+        camera = camera.withView(
+          raised,
+          camera.ahead?.withGround(raised.groundElevation, raised.groundLowest),
         );
-        _camera = camera;
       }
     }
+    _camera = camera;
     if (hold > 0) _requestFrame();
-    for (final s in _sources) {
-      final preparing = s.cover(
-        camera,
-        dataZoom,
-        frame: _frame,
-        nowMs: _clock.elapsedMilliseconds,
-        prepare: _prepare,
-        hold: hold,
-        variableZoom: _terrain != null && onGpu,
-        standing: sheet.buildingSources.contains(s.pool.source),
-      );
-      if (preparing) waiting = true;
-      if (s.retrying) _requestFrameLater();
-    }
-    if (!waiting) _prepareBackdrop(camera.zoom);
-
-    var draws = 0;
     final view = camera.view;
-    final globe = view?.globe != null;
-    final drape = onGpu && (gpu.terrain != null || globe);
+    final drape = onGpu && (gpu.terrain != null || view.globe != null);
     // Raised ground is cut by the renderer's far plane instead, as hills
     // nearer than it rise above the flat ground's far edge. So are the
     // GPU's layers past 60 degrees, as buildings near the far plane stand
     // above that edge; only what the canvas draws is cut at it.
-    final farCut = onGpu && !drape && view != null && view.pitch > 60;
-    final horizon = drape || farCut ? 0.0 : view?.groundTopY ?? 0;
-    final canvasHorizon = farCut ? view.groundTopY : 0.0;
-    if (view != null &&
-        !globe &&
-        view.horizonY > view.unrolledBounds.top &&
-        sheet.sky != null) {
+    final farCut = onGpu && !drape && view.pitch > 60;
+    return _Frame(
+      canvas: canvas,
+      camera: camera,
+      view: view,
+      sheet: sheet,
+      gpu: onGpu ? gpu : null,
+      dataZoom: dataZoom,
+      styleZoom: styleZoom,
+      now: now,
+      dt: dt,
+      hold: hold,
+      drape: drape,
+      horizon: drape || farCut ? 0.0 : view.groundTopY,
+      canvasHorizon: farCut ? view.groundTopY : 0.0,
+      viewMatrix: view.matrix(
+        originX: camera.origin.dx,
+        originY: camera.origin.dy,
+      ),
+    )..waiting = waiting;
+  }
+
+  void _coverTiles(_Frame f) {
+    for (final s in _sources) {
+      final preparing = s.cover(
+        f.camera,
+        f.dataZoom,
+        frame: _frame,
+        nowMs: _clock.elapsedMilliseconds,
+        prepare: _prepare,
+        hold: f.hold,
+        variableZoom: _ground.tiles != null && f.onGpu,
+        standing: f.sheet.buildingSources.contains(s.pool.source),
+      );
+      if (preparing) f.waiting = true;
+      if (s.retrying) _requestFrameLater();
+    }
+    if (!f.waiting) _prepareBackdrop(f.camera.zoom);
+  }
+
+  /// The sky above the horizon of a tilted map, or around the globe.
+  void _drawSky(_Frame f) {
+    final view = f.view, canvas = f.canvas, size = f.camera.size;
+    final sky = f.sheet.sky;
+    if (sky == null) return;
+    final b = view.unrolledBounds;
+    final globe = view.globe;
+    if (globe == null) {
+      if (view.horizonY <= b.top) return;
       _unroll(canvas, view);
-      final b = view.unrolledBounds;
       // As MapLibre's sky shader, every pixel whose centre is above the
       // horizon is wholly sky: an edge across a pixel would leave it part
       // see-through, the ground reaching only up to the horizon.
-      final dpr = camera.devicePixelRatio;
+      final dpr = f.camera.devicePixelRatio;
       final bottom = view.roll == 0
           ? (view.horizonY * dpr).roundToDouble() / dpr
           : view.horizonY;
       _meshes.drawSky(
         canvas,
-        sheet.sky!,
+        sky,
         size,
         ui.Rect.fromLTRB(b.left, b.top, b.right, bottom),
         horizonY: view.horizonY,
       );
       canvas.restore();
+      return;
     }
-    final globeSky = sheet.sky;
-    if (view != null && globeSky != null && view.globe != null) {
-      _unroll(canvas, view);
-      final b = view.unrolledBounds;
-      final top = Rgba.of(globeSky.skyColor(_context)) ?? Rgba.transparent;
-      if (!_atmosphere.sky(
-        canvas,
-        size,
-        ui.Rect.fromLTRB(b.left, b.top, b.right, b.bottom),
-        view.globe!,
-        top: top,
-        low: Rgba.of(globeSky.horizonColor(_context)) ?? top,
-        band:
-            (asNumber(globeSky.skyHorizonBlend(_context)) ?? 0).toDouble() *
-            size.height /
-            2,
-        horizonY: view.horizonY,
-        atmosphereBlend:
-            asNumber(globeSky.atmosphereBlend(_context))?.toDouble() ?? 0.8,
-      )) {
-        waiting = true;
-      }
-      canvas.restore();
+    _unroll(canvas, view);
+    final top = Rgba.of(sky.skyColor(_context)) ?? Rgba.transparent;
+    if (!_atmosphere.sky(
+      canvas,
+      size,
+      ui.Rect.fromLTRB(b.left, b.top, b.right, b.bottom),
+      globe,
+      top: top,
+      low: Rgba.of(sky.horizonColor(_context)) ?? top,
+      band:
+          (asNumber(sky.skyHorizonBlend(_context)) ?? 0).toDouble() *
+          size.height /
+          2,
+      horizonY: view.horizonY,
+      atmosphereBlend:
+          asNumber(sky.atmosphereBlend(_context))?.toDouble() ?? 0.8,
+    )) {
+      f.waiting = true;
     }
-    if (horizon > 0) {
+    canvas.restore();
+  }
+
+  /// The style's layers below its labels, and the buildings.
+  void _drawBelowLabels(_Frame f) {
+    final canvas = f.canvas, view = f.view, sheet = f.sheet;
+    if (f.horizon > 0) {
       canvas.save();
-      _clipGround(canvas, view!, horizon);
+      _clipGround(canvas, view, f.horizon);
     }
     // The GPU draws the vector layers into images first, which are laid in
     // the style's order between the canvas's backgrounds and rasters.
-    if (view != null && onGpu) {
-      final gpuStarted = _clock.elapsedMicroseconds;
-      gpu.rasters = drape ? [for (final r in _rasters) r.drawn] : const [];
-      gpu.states = [for (final s in _sources) _states[s.def.name]];
-      gpu.dashFade = _zoomHistory.fade;
+    if (f.gpu case final gpu?) {
+      final started = _clock.elapsedMicroseconds;
+      gpu
+        ..rasters = f.drape ? [for (final r in _rasters) r.drawn] : const []
+        ..states = [for (final s in _sources) _states[s.def.name]]
+        ..dashFade = _zoomHistory.fade;
       final more = gpu.paint(
         canvas,
         view,
-        camera.origin,
+        f.camera.origin,
         sheet,
         [for (final s in _sources) s.fallback],
         [for (final s in _sources) s.ideal],
         _context,
-        styleZoom,
-        camera.devicePixelRatio,
+        f.styleZoom,
+        f.camera.devicePixelRatio,
         _resources.sprites,
       );
-      _buildingMicros = _clock.elapsedMicroseconds - gpuStarted;
-      if (more) waiting = true;
+      _buildingMicros = _clock.elapsedMicroseconds - started;
+      if (more) f.waiting = true;
     }
-    final viewMatrix = view?.matrix(
-      originX: camera.origin.dx,
-      originY: camera.origin.dy,
-    );
-    // The runs from [from] to [to] in the style's order: the GPU's images
-    // of the vector layers laid between the canvas's backgrounds and
-    // rasters.
-    void drawRuns(int from, int to) {
-      void begin() {
-        canvas.save();
-        if (canvasHorizon > 0) _clipGround(canvas, view!, canvasHorizon);
-        canvas.transform(viewMatrix!);
-      }
+    _drawRuns(f, 0, sheet.labelsRun);
+    if (f.gpu case final gpu?) {
+      gpu.presentUntil(canvas, sheet.labelsRun);
+    } else if (sheet.extrusions.isNotEmpty) {
+      final started = _clock.elapsedMicroseconds;
+      final more = _buildings.paint(
+        canvas,
+        view,
+        f.camera.origin,
+        sheet,
+        [for (final s in _sources) ...s.ideal],
+        _context,
+        f.styleZoom,
+        f.camera.devicePixelRatio,
+      );
+      _buildingMicros = _clock.elapsedMicroseconds - started;
+      if (more) f.waiting = true;
+    }
+    if (f.horizon > 0) canvas.restore();
+  }
 
-      if (viewMatrix != null) begin();
-      for (var index = from; index < to; index++) {
-        final run = sheet.runs[index];
-        if ((run.background >= 0 || run.raster >= 0) &&
-            onGpu &&
-            viewMatrix != null) {
-          canvas.restore();
-          gpu.presentUntil(canvas, index);
-          begin();
-        }
-        if (run.background >= 0) {
-          if (drape) continue;
-          _meshes.drawBackground(
-            canvas,
-            sheet.backgrounds[run.background],
-            camera,
-          );
-          continue;
-        }
-        if (run.raster >= 0) {
-          _rasters[run.raster].paint(
-            canvas,
-            _context,
-            camera.zoom,
-            camera.origin,
-            size,
-            view: view,
-            drape: drape,
-          );
-          continue;
-        }
-        if (onGpu) continue;
-        final whole = sheet.runOpacity(run, _context);
-        if (whole == 0) continue;
-        if (whole != null && whole < 1) {
-          canvas.saveLayer(
-            null,
-            _layerPaint..color = ui.Color.fromRGBO(0, 0, 0, whole),
-          );
-        }
-        final s = _sources[run.source];
-        draws += _meshes.drawRun(
+  /// The style's runs from [from] to [to], in its order: backgrounds and
+  /// rasters on the canvas, and the vector layers on the canvas or, from
+  /// the GPU's images, laid between them.
+  void _drawRuns(_Frame f, int from, int to) {
+    final canvas = f.canvas, sheet = f.sheet, gpu = f.gpu;
+    void begin() {
+      canvas.save();
+      if (f.canvasHorizon > 0) _clipGround(canvas, f.view, f.canvasHorizon);
+      canvas.transform(f.viewMatrix);
+    }
+
+    begin();
+    for (var index = from; index < to; index++) {
+      final run = sheet.runs[index];
+      if ((run.background >= 0 || run.raster >= 0) && gpu != null) {
+        canvas.restore();
+        gpu.presentUntil(canvas, index);
+        begin();
+      }
+      if (run.background >= 0) {
+        if (f.drape) continue;
+        _meshes.drawBackground(
           canvas,
-          sheet,
-          run,
-          s.fallback.followedBy(s.ideal),
-          _states[s.def.name],
-          size,
+          sheet.backgrounds[run.background],
+          f.camera,
         );
-        if (whole != null && whole < 1) canvas.restore();
+        continue;
       }
-      if (viewMatrix != null) canvas.restore();
-    }
-
-    drawRuns(0, sheet.labelsRun);
-
-    if (view != null) {
-      if (onGpu) {
-        gpu.presentUntil(canvas, sheet.labelsRun);
-      } else if (sheet.extrusions.isNotEmpty) {
-        final buildingsStarted = _clock.elapsedMicroseconds;
-        final more = _buildings.paint(
+      if (run.raster >= 0) {
+        _rasters[run.raster].paint(
           canvas,
-          view,
-          camera.origin,
-          sheet,
-          [for (final s in _sources) ...s.ideal],
           _context,
-          styleZoom,
-          camera.devicePixelRatio,
+          f.camera.zoom,
+          f.camera.origin,
+          f.camera.size,
+          view: f.view,
+          drape: f.drape,
         );
-        _buildingMicros = _clock.elapsedMicroseconds - buildingsStarted;
-        if (more) waiting = true;
+        continue;
       }
+      if (gpu != null) continue;
+      final whole = sheet.runOpacity(run, _context);
+      if (whole == 0) continue;
+      if (whole != null && whole < 1) {
+        canvas.saveLayer(
+          null,
+          _layerPaint..color = ui.Color.fromRGBO(0, 0, 0, whole),
+        );
+      }
+      final s = _sources[run.source];
+      f.draws += _meshes.drawRun(
+        canvas,
+        sheet,
+        run,
+        s.fallback.followedBy(s.ideal),
+        _states[s.def.name],
+        f.camera.size,
+      );
+      if (whole != null && whole < 1) canvas.restore();
     }
-    if (horizon > 0) canvas.restore();
+    canvas.restore();
+  }
 
-    var animating =
+  void _drawLabels(_Frame f) {
+    final sheet = f.sheet, camera = f.camera, view = f.view, gpu = f.gpu;
+    f.animating =
         (sheet.dashed && _zoomHistory.fading) ||
         _rasters.any((r) => r is TileDrawing && r.fading);
-    final labelsStarted = _clock.elapsedMicroseconds;
-    if (_labelOptions.visible) {
-      final shown = [
-        for (final s in _sources) ...[...s.ideal, ...s.fallback],
-      ];
-      _labels.occlusion.update(view, shown, sheet, styleZoom);
-      if (_transitions.isNotEmpty) {
-        final symbols = {for (final s in sheet.symbols) s.id};
-        if (_transitions.values.any((t) => symbols.contains(t.layer))) {
-          _labels.placeNow();
-        }
-      }
-      final labelsMoving = _labels.paint(
-        canvas,
-        sources: [_markerLabels]
-            .followedBy(shown.map((d) => d.tile.labelsIn(_wrapOf(d, camera)))),
-        sourcesKey:
-            Object.hashAll(
-              shown.map(
-                (d) => Object.hash(
-                  identityHashCode(d.tile),
-                  d.tile.labels.length,
-                  _wrapOf(d, camera),
-                ),
+    f.labelsStarted = _clock.elapsedMicroseconds;
+    if (!_labelOptions.visible) return;
+    final shown = [
+      for (final s in _sources) ...[...s.ideal, ...s.fallback],
+    ];
+    _labels.occlusion.update(view, shown, sheet, f.styleZoom);
+    if (_transitions.isNotEmpty &&
+        _transitions.touches({for (final s in sheet.symbols) s.id})) {
+      _labels.placeNow();
+    }
+    final perMetre = RaisedGround.labelPerMetre(view);
+    final terrain = gpu?.terrain;
+    final moving = _labels.paint(
+      f.canvas,
+      sources: [_markerLabels]
+          .followedBy(shown.map((d) => d.tile.labelsIn(_wrapOf(d, camera)))),
+      sourcesKey:
+          Object.hashAll(
+            shown.map(
+              (d) => Object.hash(
+                identityHashCode(d.tile),
+                d.tile.labels.length,
+                _wrapOf(d, camera),
               ),
-            ) ^
-            _markerLabels.length,
-        background: sheet.background(_context)?.toArgb() ?? 0xFFFFFFFF,
-        zoom: camera.zoom,
-        origin: camera.origin,
-        size: size,
-        rotation: camera.rotation,
-        devicePixelRatio: camera.devicePixelRatio,
-        dt: dt,
-        rasterBudgetMicros: _budget.spent > 1000 ? 1 : _labelBudgetMicros,
-        styleNowMs: _clock.elapsedMilliseconds.toDouble(),
-        zooming: _budget.zooming,
-        view: view,
-        ground: _groundOf(view),
-        perMetre: _labelPerMetre(view),
-        seaLevel: onGpu && gpu.terrain != null
-            ? -gpu.terrain!.centre * _labelPerMetre(view)
-            : 0,
-        sdf: onGpu ? gpu.sdfText : null,
-      );
-      animating = animating || labelsMoving;
+            ),
+          ) ^
+          _markerLabels.length,
+      background: sheet.background(_context)?.toArgb() ?? 0xFFFFFFFF,
+      zoom: camera.zoom,
+      origin: camera.origin,
+      size: camera.size,
+      devicePixelRatio: camera.devicePixelRatio,
+      dt: f.dt,
+      rasterBudgetMicros: _budget.spent > 1000 ? 1 : _labelBudgetMicros,
+      styleNowMs: _clock.elapsedMilliseconds.toDouble(),
+      zooming: _budget.zooming,
+      view: view,
+      ground: RaisedGround.groundOf(view, terrain),
+      perMetre: perMetre,
+      seaLevel: terrain == null ? 0 : -terrain.centre * perMetre,
+      sdf: gpu?.sdfText,
+    );
+    f.animating = f.animating || moving;
+  }
+
+  /// What the style puts after its last symbol layer, which goes over the
+  /// labels, as MapLibre draws in the style's order.
+  void _drawAboveLabels(_Frame f) {
+    final sheet = f.sheet, canvas = f.canvas;
+    if (sheet.labelsRun >= sheet.runs.length) return;
+    if (f.horizon > 0) {
+      canvas.save();
+      _clipGround(canvas, f.view, f.horizon);
     }
-    if (sheet.labelsRun < sheet.runs.length) {
-      // As MapLibre draws in the style's order: what the style puts after
-      // its last symbol layer goes over the labels.
-      if (horizon > 0) {
-        canvas.save();
-        _clipGround(canvas, view!, horizon);
-      }
-      drawRuns(sheet.labelsRun, sheet.runs.length);
-      if (view != null && onGpu) gpu.presentUntil(canvas, sheet.runs.length);
-      if (horizon > 0) canvas.restore();
+    _drawRuns(f, sheet.labelsRun, sheet.runs.length);
+    f.gpu?.presentUntil(canvas, sheet.runs.length);
+    if (f.horizon > 0) canvas.restore();
+  }
+
+  /// The air in front of the globe.
+  void _drawAtmosphere(_Frame f) {
+    final globe = f.view.globe;
+    final sky = f.sheet.sky;
+    if (globe == null || sky == null) return;
+    final blend = asNumber(sky.atmosphereBlend(_context))?.toDouble() ?? 0.8;
+    if (blend <= 0) return;
+    _unroll(f.canvas, f.view);
+    final b = f.view.unrolledBounds;
+    if (!_atmosphere.paint(
+      f.canvas,
+      f.camera.size,
+      ui.Rect.fromLTRB(b.left, b.top, b.right, b.bottom),
+      globe,
+      blend,
+      f.sheet.light,
+    )) {
+      f.waiting = true;
     }
-    final globeView = view?.globe;
-    final sky = sheet.sky;
-    if (globeView != null && sky != null) {
-      final blend = asNumber(sky.atmosphereBlend(_context))?.toDouble() ?? 0.8;
-      if (blend > 0) {
-        _unroll(canvas, view!);
-        final b = view.unrolledBounds;
-        if (!_atmosphere.paint(
-          canvas,
-          size,
-          ui.Rect.fromLTRB(b.left, b.top, b.right, b.bottom),
-          globeView,
-          blend,
-          sheet.light,
-        )) {
-          waiting = true;
-        }
-        canvas.restore();
-      }
-    }
+    f.canvas.restore();
+  }
+
+  /// Counts what the frame drew and spent, ends finished transitions, asks
+  /// for another frame when something is still moving or loading, and lets
+  /// go of tiles past the cache's size.
+  void _finishFrame(_Frame f) {
+    final now = f.now, labelsStarted = f.labelsStarted;
     final finished = _clock.elapsedMicroseconds;
     var ideal = 0, fallback = 0, cached = 0, loading = 0, unpack = 0;
     var holes = 0;
@@ -1528,14 +1220,13 @@ class VmapEngine extends ChangeNotifier {
             'glyphs=${_labels.glyphsRasterized}/${_labels.glyphRasterMicros} '
             'pages=${_labels.glyphPageCount} '
             'buildings=$_buildingMicros '
-            'z=${camera.zoom.toStringAsFixed(2)} '
+            'z=${f.camera.zoom.toStringAsFixed(2)} '
             'tiles=$ideal+$fallback cached=$cached',
       );
     timings.labels.take(_labels.work);
     if (holes > 0) timings.framesWithHoles++;
     if (_transitions.isNotEmpty) {
-      final now = _clock.elapsedMilliseconds.toDouble();
-      if (_transitions.values.every((t) => t.over(now))) {
+      if (_transitions.allOver(_clock.elapsedMilliseconds.toDouble())) {
         // Done: the plain values take over, after this frame.
         _transitions.clear();
         scheduleMicrotask(() {
@@ -1545,20 +1236,19 @@ class VmapEngine extends ChangeNotifier {
           }
         });
       } else {
-        animating = true;
+        f.animating = true;
       }
     }
     // Tiles held while zooming out are swapped for the new zoom's once the
     // hold ends, which a frame then has to draw.
     stats
-      ..busy = animating || waiting || _budget.stale || hold > 0
-      ..preparing = waiting;
+      ..busy = f.animating || f.waiting || _budget.stale || f.hold > 0
+      ..preparing = f.waiting;
     if (stats.busy) {
       _requestFrame();
     } else {
       _lastPaintMicros = 0;
     }
-
     stats
       ..tilesDrawn = ideal
       ..fallbackTiles = fallback
@@ -1571,9 +1261,9 @@ class VmapEngine extends ChangeNotifier {
             0,
             (n, r) => n + r.waiting,
           ) +
-          (_terrain?.waiting ?? 0)
+          (_ground.tiles?.waiting ?? 0)
       ..resourcesLoading = _resources.loading + _labels.glyphsLoading
-      ..drawCalls = draws
+      ..drawCalls = f.draws
       ..gpuFramesReused = _renderer?.framesReused ?? 0;
     for (final s in _sources) {
       s.evict(rendering.maxCachedTiles, _frame);
@@ -1653,46 +1343,60 @@ class VmapEngine extends ChangeNotifier {
     for (final r in _rasters) {
       r.close();
     }
-    _terrain?.close();
+    _ground.close();
     super.dispose();
   }
 }
 
-/// A paint property passing from one value to another.
-class _Transition {
-  _Transition(
-    this.layer,
-    this.key,
-    this.from,
-    this.to,
-    this.startMs,
-    this.duration,
-    this.delay,
-  );
+/// What one frame draws with, handed between the steps of the engine's
+/// paint.
+class _Frame {
+  _Frame({
+    required this.canvas,
+    required this.camera,
+    required this.view,
+    required this.sheet,
+    required this.gpu,
+    required this.dataZoom,
+    required this.styleZoom,
+    required this.now,
+    required this.dt,
+    required this.hold,
+    required this.drape,
+    required this.horizon,
+    required this.canvasHorizon,
+    required this.viewMatrix,
+  });
 
-  final String layer, key;
-  final Object? from, to;
-  final double startMs, duration, delay;
+  final ui.Canvas canvas;
+  final MapFrame camera;
+  final MapView view;
+  final StyleSheet sheet;
 
-  bool over(double nowMs) => nowMs >= startMs + delay + duration;
+  /// The renderer drawing the vector layers this frame; null for the
+  /// canvas.
+  final MapRenderer? gpu;
+  bool get onGpu => gpu != null;
+  final double dataZoom, styleZoom;
 
-  /// The property's value as an expression of the frame's time.
-  List<Object?> get expression => [
-    r'$transition',
-    _quoted(from),
-    _quoted(to),
-    startMs,
-    duration,
-    delay,
-  ];
+  /// When the frame began, in microseconds of the engine's clock.
+  final int now;
 
-  /// [v] as an expression: a list that is not one is a literal.
-  static Object? _quoted(Object? v) =>
-      v is List && (v.isEmpty || v.first is! String) ||
-          v is Map && !_isFunction(v)
-      ? ['literal', v]
-      : v;
+  /// Seconds since the frame before, at most a tenth.
+  final double dt;
+  final double hold;
 
-  static bool _isFunction(Map<Object?, Object?> v) =>
-      v.containsKey('stops') || v.containsKey('property');
+  /// Whether the GPU drapes the flat layers over raised ground or the
+  /// globe.
+  final bool drape;
+
+  /// Where the ground stops on the screen, for what is cut at the horizon;
+  /// 0 when nothing is.
+  final double horizon, canvasHorizon;
+  final Float64List viewMatrix;
+
+  bool waiting = false;
+  bool animating = false;
+  int draws = 0;
+  int labelsStarted = 0;
 }

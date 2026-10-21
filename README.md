@@ -4,7 +4,7 @@ A map engine for Flutter, drawn on the GPU. It reads any MapLibre style and
 draws it the way MapLibre does, with 3D buildings, terrain, the globe and
 labels in every script, on Android, iOS, macOS, Windows, Linux and the web.
 
-- **Any MapLibre style**: 1,399 of the 1,530 MapLibre render tests that
+- **Any MapLibre style**: 1,394 of the 1,519 MapLibre render tests that
   apply, and real styles within a few percent of MapLibre GL JS.
 - **3D**: buildings with depth, terrain draped with the map, sky and fog,
   the globe, tilt up to 85 degrees.

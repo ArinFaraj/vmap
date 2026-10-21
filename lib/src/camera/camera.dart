@@ -2,6 +2,8 @@ import 'dart:ui' as ui;
 
 import 'view.dart';
 
+/// One frame of the map as the engine draws it: the screen framed at the
+/// zoom of its middle, and the view that says what the screen shows.
 class MapFrame {
   const MapFrame({
     required this.zoom,
@@ -9,7 +11,7 @@ class MapFrame {
     required this.size,
     required this.rotation,
     required this.devicePixelRatio,
-    this.view,
+    required this.view,
     this.ahead,
   });
 
@@ -22,11 +24,22 @@ class MapFrame {
   final double rotation;
   final double devicePixelRatio;
 
-  /// Set when the map is tilted: [origin] and [size] then frame the screen at
-  /// the centre's scale, and the view says what the tilted screen shows.
-  final MapView? view;
+  /// What the screen shows, tilted, turned or on the globe; [origin] and
+  /// [size] frame the screen at the scale of its middle.
+  final MapView view;
 
   /// What the screen will show where the camera is headed, while it moves
   /// to a known place, so its tiles load on the way.
   final MapView? ahead;
+
+  /// This frame seeing [view], headed for [ahead].
+  MapFrame withView(MapView view, MapView? ahead) => MapFrame(
+    zoom: zoom,
+    origin: origin,
+    size: size,
+    rotation: rotation,
+    devicePixelRatio: devicePixelRatio,
+    view: view,
+    ahead: ahead,
+  );
 }

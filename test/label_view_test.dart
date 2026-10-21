@@ -11,7 +11,6 @@ void main() {
     () {
       final view = LabelView()
         ..frame(
-          rotation: 0,
           size: const ui.Size(256, 256),
           world: 256,
           origin: ui.Offset.zero,

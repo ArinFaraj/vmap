@@ -95,17 +95,12 @@ class MeshPainter {
       if (color == null || color.a <= 0) return;
       paint = _paint..color = ui.Color(color.toArgb());
     }
-    if (camera.view case final view?) {
-      final ground = view.ground();
-      final path = ui.Path()
-        ..addPolygon([
-          for (final p in ground)
-            ui.Offset(p.x - camera.origin.dx, p.y - camera.origin.dy),
-        ], true);
-      canvas.drawPath(path, paint);
-    } else {
-      canvas.drawRect(ui.Offset.zero & camera.size, paint);
-    }
+    final path = ui.Path()
+      ..addPolygon([
+        for (final p in camera.view.ground())
+          ui.Offset(p.x - camera.origin.dx, p.y - camera.origin.dy),
+      ], true);
+    canvas.drawPath(path, paint);
     _paint.shader = null;
   }
 

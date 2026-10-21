@@ -30,7 +30,7 @@ class BuildingOcclusion {
   /// Takes this frame's [view] and the [tiles] on screen. Buildings count
   /// once the zoom is in their layer's range.
   void update(
-    MapView? view,
+    MapView view,
     Iterable<TileDraw> tiles,
     StyleSheet sheet,
     double styleZoom,
@@ -38,7 +38,7 @@ class BuildingOcclusion {
     _buildings.clear();
     _view = view;
     this.view = 0;
-    if (view == null || view.pitch < 15) return;
+    if (view.pitch < 15) return;
     final eye = view.eye;
     final shown = {
       for (final layer in sheet.extrusions)
