@@ -65,6 +65,7 @@ line-layer-opacity/line-offset	equal	edge pixels
 line-miter-limit/default	equal	edge pixels
 line-overlap	equal	edge pixels
 line-pattern/@2x	equal	edge pixels
+line-pattern/overscaled	skip	MapLibre sizes a line pattern at the whole zoom and stretches the image along the line up to twice until the next; vmap keeps the image's shape
 mlt/render-layers/render-building-extrusion	later	the MLT tile format
 mlt/render-layers/render-building-extrusion-untessellated	later	the MLT tile format
 overscale	equal	edge pixels
