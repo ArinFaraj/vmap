@@ -1530,3 +1530,11 @@ class SymbolLayout {
       rotate != null ||
       font != null;
 }
+
+/// The key a feature's state is kept under, as MapLibre keeps it under
+/// `String(id)`: the number 1 and the string "1" name the same feature.
+String featureStateKey(Object? id) => switch (id) {
+  final double d when d.isFinite && d == d.truncateToDouble() =>
+    d.toInt().toString(),
+  _ => '$id',
+};

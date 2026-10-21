@@ -77,4 +77,11 @@ void main() {
     expect(hits, hasLength(1));
     expect(hits.single.properties[r'$id'], 7);
   });
+
+  test('a number and the same digits as a string name one feature', () {
+    expect(featureStateKey(1), featureStateKey('1'));
+    expect(featureStateKey(1.0), '1');
+    expect(featureStateKey(1.5), '1.5');
+    expect(featureStateKey('a'), 'a');
+  });
 }

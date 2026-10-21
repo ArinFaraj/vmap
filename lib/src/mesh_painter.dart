@@ -306,7 +306,7 @@ class MeshPainter {
         if (layer.perFeature) {
           _context
             ..props = m.props ?? const {}
-            ..state = states?[m.props?[r'$id']] ?? const {};
+            ..state = states?[featureStateKey(m.props?[r'$id'])] ?? const {};
           final own = Rgba.of(layer.color(_context));
           if (own == null) continue;
           color = own.toArgb(asNumber(layer.opacity(_context)) ?? 1);

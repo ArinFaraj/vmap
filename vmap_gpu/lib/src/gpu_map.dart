@@ -1156,7 +1156,7 @@ class GpuMap implements MapRenderer {
     final source = sheet.buckets[layer.bucket].source;
     context.state = props == null || source >= states.length
         ? const {}
-        : states[source]?[props[r'$id']] ?? const {};
+        : states[source]?[featureStateKey(props[r'$id'])] ?? const {};
     final building = sheet.footprints[layerIndex];
     if (building == null) {
       final present = _presence.of(layerIndex);

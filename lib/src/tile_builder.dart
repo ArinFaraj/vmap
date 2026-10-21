@@ -531,7 +531,8 @@ class TileBuilder {
             if (bucket.extrude case final extrude?) {
               scaled();
               if (extrude.readsState) {
-                context.state = states[context.props[r'$id']] ?? const {};
+                context.state =
+                    states[featureStateKey(context.props[r'$id'])] ?? const {};
               }
               // As MapLibre, nothing stands below the ground.
               final height = math.max(

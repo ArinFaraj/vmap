@@ -68,7 +68,8 @@ class VmapEngine extends ChangeNotifier {
   }) : _labels = LabelEngine(text)
          ..pins = pins
          ..curvedRoads = curvedLabels {
-    _labels.stateOf = (source, id) => _states[_sources[source].def.name]?[id];
+    _labels.stateOf = (source, id) =>
+        _states[_sources[source].def.name]?[featureStateKey(id)];
     if (glyphText || styleGlyphs) {
       _resources.loadFonts(fonts, shapeInWorkers: !styleGlyphs).whenComplete(
         () {
@@ -700,7 +701,7 @@ class VmapEngine extends ChangeNotifier {
     for (final s in value) {
       final id = s.id;
       if (id == null) continue;
-      (_states[s.source] ??= {})[id] = s.state;
+      (_states[s.source] ??= {})[featureStateKey(id)] = s.state;
     }
     for (final i in _sheet?.stateBuiltSources ?? const <int>{}) {
       final source = _sources[i];
