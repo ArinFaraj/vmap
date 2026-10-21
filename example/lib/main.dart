@@ -255,6 +255,7 @@ class _BenchAppState extends State<BenchApp>
         'draw_max_us': engine.stats.timings.maxDrawMicros,
         'unpack_max_us': engine.stats.timings.maxUnpackMicros,
         'rss_mb': kIsWeb ? 0 : ProcessInfo.currentRss >> 20,
+        'max_rss_mb': kIsWeb ? 0 : ProcessInfo.maxRss >> 20,
         'slow':
             (engine.stats.timings.slowPaints.toList()..sort(
                   (a, b) =>
