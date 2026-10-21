@@ -620,6 +620,13 @@ packages:
       relative: true
     source: path
     version: "0.26.0"
+  vmap_flutter_map:
+    dependency: "direct main"
+    description:
+      path: "../vmap_flutter_map"
+      relative: true
+    source: path
+    version: "0.1.0"
   web:
     dependency: transitive
     description:

@@ -30,7 +30,6 @@ dependencies:
   flutter_gpu:
     sdk: flutter
   flutter_gpu_shaders: ^0.5.2
-  flutter_map: ^8.3.0
   latlong2: ">=0.9.0 <0.11.0"
   hooks: ^2.0.0
   payv: 0.1.2

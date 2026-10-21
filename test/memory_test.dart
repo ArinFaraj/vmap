@@ -1,9 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:vmap/renderer.dart';
 import 'package:vmap/vmap.dart';
 
@@ -70,29 +68,5 @@ void main() {
 
     expect(renderer.trims, 1);
     await tester.pumpWidget(const SizedBox());
-  });
-
-  testWidgets('the layer lets memory go when the system runs short', (
-    tester,
-  ) async {
-    final renderer = _Renderer();
-    final engine = VmapEngine(style: empty, renderer: renderer);
-    addTearDown(engine.dispose);
-    await tester.pumpWidget(
-      Directionality(
-        textDirection: TextDirection.ltr,
-        child: FlutterMap(
-          options: const MapOptions(
-            initialCenter: LatLng(36.19, 44.01),
-            initialZoom: 10,
-          ),
-          children: [VmapLayer.engine(engine)],
-        ),
-      ),
-    );
-
-    tester.binding.handleMemoryPressure();
-
-    expect(renderer.trims, 1);
   });
 }

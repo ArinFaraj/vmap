@@ -36,6 +36,8 @@ dependencies:
   cupertino_icons: ^1.0.8
   vmap:
     path: ..
+  vmap_flutter_map:
+    path: ../vmap_flutter_map
   flutter_map: ^8.3.2
   flutter_displaymode: ^0.7.0
   latlong2: ^0.10.1

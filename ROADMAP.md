@@ -14,8 +14,11 @@ What the API looks like and what should change before release:
 
 ## Status
 
-- **Now:** 0.1, step 1, the restructure: `vmap_gpu` folded into `vmap`, then
-  the flutter_map layers moved to `vmap_flutter_map`.
+- **Now:** 0.1, step 1, the restructure, done on 2026-10-21: `vmap_gpu` is
+  folded into `vmap` (`GpuMap` exported from `package:vmap/vmap.dart`), and
+  the flutter_map layers live in `vmap_flutter_map/` with a core
+  `VmapMarker` in their place. The root README still shows `VmapLayer`
+  imported from vmap; it is rewritten in step 7.
 - **Next:** the API polish in [doc/api-review.md](doc/api-review.md). Its
   proposals have been reviewed twice (verdicts in its second pass section);
   Arin asked for that review rather than approving item by item.

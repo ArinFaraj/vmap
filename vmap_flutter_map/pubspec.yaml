@@ -1,0 +1,25 @@
+name: vmap_flutter_map
+description: >-
+  vmap's maps inside flutter_map: a layer that draws any MapLibre style where
+  a TileLayer would go, a whole map in one widget, and named markers.
+version: 0.1.0
+publish_to: none
+repository: https://github.com/ArinFaraj/vmap/tree/main/vmap_flutter_map
+issue_tracker: https://github.com/ArinFaraj/vmap/issues
+
+environment:
+  sdk: ">=3.13.0 <4.0.0"
+  flutter: ">=3.47.1"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_map: ^8.3.0
+  latlong2: ">=0.9.0 <0.11.0"
+  vmap:
+    path: ..
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter

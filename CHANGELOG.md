@@ -1,5 +1,8 @@
 ## Unreleased
 
+- `VmapLayer`, `VmapMap`, `VmapGestures` and `NamedMarker` move to the
+  `vmap_flutter_map` package, so vmap no longer depends on flutter_map.
+  `VmapEngine.markers` takes `VmapMarker`s.
 - `VMap` on a flat map keeps the camera to the world, as MapLibre does: it
   does not zoom out past a world as tall as the map, nor show past the
   poles. `MapCameraPosition.constrained` applies the same rule.

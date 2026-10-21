@@ -5,7 +5,6 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter_map/flutter_map.dart' show Marker;
 import 'package:latlong2/latlong.dart' show LatLng;
 
 import 'atmosphere.dart';
@@ -20,7 +19,7 @@ import 'text_style.dart';
 import 'paint_defaults.dart';
 import 'pins.dart';
 import 'query.dart';
-import 'layer.dart' show NamedMarker;
+import 'marker.dart';
 import 'raster.dart';
 import 'raster_style.dart';
 import 'style_resources.dart';
@@ -671,11 +670,10 @@ class VmapEngine extends ChangeNotifier {
     _requestFrame();
   }
 
-  /// Markers the app draws above the map with a `MarkerLayer`. Map labels
-  /// keep clear of each one, and a [NamedMarker]'s name is placed beside it
-  /// ahead of every map label; when there is no room the name hides and the
-  /// marker stays.
-  set markers(List<Marker> value) {
+  /// Markers the app draws above the map. Map labels keep clear of each
+  /// one, and a marker's name is placed beside it ahead of every map label;
+  /// when there is no room the name hides and the marker stays.
+  set markers(List<VmapMarker> value) {
     final areas = <(double, double, double, double, double, double)>[];
     _markerLabels.clear();
     for (var i = 0; i < value.length; i++) {
@@ -690,7 +688,7 @@ class VmapEngine extends ChangeNotifier {
         (m.alignment?.x ?? 0) * m.width / 2,
         (m.alignment?.y ?? 0) * m.height / 2,
       ));
-      final name = m is NamedMarker ? m.name : null;
+      final name = m.name;
       if (name == null || name.isEmpty) continue;
       _markerLabels.add(MarkerName(i, name, wx, wy));
     }

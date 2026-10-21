@@ -1,13 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_map/flutter_map.dart';
 
-import 'camera.dart';
-import 'engine.dart';
-import 'text_style.dart';
-import 'pins.dart';
-import 'query.dart';
-import 'style.dart';
-import 'source_config.dart';
+import 'package:vmap/vmap.dart';
 
 /// A flutter_map [Marker] with a name the map writes beside it, placed so it
 /// never covers another label.
@@ -176,7 +171,7 @@ class VmapLayerState extends State<VmapLayer> with WidgetsBindingObserver {
             )
             ..onError = widget.onError
             ..crossSourceCollisions = widget.crossSourceCollisions
-            ..markers = widget.markers
+            ..markers = _vmapMarkers(widget.markers)
             ..featureStates = widget.featureStates;
     }
     PaintingBinding.instance.systemFonts.addListener(_fontsChanged);
@@ -200,30 +195,25 @@ class VmapLayerState extends State<VmapLayer> with WidgetsBindingObserver {
       ..crossSourceCollisions = widget.crossSourceCollisions
       ..onError = widget.onError
       ..text = _text;
-    if (!_sameMarkers(oldWidget.markers, widget.markers)) {
-      owned.markers = widget.markers;
+    final markers = _vmapMarkers(widget.markers);
+    if (!listEquals(_vmapMarkers(oldWidget.markers), markers)) {
+      owned.markers = markers;
     }
     if (!identical(oldWidget.featureStates, widget.featureStates)) {
       owned.featureStates = widget.featureStates;
     }
   }
 
-  static bool _sameMarkers(List<Marker> a, List<Marker> b) {
-    if (identical(a, b)) return true;
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      final x = a[i], y = b[i];
-      if (x.point != y.point ||
-          x.width != y.width ||
-          x.height != y.height ||
-          x.alignment != y.alignment ||
-          (x is NamedMarker ? x.name : null) !=
-              (y is NamedMarker ? y.name : null)) {
-        return false;
-      }
-    }
-    return true;
-  }
+  static List<VmapMarker> _vmapMarkers(List<Marker> markers) => [
+    for (final m in markers)
+      VmapMarker(
+        point: m.point,
+        width: m.width,
+        height: m.height,
+        alignment: m.alignment,
+        name: m is NamedMarker ? m.name : null,
+      ),
+  ];
 
   @override
   void dispose() {

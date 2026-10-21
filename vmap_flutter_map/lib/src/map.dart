@@ -2,12 +2,10 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
-import 'engine.dart';
+import 'package:vmap/vmap.dart';
+
 import 'gestures.dart';
 import 'layer.dart';
-import 'pins.dart';
-import 'query.dart';
-import 'style.dart';
 
 /// A whole map in one widget: a [FlutterMap] with a [VmapLayer], the markers
 /// above it, and [VmapGestures] in place of flutter_map's own.
