@@ -176,4 +176,31 @@ void main() {
     expect(at(1350), closeTo(5, 1e-9));
     expect(at(1600), 10);
   });
+
+  test('the text of a zoom function has its tokens filled in', () {
+    final text = compileText({
+      'stops': [
+        [0, '{name}'],
+        [22, ''],
+      ],
+    });
+    final c = EvalContext()
+      ..zoom = 0
+      ..props = {'name': 'X'};
+    expect(text(c), 'X');
+  });
+
+  test('the text of an expression keeps its braces', () {
+    final text = compileText([
+      'step',
+      ['zoom'],
+      '{name}',
+      10,
+      '',
+    ]);
+    final c = EvalContext()
+      ..zoom = 0
+      ..props = {'name': 'X'};
+    expect(text(c), '{name}');
+  });
 }

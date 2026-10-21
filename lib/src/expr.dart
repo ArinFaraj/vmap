@@ -156,22 +156,37 @@ Expr compileExpr(Object? json) {
 /// Compiles a text field: an expression, or a string with `{property}`
 /// tokens.
 Expr compileText(Object? json) {
-  if (json is! String || !json.contains('{')) {
-    final inner = compileExpr(json);
+  if (json is String && json.contains('{')) return _tokens(json);
+  final inner = compileExpr(json);
+  // As MapLibre's getValueAndResolveTokens: the output of a legacy
+  // function that reads no property has its tokens filled in too.
+  if (json is Map && json['property'] == null) {
+    final filled = <String, Expr>{};
     return (c) {
       final value = inner(c);
+      if (value is String && value.contains('{')) {
+        return (filled[value] ??= _tokens(value))(c);
+      }
       return value is FormattedText ? value : asText(value).trim();
     };
   }
+  return (c) {
+    final value = inner(c);
+    return value is FormattedText ? value : asText(value).trim();
+  };
+}
+
+/// [text] with each `{property}` token the feature's property.
+Expr _tokens(String text) {
   final parts = <Object>[];
   final token = RegExp(r'\{([^}]*)\}');
   var at = 0;
-  for (final m in token.allMatches(json)) {
-    if (m.start > at) parts.add(json.substring(at, m.start));
+  for (final m in token.allMatches(text)) {
+    if (m.start > at) parts.add(text.substring(at, m.start));
     parts.add([m.group(1)!]);
     at = m.end;
   }
-  if (at < json.length) parts.add(json.substring(at));
+  if (at < text.length) parts.add(text.substring(at));
   return (c) {
     final out = StringBuffer();
     for (final p in parts) {
