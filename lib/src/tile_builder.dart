@@ -1192,7 +1192,10 @@ class TileBuilder {
   ) {
     var width = 0.0;
     var section = 0;
-    final runes = text.runes.toList();
+    final runes = [
+      for (final c in joinedForms(text.runes.toList()))
+        if (c >= 0) c,
+    ];
     final spacing = letterSpacingFor(plainText(text), symbol.letterSpacing);
     for (var i = 0; i < runes.length; i++) {
       final r = runes[i];

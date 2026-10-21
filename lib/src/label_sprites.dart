@@ -354,14 +354,19 @@ class LabelSprites {
                 },
               ),
         ];
-        for (final section in {for (final s in sections) s.face}) {
-          if (!store.ready(section, plain)) return null;
-        }
       }
-      final joined = format == null && hasJoiningLetters(look.text)
+      // A formatted label's marks join with nothing, so each section is
+      // joined on its own, as MapLibre shapes each section.
+      final joined = hasJoiningLetters(look.text)
           ? String.fromCharCodes(joinArabic(look.text.runes.toList()))
           : look.text;
       final text = look.vertical ? verticalPunctuation(joined) : joined;
+      if (sections != null) {
+        final drawn = plainText(text);
+        for (final section in {for (final s in sections) s.face}) {
+          if (!store.ready(section, drawn)) return null;
+        }
+      }
       if (format == null && !store.ready(face, text)) return null;
       final laid = layoutRanges(
         store.glyph,
