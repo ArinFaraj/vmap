@@ -55,7 +55,10 @@ printf '%s\n' "$filter" >"$out/filter"
 scope="$(cd "$(dirname "$0")" && pwd)/render_suite_out_of_scope.tsv"
 exceptions="$(cd "$(dirname "$0")" && pwd)/render_suite_exceptions.tsv"
 cd "$(dirname "$0")/../example"
-VMAP_BACKGROUND=1 flutter run -d macos --profile -t lib/render_suite.dart \
+# Built, then started as a plain process rather than through `open`, which
+# drops the environment: VMAP_BACKGROUND keeps the app hidden, out of the
+# Dock and from taking focus.
+flutter build macos --profile -t lib/render_suite.dart \
   --dart-define=SUITE="$suite" \
   --dart-define=OUT="$out" \
   --dart-define=FILTER="$filter" \
@@ -66,6 +69,11 @@ VMAP_BACKGROUND=1 flutter run -d macos --profile -t lib/render_suite.dart \
   --dart-define=MULTISAMPLE="${MULTISAMPLE:-true}" \
   --dart-define=PARALLEL="${PARALLEL:-6}" \
   --dart-define=IDLE_CHECK="${IDLE_CHECK:-false}" \
-  --dart-define=LABELS="${LABELS:-false}" >"$out/run.log" 2>&1 || true
-grep -E '^flutter: (render suite|in scope|must pass):' "$out/run.log" || tail -20 "$out/run.log"
+  --dart-define=LABELS="${LABELS:-false}" >"$out/build.log" 2>&1 || {
+  tail -20 "$out/build.log"
+  exit 1
+}
+app=$(ls -d build/macos/Build/Products/Profile/*.app | head -1)
+VMAP_BACKGROUND=1 "$app/Contents/MacOS/$(basename "$app" .app)" >"$out/run.log" 2>&1 || true
+grep -E '^(flutter: )?(render suite|in scope|must pass):' "$out/run.log" || tail -20 "$out/run.log"
 echo "report: $out/index.html"
