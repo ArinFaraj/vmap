@@ -246,11 +246,15 @@ class RoadLabels {
 
   /// Whether a name the same as [st]'s is placed closer than [distance]
   /// logical pixels already, or than vmap's own distance without one.
-  bool nearSame(LabelState st, [double? distance]) {
+  /// With [sameLayer], only names of [st]'s own style layer count, as
+  /// MapLibre's cross-tile index matches a symbol within its layer.
+  bool nearSame(LabelState st, [double? distance, bool sameLayer = false]) {
     final world = _view.world;
     final text = st.candidate.text;
     final most = distance ?? _repeatDistance;
+    final layer = _layerOf(st);
     for (final other in _placed[text] ?? const <LabelState>[]) {
+      if (sameLayer && _layerOf(other) != layer) continue;
       final dx = (other.worldX - st.worldX) * world;
       final dy = (other.worldY - st.worldY) * world;
       if (dx * dx + dy * dy < most * most) {
@@ -259,4 +263,9 @@ class RoadLabels {
     }
     return false;
   }
+
+  static int _layerOf(LabelState st) => switch (st.candidate) {
+    TileLabel(:final tile) => tile.layer,
+    _ => -1,
+  };
 }

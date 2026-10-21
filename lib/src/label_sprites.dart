@@ -167,7 +167,14 @@ class TextLook {
     this.fontStack = const [],
     this.format,
     this.vertical = false,
+    this.lineShift,
   });
+
+  /// For a name along a line, as MapLibre shapes one: its anchor's
+  /// alignment across and down, each -0.5, 0 or 0.5 of the text's box,
+  /// then its `text-offset` in ems. Moved so, the name runs along its line
+  /// and stands off it.
+  final (double, double, double, double)? lineShift;
 
   /// Written down the page, as MapLibre writes a vertical point label.
   final bool vertical;
@@ -277,6 +284,31 @@ class LabelSprites {
       work.evicted++;
       _byKey.remove(key)!.dispose();
     }
+  }
+
+  static ShapedText _shifted(
+    ShapedText shaped,
+    (double, double, double, double)? shift,
+  ) {
+    if (shift == null) return shaped;
+    final (alignX, alignY, offsetX, offsetY) = shift;
+    final dx = alignX * shaped.width + offsetX;
+    final dy = alignY * shaped.height + offsetY;
+    if (dx == 0 && dy == 0) return shaped;
+    final glyphs = Float32List.fromList(shaped.glyphs);
+    for (var i = 0; i < glyphs.length; i += 5) {
+      glyphs[i + 2] += dx;
+      glyphs[i + 3] += dy;
+    }
+    return ShapedText(
+      glyphs,
+      shaped.width,
+      shaped.height,
+      shaped.lines,
+      shaped.scales,
+      shaped.colors,
+      shaped.turns,
+    );
   }
 
   /// Draws [look] once and keeps it under [key]. The halo is the text
@@ -535,11 +567,12 @@ class LabelSprites {
   }
 
   GlyphSprite _glyphSprite(
-    ShapedText shaped,
+    ShapedText unshifted,
     TextLook look,
     int pass,
     bool fromRanges,
   ) {
+    final shaped = _shifted(unshifted, look.lineShift);
     final textW = math.max(1.0, shaped.width * look.fontSize);
     final textH = shaped.height * look.fontSize;
     final w = textW + haloPad * 2, h = textH + haloPad * 2;

@@ -281,10 +281,38 @@ class LabelEngine {
 
   /// The key [st]'s text sprite is kept under: its candidate's, and with
   /// `text-justify: auto` the side its lines are flush on.
+  /// How a name along a line is moved off its anchor, as MapLibre shapes
+  /// it: its `text-anchor`'s alignment and its `text-offset`. Null when it
+  /// is not moved.
+  (double, double, double, double)? _lineShift(LabelCandidate c) {
+    if (c is! TileLabel || c.tile.line == null) return null;
+    final symbol = _symbolOf(c);
+    if (symbol == null) return null;
+    final anchor = symbol.anchor;
+    final alignX = anchor.endsWith('left')
+        ? 0.5
+        : anchor.endsWith('right')
+        ? -0.5
+        : 0.0;
+    final alignY = anchor.startsWith('top')
+        ? 0.5
+        : anchor.startsWith('bottom')
+        ? -0.5
+        : 0.0;
+    final (offsetX, offsetY) = symbol.textOffset(_layoutContext(c));
+    if (alignX == 0 && alignY == 0 && offsetX == 0 && offsetY == 0) {
+      return null;
+    }
+    return (alignX, alignY, offsetX, offsetY);
+  }
+
   String _spriteKey(LabelState st) {
     final c = st.candidate;
     final symbol = _symbolOf(c);
     var key = st.vertical ? '${c.spriteKey}|v' : c.spriteKey;
+    if (_lineShift(c) case (final ax, final ay, final ox, final oy)) {
+      key = '$key|$ax,$ay,$ox,$oy';
+    }
     if (symbol == null) return key;
     if (symbol.layoutAt.any) {
       final context = _layoutContext(c);
@@ -1083,7 +1111,7 @@ class LabelEngine {
     }
     if (!st.roadFits) return;
     final mapLibre = identical(_rules, LabelRules.mapLibre) && layer != null;
-    if (_roads.nearSame(st, mapLibre ? 1 : null)) {
+    if (_roads.nearSame(st, mapLibre ? 1 : null, mapLibre)) {
       return;
     }
     final overlaps = mapLibre && layer.textOverlaps;
@@ -1253,6 +1281,7 @@ class LabelEngine {
             ? (c.tile.props?[formatKey] as List<Object?>?)
             : null,
         vertical: st.vertical,
+        lineShift: _lineShift(c),
       ),
       dpr: dpr,
       pass: _pass,
