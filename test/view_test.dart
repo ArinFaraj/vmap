@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/mercator.dart';
+import 'package:vmap/src/map_camera.dart' show MapCameraPosition;
 import 'package:vmap/src/view.dart' show EdgeInsets2, MapView;
 
 MapView _view({
@@ -254,6 +255,42 @@ void main() {
       final cy = (clip[1] * g.x + clip[5] * g.y + clip[13]) / w;
       expect((cx + 1) * v.width / 2, closeTo(sx, 1e-3));
       expect((1 - cy) * v.height / 2, closeTo(sy, 1e-3));
+    }
+  });
+
+  test('a picture taken with one camera warps onto the ground of another', () {
+    MapView at(
+      double lon,
+      double lat,
+      double zoom,
+      double bearing,
+      double pitch,
+    ) => MapCameraPosition(
+      latitude: lat,
+      longitude: lon,
+      zoom: zoom,
+      bearing: bearing,
+      pitch: pitch,
+    ).view(400, 300);
+    final from = at(44, 36.19, 14, 10, 40);
+    for (final to in [
+      at(44.001, 36.19, 14, 10, 40),
+      at(44, 36.19, 14.3, 10, 40),
+      at(44, 36.19, 14, 14, 40),
+      at(44, 36.19, 14, 10, 44),
+      at(44.002, 36.189, 14.2, 7, 35),
+    ]) {
+      final m = to.warpFrom(from)!;
+      for (final (sx, sy) in [(50.0, 280.0), (200.0, 200.0), (380.0, 150.0)]) {
+        final ground = from.unproject(sx, sy)!;
+        final want = to.project(
+          ground.x / from.worldSize * to.worldSize,
+          ground.y / from.worldSize * to.worldSize,
+        );
+        final w = m[3] * sx + m[7] * sy + m[15];
+        expect((m[0] * sx + m[4] * sy + m[12]) / w, closeTo(want.x, 1e-3));
+        expect((m[1] * sx + m[5] * sy + m[13]) / w, closeTo(want.y, 1e-3));
+      }
     }
   });
 }

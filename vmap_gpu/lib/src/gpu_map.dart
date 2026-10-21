@@ -107,6 +107,19 @@ class GpuMap implements MapRenderer {
 
   /// The last frame drawn, shown again while the GPU catches up.
   _Shown? _last;
+
+  /// The camera of the frame being shown: [_lastView] unless [_last] is
+  /// shown again for a camera that has moved on, which it is warped to.
+  MapView? _showView;
+
+  /// How many frames showed the last one again because the GPU had not
+  /// caught up.
+  int framesReused = 0;
+
+  /// Shows the last frame again every other frame, as a GPU that cannot
+  /// keep up does, to see the map stay with its labels.
+  @visibleForTesting
+  bool debugReuseFrames = false;
   final ui.Paint _overlayPaint = ui.Paint()
     ..filterQuality = ui.FilterQuality.low;
   int _inFlight = 0;
@@ -546,8 +559,11 @@ class GpuMap implements MapRenderer {
     // it, so while two frames are still in flight the last image is shown
     // again and the frame comes back once one finishes.
     final last = _last;
-    if (_inFlight >= 2 && last != null) {
+    if ((_inFlight >= 2 || (debugReuseFrames && _frame.isOdd)) &&
+        last != null) {
       _presented = 0;
+      _showView = view;
+      framesReused++;
       return true;
     }
     final frame = _ring[_next];
@@ -793,7 +809,7 @@ class GpuMap implements MapRenderer {
     _last = shown;
     _splits = splits;
     _presented = 0;
-    _lastView = view;
+    _lastView = _showView = view;
     return _reveal.animating ||
         _presence.animating ||
         _spritesLoading ||
@@ -1017,12 +1033,32 @@ class GpuMap implements MapRenderer {
     _lastView = view;
     final from = ui.Rect.fromLTWH(0, 0, _width.toDouble(), _height.toDouble());
     final to = ui.Rect.fromLTWH(0, 0, view.width, view.height);
+    // A frame shown again for a camera that has moved is moved with it, so
+    // the map keeps up with the labels drawn for the new camera.
+    final now = _showView;
+    var warp = now == null || identical(now, view) || terrain != null
+        ? null
+        : now.warpFrom(view);
+    if (warp != null && _identity(warp)) warp = null;
+    if (warp != null) {
+      canvas
+        ..save()
+        ..transform(warp);
+    }
     for (final (image, opacity) in shown) {
       final paint = opacity >= 1
           ? _paint
           : (_overlayPaint..color = ui.Color.fromRGBO(255, 255, 255, opacity));
       canvas.drawImageRect(image, from, to, paint);
     }
+    if (warp != null) canvas.restore();
+  }
+
+  static bool _identity(Float64List m) {
+    for (var i = 0; i < 16; i++) {
+      if ((m[i] - (i % 5 == 0 ? 1 : 0)).abs() > 1e-9) return false;
+    }
+    return true;
   }
 
   /// Copies the sprite sheet's pixels into a texture. Read back on the

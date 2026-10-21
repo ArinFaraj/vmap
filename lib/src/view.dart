@@ -398,6 +398,62 @@ class MapView {
     return (x: _cx + _cosB * u - _sinB * v, y: _cy + _sinB * u + _cosB * v);
   }
 
+  /// A column-major matrix for `Canvas.transform` that moves what [from]
+  /// showed on its screen to where this view shows the same ground: a
+  /// picture of the map taken with one camera, shown for another. Exact
+  /// for whatever lies on the ground. Null where the ground cannot be
+  /// matched: on the globe, or where a point of [from]'s screen it is
+  /// matched by lies above its horizon or behind this camera.
+  Float64List? warpFrom(MapView from) {
+    if (globe != null || from.globe != null) return null;
+    final w = from.width, h = from.height;
+    final source = [(0.0, h), (w, h), (w, h * 0.55), (0.0, h * 0.55)];
+    final rows = List.generate(8, (_) => Float64List(9));
+    for (final (i, (x, y)) in source.indexed) {
+      final ground = from.unproject(x, y);
+      if (ground == null) return null;
+      final gx = ground.x / from.worldSize * worldSize;
+      final gy = ground.y / from.worldSize * worldSize;
+      if (depth(gx, gy) <= 1e-6) return null;
+      final (x: u, y: v) = project(gx, gy);
+      rows[i * 2].setAll(0, [x, y, 1, 0, 0, 0, -u * x, -u * y, u]);
+      rows[i * 2 + 1].setAll(0, [0, 0, 0, x, y, 1, -v * x, -v * y, v]);
+    }
+    final hm = _solve(rows);
+    if (hm == null) return null;
+    return Float64List.fromList([
+      hm[0], hm[3], 0, hm[6], //
+      hm[1], hm[4], 0, hm[7],
+      0, 0, 1, 0,
+      hm[2], hm[5], 0, 1,
+    ]);
+  }
+
+  /// The solution of the linear system [rows], each its coefficients and
+  /// then its right-hand side, or null when it has none.
+  static List<double>? _solve(List<Float64List> rows) {
+    final n = rows.length;
+    for (var c = 0; c < n; c++) {
+      var pivot = c;
+      for (var r = c + 1; r < n; r++) {
+        if (rows[r][c].abs() > rows[pivot][c].abs()) pivot = r;
+      }
+      if (rows[pivot][c].abs() < 1e-12) return null;
+      final swap = rows[c];
+      rows[c] = rows[pivot];
+      rows[pivot] = swap;
+      for (var r = 0; r < n; r++) {
+        if (r == c) continue;
+        final k = rows[r][c] / rows[c][c];
+        if (k == 0) continue;
+        for (var j = c; j <= n; j++) {
+          rows[r][j] -= k * rows[c][j];
+        }
+      }
+    }
+    return [for (var r = 0; r < n; r++) rows[r][n] / rows[r][r]];
+  }
+
   /// A column-major matrix for `Canvas.transform` that draws world pixels,
   /// less [originX] and [originY], where they appear on the screen. Keeping
   /// the origin near the view keeps the numbers small enough for the GPU's
