@@ -1110,6 +1110,7 @@ class VmapEngine extends ChangeNotifier {
         prepare: _prepare,
         hold: hold,
         variableZoom: _terrain != null && onGpu,
+        standing: sheet.buildingSources.contains(s.pool.source),
       );
       if (preparing) waiting = true;
       if (s.retrying) _requestFrameLater();
@@ -1121,8 +1122,12 @@ class VmapEngine extends ChangeNotifier {
     final globe = view?.globe != null;
     final drape = onGpu && (gpu.terrain != null || globe);
     // Raised ground is cut by the renderer's far plane instead, as hills
-    // nearer than it rise above the flat ground's far edge.
-    final horizon = drape ? 0.0 : view?.groundTopY ?? 0;
+    // nearer than it rise above the flat ground's far edge. So are the
+    // GPU's layers past 60 degrees, as buildings near the far plane stand
+    // above that edge; only what the canvas draws is cut at it.
+    final farCut = onGpu && !drape && view != null && view.pitch > 60;
+    final horizon = drape || farCut ? 0.0 : view?.groundTopY ?? 0;
+    final canvasHorizon = farCut ? view.groundTopY : 0.0;
     if (view != null &&
         !globe &&
         view.horizonY > view.unrolledBounds.top &&
@@ -1203,11 +1208,13 @@ class VmapEngine extends ChangeNotifier {
     // of the vector layers laid between the canvas's backgrounds and
     // rasters.
     void drawRuns(int from, int to) {
-      if (viewMatrix != null) {
-        canvas
-          ..save()
-          ..transform(viewMatrix);
+      void begin() {
+        canvas.save();
+        if (canvasHorizon > 0) _clipGround(canvas, view!, canvasHorizon);
+        canvas.transform(viewMatrix!);
       }
+
+      if (viewMatrix != null) begin();
       for (var index = from; index < to; index++) {
         final run = sheet.runs[index];
         if ((run.background >= 0 || run.raster >= 0) &&
@@ -1215,9 +1222,7 @@ class VmapEngine extends ChangeNotifier {
             viewMatrix != null) {
           canvas.restore();
           gpu.presentUntil(canvas, index);
-          canvas
-            ..save()
-            ..transform(viewMatrix);
+          begin();
         }
         if (run.background >= 0) {
           if (drape) continue;

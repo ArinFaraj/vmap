@@ -547,7 +547,9 @@ class MapView {
   /// [groundTopY] when that is on the screen, over flat ground. With [beyond], over raised ground, the far edge may
   /// lie up to that many pixels above the screen's top instead: hills
   /// there rise into view, as far off as MapLibre's far plane lets them.
-  List<WorldPoint> ground({double beyond = 0}) {
+  /// With [standing], the ground under anything up to that many metres
+  /// tall that the screen shows, though the ground itself is off it.
+  List<WorldPoint> ground({double beyond = 0, double standing = 0}) {
     final far = math.max(beyond > 0 ? -beyond : unrolledBounds.top, groundTopY);
     final (:left, :right, :bottom, top: _) = unrolledBounds;
     final corners = [
@@ -556,25 +558,42 @@ class MapView {
       _unprojectUnrolled(right - _sx, bottom - _sy)!,
       _unprojectUnrolled(left - _sx, bottom - _sy)!,
     ];
-    final below = (groundElevation - groundLowest) * _pixelsPerMeter;
-    if (beyond <= 0 || below <= 0) return corners;
-    // Ground lower than the centre shows from farther out: the ground is
-    // also met where each corner's line of sight reaches the lowest ground
-    // near the centre, though no farther than the far plane, as MapLibre
-    // culls tiles by their lowest height.
     final (x: ex, y: ey, height: eh) = eye;
-    final reach = (eh + below) / eh;
-    return _hull([
-      ...corners,
-      for (final c in corners)
-        () {
-          final dx = c.x - ex, dy = c.y - ey;
-          final flat = math.sqrt(dx * dx + dy * dy);
-          final most = math.max(flat, farDistance);
-          final k = flat * reach > most ? most / flat : reach;
-          return (x: ex + dx * k, y: ey + dy * k);
-        }(),
-    ]);
+    final more = <WorldPoint>[];
+    final below = (groundElevation - groundLowest) * _pixelsPerMeter;
+    if (beyond > 0 && below > 0) {
+      // Ground lower than the centre shows from farther out: the ground is
+      // also met where each corner's line of sight reaches the lowest
+      // ground near the centre, though no farther than the far plane, as
+      // MapLibre culls tiles by their lowest height.
+      final reach = (eh + below) / eh;
+      for (final c in corners) {
+        final dx = c.x - ex, dy = c.y - ey;
+        final flat = math.sqrt(dx * dx + dy * dy);
+        final most = math.max(flat, farDistance);
+        final k = flat * reach > most ? most / flat : reach;
+        more.add((x: ex + dx * k, y: ey + dy * k));
+      }
+    }
+    final above = standing * _pixelsPerMeter;
+    if (above > 0) {
+      // A building stands into view from ground below the screen's bottom
+      // where each corner's line of sight passes its top.
+      final k = math.max(0.0, (eh - above) / eh);
+      for (final c in corners) {
+        more.add((x: ex + (c.x - ex) * k, y: ey + (c.y - ey) * k));
+      }
+    }
+    return more.isEmpty ? corners : _hull([...corners, ...more]);
+  }
+
+  /// How tall, in metres, the buildings a tile is kept for may stand: none
+  /// until the screen's bottom edge looks within 15 degrees of the horizon,
+  /// then up to [tallest] as it nears it, as MapLibre's
+  /// `getElevationForTileCulling`.
+  double standingFor({double tallest = 500}) {
+    final bottomAboveHorizon = 89.25 - pitch - fov * 90 / math.pi;
+    return ((15 - bottomAboveHorizon) / 15).clamp(0.0, 1.0) * tallest;
   }
 
   /// The convex hull of [points], clockwise as the screen shows it.
@@ -609,7 +628,9 @@ class MapView {
   /// allows with terrain, or the view is pitched past 60 degrees: then each
   /// tile is at the zoom its distance from the camera asks for, by MapLibre's
   /// `calculateTileZoom`. Tiles off the [ground] reaching [beyond] the
-  /// screen's top are left out. Each copy of the world in view has its own
+  /// screen's top are left out, and with [standing], tiles whose buildings
+  /// up to that many metres tall reach into view are kept. Each copy of the
+  /// world in view has its own
   /// columns, counted on past the world's edge, not wrapped.
   List<CoverTile> cover({
     required int maxZoom,
@@ -617,11 +638,12 @@ class MapView {
     double hold = 0,
     bool variableZoom = false,
     double beyond = 0,
+    double standing = 0,
   }) {
     if (globe case final globe?) {
       return globe.cover(maxZoom: maxZoom, minZoom: minZoom, hold: hold);
     }
-    final quad = ground(beyond: beyond);
+    final quad = ground(beyond: beyond, standing: standing);
     final (x: camX, y: camY, height: camH) = eye;
     final top = math.min((zoom + hold).floor(), maxZoom);
     final out = <CoverTile>[];

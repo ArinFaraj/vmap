@@ -1416,6 +1416,11 @@ class StyleSheet {
         (l.dash != null || l.dashStops.isNotEmpty || l.dashChoices.isNotEmpty),
   );
 
+  /// The sources with buildings to stand up.
+  late final Set<int> buildingSources = {
+    for (final e in extrusions) buckets[e.bucket].source,
+  };
+
   /// The sources whose buildings are built from `feature-state`.
   late final Set<int> stateBuiltSources = {
     for (final b in buckets)

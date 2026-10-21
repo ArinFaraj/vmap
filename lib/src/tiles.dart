@@ -374,6 +374,7 @@ class TileSource {
     required void Function(LoadedTile tile, double scale) prepare,
     double hold = 0,
     bool variableZoom = false,
+    bool standing = false,
   }) {
     retrying = false;
     final size = camera.size;
@@ -388,6 +389,7 @@ class TileSource {
         prepare: prepare,
         hold: hold,
         variableZoom: variableZoom,
+        standing: standing,
       );
     }
     final tz = dataZoom.floor().clamp(0, maxDataZoom);
@@ -447,6 +449,7 @@ class TileSource {
     required void Function(LoadedTile tile, double scale) prepare,
     double hold = 0,
     bool variableZoom = false,
+    bool standing = false,
   }) {
     ideal.clear();
     fallback.clear();
@@ -461,6 +464,7 @@ class TileSource {
       hold: hold,
       variableZoom: variableZoom,
       beyond: variableZoom ? view.height : 0,
+      standing: standing ? view.standingFor() : 0,
     );
     for (final (rank, t) in picked.indexed) {
       final n = 1 << t.z;
