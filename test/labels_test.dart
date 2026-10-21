@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -7,6 +8,8 @@ import 'package:vmap/src/labels.dart';
 import 'package:vmap/src/text_style.dart';
 import 'package:vmap/src/style_model.dart';
 import 'package:vmap/src/tile_builder.dart';
+import 'package:vmap/src/view.dart';
+import 'package:vmap/src/map_camera.dart';
 
 const _size = ui.Size(400, 400);
 
@@ -63,8 +66,9 @@ LabelEngine _engine() => LabelEngine(const VmapTextStyle())
 /// keys of the labels showing.
 Future<Set<String>> _settle(
   LabelEngine labels,
-  List<List<LabelCandidate>> sources,
-) async {
+  List<List<LabelCandidate>> sources, {
+  MapView? view,
+}) async {
   for (var frame = 0; frame < 8; frame++) {
     final recorder = ui.PictureRecorder();
     labels.paint(
@@ -80,6 +84,7 @@ Future<Set<String>> _settle(
       dt: 1,
       rasterBudgetMicros: 1000000,
       zooming: false,
+      view: view,
     );
     recorder.endRecording().dispose();
     await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -134,4 +139,49 @@ void main() {
     ]);
     expect(shown, {'road'});
   });
+
+  test(
+    'a road drawn as an image is named on a flat view, not a tilted one',
+    () async {
+      TileLabel road() => TileLabel(
+        'road',
+        BuiltLabel(
+          1,
+          1,
+          'Long Road',
+          0,
+          0,
+          Float32List.fromList([0, 2048, 4096, 2048]),
+        ),
+        0,
+        0,
+        400 / _world,
+      );
+      MapView view(double pitch) {
+        const x = 200 / _world, y = 200 / _world;
+        final lat = math.atan(_sinh(math.pi * (1 - 2 * y))) * 180 / math.pi;
+        return MapCameraPosition(
+          latitude: lat,
+          longitude: x * 360 - 180,
+          zoom: _zoom - 1,
+          pitch: pitch,
+        ).view(_size.width, _size.height);
+      }
+
+      expect(
+        await _settle(_engine(), [
+          [road()],
+        ], view: view(0)),
+        {'road'},
+      );
+      expect(
+        await _settle(_engine(), [
+          [road()],
+        ], view: view(40)),
+        isEmpty,
+      );
+    },
+  );
 }
+
+double _sinh(double x) => (math.exp(x) - math.exp(-x)) / 2;

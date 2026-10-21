@@ -866,8 +866,11 @@ class LabelEngine {
         final sx = _view.x;
         final sy = _view.y;
         if (_view.ratio < _perspectiveCutoff) continue;
+        // A road name drawn as an image is not laid on tilted ground.
+        final tilted = _view.tilted;
         if (!_glyphText &&
-            _view.tilted != null &&
+            tilted != null &&
+            (tilted.pitch > 0 || tilted.globe != null) &&
             c is TileLabel &&
             c.tile.line != null) {
           continue;
