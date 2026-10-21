@@ -488,6 +488,13 @@ final class WebGlRenderPass extends RenderPass {
     }
   }
 
+  /// [length] floats of [floats] from [offset], as a JS array of just them.
+  /// Under dart2wasm `toJS` copies a whole list, and the staging list is a
+  /// whole uniform block, so crossing it entire for each member of each
+  /// draw cost seconds a frame; under dart2js both are views.
+  static JSFloat32Array _floats(Float32List floats, int offset, int length) =>
+      Float32List.sublistView(floats, offset, offset + length).toJS;
+
   // Scratch for the rare matrix repack; grows to the largest repacked member
   // and is reused across draws.
   static Float32List _matrixScratch = Float32List(64);
@@ -513,7 +520,11 @@ final class WebGlRenderPass extends RenderPass {
       if (rows * 4 == columnStride) {
         // mat4 columns are already tight in std140; upload straight from the
         // staging view with no copy (the overwhelmingly common case).
-        gl.uniformMatrix4fv(loc, false, floats.toJS, floatOffset, count * 16);
+        gl.uniformMatrix4fv(
+          loc,
+          false,
+          _floats(floats, floatOffset, count * 16),
+        );
         return;
       }
       final tightLength = count * cols * rows;
@@ -532,9 +543,9 @@ final class WebGlRenderPass extends RenderPass {
       }
       switch (cols) {
         case 2:
-          gl.uniformMatrix2fv(loc, false, tight.toJS, 0, tightLength);
+          gl.uniformMatrix2fv(loc, false, _floats(tight, 0, tightLength));
         case 3:
-          gl.uniformMatrix3fv(loc, false, tight.toJS, 0, tightLength);
+          gl.uniformMatrix3fv(loc, false, _floats(tight, 0, tightLength));
       }
     } else {
       // Vector / scalar, possibly an array. vec4 arrays are tightly packed
@@ -544,13 +555,13 @@ final class WebGlRenderPass extends RenderPass {
       final length = member.vecSize * count;
       switch (member.vecSize) {
         case 1:
-          gl.uniform1fv(loc, floats.toJS, floatOffset, length);
+          gl.uniform1fv(loc, _floats(floats, floatOffset, length));
         case 2:
-          gl.uniform2fv(loc, floats.toJS, floatOffset, length);
+          gl.uniform2fv(loc, _floats(floats, floatOffset, length));
         case 3:
-          gl.uniform3fv(loc, floats.toJS, floatOffset, length);
+          gl.uniform3fv(loc, _floats(floats, floatOffset, length));
         case 4:
-          gl.uniform4fv(loc, floats.toJS, floatOffset, length);
+          gl.uniform4fv(loc, _floats(floats, floatOffset, length));
       }
     }
   }

@@ -283,6 +283,6 @@ suites drew as before where drawing was touched.
 | 38 | Fixed: widget tests for gestures, taps, markers, wheel, keyboard, idle, loading and `fitBounds`. |
 | 39 | Fixed: CI runs MapLibre's render tests on the GPU on macOS and fails below a floor. |
 | 40 | Partly: the vaguely named test files are split; there are no golden tests. |
-| 41 | Open: the WebAssembly build. |
+| 41 | Fixed. The WebAssembly build froze because raw image decoding blocks its page, crossed whole uniform blocks to WebGL for every draw, and sent tiles a byte at a time; it now matches the JavaScript build. Looking at it found web bugs in both builds: glyphs never worked (the rasterizer needed an isolate), the style's glyph ranges decoded negative metrics as huge numbers (bitwise results are unsigned on the web), and premultiplied pixels were premultiplied again. |
 | 42 | Open: runs on iOS, Windows, Linux, Safari and Firefox (roadmap step 6). |
 | 43 | Fixed: the background is drawn while the shaders load. |

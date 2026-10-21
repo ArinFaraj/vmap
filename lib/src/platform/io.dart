@@ -87,6 +87,19 @@ const bool directLabels = false;
 /// The image to make a shader of.
 ui.Image forShader(ui.Image image) => image;
 
+/// An image of [pixels], premultiplied RGBA rows [width] wide.
+Future<ui.Image> imageFromRgba(Uint8List pixels, int width, int height) {
+  final done = Completer<ui.Image>();
+  ui.decodeImageFromPixels(
+    pixels,
+    width,
+    height,
+    ui.PixelFormat.rgba8888,
+    done.complete,
+  );
+  return done.future;
+}
+
 /// Runs [work] off the UI thread where the platform can.
 Future<T> runAside<T>(T Function() work) => Isolate.run(work);
 

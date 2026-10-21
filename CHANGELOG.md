@@ -41,6 +41,15 @@ moved to an adapter package. This release changes most of the public API;
 - Statistics are in `package:vmap/debug.dart`. `VmapPalette` names its
   colours. `VmapEngine.useWebWorker` sets the web worker.
 
+### The web
+
+- The WebAssembly build (`--wasm`) draws as the JavaScript one does; it
+  froze its tab before.
+- Labels are drawn from glyphs in the browser too, as on other platforms,
+  with Kurdish shaped and the style's glyph ranges placed right; road shield
+  numbers and names in Latin script showed blank, and halos came out grey.
+- Tiles reach WebGL as the lists they are built in.
+
 ### Drawing
 
 - On a flat map the camera keeps to the world, as MapLibre's does: it does

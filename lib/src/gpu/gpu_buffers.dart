@@ -94,7 +94,7 @@ class GpuHeap {
   void topUp() {
     _release();
     if (_total - used < _headroom && _total + _slabBytes <= capBytes) {
-      _slabs.add(_Slab(_create(_slabBytes), _slabBytes));
+      _slabs.add(_Slab(_create(_slabBytes, indices: false), _slabBytes));
     }
   }
 
@@ -105,14 +105,14 @@ class GpuHeap {
     used += size;
     if (size > _slabBytes) {
       _oversize += size;
-      return GpuRange._(_create(size), 0, size, null);
+      return GpuRange._(_create(size, indices: indices), 0, size, null);
     }
     final slabs = indices ? _indexSlabs : _slabs;
     for (final slab in slabs) {
       final at = slab.take(size);
       if (at >= 0) return GpuRange._(slab.buffer, at, size, slab);
     }
-    final slab = _Slab(_create(_slabBytes), _slabBytes);
+    final slab = _Slab(_create(_slabBytes, indices: indices), _slabBytes);
     slabs.add(slab);
     return GpuRange._(slab.buffer, slab.take(size), size, slab);
   }
@@ -134,10 +134,17 @@ class GpuHeap {
     }
   }
 
-  static gpu.DeviceBuffer _create(int bytes) => Timeline.timeSync(
-    'vmap.gpu.alloc',
-    () => gpu.gpuContext.createDeviceBuffer(gpu.StorageMode.hostVisible, bytes),
-  );
+  /// A buffer of [bytes] for indices or for vertices alone. On the web it
+  /// is typed for that one role, so uploads cross to WebGL as the lists
+  /// they are instead of byte by byte.
+  static gpu.DeviceBuffer _create(int bytes, {required bool indices}) =>
+      Timeline.timeSync('vmap.gpu.alloc', () {
+        final made = gpu.createGeometryBuffers(
+          indices ? 0 : bytes,
+          indices ? bytes : 0,
+        );
+        return indices ? made.index : made.vertex;
+      });
 
   /// Lets go of the slabs nothing is held in, and returns true once the
   /// GPU has finished with every range given back.
@@ -213,11 +220,11 @@ class _Slab {
 /// budget needs; drawn once [ready].
 class TileGpu implements RendererTileData {
   factory TileGpu(LoadedTile tile, GpuHeap heap) {
-    final parts = <(ByteData, int)>[];
+    final parts = <(TypedData, int)>[];
     var at = 0;
     int part(TypedData data) {
       final start = at;
-      parts.add((ByteData.sublistView(data), at));
+      parts.add((data, at));
       at =
           (at + data.lengthInBytes + GpuHeap.align - 1) ~/
           GpuHeap.align *
@@ -231,11 +238,11 @@ class TileGpu implements RendererTileData {
       for (final e in tile.extrusions) (e, part(e.vertices)),
     ];
     // The flat layers' indices first, then each building layer's.
-    final indexParts = <(ByteData, int)>[];
+    final indexParts = <(TypedData, int)>[];
     var indexAt = 0;
     int indexPart(Uint32List data) {
       final start = indexAt;
-      if (data.isNotEmpty) indexParts.add((ByteData.sublistView(data), start));
+      if (data.isNotEmpty) indexParts.add((data, start));
       indexAt += data.lengthInBytes;
       return start;
     }
@@ -298,10 +305,20 @@ class TileGpu implements RendererTileData {
   gpu.DeviceBuffer? get indexBuffer => _indices?.buffer;
 
   /// What to copy, each with the buffer and offset it goes to, in order.
-  final List<(ByteData, gpu.DeviceBuffer, int)> _parts;
+  final List<(TypedData, gpu.DeviceBuffer, int)> _parts;
   int _part = 0, _sent = 0;
 
   static const _piece = 256 * 1024;
+
+  /// Bytes [from] to [to] of [data], as a list of its own element type:
+  /// under dart2wasm a byte view over float storage crosses to WebGL a byte
+  /// at a time.
+  static TypedData _slice(TypedData data, int from, int to) => switch (data) {
+    Float32List() => Float32List.sublistView(data, from ~/ 4, to ~/ 4),
+    Uint32List() => Uint32List.sublistView(data, from ~/ 4, to ~/ 4),
+    Uint16List() => Uint16List.sublistView(data, from ~/ 2, to ~/ 2),
+    _ => Uint8List.sublistView(data, from, to),
+  };
 
   bool get ready => _part >= _parts.length;
 
@@ -311,12 +328,12 @@ class TileGpu implements RendererTileData {
     while (!ready) {
       final (source, buffer, at) = _parts[_part];
       final n = math.min(_piece, source.lengthInBytes - _sent);
-      buffer
-        ..overwrite(
-          ByteData.sublistView(source, _sent, _sent + n),
-          destinationOffsetInBytes: at + _sent,
-        )
-        ..flush(offsetInBytes: at + _sent, lengthInBytes: n);
+      gpu.writeGeometryData(
+        buffer,
+        _slice(source, _sent, _sent + n),
+        destinationOffsetInBytes: at + _sent,
+      );
+      buffer.flush(offsetInBytes: at + _sent, lengthInBytes: n);
       _sent += n;
       if (_sent >= source.lengthInBytes) {
         _part++;

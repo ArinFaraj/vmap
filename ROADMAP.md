@@ -18,8 +18,9 @@ What the API looks like and what should change before release:
   [doc/review.md](doc/review.md), whose last table gives each finding's
   state. vmap is 0.27.0 on the `engine` branch, unpublished.
 - **Open before publishing:** step 6 (runs on an iPhone, Windows, Linux,
-  Safari and Firefox), the WebAssembly build, and payv exporting its glyph
-  path commands so vmap stops importing a private file.
+  Safari and Firefox), and payv exporting its glyph path commands so vmap
+  stops importing a private file. The web, JavaScript and WebAssembly
+  builds both, was checked in headless Chrome on 2026-10-21.
 - **Then:** step 8, publishing, which waits for Arin's yes: merging
   `engine` to `main` and tagging publishes vmap to pub.dev.
 - Work happens on the `engine` branch of `ArinFaraj/vmap`.

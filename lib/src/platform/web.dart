@@ -86,6 +86,26 @@ const bool directLabels = !bool.fromEnvironment('dart.tool.dart2wasm');
 /// the image it is given when it is disposed, so it gets a handle of its own.
 ui.Image forShader(ui.Image image) => image.clone();
 
+/// An image of [pixels], premultiplied RGBA rows [width] wide, as Flutter
+/// takes raw pixels. Made through an `ImageBitmap`, since decoding raw
+/// pixels freezes the page under the WebAssembly renderer; `ImageData` is
+/// unpremultiplied, so the colours are divided by alpha first.
+Future<ui.Image> imageFromRgba(Uint8List pixels, int width, int height) async {
+  final straight = Uint8ClampedList(pixels.length);
+  for (var i = 0; i < pixels.length; i += 4) {
+    final a = pixels[i + 3];
+    if (a == 0) continue;
+    straight
+      ..[i] = pixels[i] * 255 ~/ a
+      ..[i + 1] = pixels[i + 1] * 255 ~/ a
+      ..[i + 2] = pixels[i + 2] * 255 ~/ a
+      ..[i + 3] = a;
+  }
+  final data = web.ImageData(straight.toJS, width, height.toJS);
+  final bitmap = await web.window.createImageBitmap(data).toDart;
+  return await ui_web.createImageFromImageBitmap(bitmap);
+}
+
 /// A browser page has one thread for Dart, so the work runs where it is.
 Future<T> runAside<T>(T Function() work) async => work();
 

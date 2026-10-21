@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import '../../platform.dart';
 import 'glyph_layout.dart';
 import 'glyph_pbf.dart';
 import 'glyph_raster.dart';
@@ -123,19 +124,7 @@ class GlyphPage {
 
   static Future<ui.Image?> _image(GlyphRaster r) async {
     if (r.cells.isEmpty) return null;
-    final buffer = await ui.ImmutableBuffer.fromUint8List(r.pixels);
-    final descriptor = ui.ImageDescriptor.raw(
-      buffer,
-      width: r.width,
-      height: r.height,
-      pixelFormat: ui.PixelFormat.rgba8888,
-    );
-    final codec = await descriptor.instantiateCodec();
-    final frame = await codec.getNextFrame();
-    codec.dispose();
-    descriptor.dispose();
-    buffer.dispose();
-    return frame.image;
+    return imageFromRgba(r.pixels, r.width, r.height);
   }
 
   void dispose() {
@@ -308,7 +297,7 @@ class GlyphPages {
           ui.Paint()
             ..filterQuality = ui.FilterQuality.low
             ..shader = ui.ImageShader(
-              image,
+              forShader(image),
               ui.TileMode.clamp,
               ui.TileMode.clamp,
               _identity,

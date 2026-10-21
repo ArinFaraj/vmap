@@ -986,15 +986,7 @@ final class ShadedTiles extends TileDrawing<HillshadeLayer> {
         sides: sides,
       ),
     );
-    final done = Completer<ui.Image>();
-    ui.decodeImageFromPixels(
-      shaded,
-      width + 2,
-      height + 2,
-      ui.PixelFormat.rgba8888,
-      done.complete,
-    );
-    return done.future;
+    return imageFromRgba(shaded, width + 2, height + 2);
   }
 }
 
@@ -1045,15 +1037,7 @@ final class ReliefTiles extends TileDrawing<ColorReliefLayer> {
         layer.colors,
       ),
     );
-    final done = Completer<ui.Image>();
-    ui.decodeImageFromPixels(
-      coloured,
-      width,
-      height,
-      ui.PixelFormat.rgba8888,
-      done.complete,
-    );
-    final picture = await done.future;
+    final picture = await imageFromRgba(coloured, width, height);
     if (_closed) return picture.dispose();
     tile.image?.dispose();
     tile.image = picture;

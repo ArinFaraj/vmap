@@ -340,8 +340,8 @@ preview in Flutter itself.
 On the web, tiles are built in a web worker vmap ships, so loading an area
 does not hold up the page; `VmapEngine.useWebWorker(null)` before the first
 map builds them on the page instead. There is no disk cache in a browser,
-and a PMTiles archive has to be at an `https://` address. Use the default
-JavaScript build: the `--wasm` build has frozen its tab in some runs.
+and a PMTiles archive has to be at an `https://` address. Both the
+JavaScript build and the WebAssembly one (`--wasm`) draw the map.
 
 ## flutter_map
 

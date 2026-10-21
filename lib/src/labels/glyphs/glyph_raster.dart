@@ -3,6 +3,8 @@ import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 // payv exports the command type but not its cases.
 // ignore: implementation_imports
 import 'package:payv/src/font/glyph_path.dart';
@@ -549,9 +551,15 @@ class GlyphRasterizer {
   }
 }
 
-/// A [GlyphRasterizer] in its own isolate, so glyphs never cost a frame.
+/// A [GlyphRasterizer] in its own isolate, so glyphs never cost a frame. A
+/// browser has no isolates: there each batch is drawn on the page's thread,
+/// as a task of its own.
 class GlyphRasterWorker {
   GlyphRasterWorker(GlyphFonts fonts) {
+    if (kIsWeb) {
+      _inline = GlyphRasterizer(fonts);
+      return;
+    }
     final ready = ReceivePort();
     _replies.listen(_reply);
     _gone.listen((_) => _fail());
@@ -581,8 +589,9 @@ class GlyphRasterWorker {
     });
   }
 
-  final _replies = ReceivePort();
-  final _gone = ReceivePort();
+  GlyphRasterizer? _inline;
+  late final _replies = ReceivePort();
+  late final _gone = ReceivePort();
 
   /// The isolate died: every batch waiting and asked for later fails, so
   /// no page waits forever.
@@ -603,6 +612,9 @@ class GlyphRasterWorker {
   bool _disposed = false;
 
   Future<GlyphRaster> draw(PageKey key, List<int> ids) {
+    if (_inline case final rasterizer?) {
+      return Future(() => _drawSafely(rasterizer, key, ids));
+    }
     if (_dead) {
       return Future.error(StateError('vmap glyphs: the isolate is gone'));
     }
@@ -612,10 +624,43 @@ class GlyphRasterWorker {
     return done.future;
   }
 
-  void forget(PageKey key) => _send(_Forget(key));
+  void forget(PageKey key) {
+    if (_inline case final rasterizer?) return rasterizer.forget(key);
+    _send(_Forget(key));
+  }
 
-  /// Hands the isolate the glyphs of a style glyph range for [face].
-  void addPbf(int face, List<PbfGlyph> glyphs) => _send(_AddPbf(face, glyphs));
+  /// Hands the rasterizer the glyphs of a style glyph range for [face].
+  void addPbf(int face, List<PbfGlyph> glyphs) {
+    if (_inline case final rasterizer?) {
+      _addPbf(rasterizer, face, glyphs);
+      return;
+    }
+    _send(_AddPbf(face, glyphs));
+  }
+
+  static void _addPbf(
+    GlyphRasterizer rasterizer,
+    int face,
+    List<PbfGlyph> glyphs,
+  ) {
+    final known = rasterizer.ranges[face] ??= {};
+    for (final g in glyphs) {
+      known[g.id] = g;
+    }
+  }
+
+  /// [ids] drawn by [rasterizer], or an empty raster when a glyph cannot be.
+  static GlyphRaster _drawSafely(
+    GlyphRasterizer rasterizer,
+    PageKey key,
+    List<int> ids,
+  ) {
+    try {
+      return rasterizer.draw(key, ids);
+    } catch (_) {
+      return GlyphRaster(1, 1, Uint8List(4), Float64List(0));
+    }
+  }
 
   void _send(_Request request) {
     if (_disposed) return;
@@ -643,6 +688,7 @@ class GlyphRasterWorker {
 
   void dispose() {
     _disposed = true;
+    if (_inline != null) return;
     _isolate?.kill();
     _replies.close();
     _gone.close();
@@ -665,17 +711,9 @@ class GlyphRasterWorker {
         case _Forget(:final key):
           rasterizer.forget(key);
         case _AddPbf(:final face, :final glyphs):
-          final known = rasterizer.ranges[face] ??= {};
-          for (final g in glyphs) {
-            known[g.id] = g;
-          }
+          _addPbf(rasterizer, face, glyphs);
         case _Draw(:final id, :final key, :final ids):
-          GlyphRaster r;
-          try {
-            r = rasterizer.draw(key, ids);
-          } catch (_) {
-            r = GlyphRaster(1, 1, Uint8List(4), Float64List(0));
-          }
+          final r = _drawSafely(rasterizer, key, ids);
           replies.send(
             _Drawn(
               id,

@@ -104,12 +104,15 @@ class _Reader {
     return (k >> 3, k & 7);
   }
 
+  /// Built by multiplying, not shifting: on the web a shift or a bitwise
+  /// operator keeps only 32 bits.
   int varint() {
-    var value = 0;
-    for (var shift = 0; shift < 70; shift += 7) {
+    var value = 0, scale = 1;
+    for (var i = 0; i < 10; i++) {
       final b = data[at++];
-      value |= (b & 0x7f) << shift;
+      value += (b & 0x7f) * scale;
       if (b < 0x80) return value;
+      scale *= 128;
     }
     throw const FormatException('A varint runs over ten bytes');
   }
@@ -123,9 +126,11 @@ class _Reader {
     return n;
   }
 
+  /// A zigzag varint, decoded without bitwise operators: on the web their
+  /// results are unsigned, so `(v >> 1) ^ -(v & 1)` gives -9 as 4294967287.
   int svarint() {
     final v = varint();
-    return (v >> 1) ^ -(v & 1);
+    return v.isEven ? v ~/ 2 : -(v + 1) ~/ 2;
   }
 
   Uint8List bytes() {

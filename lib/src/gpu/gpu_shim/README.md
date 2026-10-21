@@ -15,5 +15,8 @@ Changed here:
 - `web/webgl/buffer.dart`: an upload into a buffer already used for indices
   drops to the default vertex array first. Bound as it was, it re-pointed
   the index buffer of whichever cached vertex array the last draw left bound.
+- `web/webgl/render_pass.dart`: a uniform member crosses to WebGL as just
+  its floats. Under dart2wasm `toJS` copied the whole uniform block for each
+  member of each draw.
 - `render_pass_compat.dart` and `raster_sync.dart` are left out; they reach
   into flutter_scene's renderer.
