@@ -4,7 +4,10 @@ import 'dart:typed_data';
 
 import 'gpu_shim/gpu.dart' as gpu;
 
-import 'package:vmap/renderer.dart';
+import '../extrusion.dart';
+import '../gpu_stream.dart';
+import '../map_renderer.dart';
+import '../tiles.dart';
 
 /// Frames the GPU may still be reading while the next one is written.
 const framesInFlight = 4;

@@ -46,8 +46,8 @@ class VmapStyle {
   final List<String>? nameKeys;
 
   /// Added to the zoom the style is read at. A style is drawn as MapLibre
-  /// draws it for the same view; 1 reads it one level deeper, which is how
-  /// vector_map_tiles draws a style.
+  /// draws it for the same view; 1 reads it one level deeper, so roads are
+  /// wider and labels larger at each zoom.
   final double zoomOffset;
 
   /// The style document, when it does not have to be downloaded.

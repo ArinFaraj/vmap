@@ -3,7 +3,12 @@ import 'dart:ui' as ui;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/renderer.dart';
+import 'package:vmap/src/expr.dart';
+import 'package:vmap/src/map_renderer.dart';
+import 'package:vmap/src/sprites.dart';
+import 'package:vmap/src/style_model.dart';
+import 'package:vmap/src/tiles.dart';
+import 'package:vmap/src/view.dart';
 import 'package:vmap/vmap.dart';
 import 'package:vmap_flutter_map/vmap_flutter_map.dart';
 

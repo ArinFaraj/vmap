@@ -7,8 +7,9 @@ Map<String, Object?> builtInStyle(
   required String tileJsonUrl,
   required List<String> nameKeys,
 }) {
+  final tones = palette.tones;
   String tone(int t) {
-    final c = palette.colors[t];
+    final c = tones[t];
     return 'rgba(${c >> 16 & 255},${c >> 8 & 255},${c & 255},${(c >>> 24) / 255})';
   }
 

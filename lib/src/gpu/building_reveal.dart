@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 
-import 'package:vmap/renderer.dart';
+import '../style_model.dart';
+import '../tile_id.dart';
+import '../tiles.dart';
 
 import 'gpu_buffers.dart';
 

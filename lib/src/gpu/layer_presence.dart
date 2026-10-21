@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
-import 'package:vmap/renderer.dart';
+import '../style_model.dart';
+import '../tiles.dart';
 
 /// How far each paint layer is in view. A layer whose zoom range the
 /// camera enters fades in over [micros] instead of every road of a kind

@@ -343,6 +343,7 @@ class TileHit {
     required this.geometryType,
     required this.layers,
     required this.properties,
+    this.rings = const [],
   });
 
   factory TileHit.fromWire(List<Object?> wire) => TileHit(
@@ -351,6 +352,7 @@ class TileHit {
     geometryType: wire[2]! as String,
     layers: (wire[3]! as List).cast<String>(),
     properties: (wire[4]! as Map).cast<String, Object?>(),
+    rings: (wire[5]! as List).cast<Float64List>(),
   );
 
   /// The highest place among the style layers drawing it, for putting the
@@ -367,11 +369,16 @@ class TileHit {
   /// Its tags, with its id under `$id` when it has one.
   final Map<String, Object?> properties;
 
+  /// Its points, lines or rings, x and y in turn, in units of which the
+  /// tile is 4096 across.
+  final List<Float64List> rings;
+
   List<Object?> toWire() => [
     order,
     sourceLayer,
     geometryType,
     layers,
     properties,
+    rings,
   ];
 }

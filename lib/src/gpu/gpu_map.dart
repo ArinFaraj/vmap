@@ -8,7 +8,24 @@ import 'package:flutter/foundation.dart';
 import 'gpu_shim/gpu.dart' as gpu;
 
 import 'package:vector_math/vector_math.dart' show Vector4;
-import 'package:vmap/renderer.dart';
+
+import '../expr.dart';
+import '../glyphs/glyph_pbf.dart';
+import '../sdf_text.dart';
+import '../extrusion.dart';
+import '../globe.dart';
+import '../gpu_stream.dart';
+import '../map_renderer.dart';
+import '../mercator.dart';
+import '../shaders.dart';
+import '../sprites.dart';
+import '../style_model.dart';
+import '../terrain/terrain.dart';
+import '../tile_builder.dart';
+import '../tile_id.dart';
+import '../tiles.dart';
+import '../view.dart';
+import '../zoom_history.dart';
 
 import 'building_reveal.dart';
 import 'gpu_buffers.dart';

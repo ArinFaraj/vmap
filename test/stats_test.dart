@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/vmap.dart';
+import 'package:vmap/debug.dart';
 
 void main() {
   test('resetting the timers starts every running count again', () {

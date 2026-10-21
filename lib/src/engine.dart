@@ -180,15 +180,8 @@ class VmapEngine extends ChangeNotifier {
   final List<RasterDrawing<RasterLayer>> _rasters = [];
   final VmapStats stats = VmapStats();
   final EvalContext _context = EvalContext();
-  BuildingRenderer _buildings = ExtrusionPainter();
+  final BuildingRenderer _buildings = ExtrusionPainter();
   int _buildingMicros = 0;
-
-  /// What draws buildings standing on a tilted map: the canvas unless set.
-  set buildingRenderer(BuildingRenderer value) {
-    _buildings.dispose();
-    _buildings = value;
-    notifyListeners();
-  }
 
   VmapStyle _style;
   int _frame = 0;
@@ -926,7 +919,7 @@ class VmapEngine extends ChangeNotifier {
             styleZoom,
           );
           for (final hit in hits) {
-            found.add(_feature(s.def.name, hit));
+            found.add(_feature(s.def.name, TileId(z, x, y), hit));
           }
         }(),
     ]);
@@ -934,20 +927,33 @@ class VmapEngine extends ChangeNotifier {
     return [for (final f in found) f.$2];
   }
 
-  static (int, VmapFeature) _feature(String source, TileHit hit) => (
-    hit.order,
-    VmapFeature(
-      source: source,
-      sourceLayer: hit.sourceLayer,
-      geometryType: hit.geometryType,
-      layers: hit.layers,
-      id: hit.properties[r'$id'],
-      properties: {
-        for (final e in hit.properties.entries)
-          if (e.key != r'$id') e.key: e.value,
-      },
-    ),
-  );
+  static (int, VmapFeature) _feature(String source, TileId tile, TileHit hit) {
+    final n = 1 << tile.z;
+    return (
+      hit.order,
+      VmapFeature(
+        source: source,
+        sourceLayer: hit.sourceLayer,
+        geometryType: hit.geometryType,
+        layers: hit.layers,
+        geometry: [
+          for (final ring in hit.rings)
+            [
+              for (var i = 0; i + 1 < ring.length; i += 2)
+                LatLng(
+                  latitudeAt((tile.y + ring[i + 1] / 4096) / n),
+                  longitudeAt((tile.x + ring[i] / 4096) / n),
+                ),
+            ],
+        ],
+        id: hit.properties[r'$id'],
+        properties: {
+          for (final e in hit.properties.entries)
+            if (e.key != r'$id') e.key: e.value,
+        },
+      ),
+    );
+  }
 
   /// What the map shows between [southWest] and [northEast]: the features
   /// the style draws that touch the box, topmost first. It reads the tiles
@@ -998,7 +1004,11 @@ class VmapEngine extends ChangeNotifier {
                   ),
                 );
                 for (final hit in hits) {
-                  final (order, feature) = _feature(s.def.name, hit);
+                  final (order, feature) = _feature(
+                    s.def.name,
+                    TileId(z, x, y),
+                    hit,
+                  );
                   // A feature lying over a tile edge is in both tiles, and
                   // only an id tells its two halves from two features.
                   final key = feature.id == null
@@ -1067,8 +1077,7 @@ class VmapEngine extends ChangeNotifier {
   static List<VmapClusterMember> _members(List<ClusterMember>? found) => [
     for (final member in found ?? const <ClusterMember>[])
       VmapClusterMember(
-        latitude: latitudeAt(member.y),
-        longitude: longitudeAt(member.x),
+        point: LatLng(latitudeAt(member.y), longitudeAt(member.x)),
         id: member.properties[r'$id'],
         properties: {
           for (final e in member.properties.entries)

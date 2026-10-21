@@ -23,13 +23,17 @@ class VmapPin {
 /// pubspec.
 class VmapPins {
   const VmapPins({
-    this.byIcon = standardPins,
+    this.byIcon = _standard,
     this.other = const VmapPin(Icons.place_rounded, ui.Color(0xFF8A93A0)),
     this.size = 22,
   });
 
   /// The standard set at the standard size.
   static const VmapPins standard = VmapPins();
+
+  /// The standard pins by icon name: food, cafes, hotels, shops, parks,
+  /// sights, health, transport. Spread it into [byIcon] to change a few.
+  static const Map<String, VmapPin> standardIcons = _standard;
 
   final Map<String, VmapPin> byIcon;
 
@@ -39,9 +43,12 @@ class VmapPins {
 
   /// The diameter in logical pixels.
   final double size;
+}
 
+/// How the labels find a place's pin; not part of the public API.
+extension PinLookup on VmapPins {
   /// The pin for a style's icon name. [place] says the symbol comes from the
-  /// style's layer of places, which is where [other] applies.
+  /// style's layer of places, which is where `other` applies.
   VmapPin? resolve(String icon, {required bool place}) {
     final exact = byIcon[icon];
     if (exact != null) return exact;
@@ -65,7 +72,7 @@ const ui.Color _move = ui.Color(0xFF0E9AA7);
 const ui.Color _civic = ui.Color(0xFF5F6B7A);
 
 /// Pins for the place classes of OpenMapTiles styles.
-const Map<String, VmapPin> standardPins = {
+const Map<String, VmapPin> _standard = {
   'restaurant': VmapPin(Icons.restaurant_rounded, _food),
   'fast_food': VmapPin(Icons.fastfood_rounded, _food),
   'bakery': VmapPin(Icons.bakery_dining_rounded, _food),

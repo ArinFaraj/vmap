@@ -4,7 +4,8 @@ import 'package:flutter/foundation.dart';
 
 import 'gpu_shim/gpu.dart' as gpu;
 
-import 'package:vmap/renderer.dart';
+import '../expr.dart';
+import '../style_model.dart';
 
 /// What lines read along their length, a row of [width] texels each in one
 /// texture, made again when the style changes: a gradient line layer's

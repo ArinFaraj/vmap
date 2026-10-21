@@ -1,3 +1,7 @@
+import 'dart:typed_data';
+
+import 'package:latlong2/latlong.dart';
+
 import 'expr.dart';
 import 'mvt.dart';
 import 'protocol.dart' show TileHit;
@@ -11,6 +15,7 @@ class VmapFeature {
     required this.layers,
     required this.geometryType,
     required this.properties,
+    this.geometry = const [],
     this.id,
   });
 
@@ -24,6 +29,13 @@ class VmapFeature {
   /// `Point`, `LineString` or `Polygon`.
   final String geometryType;
   final Map<String, Object?> properties;
+
+  /// Where it is, as lists of places: for a Point one list of its points,
+  /// for a LineString its lines, for a Polygon its rings, outer rings
+  /// followed by their holes. As MapLibre's query gives it, it is the part
+  /// in the tile it was read from, which may stop at the tile's edge a
+  /// little past what the screen shows.
+  final List<List<LatLng>> geometry;
 
   /// The feature's id in its source, or null when it has none. It is what a
   /// [VmapFeatureState] names the feature by.
@@ -53,14 +65,12 @@ class VmapDownload {
 /// the points of the data.
 class VmapClusterMember {
   const VmapClusterMember({
-    required this.latitude,
-    required this.longitude,
+    required this.point,
     required this.properties,
     this.id,
   });
 
-  final double latitude;
-  final double longitude;
+  final LatLng point;
   final Map<String, Object?> properties;
   final Object? id;
 
@@ -68,7 +78,7 @@ class VmapClusterMember {
   bool get isCluster => properties['cluster'] == true;
 
   @override
-  String toString() => 'VmapClusterMember($latitude, $longitude $properties)';
+  String toString() => 'VmapClusterMember($point $properties)';
 }
 
 /// State an app gives one feature, which the style reads with
@@ -189,6 +199,17 @@ List<TileHit> queryTile(
           geometryType: context.geometryType,
           layers: ids,
           properties: context.props,
+          rings: [
+            for (var r = 0; r < sink.ringCount; r++)
+              Float64List.fromList([
+                for (
+                  var i = sink.ringStart(r) * 2;
+                  i < sink.ringEnd(r) * 2;
+                  i++
+                )
+                  sink.coords[i] * scale,
+              ]),
+          ],
         ),
       );
     }
