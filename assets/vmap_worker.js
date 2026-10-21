@@ -1,4 +1,4 @@
-// vmap web worker, built from lib 96b765ed
+// vmap web worker, built from lib a8fd2cf7
 (function dartProgram(){function copyProperties(a,b){var s=Object.keys(a)
 for(var r=0;r<s.length;r++){var q=s[r]
 b[q]=a[q]}}function mixinPropertiesHard(a,b){var s=Object.keys(a)
@@ -14981,6 +14981,7 @@ $1(a){var s,r,q,p,o,n,m,l=this
 t.X.a(a)
 s=A.E(l.a.$1(a))
 if(s==null)return l.b.$1(a)
+if(isNaN(s))return null
 r=l.b
 q=l.d
 p=q.length
@@ -15233,12 +15234,14 @@ $1(a){A.db(a)
 return a<0||a>255},
 $S:31}
 A.mK.prototype={
-$1(a4){var s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d,c,b,a,a0,a1,a2,a3=this
-t.X.a(a4)
-s=A.E(a3.a.$1(a4))
-if(s==null||s<=B.a.gu(a3.b))return B.a.i4(a3.c,a4)
+$1(a5){var s,r,q,p,o,n,m,l,k,j,i,h,g,f,e,d,c,b,a,a0,a1,a2,a3=this,a4=null
+t.X.a(a5)
+s=A.E(a3.a.$1(a5))
+r=s!=null
+if(r&&isNaN(s))return a4
+if(!r||s<=B.a.gu(a3.b))return B.a.i4(a3.c,a5)
 r=a3.b
-if(s>=B.a.gN(r))return B.a.ik(a3.c,a4)
+if(s>=B.a.gN(r))return B.a.ik(a3.c,a5)
 q=r.length
 p=1
 for(;;){if(!(p<q))return A.a(r,p)
@@ -15254,26 +15257,26 @@ l=r}else{r=a3.e
 r=r===1?m/n:(Math.pow(r,m)-1)/(Math.pow(r,n)-1)
 l=r}}r=a3.c
 if(!(q<r.length))return A.a(r,q)
-k=r[q].$1(a4)
+k=r[q].$1(a5)
 if(!(p<r.length))return A.a(r,p)
-j=r[p].$1(a4)
+j=r[p].$1(a5)
 if(typeof k=="number"&&typeof j=="number"){if(a3.f&&k>0&&j>0)return k*Math.pow(j/k,l)
 return k+(j-k)*l}r=t.j
 if(r.b(k)&&r.b(j)&&J.U(k)===J.U(j)){r=A.b([],t.n)
 for(q=J.n(k),o=J.n(j),i=0;i<q.gk(k);++i){h=q.h(k,i)
 if(!(typeof h=="number"))if(typeof h=="string")h=A.O(h)
 else if(A.H(h))h=h?1:0
-else h=null
+else h=a4
 if(h==null)h=0
 g=o.h(j,i)
 if(!(typeof g=="number"))if(typeof g=="string")g=A.O(g)
 else if(A.H(g))g=g?1:0
-else g=null
+else g=a4
 if(g==null)g=0
 f=q.h(k,i)
 if(!(typeof f=="number"))if(typeof f=="string")f=A.O(f)
 else if(A.H(f))f=f?1:0
-else f=null
+else f=a4
 r.push(h+(g-(f==null?0:f))*l)}return r}e=A.aO(k)
 d=A.aO(j)
 if(e!=null&&d!=null){c=a3.r
@@ -15290,12 +15293,12 @@ a1=Math.sqrt(h*h+o*o)
 a2=a-b
 if(a2>3.141592653589793)a2-=6.283185307179586
 b+=(a2<-3.141592653589793?a2+6.283185307179586:a2)*l
-a4=a0+(a1-a0)*l
+a5=a0+(a1-a0)*l
 r=k.a
 q=Math.cos(b)
 o=Math.sin(b)
 h=e.d
-h=A.rh(r+(j.a-r)*l,q*a4,o*a4,h+(d.d-h)*l)
+h=A.rh(r+(j.a-r)*l,q*a5,o*a5,h+(d.d-h)*l)
 r=h
 break A}if("lab"===c){k=e.gbA()
 j=d.gbA()
@@ -17549,10 +17552,15 @@ r=this.b
 return r==null?this.c.$1(a):r},
 $S:30}
 A.kT.prototype={
-$1(a){var s
+$1(a){var s,r
 t.X.a(a)
 s=this.a.$1(a)
-return s==null?this.b.$1(a):s},
+A:{if(s==null){r=this.b.$1(a)
+break A}if(typeof s=="number")r=isNaN(s)
+else r=!1
+if(r){r=this.b.$1(a)
+break A}r=s
+break A}return r},
 $S:1}
 A.kM.prototype={
 $2(a,b){var s=this.a,r=s.h(0,a)

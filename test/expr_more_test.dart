@@ -203,4 +203,26 @@ void main() {
       ..props = {'name': 'X'};
     expect(text(c), '{name}');
   });
+
+  test('step and interpolate give nothing for an input that is no number', () {
+    final c = EvalContext()..props = {'zero': 0};
+    final nan = [
+      '/',
+      0,
+      ['get', 'zero'],
+    ];
+    expect(compileExpr(['step', nan, 1, 2, 2])(c), isNull);
+    expect(
+      compileExpr([
+        'interpolate',
+        ['linear'],
+        nan,
+        1,
+        1,
+        2,
+        2,
+      ])(c),
+      isNull,
+    );
+  });
 }

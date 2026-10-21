@@ -671,6 +671,9 @@ Expr _op(String op, List<Object?> args) {
       return (c) {
         final v = asNumber(input(c));
         if (v == null) return first(c);
+        // As MapLibre's findStopLessThanOrEqualTo: not a number is an
+        // error, which leaves the property its default.
+        if (v.isNaN) return null;
         var out = first;
         for (var i = 0; i < stops.length && stops[i] <= v; i++) {
           out = outs[i];
@@ -1039,6 +1042,7 @@ Expr _interpolate(
   if (stops.isEmpty) return _constant(null);
   return (c) {
     final v = asNumber(input(c));
+    if (v != null && v.isNaN) return null;
     if (v == null || v <= stops.first) return outs.first(c);
     if (v >= stops.last) return outs.last(c);
     var i = 1;

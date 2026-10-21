@@ -1221,7 +1221,13 @@ class StyleCompiler {
         return second ?? otherwise(c);
       };
     }
-    return (c) => expr(c) ?? otherwise(c);
+    // As MapLibre's StyleExpression.evaluate, a number that is not one
+    // falls back to the property's default.
+    return (c) => switch (expr(c)) {
+      null => otherwise(c),
+      final double d when d.isNaN => otherwise(c),
+      final value => value,
+    };
   }
 
   static Expr? _maybe(Object? json) => json == null ? null : compileExpr(json);
