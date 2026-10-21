@@ -7,19 +7,8 @@
 #   skip   a MapLibre quirk vmap does not copy
 # Delete a line when its test passes.
 bright-v9/z0	equal	edge pixels
-combinations/background-translucent--symbol-translucent	equal	edge pixels
-combinations/circle-translucent--symbol-translucent	equal	edge pixels
-combinations/fill-extrusion-translucent--symbol-translucent	equal	edge pixels of a symbol
-combinations/fill-translucent--symbol-translucent	equal	edge pixels of a symbol
 combinations/heatmap-translucent--background-opaque	skip	MapLibre shows a heatmap through opaque layers drawn above it
 combinations/heatmap-translucent--fill-opaque	skip	MapLibre shows a heatmap through opaque layers drawn above it
-combinations/heatmap-translucent--symbol-translucent	equal	edge pixels of a symbol
-combinations/hillshade-translucent--symbol-translucent	equal	edge pixels of a symbol
-combinations/raster-translucent--symbol-translucent	equal	edge pixels of a symbol
-combinations/symbol-translucent--fill-translucent	equal	edge pixels of a symbol
-combinations/symbol-translucent--heatmap-translucent	equal	edge pixels of a symbol
-combinations/symbol-translucent--hillshade-translucent	equal	edge pixels of a symbol
-combinations/symbol-translucent--line-translucent	equal	edge pixels of a symbol
 feature-state/vector-source	equal	one dot's edge
 fill-extrusion-rounded-corner-distance/clamped	equal	shading along a rounded edge
 fill-extrusion-rounded-corner-distance/houses	equal	edge pixels
@@ -121,7 +110,6 @@ sky/horizon-fog-blend/default	equal	the skyline's edge pixels
 sky/horizon-fog-blend/function	equal	the skyline's edge pixels
 sky/horizon-fog-blend/global-state	equal	the skyline's edge pixels
 sprites/2x-screen-1x-icon	equal	edge pixels
-symbol-placement/line-promote-id	equal	edge pixels
 symbol-z-order/pitched	equal	edge pixels
 terrain/default	equal	edge pixels
 terrain/field-of-view	equal	edge pixels

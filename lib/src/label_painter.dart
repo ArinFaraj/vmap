@@ -181,9 +181,29 @@ class LabelPainter {
         )) {
       return;
     }
+    final onGround = st.iconOnGround && _view.tilted != null;
     for (final filter in [?rim, fill]) {
       _imagePaint.colorFilter = filter;
-      if (nearest && !texelForPixel) {
+      if (onGround) {
+        final (ux, uy, vx, vy) = basis;
+        canvas
+          ..save()
+          ..transform(
+            Float64List(16)
+              ..[0] = ux
+              ..[1] = uy
+              ..[4] = vx
+              ..[5] = vy
+              ..[10] = 1
+              ..[12] = ix
+              ..[13] = iy
+              ..[15] = 1,
+          );
+        for (final (from, to) in pieces) {
+          canvas.drawImageRect(sheet.image, from, to, _imagePaint);
+        }
+        canvas.restore();
+      } else if (nearest && !texelForPixel) {
         _imagePaint.filterQuality = ui.FilterQuality.none;
         for (final (from, to) in pieces) {
           final (snappedFrom, snappedTo) = _toPixelCentres(
