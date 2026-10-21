@@ -130,4 +130,14 @@ void main() {
     final breaks = mapLibreLineBreaks('一二三四五六'.runes.toList(), (_) => 10, 30);
     expect(breaks, [3, 6]);
   });
+
+  test('text with right-to-left letters breaks at a paragraph separator', () {
+    final codes = 'ab\u001ccd هه'.runes.toList();
+    expect(mapLibreLineBreaks(codes, (_) => 10, 1000), [3, codes.length]);
+  });
+
+  test('left-to-right text does not break at a paragraph separator', () {
+    final codes = 'ab\u001ccd'.runes.toList();
+    expect(mapLibreLineBreaks(codes, (_) => 10, 1000), [codes.length]);
+  });
 }

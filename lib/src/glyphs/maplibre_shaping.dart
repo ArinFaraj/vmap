@@ -292,7 +292,7 @@ List<int> mapLibreLineBreaks(
   }
   final newline = codes.contains(0x0a) || codes.contains(0x0d);
   if (spacing >= 0 && total > 0 && total <= maxWidth && !newline) {
-    return [codes.length];
+    return _atParagraphs(codes, [codes.length]);
   }
   final lineCount = maxWidth > 0 && maxWidth.isFinite
       ? (total / maxWidth).ceil()
@@ -356,15 +356,33 @@ List<int> mapLibreLineBreaks(
   ) {
     out.insert(0, b.index);
   }
-  return out;
+  return _atParagraphs(codes, out);
 }
+
+/// [breaks] with a line also ended at each paragraph separator when
+/// [codes] has right-to-left letters, as MapLibre's bidi step ends one.
+List<int> _atParagraphs(List<int> codes, List<int> breaks) {
+  if (!codes.any(_rightToLeft)) return breaks;
+  final ends = {...breaks};
+  for (var i = 0; i + 1 < codes.length; i++) {
+    if (_paragraphSeparator(codes[i])) ends.add(i + 1);
+  }
+  return ends.length == breaks.length ? breaks : (ends.toList()..sort());
+}
+
+bool _rightToLeft(int c) => c >= 0x0590 && c <= 0x08FF || c >= 0xFB1D;
+
+/// The characters of bidi class B other than the newlines, which end a
+/// paragraph in the Unicode bidi algorithm.
+bool _paragraphSeparator(int c) =>
+    c == 0x1C || c == 0x1D || c == 0x1E || c == 0x85 || c == 0x2029;
 
 /// Where in [codes], one line, each character drawn is, left to right: runs of
 /// right-to-left text reversed by the Unicode bidi algorithm, as MapLibre
 /// orders a line after breaking the text into lines. The characters that
 /// only steer the ordering are dropped, as no font draws them.
 List<int> _visualIndices(List<int> codes) {
-  if (!codes.any((c) => c >= 0x0590 && c <= 0x08FF || c >= 0xFB1D)) {
+  if (!codes.any(_rightToLeft)) {
     return [
       for (var i = 0; i < codes.length; i++)
         if (!_bidiControl(codes[i])) i,
