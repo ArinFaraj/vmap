@@ -19,6 +19,11 @@ What the API looks like and what should change before release:
   the flutter_map layers live in `vmap_flutter_map/` with a core
   `VmapMarker` in their place. The root README still shows `VmapLayer`
   imported from vmap; it is rewritten in step 7.
+- **Review, 2026-10-21:** [doc/review.md](doc/review.md) read the whole
+  package critically: confirmed bugs, a README and example for the old
+  product, packaging that ships the wrong files, and too many paths through
+  every frame. Its last section reorders the work before step 2. Waiting on
+  Arin's call on that order.
 - **Next:** the API polish in [doc/api-review.md](doc/api-review.md). Its
   proposals have been reviewed twice (verdicts in its second pass section);
   Arin asked for that review rather than approving item by item.
