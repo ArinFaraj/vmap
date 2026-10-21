@@ -1174,8 +1174,10 @@ final class TiledSource extends VectorSource {
   /// says, rather than Mapbox Vector Tiles.
   final bool mlt;
 
+  /// As the style spec and MapLibre: a source that names no `maxzoom`,
+  /// here or in its TileJSON, has tiles down to 22.
   @override
-  int get defaultMaxZoom => 14;
+  int get defaultMaxZoom => 22;
 }
 
 /// A `background` layer: the whole map filled with a colour or a repeated

@@ -1,5 +1,8 @@
 ## Unreleased
 
+- A vector source that names no `maxzoom`, in the style or its TileJSON,
+  has tiles down to zoom 22, as the style spec and MapLibre say, not 14.
+  Give the source its `maxzoom` when its server stops sooner.
 - Vector tiles in the MapLibre Tile format (MLT): a `vector` source with
   `"encoding": "mlt"` is read as MapLibre reads it.
 - `VMap`, a map widget of vmap's own: it tilts up to 60 degrees and stands
