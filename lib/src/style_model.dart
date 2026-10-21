@@ -1538,3 +1538,43 @@ String featureStateKey(Object? id) => switch (id) {
     d.toInt().toString(),
   _ => '$id',
 };
+
+/// [style] with each layer that names another in `ref` given that layer's
+/// type, source, source layer, zoom range, filter and layout, as the
+/// style spec's derefLayers resolves the old `ref` property. Unchanged when
+/// no layer has one.
+Map<String, Object?> derefLayers(Map<String, Object?> style) {
+  final layers = style['layers'];
+  if (layers is! List || !layers.any((l) => l is Map && l['ref'] != null)) {
+    return style;
+  }
+  const shared = [
+    'type',
+    'source',
+    'source-layer',
+    'minzoom',
+    'maxzoom',
+    'filter',
+    'layout',
+  ];
+  final byId = {
+    for (final l in layers)
+      if (l is Map) l['id']: l,
+  };
+  return {
+    ...style,
+    'layers': [
+      for (final l in layers)
+        if (l is Map && l['ref'] != null && byId[l['ref']] is Map)
+          <String, Object?>{
+            for (final e in l.entries)
+              if (e.key != 'ref') '${e.key}': e.value,
+            for (final k in shared)
+              if ((byId[l['ref']] as Map).containsKey(k))
+                k: (byId[l['ref']] as Map)[k],
+          }
+        else
+          l,
+    ],
+  };
+}

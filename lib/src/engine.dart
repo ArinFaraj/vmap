@@ -428,6 +428,7 @@ class VmapEngine extends ChangeNotifier {
     VmapStyle from, {
     bool keepLabels = false,
   }) {
+    base = derefLayers(base);
     _base = base;
     final document = _transitioned(
       VmapStyleEdit.applyAll(_edits, _overlay?.applyTo(base) ?? base),
