@@ -14,21 +14,15 @@ What the API looks like and what should change before release:
 
 ## Status
 
-- **Now:** 0.1, step 1, the restructure, done on 2026-10-21: `vmap_gpu` is
-  folded into `vmap` (`GpuMap` exported from `package:vmap/vmap.dart`), and
-  the flutter_map layers live in `vmap_flutter_map/` with a core
-  `VmapMarker` in their place. The root README still shows `VmapLayer`
-  imported from vmap; it is rewritten in step 7.
-- **Review, 2026-10-21:** [doc/review.md](doc/review.md) read the whole
-  package critically: confirmed bugs, a README and example for the old
-  product, packaging that ships the wrong files, and too many paths through
-  every frame. Its last section reorders the work before step 2. Waiting on
-  Arin's call on that order.
-- **Next:** the API polish in [doc/api-review.md](doc/api-review.md). Its
-  proposals have been reviewed twice (verdicts in its second pass section);
-  Arin asked for that review rather than approving item by item.
-- Work happens on the `engine` branch of `ArinFaraj/vmap`. Merging to `main`
-  and tagging (which publishes to pub.dev) waits for Arin's yes.
+- **Done, 2026-10-21:** steps 1 to 5 and 7 below, and the fixes from
+  [doc/review.md](doc/review.md), whose last table gives each finding's
+  state. vmap is 0.27.0 on the `engine` branch, unpublished.
+- **Open before publishing:** step 6 (runs on an iPhone, Windows, Linux,
+  Safari and Firefox), the WebAssembly build, and payv exporting its glyph
+  path commands so vmap stops importing a private file.
+- **Then:** step 8, publishing, which waits for Arin's yes: merging
+  `engine` to `main` and tagging publishes vmap to pub.dev.
+- Work happens on the `engine` branch of `ArinFaraj/vmap`.
 
 Keep this section current: update it whenever a step starts or finishes.
 
@@ -74,35 +68,30 @@ Already in, from the work so far:
   the new camera when the GPU falls behind.
 - Vector tiles in MVT and MLT, PMTiles archives, GeoJSON with clustering, a
   disk cache and regions downloaded for offline use.
-- The `VMap` widget with its own gestures, `flyTo` and `easeTo`, pins and
-  markers, feature lookup under a tap, and feature state for highlighting.
+- The `Vmap` widget with gestures for touch, mouse, trackpad and keyboard,
+  `flyTo`, `easeTo` and `fitBounds`, markers that are widgets, feature
+  lookup under a tap, and feature state for highlighting.
 
 To do before publishing:
 
-1. Restructure: the GPU renderer moved into `vmap`, the flutter_map layers
-   into a `vmap_flutter_map` adapter beside it, the canvas renderer frozen.
-2. Polish the API and the first impression, per
-   [doc/api-review.md](doc/api-review.md): one prefix, GPU and style glyphs by
-   default, a loading builder and state callbacks on the widget, `onTap` with
-   the features, grouped options, statistics moved out, wording that
-   describes the engine.
-3. Example app targets for iOS, Windows and Linux, with Flutter GPU switched on
-   for each platform; the Android manifest and the macOS `Info.plist` already
-   have it, and the example has no iOS, Windows or Linux target yet.
-4. Packaging: a `.pubignore` so scratch files and the untracked `docs/` folder
-   are not published, `payv: ^0.1.2` instead of an exact pin, and a version and
-   changelog for the engine release. `vmap_flutter_map` depends on vmap by
-   path and has `publish_to: none` until then. The shader bundle is declared
-   as an asset under `build/`, which the build hook writes; check it still
-   lands when vmap comes from pub.dev rather than a path (see the shader
-   delivery note in [doc/api-review.md](doc/api-review.md)).
-5. CI that builds the web and Android example as well as running the checks on
-   Linux.
+1. Done: the GPU renderer is part of `vmap`, the flutter_map layers are the
+   `vmap_flutter_map` adapter beside it, and the canvas is a renderer of
+   the same shape, kept as the fallback.
+2. Done: the API and first impression, per
+   [doc/api-review.md](doc/api-review.md) and [doc/review.md](doc/review.md).
+3. Done: `example/` targets every platform with Flutter GPU switched on;
+   the benchmark app is `bench/`.
+4. Done: a `.pubignore`, `payv: ^0.1.2`, version 0.27.0 and its changelog,
+   and the shader bundle shown to land when vmap comes as published files.
+   `vmap_flutter_map` depends on vmap by path and has `publish_to: none`
+   until it is published after vmap.
+5. Done: CI checks every push, builds the example for the web, Android,
+   iOS, Linux and Windows, and runs MapLibre's render tests on the GPU.
 6. Run it on an iPhone, a Windows PC, a Linux PC, Safari and Firefox, and fix
    what breaks.
-7. A README written around the engine, an honest platform table, and a short
-   guide for moving from vmap.
-8. Publish vmap and vmap_flutter_map.
+7. Done: the README is written around the engine, with the platform table
+   and a guide for moving from 0.26.
+8. Publish vmap, then vmap_flutter_map.
 
 ## 0.2: steady on real devices
 
@@ -173,12 +162,19 @@ Render tests that still fail and could matter to some styles:
 - 2026-10-21: the engine keeps the name vmap.
 - 2026-10-21: test Impeller's OpenGL ES backend by forcing it on an Android
   phone (0.2).
+- 2026-10-21: after a critical review, one camera and one zoom scale
+  (MapLibre's) in the public API, the GPU by default, one glyph setting,
+  and the canvas as a renderer behind the same interface as the GPU.
 
 ## How this is measured
 
 - `tool/render_suite.sh ~/projects/maplibre-gl-js <out> "" --gpu`: MapLibre's
   render tests, hidden, with the exceptions and out-of-scope lists in `tool/`.
+  CI runs it on the GPU on macOS against a pinned MapLibre commit and fails
+  below `tool/render_suite_floor.txt`, one under its 1,394 for the one
+  timing sensitive test. A local checkout with probe tests of our own in it
+  counts a few more; the canvas renderer passes 1,074 in such a checkout.
 - `tool/compare_style.sh`: real OpenFreeMap styles over real places against
   MapLibre GL JS with its right-to-left plugin.
-- The example app's tour on a phone for frame times and memory
+- The bench app's tour on a phone for frame times and memory
   ([doc/benchmark.md](doc/benchmark.md)).

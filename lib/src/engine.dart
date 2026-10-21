@@ -8,12 +8,12 @@ import 'package:flutter/scheduler.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
 
 import 'canvas/atmosphere.dart';
+import 'canvas/canvas_map.dart';
 import 'camera/camera.dart';
 import 'errors.dart';
 import 'gpu/gpu_map.dart';
 import 'camera/map_camera.dart';
 import 'style/expr.dart';
-import 'tiles/extrusion.dart';
 import 'tiles/feature_queries.dart';
 import 'gpu/map_renderer.dart';
 import 'labels/glyphs/vmap_font.dart';
@@ -158,7 +158,6 @@ class VmapEngine extends ChangeNotifier {
       onError?.call(error is VmapError ? error : VmapError(kind, error));
 
   final _zoomOutHold = ZoomOutHold();
-  final ui.Paint _layerPaint = ui.Paint();
 
   /// How the map fetches what it loads, fixed when the engine is made.
   final VmapNetworkOptions network;
@@ -180,7 +179,6 @@ class VmapEngine extends ChangeNotifier {
   final List<RasterDrawing<RasterLayer>> _rasters = [];
   final VmapStats stats = VmapStats();
   final EvalContext _context = EvalContext();
-  final BuildingRenderer _buildings = ExtrusionPainter();
   int _buildingMicros = 0;
 
   VmapStyle _style;
@@ -902,7 +900,8 @@ class VmapEngine extends ChangeNotifier {
       camera: camera,
       view: view,
       sheet: sheet,
-      gpu: onGpu ? gpu : null,
+      renderer: onGpu ? gpu : _canvas,
+      onGpu: onGpu,
       dataZoom: dataZoom,
       styleZoom: styleZoom,
       now: now,
@@ -987,84 +986,56 @@ class VmapEngine extends ChangeNotifier {
 
   /// The style's layers below its labels, and the buildings.
   void _drawBelowLabels(_Frame f) {
-    final canvas = f.canvas, view = f.view, sheet = f.sheet;
+    final canvas = f.canvas, sheet = f.sheet, renderer = f.renderer;
     if (f.horizon > 0) {
       canvas.save();
-      _clipGround(canvas, view, f.horizon);
+      _clipGround(canvas, f.view, f.horizon);
     }
-    // The GPU draws the vector layers into images first, which are laid in
-    // the style's order between the canvas's backgrounds and rasters.
-    if (f.gpu case final gpu?) {
-      final started = _clock.elapsedMicroseconds;
-      gpu
-        ..rasters = f.drape ? [for (final r in _rasters) r.drawn] : const []
-        ..states = [for (final s in _sources) _states[s.def.name]]
-        ..dashFade = _zoomHistory.fade;
-      final more = gpu.paint(
-        canvas,
-        view,
-        f.camera.origin,
-        sheet,
-        [for (final s in _sources) s.fallback],
-        [for (final s in _sources) s.ideal],
-        _context,
-        f.styleZoom,
-        f.camera.devicePixelRatio,
-        _resources.sprites,
-      );
-      _buildingMicros = _clock.elapsedMicroseconds - started;
-      if (more) f.waiting = true;
+    final started = _clock.elapsedMicroseconds;
+    renderer
+      ..rasters = f.drape ? [for (final r in _rasters) r.drawn] : const []
+      ..states = [for (final s in _sources) _states[s.def.name]]
+      ..dashFade = _zoomHistory.fade;
+    if (renderer.paint(
+      canvas,
+      f.view,
+      f.camera.origin,
+      sheet,
+      [for (final s in _sources) s.fallback],
+      [for (final s in _sources) s.ideal],
+      _context,
+      f.styleZoom,
+      f.camera.devicePixelRatio,
+      _resources.sprites,
+    )) {
+      f.waiting = true;
     }
     _drawRuns(f, 0, sheet.labelsRun);
-    if (f.gpu case final gpu?) {
-      gpu.presentUntil(canvas, sheet.labelsRun);
-    } else if (sheet.extrusions.isNotEmpty) {
-      final started = _clock.elapsedMicroseconds;
-      final more = _buildings.paint(
-        canvas,
-        view,
-        f.camera.origin,
-        sheet,
-        [for (final s in _sources) ...s.ideal],
-        _context,
-        f.styleZoom,
-        f.camera.devicePixelRatio,
-      );
-      _buildingMicros = _clock.elapsedMicroseconds - started;
-      if (more) f.waiting = true;
-    }
+    if (renderer.presentUntil(canvas, sheet.labelsRun)) f.waiting = true;
+    _buildingMicros = _clock.elapsedMicroseconds - started;
     if (f.horizon > 0) canvas.restore();
   }
 
-  /// The style's runs from [from] to [to], in its order: backgrounds and
-  /// rasters on the canvas, and the vector layers on the canvas or, from
-  /// the GPU's images, laid between them.
+  /// The style's backgrounds and raster layers from run [from] to [to], with
+  /// the renderer's vector layers before each laid down first, so all of
+  /// them come in the style's order.
   void _drawRuns(_Frame f, int from, int to) {
-    final canvas = f.canvas, sheet = f.sheet, gpu = f.gpu;
-    void begin() {
+    final canvas = f.canvas, sheet = f.sheet;
+    for (var index = from; index < to; index++) {
+      final run = sheet.runs[index];
+      if (run.background < 0 && run.raster < 0) continue;
+      if (run.background >= 0 && f.drape) continue;
+      if (f.renderer.presentUntil(canvas, index)) f.waiting = true;
       canvas.save();
       if (f.canvasHorizon > 0) _clipGround(canvas, f.view, f.canvasHorizon);
       canvas.transform(f.viewMatrix);
-    }
-
-    begin();
-    for (var index = from; index < to; index++) {
-      final run = sheet.runs[index];
-      if ((run.background >= 0 || run.raster >= 0) && gpu != null) {
-        canvas.restore();
-        gpu.presentUntil(canvas, index);
-        begin();
-      }
       if (run.background >= 0) {
-        if (f.drape) continue;
         _meshes.drawBackground(
           canvas,
           sheet.backgrounds[run.background],
           f.camera,
         );
-        continue;
-      }
-      if (run.raster >= 0) {
+      } else {
         _rasters[run.raster].paint(
           canvas,
           _context,
@@ -1074,33 +1045,13 @@ class VmapEngine extends ChangeNotifier {
           view: f.view,
           drape: f.drape,
         );
-        continue;
       }
-      if (gpu != null) continue;
-      final whole = sheet.runOpacity(run, _context);
-      if (whole == 0) continue;
-      if (whole != null && whole < 1) {
-        canvas.saveLayer(
-          null,
-          _layerPaint..color = ui.Color.fromRGBO(0, 0, 0, whole),
-        );
-      }
-      final s = _sources[run.source];
-      f.draws += _meshes.drawRun(
-        canvas,
-        sheet,
-        run,
-        s.fallback.followedBy(s.ideal),
-        _states[s.def.name],
-        f.camera.size,
-      );
-      if (whole != null && whole < 1) canvas.restore();
+      canvas.restore();
     }
-    canvas.restore();
   }
 
   void _drawLabels(_Frame f) {
-    final sheet = f.sheet, camera = f.camera, view = f.view, gpu = f.gpu;
+    final sheet = f.sheet, camera = f.camera, view = f.view;
     f.animating =
         (sheet.dashed && _zoomHistory.fading) ||
         _rasters.any((r) => r is TileDrawing && r.fading);
@@ -1115,7 +1066,7 @@ class VmapEngine extends ChangeNotifier {
       _labels.placeNow();
     }
     final perMetre = RaisedGround.labelPerMetre(view);
-    final terrain = gpu?.terrain;
+    final terrain = f.renderer.terrain;
     final moving = _labels.paint(
       f.canvas,
       sources: [_markerLabels]
@@ -1144,7 +1095,7 @@ class VmapEngine extends ChangeNotifier {
       ground: RaisedGround.groundOf(view, terrain),
       perMetre: perMetre,
       seaLevel: terrain == null ? 0 : -terrain.centre * perMetre,
-      sdf: gpu?.sdfText,
+      sdf: f.renderer.sdfText,
     );
     f.animating = f.animating || moving;
   }
@@ -1159,7 +1110,7 @@ class VmapEngine extends ChangeNotifier {
       _clipGround(canvas, f.view, f.horizon);
     }
     _drawRuns(f, sheet.labelsRun, sheet.runs.length);
-    f.gpu?.presentUntil(canvas, sheet.runs.length);
+    if (f.renderer.presentUntil(canvas, sheet.runs.length)) f.waiting = true;
     if (f.horizon > 0) canvas.restore();
   }
 
@@ -1263,7 +1214,7 @@ class VmapEngine extends ChangeNotifier {
           ) +
           (_ground.tiles?.waiting ?? 0)
       ..resourcesLoading = _resources.loading + _labels.glyphsLoading
-      ..drawCalls = f.draws
+      ..drawCalls = f.onGpu ? 0 : _canvas.drawCalls
       ..gpuFramesReused = _renderer?.framesReused ?? 0;
     for (final s in _sources) {
       s.evict(rendering.maxCachedTiles, _frame);
@@ -1292,6 +1243,7 @@ class VmapEngine extends ChangeNotifier {
   double _lastZoom = 0;
   final FrameBudget _budget = FrameBudget();
   late final MeshPainter _meshes = MeshPainter(_budget, stats, _context);
+  late final CanvasMap _canvas = CanvasMap(_meshes);
 
   final ZoomHistory _zoomHistory = ZoomHistory();
   final Atmosphere _atmosphere = Atmosphere();
@@ -1336,7 +1288,7 @@ class VmapEngine extends ChangeNotifier {
     _labels
       ..clear()
       ..disposeGlyphs();
-    _buildings.dispose();
+    _canvas.dispose();
     _renderer?.dispose();
     _resources.dispose();
     _meshes.dispose();
@@ -1356,7 +1308,8 @@ class _Frame {
     required this.camera,
     required this.view,
     required this.sheet,
-    required this.gpu,
+    required this.renderer,
+    required this.onGpu,
     required this.dataZoom,
     required this.styleZoom,
     required this.now,
@@ -1373,10 +1326,11 @@ class _Frame {
   final MapView view;
   final StyleSheet sheet;
 
-  /// The renderer drawing the vector layers this frame; null for the
-  /// canvas.
-  final MapRenderer? gpu;
-  bool get onGpu => gpu != null;
+  /// What draws the vector layers and buildings this frame.
+  final MapRenderer renderer;
+
+  /// Whether that is the GPU.
+  final bool onGpu;
   final double dataZoom, styleZoom;
 
   /// When the frame began, in microseconds of the engine's clock.
@@ -1397,6 +1351,5 @@ class _Frame {
 
   bool waiting = false;
   bool animating = false;
-  int draws = 0;
   int labelsStarted = 0;
 }

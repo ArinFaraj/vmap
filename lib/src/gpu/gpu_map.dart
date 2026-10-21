@@ -1035,9 +1035,9 @@ class GpuMap implements MapRenderer {
   int _presented = 0;
 
   @override
-  void presentUntil(ui.Canvas canvas, int run) {
+  bool presentUntil(ui.Canvas canvas, int run) {
     final last = _last, view = _lastView;
-    if (last == null || view == null) return;
+    if (last == null || view == null) return false;
     var upTo = last.length;
     for (final (at, image) in _splits) {
       if (at >= run) {
@@ -1045,9 +1045,10 @@ class GpuMap implements MapRenderer {
         break;
       }
     }
-    if (upTo <= _presented) return;
+    if (upTo <= _presented) return false;
     _present(canvas, last.getRange(_presented, upTo), view);
     _presented = upTo;
+    return false;
   }
 
   void _present(

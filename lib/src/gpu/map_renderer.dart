@@ -21,13 +21,13 @@ typedef RasterPiece = ({
   bool smooth,
 });
 
-/// Draws the map's fill, line and circle layers and its buildings in place
-/// of the canvas, from each tile's GPU stream, flat or tilted, whenever the
-/// camera has a view. Labels, icons and raster layers stay on the canvas,
-/// except tiled raster layers over raised ground, which it drapes.
+/// Draws the map's fill, line and circle layers and its buildings: the GPU
+/// renderer from each tile's GPU stream, the canvas renderer from its
+/// meshes. Backgrounds, raster layers and labels are the engine's, except
+/// tiled raster layers over raised ground, which the GPU drapes.
 abstract class MapRenderer {
-  /// Whether it draws [sheet]'s layers in the right order; when it does
-  /// not, the canvas draws the map.
+  /// Whether it draws [sheet]'s layers in the right order; when the GPU
+  /// does not, the canvas draws the map.
   bool supports(StyleSheet sheet);
 
   /// Draws each source's [ideal] tiles and, where none of them is, its
@@ -68,10 +68,12 @@ abstract class MapRenderer {
   /// How the frame's dashes cross-fade from the zoom level before.
   DashFade dashFade = ZoomHistory.settled;
 
-  /// Lays on [canvas] the images [paint] made of the vector layers before
-  /// the style's run [run], those not laid yet: a background or raster run
-  /// is drawn between them, and the labels before the style's labels run.
-  void presentUntil(ui.Canvas canvas, int run) {}
+  /// Draws on [canvas] the vector layers before the style's run [run] that
+  /// are not drawn yet, and the buildings once [run] reaches the labels: a
+  /// background or raster run is drawn between them, and the labels after
+  /// the style's labels run. Returns true when it held work back for the
+  /// next frame.
+  bool presentUntil(ui.Canvas canvas, int run) => false;
 
   /// Lets go of the memory of tiles not drawn in the last frame.
   void trimMemory() {}

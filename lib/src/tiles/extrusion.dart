@@ -458,30 +458,10 @@ class ExtrusionBuilder {
   }
 }
 
-/// Draws a style's buildings standing up on a tilted map. vmap's own draws
-/// them with the canvas; another may draw them on the GPU with a depth
-/// buffer.
-abstract class BuildingRenderer {
-  /// Draws what it can and returns true when it held some back for the
-  /// next frame.
-  bool paint(
-    ui.Canvas canvas,
-    MapView view,
-    ui.Offset origin,
-    StyleSheet sheet,
-    Iterable<TileDraw> tiles,
-    EvalContext context,
-    double styleZoom,
-    double devicePixelRatio,
-  );
-
-  void dispose() {}
-}
-
 /// Draws buildings standing up on a tilted map with the canvas: walls and
 /// roofs projected through the view, farthest building first, walls facing
 /// away from the camera left out and each wall shaded by where it faces.
-class ExtrusionPainter implements BuildingRenderer {
+class ExtrusionPainter {
   Float32List _positions = Float32List(1 << 14);
   Int32List _colors = Int32List(1 << 13);
   int _vertices = 0;
@@ -489,10 +469,10 @@ class ExtrusionPainter implements BuildingRenderer {
   Int32List _order = Int32List(1024);
   final List<(TileDraw, BuiltExtrusion)> _found = [];
 
-  @override
   void dispose() {}
 
-  @override
+  /// Draws what it can and returns true when it held some back for the
+  /// next frame.
   bool paint(
     ui.Canvas canvas,
     MapView view,

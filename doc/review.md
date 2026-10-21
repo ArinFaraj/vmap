@@ -245,3 +245,44 @@ starts, these come first, in this order, because the rest builds on them:
 7. Tests for `VMap` and its controller; the render suite runnable in CI.
 8. Then the folder layout and the splitting of the large classes, which
    are easier once the paths above are fewer.
+
+## Status after the fixes, 2026-10-21
+
+Each finding by number. "Fixed" means changed, tested, and both render
+suites drew as before where drawing was touched.
+
+| # | Status |
+| --- | --- |
+| 1 | Fixed: every zoom the public API takes or gives is MapLibre's; the flutter_map adapter converts. |
+| 2, 3 | Fixed, with tests: `easeTo`, carried motions and `flyTo` keep padding, roll and field of view. |
+| 4 | Fixed: the engine makes and disposes its renderer. |
+| 5 | Fixed; CI runs on every push. |
+| 6 | Fixed: README, example page, description and topics describe the engine. |
+| 7 | Fixed: the GPU is the default renderer everywhere. |
+| 8 | Fixed: one glyph setting, `VmapRenderOptions.glyphs`, for every widget. |
+| 9 | Fixed, with tests: mouse wheel, trackpad pan, pinch and turn, right drag, keyboard. |
+| 10 | Fixed: `Vmap` takes every engine option. |
+| 11 | Fixed: loading builder, style loaded, camera move and idle, map idle, typed errors. |
+| 12 | Fixed: `example/` is a one-screen app for every platform; the lab is `bench/`. |
+| 13 | Fixed: `.pubignore`; the dry run lists only the package. |
+| 14 | Fixed: an app built against exactly the published files draws on the GPU on macOS and builds for the web; the example builds for Android and iOS, and CI builds it for Linux and Windows. |
+| 15 | Kept on purpose: 300 KB of fonts shape Arabic script and Syriac with no setup; the README says so. |
+| 16 | Open: payv is `^0.1.2`, but vmap still imports its private glyph path file; payv has to export the command classes. |
+| 17 | Fixed: `lib/renderer.dart` is gone. |
+| 18 | Fixed: GPU failures reach `onError` and say which switch is missing. |
+| 19 | Fixed: the canvas is a `MapRenderer` like the GPU, and the engine's drawing has no branch on which one draws. |
+| 20 | Fixed for the camera (one model; the flat path is gone from tiles, labels, rasters and occlusion) and the text (one setting). The canvas and the GPU remain two renderers by design. |
+| 21 | Fixed for the engine: its transitions, raised ground, queries, paint steps and the canvas renderer are their own pieces. Kept: `LabelState` stays one flat record, read for every label every frame, where nesting would add indirection on the hottest path; `LabelEngine` keeps its fields with it. |
+| 22 | Fixed: `lib/src` is in folders by area. |
+| 23 | Kept: the adapter's gestures drive flutter_map's controller and the widget's drive vmap's; sharing them needs a gesture core both can use. |
+| 24 | Fixed: one public camera type, `VmapCamera`. |
+| 25 | Changed: `Vmap.highRefreshRate`, on by default, so the app decides. |
+| 26 | Kept: the standard pins use Material's icon font. |
+| 27 to 35, 37 | Fixed. |
+| 36 | Partly: statistics are in `package:vmap/debug.dart`; `debugLabels`, `debugBoxes` and `showCollisionBoxes` stay on the engine under their debug names. |
+| 38 | Fixed: widget tests for gestures, taps, markers, wheel, keyboard, idle, loading and `fitBounds`. |
+| 39 | Fixed: CI runs MapLibre's render tests on the GPU on macOS and fails below a floor. |
+| 40 | Partly: the vaguely named test files are split; there are no golden tests. |
+| 41 | Open: the WebAssembly build. |
+| 42 | Open: runs on iOS, Windows, Linux, Safari and Firefox (roadmap step 6). |
+| 43 | Fixed: the background is drawn while the shaders load. |
