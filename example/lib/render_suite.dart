@@ -574,10 +574,9 @@ Future<void> _score(
     ..ok = result.error == null && best <= result.allowed;
   if (result.ok) return;
   final out = Directory('$_out/${result.id}')..createSync(recursive: true);
-  File('${out.path}/actual.png').writeAsBytesSync(
-    (await actual.toByteData(format: ui.ImageByteFormat.png))!.buffer
-        .asUint8List(),
-  );
+  // From the pixels scored: the image's texture may hold a later frame
+  // by now.
+  File('${out.path}/actual.png').writeAsBytesSync(await _encode(pixels, w, h));
   if (bestDiff != null) {
     File('${out.path}/diff.png')
         .writeAsBytesSync(await _encode(bestDiff, w, h));
