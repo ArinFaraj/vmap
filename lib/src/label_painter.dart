@@ -110,8 +110,7 @@ class LabelPainter {
         : _tint(st, icon, symbol, tint, devicePixelRatio);
     final fit = symbol?.textFit ?? false;
     _view.project(st.worldX, st.worldY);
-    final ix = _view.x + st.iconDx;
-    final iy = _view.y + st.iconDy;
+    final ax = _view.x, ay = _view.y;
     final turn = switch (st.candidate) {
       // An icon on a name along a line lies along the line at its anchor.
       TileLabel(tile: BuiltLabel(line: _?)) => _view.screenAngle(
@@ -140,6 +139,13 @@ class LabelPainter {
       };
       basis = _groundBasis(st, onMap);
     }
+    // As MapLibre's getIconQuads, an icon's offset and anchor are in its
+    // own frame, turned and laid down with it; a fitted icon's follow its
+    // text, which already has been.
+    final (ux, uy, vx, vy) = basis;
+    final ox = st.iconDx - st.iconMoveX, oy = st.iconDy - st.iconMoveY;
+    final ix = st.iconMoveX + ax + (fit ? ox : ux * ox + vx * oy);
+    final iy = st.iconMoveY + ay + (fit ? oy : uy * ox + vy * oy);
     final area = ui.Rect.fromLTWH(
       -st.iconW / 2,
       -st.iconH / 2,

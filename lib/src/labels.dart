@@ -1313,8 +1313,8 @@ class LabelEngine {
       ..iconScale *= i
       ..iconW *= i
       ..iconH *= i
-      ..iconDx *= i
-      ..iconDy *= i
+      ..iconDx = st.iconMoveX + (st.iconDx - st.iconMoveX) * i
+      ..iconDy = st.iconMoveY + (st.iconDy - st.iconMoveY) * i
       ..placedSize = size
       ..perspective = perspective;
   }

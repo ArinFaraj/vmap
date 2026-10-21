@@ -198,6 +198,10 @@ class LabelState {
   double placedSize = 0;
   double moveX = 0, moveY = 0;
 
+  /// The part of [iconDx] and [iconDy] that is the icon's translate, in
+  /// screen pixels, not turned or grown with the icon.
+  double iconMoveX = 0, iconMoveY = 0;
+
   /// The image is too far from the label's size and wants drawing again.
   bool resize = false;
 

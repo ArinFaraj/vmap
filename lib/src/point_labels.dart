@@ -403,7 +403,9 @@ class PointLabels {
     }
     st
       ..iconDx = 0
-      ..iconDy = 0;
+      ..iconDy = 0
+      ..iconMoveX = 0
+      ..iconMoveY = 0;
     if (icon == null || symbol == null) return icon;
     // As MapLibre's icon shader, an icon grows and shrinks with its
     // distance from a tilted camera as text does; a fitted icon takes its
@@ -447,6 +449,8 @@ class PointLabels {
     st
       ..iconDx += ix
       ..iconDy += iy
+      ..iconMoveX = ix
+      ..iconMoveY = iy
       ..iconOpacity = (asNumber(symbol.iconOpacity(context)) ?? 1).clamp(
         0.0,
         1.0,
@@ -508,6 +512,8 @@ class PointLabels {
     st
       ..iconDx = 0
       ..iconDy = 0
+      ..iconMoveX = 0
+      ..iconMoveY = 0
       ..iconW = pins!.size
       ..iconH = pins.size
       ..iconOpacity = 1;
