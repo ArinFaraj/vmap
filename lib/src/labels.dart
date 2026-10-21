@@ -921,8 +921,12 @@ class LabelEngine {
       final road = c is TileLabel && c.tile.line != null ? c : null;
       _bind(c);
       final layer = _symbolOf(c);
-      final textPad = layer?.textPadding ?? CollisionBoxes.defaultPad;
-      final iconPad = layer?.iconPadding ?? CollisionBoxes.defaultPad;
+      // As MapLibre keeps padding in tile units, a tilted map's distance
+      // grows and shrinks it with the label.
+      final textPad =
+          (layer?.textPadding ?? CollisionBoxes.defaultPad) * st.perspective;
+      final iconPad =
+          (layer?.iconPadding ?? CollisionBoxes.defaultPad) * st.perspective;
       final fontSize = _size(c, styleZoom) * st.perspective;
       if (layer != null &&
           c is TileLabel &&
