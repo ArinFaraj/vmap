@@ -14,9 +14,8 @@ What the API looks like and what should change before release:
 
 ## Status
 
-- **Now:** 0.1, step 1. Waiting on the package name
-  ([doc/naming.md](doc/naming.md): shortlist and checks, `mappa`
-  recommended); nothing can be renamed or restructured without it.
+- **Now:** 0.1, step 1, the restructure: `vmap_gpu` folded into `vmap`, then
+  the flutter_map layers moved to `vmap_flutter_map`.
 - **Next:** the API polish in [doc/api-review.md](doc/api-review.md). Its
   proposals have been reviewed twice (verdicts in its second pass section);
   Arin asked for that review rather than approving item by item.
@@ -27,9 +26,9 @@ Keep this section current: update it whenever a step starts or finishes.
 
 ## Decided
 
-- **A new package replaces vmap.** It is the engine: the map widget, the
-  camera, styles, tiles, labels and the GPU renderer, built in rather than in
-  a second package. vmap on pub.dev is marked discontinued and points to it.
+- **vmap becomes the engine**, under its existing name (decided 2026-10-21,
+  [doc/naming.md](doc/naming.md)): the map widget, the camera, styles, tiles,
+  labels and the GPU renderer, built in rather than in a second package.
 - **GPU first.** All new work is on the GPU renderer. The canvas renderer is
   frozen: kept so a map still draws on Android 9 and older, Vivante devices,
   browsers without WebGL2 and in `flutter test`, but given no new features.
@@ -44,9 +43,6 @@ Keep this section current: update it whenever a step starts or finishes.
 
 ## Still to decide
 
-- **The name.** Shortlist, criteria and pub.dev checks in
-  [doc/naming.md](doc/naming.md). vmap's slot may be reused or left behind.
-  The adapter takes the name plus `_flutter_map`.
 - **Whether the canvas renderer goes entirely**, once we know whether
   `flutter test` can run Flutter GPU and how Impeller's OpenGL ES backend
   copes on old phones.
@@ -75,8 +71,8 @@ Already in, from the work so far:
 
 To do before publishing:
 
-1. Name the package and restructure: the engine package with the GPU renderer
-   inside, the flutter_map adapter beside it, the canvas renderer frozen.
+1. Restructure: the GPU renderer moved into `vmap`, the flutter_map layers
+   into a `vmap_flutter_map` adapter beside it, the canvas renderer frozen.
 2. Polish the API and the first impression, per
    [doc/api-review.md](doc/api-review.md): one prefix, GPU and style glyphs by
    default, a loading builder and state callbacks on the widget, `onTap` with
@@ -87,15 +83,14 @@ To do before publishing:
    have it, and the example has no iOS, Windows or Linux target yet.
 4. Packaging: a `.pubignore` so scratch files and the untracked `docs/` folder
    are not published, `payv: ^0.1.2` instead of an exact pin, and a version and
-   changelog for the new name.
+   changelog for the engine release.
 5. CI that builds the web and Android example as well as running the checks on
    Linux.
 6. Run it on an iPhone, a Windows PC, a Linux PC, Safari and Firefox, and fix
    what breaks.
 7. A README written around the engine, an honest platform table, and a short
    guide for moving from vmap.
-8. Publish, then mark vmap discontinued on pub.dev with the new package as its
-   replacement.
+8. Publish vmap and vmap_flutter_map.
 
 ## 0.2: steady on real devices
 
@@ -163,6 +158,7 @@ Render tests that still fail and could matter to some styles:
   as of 3.47, the WebGL2 shim on the web), so a new GPU first package replaces
   vmap, the canvas is frozen as a fallback, and flutter_map becomes an
   adapter. Before release, the API and first impression get a polish pass.
+- 2026-10-21: the engine keeps the name vmap.
 - 2026-10-21: test Impeller's OpenGL ES backend by forcing it on an Android
   phone (0.2).
 

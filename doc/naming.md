@@ -1,5 +1,11 @@
 # Naming the engine
 
+**Decided 2026-10-21: keep `vmap`.** The engine is published under vmap's
+existing name, so its pub.dev history and KRDPass's dependency carry over and
+nothing is discontinued. The prefix gets one spelling in the API polish (see
+[api-review.md](api-review.md)). The rest of this page is how the choice was
+made.
+
 The package that replaces vmap needs a name. vmap's own slot can be reused or
 left behind: on 2026-10-21 it had 0 likes and 108 downloads in 30 days, most
 likely KRDPass's own builds.
