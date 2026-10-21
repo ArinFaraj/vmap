@@ -10,8 +10,7 @@ const int splitZoom = 18;
 
 /// [layers] of the tile [from], cut to its descendant [to], as MapLibre's
 /// sliceVectorTileLayer: scaled into [to]'s units and clipped to it with a
-/// buffer of 128 units on a 4096 unit tile. The cut points are rounded as
-/// MapLibre's encoding of the cut tile rounds them.
+/// buffer of 128 units on a 4096 unit tile.
 List<TileLayer> sliceLayers(
   Iterable<TileLayer> layers,
   TileId from,
@@ -61,30 +60,13 @@ List<TileLayer> sliceLayers(
   return out;
 }
 
-/// [rings] as they read back once written to a tile: each step from the
-/// last point is cut to a whole number, polygons dropping their closing
-/// point.
-List<List<double>> _encoded(List<List<double>> rings, int type) {
-  var x = 0.0, y = 0.0;
-  var ex = 0, ey = 0;
-  final out = <List<double>>[];
-  for (final ring in rings) {
-    final count = type == mvtPolygon ? ring.length ~/ 2 - 1 : ring.length ~/ 2;
-    final points = <double>[];
-    for (var i = 0; i < count; i++) {
-      final dx = ring[i * 2] - x, dy = ring[i * 2 + 1] - y;
-      ex += dx.truncate();
-      ey += dy.truncate();
-      x += dx;
-      y += dy;
-      points
-        ..add(ex.toDouble())
-        ..add(ey.toDouble());
-    }
-    out.add(points);
-  }
-  return out;
-}
+/// [rings] as the reader gives them, polygons without their closing point.
+/// The points stay as cut: MapLibre lays out the cut tile from them, not
+/// from its encoding.
+List<List<double>> _encoded(List<List<double>> rings, int type) => [
+  for (final ring in rings)
+    type == mvtPolygon ? ring.sublist(0, ring.length - 2) : ring,
+];
 
 /// [rings] clipped to [start] to [end] along [axis], 0 for x and 1 for y,
 /// as MapLibre's clipGeometryOnAxis.
