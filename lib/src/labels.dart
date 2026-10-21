@@ -127,8 +127,9 @@ class LabelEngine {
 
   /// A text's colour, halo colour and halo width from its layer's paint.
   (int, int?, double) _ink(SymbolLayer symbol) {
+    final opacity = asNumber(symbol.opacity(_context)) ?? 1;
     final color = (Rgba.of(symbol.color(_context)) ?? Rgba.black).toArgb(
-      asNumber(symbol.opacity(_context)) ?? 1,
+      opacity,
     );
     final double haloWidth = (asNumber(symbol.haloWidth(_context)) ?? 0).clamp(
       0,
@@ -136,7 +137,9 @@ class LabelEngine {
     );
     return (
       color,
-      haloWidth > 0 ? Rgba.of(symbol.haloColor(_context))?.toArgb() : null,
+      haloWidth > 0
+          ? Rgba.of(symbol.haloColor(_context))?.toArgb(opacity)
+          : null,
       haloWidth,
     );
   }
