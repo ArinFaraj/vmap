@@ -17,6 +17,7 @@ import 'glyphs/vmap_font.dart';
 import 'label_state.dart';
 import 'labels.dart';
 import 'text_style.dart';
+import 'paint_defaults.dart';
 import 'pins.dart';
 import 'query.dart';
 import 'layer.dart' show NamedMarker;
@@ -331,10 +332,15 @@ class VmapEngine extends ChangeNotifier {
       return;
     }
     final document = _overlay?.applyTo(base) ?? base;
+    // A change of paint keeps the labels where they are.
     String symbols(List<VmapStyleEdit> edits) => jsonEncode([
       for (final layer
           in VmapStyleEdit.applyAll(edits, document)['layers']! as List)
-        if (layer case {'type': 'symbol'}) layer,
+        if (layer case {'type': 'symbol'})
+          {
+            for (final e in layer.entries)
+              if (e.key != 'paint') e.key: e.value,
+          },
     ]);
     final sameSymbols = symbols(value) == symbols(_edits);
     _edits = value;
@@ -372,7 +378,8 @@ class VmapEngine extends ChangeNotifier {
         final prior = was['paint'] is Map ? was['paint'] as Map : const {};
         for (final key in {...paint.keys, ...prior.keys}) {
           if ('$key'.endsWith('-transition')) continue;
-          final a = prior[key], b = paint[key];
+          final a = prior[key] ?? paintDefaults[key];
+          final b = paint[key] ?? paintDefaults[key];
           if (a == null || b == null || _sameJson(a, b)) continue;
           final own = paint['$key-transition'];
           double timing(String name, double fallback) =>
@@ -470,7 +477,11 @@ class VmapEngine extends ChangeNotifier {
     _labels
       ..symbols = sheet.symbols
       ..zoomOffset = sheet.zoomOffset;
-    if (!keepLabels || !sameShape) _labels.clear();
+    if (!keepLabels || !sameShape) {
+      _labels.clear();
+    } else {
+      _labels.redraw();
+    }
     final byName = <String, TileSource>{
       if (sameShape)
         for (final s in _sources) s.def.name: s,
@@ -1320,6 +1331,12 @@ class VmapEngine extends ChangeNotifier {
         for (final s in _sources) ...[...s.ideal, ...s.fallback],
       ];
       _labels.occlusion.update(view, shown, sheet, styleZoom);
+      if (_transitions.isNotEmpty) {
+        final symbols = {for (final s in sheet.symbols) s.id};
+        if (_transitions.values.any((t) => symbols.contains(t.layer))) {
+          _labels.placeNow();
+        }
+      }
       final labelsMoving = _labels.paint(
         canvas,
         sources: [_markerLabels]
@@ -1343,6 +1360,7 @@ class VmapEngine extends ChangeNotifier {
         devicePixelRatio: camera.devicePixelRatio,
         dt: dt,
         rasterBudgetMicros: _budget.spent > 1000 ? 1 : _labelBudgetMicros,
+        styleNowMs: _clock.elapsedMilliseconds.toDouble(),
         zooming: _budget.zooming,
         view: view,
         ground: _groundOf(view),
@@ -1459,7 +1477,7 @@ class VmapEngine extends ChangeNotifier {
             (n, r) => n + r.waiting,
           ) +
           (_terrain?.waiting ?? 0)
-      ..resourcesLoading = _resources.loading
+      ..resourcesLoading = _resources.loading + _labels.glyphsLoading
       ..drawCalls = draws;
     for (final s in _sources) {
       s.evict(maxCachedTiles, _frame);

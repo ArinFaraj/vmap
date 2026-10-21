@@ -6,7 +6,6 @@
 #   later  a feature vmap adds after reaching parity
 #   skip   a MapLibre quirk vmap does not copy
 # Delete a line when its test passes.
-bright-v9/z0	equal	edge pixels
 combinations/heatmap-translucent--background-opaque	skip	MapLibre shows a heatmap through opaque layers drawn above it
 combinations/heatmap-translucent--fill-opaque	skip	MapLibre shows a heatmap through opaque layers drawn above it
 fill-extrusion-rounded-corner-distance/clamped	equal	shading along a rounded edge

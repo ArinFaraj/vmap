@@ -104,6 +104,21 @@ class LabelEngine {
   /// Has the labels placed and coloured again on the next frame.
   void restyle() => _placeAgain = true;
 
+  /// Places every label again from the style, each keeping how far it
+  /// has faded in, as MapLibre keeps them through a change of paint. A
+  /// sprite whose colours changed is drawn again by its key.
+  void redraw() => _placeAgain = true;
+
+  /// Glyph ranges asked for and not here yet, which labels wait on.
+  int get glyphsLoading => _sprites.ranges?.pending ?? 0;
+
+  /// Places the labels again in the next frame, however soon after the
+  /// last placement, while a paint property they are placed by changes.
+  void placeNow() {
+    _placeAgain = true;
+    _placedAtMs = -1000000;
+  }
+
   /// The context with the paint expressions pointed at [c]'s feature.
   EvalContext _bound(LabelCandidate c, double styleZoom) {
     _context.zoom = styleZoom;
@@ -494,8 +509,10 @@ class LabelEngine {
     double perMetre = 0,
     double seaLevel = 0,
     SdfText? sdf,
+    double styleNowMs = 0,
   }) {
     lastPlaceMicros = 0;
+    _context.nowMs = styleNowMs;
     // Text from glyph ranges is drawn by the renderer as distance fields
     // where it can, on the unturned screen of a projected view.
     final ranges = _sprites.ranges;
@@ -580,7 +597,10 @@ class LabelEngine {
         ..spriteKey = key
         ..resize = false
         ..roadFitKey = -1;
+      // Placed again at its real size, and then faded in: frames are
+      // still needed even with nothing else moving.
       _placeAgain = true;
+      pending = true;
       if (cached == null) rasterized++;
     }
 
@@ -604,6 +624,7 @@ class LabelEngine {
           ..sprite = sprite
           ..spriteKey = key;
         _placeAgain = true;
+        pending = true;
         rasterized++;
       }
     }
