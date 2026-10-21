@@ -172,8 +172,9 @@ Render tests that still fail and could matter to some styles:
 - `tool/render_suite.sh ~/projects/maplibre-gl-js <out> "" --gpu`: MapLibre's
   render tests, hidden, with the exceptions and out-of-scope lists in `tool/`.
   CI runs it on the GPU on macOS against a pinned MapLibre commit and fails
-  below `tool/render_suite_floor.txt`, one under its 1,394 for the one
-  timing sensitive test. A local checkout with probe tests of our own in it
+  below `tool/render_suite_floor.txt`, three under its 1,394: on the
+  runner `regressions/mapbox-gl-js#2762` and
+  `icon-size/property-function-plain` pass or fail with timing. A local checkout with probe tests of our own in it
   counts a few more; the canvas renderer passes 1,074 in such a checkout.
 - `tool/compare_style.sh`: real OpenFreeMap styles over real places against
   MapLibre GL JS with its right-to-left plugin.
