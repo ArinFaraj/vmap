@@ -128,7 +128,9 @@ class LabelPainter {
       final onMap = switch (st.candidate) {
         TileLabel(tile: BuiltLabel(line: _?)) => st.angle,
         TileLabel(tile: BuiltLabel(:final angle, :final turns)) =>
-          turns ? angle : angle - _view.mapTurn,
+          turns || (symbol?.iconAlongMap ?? false)
+              ? angle
+              : angle - _view.mapTurn,
         MarkerName() => -_view.mapTurn,
       };
       basis = _groundBasis(st, onMap);

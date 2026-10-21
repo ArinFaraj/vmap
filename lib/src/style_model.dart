@@ -731,6 +731,7 @@ class SymbolLayer {
     this.justifyAuto = false,
     this.textPadding,
     this.textAlongMap = false,
+    this.iconAlongMap = false,
     this.iconPadding,
     this.iconPaddings,
     this.textIgnored = false,
@@ -874,6 +875,9 @@ class SymbolLayer {
 
   /// `text-rotation-alignment: map`: a point's text turns with the map.
   final bool textAlongMap;
+
+  /// The icon turns with the map, as `icon-rotation-alignment: map` asks.
+  final bool iconAlongMap;
   final double? iconPadding;
 
   /// `icon-padding` given for each side, top, right, bottom and left;

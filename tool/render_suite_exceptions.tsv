@@ -21,12 +21,9 @@ icon-halo-color/opacity	equal	halo shade differs slightly
 icon-halo-color/property-function	equal	edge pixels
 icon-overlap/always	equal	edge pixels
 icon-overlap/cooperative	equal	edge pixels
-icon-pitch-alignment/auto-rotation-alignment-map	equal	edge pixels
 icon-pitch-alignment/viewport-rotation-alignment-map	equal	edge pixels
 icon-pixelratio-mismatch/default	equal	icon resampling
-icon-roll-alignment/auto-rotation-alignment-map	equal	edge pixels
 icon-roll-alignment/viewport-rotation-alignment-map	equal	edge pixels
-icon-rotation-alignment/map-symbol-placement-point	equal	edge pixels
 icon-text-fit/both-text-anchor-1x-image-2x-screen	equal	edge pixels
 icon-text-fit/both-text-anchor-2x-image-2x-screen	equal	edge pixels
 icon-text-fit/textFit-anchors-long	equal	edge pixels

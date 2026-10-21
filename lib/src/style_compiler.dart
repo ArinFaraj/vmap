@@ -573,6 +573,7 @@ class StyleCompiler {
         justifyAuto: layout['text-justify'] == 'auto',
         textPadding: asNumber(layout['text-padding']),
         textAlongMap: layout['text-rotation-alignment'] == 'map',
+        iconAlongMap: layout['icon-rotation-alignment'] == 'map',
         iconPadding: asNumber(layout['icon-padding']),
         iconPaddings: _sides(layout['icon-padding']),
         textIgnored: layout['text-ignore-placement'] == true,
