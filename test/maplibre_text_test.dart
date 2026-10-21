@@ -140,4 +140,13 @@ void main() {
     final codes = 'ab\u001ccd'.runes.toList();
     expect(mapLibreLineBreaks(codes, (_) => 10, 1000), [codes.length]);
   });
+
+  test('brackets in right-to-left text are drawn mirrored', () {
+    final laid = layoutRanges(tenWide, 600, 'هه (ab)')!;
+    final ids = [
+      for (var i = 0; i < laid.glyphs.length; i += 5)
+        if (laid.glyphs[i + 1] != 0x20) laid.glyphs[i + 1].toInt(),
+    ];
+    expect(ids.take(4), [0x28, 0x61, 0x62, 0x29]);
+  });
 }

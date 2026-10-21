@@ -140,9 +140,9 @@ ShapedText? layoutRanges(
     if (lineScale != 1 || imageOffset > 0) scaled = true;
     final glyphs = <double>[];
     var x = 0.0;
-    for (final k in _visualIndices(codes.sublist(start, end))) {
+    for (final (k, mirror) in _visualIndices(codes.sublist(start, end))) {
       final i = start + k;
-      final c = codes[i];
+      final c = mirror ? _mirrored[codes[i]] ?? codes[i] : codes[i];
       final r = runOf[i];
       final section = sectionOf(r);
       final align = section?.align ?? 1;
@@ -381,22 +381,50 @@ bool _paragraphSeparator(int c) =>
 /// right-to-left text reversed by the Unicode bidi algorithm, as MapLibre
 /// orders a line after breaking the text into lines. The characters that
 /// only steer the ordering are dropped, as no font draws them.
-List<int> _visualIndices(List<int> codes) {
+List<(int, bool)> _visualIndices(List<int> codes) {
   if (!codes.any(_rightToLeft)) {
     return [
       for (var i = 0; i < codes.length; i++)
-        if (!_bidiControl(codes[i])) i,
+        if (!_bidiControl(codes[i])) (i, false),
     ];
   }
-  final out = <int>[];
+  final out = <(int, bool)>[];
   for (final run in Bidi.resolve(codes).visualRuns) {
     final order = [for (var i = run.start; i < run.end; i++) i];
-    for (final i in run.level.isOdd ? order.reversed : order) {
-      if (!_bidiControl(codes[i])) out.add(i);
+    final rtl = run.level.isOdd;
+    for (final i in rtl ? order.reversed : order) {
+      if (!_bidiControl(codes[i])) out.add((i, rtl));
     }
   }
   return out;
 }
+
+/// The characters Unicode draws mirrored in right-to-left text, each with
+/// the one drawn in its place, as the bidi step of MapLibre's RTL plugin
+/// mirrors them.
+const _mirrorPairs = [
+  (0x28, 0x29),
+  (0x3C, 0x3E),
+  (0x5B, 0x5D),
+  (0x7B, 0x7D),
+  (0xAB, 0xBB),
+  (0x2039, 0x203A),
+  (0x2045, 0x2046),
+  (0x207D, 0x207E),
+  (0x208D, 0x208E),
+  (0x2264, 0x2265),
+  (0x3008, 0x3009),
+  (0x300A, 0x300B),
+  (0x300C, 0x300D),
+  (0x300E, 0x300F),
+  (0x3010, 0x3011),
+  (0xFF08, 0xFF09),
+  (0xFF3B, 0xFF3D),
+  (0xFF5B, 0xFF5D),
+];
+final _mirrored = {
+  for (final (a, b) in _mirrorPairs) ...{a: b, b: a},
+};
 
 bool _bidiControl(int c) =>
     c == 0x061C ||
