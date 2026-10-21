@@ -562,88 +562,96 @@ class PointLabels {
     // As MapLibre: a text set above or below its point sits 7/24 of an em
     // nearer it, the room glyphs leave under their baseline.
     final baseline = pinReach == null ? 7 / 24 * fontSize : 0.0;
-    // The side taken last is tried first, so a label stays put while it
-    // fits there; then the sides in the layer's order.
+    // As MapLibre's placement: the side taken last is tried first, so a
+    // label stays put while it fits there; then every side in the layer's
+    // order without overlapping; and only then, when the layer allows it,
+    // every side again overlapping.
     final previous = st.opacity > 0 && st.side < sides.length ? st.side : -1;
     final turn = symbol.textAlongMap && !st.onGround ? _view.mapTurn : 0.0;
     final cos = math.cos(turn), sin = math.sin(turn);
-    for (var k = previous < 0 ? 0 : -1; k < sides.length; k++) {
-      final at = k < 0 ? previous : k;
-      if (k >= 0 && at == previous) continue;
-      final (ax, ay) = anchorSides(sides[at]);
-      final double fx, fy;
-      // As MapLibre's calculateVariableLayoutShift: by half the text's
-      // collision box, which its padding is part of.
-      final groundW = spot.groundW, groundH = spot.groundH;
-      final halfW = (groundW ?? spot.textW) / 2 + spot.textPad;
-      final halfH = (groundH ?? spot.textH) / 2 + spot.textPad;
-      final given = symbol.anchorOffsets;
-      final double lx, ly;
-      if (given != null) {
-        // As MapLibre's getTextVariableAnchorOffset: the offset as given,
-        // with the baseline shift of a text above or below its point.
-        lx = ax * halfW + given[at].$1 * fontSize;
-        ly = ay * halfH + given[at].$2 * fontSize - ay * baseline;
-      } else if (away != null) {
-        final reach = ax != 0 && ay != 0 ? away / math.sqrt2 : away;
-        lx = ax * (reach + halfW);
-        ly = ay * (reach + halfH) - ay * baseline;
-      } else {
-        lx = ax * ((ems.$1 * fontSize).abs() + halfW);
-        ly = ay * ((ems.$2 * fontSize).abs() + halfH) - ay * baseline;
-      }
-      var hits = false;
-      if (groundW != null && groundH != null) {
-        // Text lying on a tilted map is shifted on the ground and the
-        // shift then seen through the tilt, as MapLibre shifts it in tile
-        // units, without its perspective growth.
-        final c = math.cos(st.angle), s = math.sin(st.angle);
-        final wx = st.worldX + (lx * c - ly * s) / _view.world;
-        final wy = st.worldY + (lx * s + ly * c) / _view.world;
-        final (bw, bh) = _groundBox(
-          st,
-          groundW,
-          groundH,
-          perspective: false,
-          atX: wx,
-          atY: wy,
-        );
-        _view.project(wx, wy);
-        fx = moved.$1 + _view.x - spot.x;
-        fy = moved.$2 + _view.y - spot.y;
-        if (_boxes.offGridAround(
-          _view.x + moved.$1,
-          _view.y + moved.$2,
-          bw,
-          bh,
-          pad: spot.textPad,
-        )) {
-          continue;
+    final passes = [
+      if (previous >= 0) (previous, false),
+      (null, false),
+      if (symbol.textOverlaps) (null, true),
+    ];
+    for (final (only, overlap) in passes) {
+      for (var at = 0; at < sides.length; at++) {
+        if (only != null && at != only) continue;
+        final (ax, ay) = anchorSides(sides[at]);
+        final double fx, fy;
+        // As MapLibre's calculateVariableLayoutShift: by half the text's
+        // collision box, which its padding is part of.
+        final groundW = spot.groundW, groundH = spot.groundH;
+        final halfW = (groundW ?? spot.textW) / 2 + spot.textPad;
+        final halfH = (groundH ?? spot.textH) / 2 + spot.textPad;
+        final given = symbol.anchorOffsets;
+        final double lx, ly;
+        if (given != null) {
+          // As MapLibre's getTextVariableAnchorOffset: the offset as given,
+          // with the baseline shift of a text above or below its point.
+          lx = ax * halfW + given[at].$1 * fontSize;
+          ly = ay * halfH + given[at].$2 * fontSize - ay * baseline;
+        } else if (away != null) {
+          final reach = ax != 0 && ay != 0 ? away / math.sqrt2 : away;
+          lx = ax * (reach + halfW);
+          ly = ay * (reach + halfH) - ay * baseline;
+        } else {
+          lx = ax * ((ems.$1 * fontSize).abs() + halfW);
+          ly = ay * ((ems.$2 * fontSize).abs() + halfH) - ay * baseline;
         }
-        hits = _boxes.collides(
-          _view.x + moved.$1,
-          _view.y + moved.$2,
-          bw,
-          bh,
-          0,
-          pad: spot.textPad,
-          cooperative: spot.cooperative,
-        );
-      } else {
-        // Text turned with the map is shifted along the map's axes, as
-        // MapLibre's collision index shifts it in tile units.
-        fx = moved.$1 + lx * cos - ly * sin;
-        fy = moved.$2 + lx * sin + ly * cos;
-        if (_textOffGrid(spot, fx, fy)) continue;
-        hits = _textHits(spot, fx, fy);
+        var hits = false;
+        if (groundW != null && groundH != null) {
+          // Text lying on a tilted map is shifted on the ground and the
+          // shift then seen through the tilt, as MapLibre shifts it in tile
+          // units, without its perspective growth.
+          final c = math.cos(st.angle), s = math.sin(st.angle);
+          final wx = st.worldX + (lx * c - ly * s) / _view.world;
+          final wy = st.worldY + (lx * s + ly * c) / _view.world;
+          final (bw, bh) = _groundBox(
+            st,
+            groundW,
+            groundH,
+            perspective: false,
+            atX: wx,
+            atY: wy,
+          );
+          _view.project(wx, wy);
+          fx = moved.$1 + _view.x - spot.x;
+          fy = moved.$2 + _view.y - spot.y;
+          if (_boxes.offGridAround(
+            _view.x + moved.$1,
+            _view.y + moved.$2,
+            bw,
+            bh,
+            pad: spot.textPad,
+          )) {
+            continue;
+          }
+          hits = _boxes.collides(
+            _view.x + moved.$1,
+            _view.y + moved.$2,
+            bw,
+            bh,
+            0,
+            pad: spot.textPad,
+            cooperative: spot.cooperative,
+          );
+        } else {
+          // Text turned with the map is shifted along the map's axes, as
+          // MapLibre's collision index shifts it in tile units.
+          fx = moved.$1 + lx * cos - ly * sin;
+          fy = moved.$2 + lx * sin + ly * cos;
+          if (_textOffGrid(spot, fx, fy)) continue;
+          hits = _textHits(spot, fx, fy);
+        }
+        if (!overlap && hits) continue;
+        if (iconClear != null && !iconClear(fx, fy)) continue;
+        st
+          ..side = at
+          ..dx = fx
+          ..dy = fy;
+        return true;
       }
-      if (!symbol.textOverlaps && hits) continue;
-      if (iconClear != null && !iconClear(fx, fy)) continue;
-      st
-        ..side = at
-        ..dx = fx
-        ..dy = fy;
-      return true;
     }
     return false;
   }
