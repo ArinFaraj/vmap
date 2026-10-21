@@ -21,6 +21,7 @@ class Extrude {
     this.verticalGradient = true,
     this.roundedCorners,
     this.pattern,
+    this.readsState = false,
   });
 
   final Expr height;
@@ -36,6 +37,10 @@ class Extrude {
   /// `fill-extrusion-pattern`: the sprite image the walls and roofs are
   /// covered in.
   final Expr? pattern;
+
+  /// Whether [height], [base] or [color] read `feature-state`, so the
+  /// buildings are built again when the app changes a feature's state.
+  final bool readsState;
 }
 
 /// A style's root `light`, which shades buildings as MapLibre's
@@ -1410,6 +1415,12 @@ class StyleSheet {
         l is LineLayer &&
         (l.dash != null || l.dashStops.isNotEmpty || l.dashChoices.isNotEmpty),
   );
+
+  /// The sources whose buildings are built from `feature-state`.
+  late final Set<int> stateBuiltSources = {
+    for (final b in buckets)
+      if (b.extrude?.readsState ?? false) b.source,
+  };
 
   late final Map<int, ExtrusionLayer> _extrusionByFill = {
     for (final e in extrusions) e.fill: e,

@@ -500,6 +500,9 @@ class VmapEngine extends ChangeNotifier {
         families: _resources.families,
         gpu: renderer != null,
       );
+      if (sheet.stateBuiltSources.contains(i) && _states[def.name] != null) {
+        made.pool.useStates(_statePairs(def.name));
+      }
       final before = byName[def.name];
       if (before != null) {
         made.previous
@@ -681,18 +684,51 @@ class VmapEngine extends ChangeNotifier {
   final Map<String, Map<Object, Map<String, Object?>>> _states = {};
 
   /// State given to single features, read by the style's paint properties
-  /// with `['feature-state', name]`. Changing it repaints and rebuilds
-  /// nothing.
+  /// with `['feature-state', name]`. Changing it repaints, and builds again
+  /// only the tiles of a source whose buildings' height, base or colour
+  /// read it.
   set featureStates(List<VmapFeatureState> value) {
     if (value.isEmpty && _states.isEmpty) return;
+    final before = Map.of(_states);
     _states.clear();
     for (final s in value) {
       final id = s.id;
       if (id == null) continue;
       (_states[s.source] ??= {})[id] = s.state;
     }
+    for (final i in _sheet?.stateBuiltSources ?? const <int>{}) {
+      final source = _sources[i];
+      final name = source.def.name;
+      if (_sameStates(before[name], _states[name])) continue;
+      source.pool.useStates(_statePairs(name));
+      for (final MapEntry(:key, :value) in source.tiles.entries) {
+        source.previous.remove(key)?.dispose();
+        source.previous[key] = value;
+      }
+      source.tiles.clear();
+    }
     _labels.restyle();
     notifyListeners();
+  }
+
+  List<(Object?, Map<String, Object?>)> _statePairs(String source) => [
+    for (final MapEntry(:key, :value) in _states[source]?.entries ?? const [])
+      (key, value),
+  ];
+
+  static bool _sameStates(
+    Map<Object, Map<String, Object?>>? a,
+    Map<Object, Map<String, Object?>>? b,
+  ) {
+    if ((a?.length ?? 0) != (b?.length ?? 0)) return false;
+    for (final MapEntry(:key, :value) in a?.entries ?? const []) {
+      final other = b![key];
+      if (other == null || other.length != value.length) return false;
+      for (final MapEntry(key: name, value: v) in value.entries) {
+        if (other[name] != v || !other.containsKey(name)) return false;
+      }
+    }
+    return true;
   }
 
   /// Pins drawn in place of the style's icons for places of interest. Null

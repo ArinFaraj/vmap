@@ -106,6 +106,10 @@ sealed class WorkerRequest {
         limit: wire[4]! as int,
         offset: wire[5]! as int,
       ),
+      'states' => UseStates(job, [
+        for (final pair in wire[2]! as List)
+          ((pair as List)[0], (pair[1]! as Map).cast<String, Object?>()),
+      ]),
       final kind => throw ArgumentError('No worker request is called $kind'),
     };
   }
@@ -134,6 +138,25 @@ final class BuildTile extends WorkerRequest {
     tile.y,
     maxZoom,
     tile.over,
+  ];
+}
+
+/// The state the app gave each feature, which buildings are built from.
+/// A worker takes it in turn with its other requests and does not answer.
+final class UseStates extends WorkerRequest {
+  const UseStates(super.job, this.states);
+
+  /// Each feature's id and its state. In pairs, not a map, so an id keeps
+  /// its type through a browser worker.
+  final List<(Object?, Map<String, Object?>)> states;
+
+  @override
+  List<Object?> toWire() => [
+    job,
+    'states',
+    [
+      for (final (id, state) in states) [id, state],
+    ],
   ];
 }
 

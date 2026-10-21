@@ -902,6 +902,11 @@ class StyleCompiler {
                 layer.layout['fill-extrusion-rounded-corner-distance'] ?? 0,
               ),
               pattern: image == null ? null : compileImage(image),
+              readsState: _readsState([
+                paint['fill-extrusion-height'],
+                paint['fill-extrusion-base'],
+                if (image == null) color,
+              ]),
             ),
           ),
         );
@@ -1125,6 +1130,12 @@ class StyleCompiler {
     }
     return runs;
   }
+
+  static bool _readsState(Object? json) => switch (json) {
+    ['feature-state', ...] => true,
+    List() => json.any(_readsState),
+    _ => false,
+  };
 
   /// Collects the feature properties an expression reads.
   static bool _readsAny(Object? json) {

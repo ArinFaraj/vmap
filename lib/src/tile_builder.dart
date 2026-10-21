@@ -291,6 +291,10 @@ class TileBuilder {
   /// style's sprite indexes are read: icons along a line are spaced by it.
   Map<String, (double, double)> iconSizes = const {};
 
+  /// The state the app gave each feature, by id, which buildings whose
+  /// paint reads `feature-state` are built from.
+  Map<Object?, Map<String, Object?>> states = const {};
+
   final StyleSheet sheet;
   final int source;
 
@@ -521,6 +525,9 @@ class TileBuilder {
             if (!fits || !bucket.filter(context)) continue;
             if (bucket.extrude case final extrude?) {
               scaled();
+              if (extrude.readsState) {
+                context.state = states[context.props[r'$id']] ?? const {};
+              }
               // As MapLibre, nothing stands below the ground.
               final height = math.max(
                 0.0,
@@ -557,6 +564,7 @@ class TileBuilder {
                   _ => null,
                 },
               );
+              context.state = const {};
               continue;
             }
             final group = groupFor(b, bucket);

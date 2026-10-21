@@ -191,6 +191,7 @@ class TilePool {
         _workers.clear();
         _inflight.clear();
         _inflightIds.clear();
+        _stale.clear();
         _use(current);
         await _spawnWorkers(current);
         if (_closed) return;
@@ -262,6 +263,7 @@ class TilePool {
       script: script,
       debugName: 'vmap-tiles-$source-$index',
     );
+    if (_states.isNotEmpty) _sendStates(worker);
     return worker;
   }
 
@@ -331,11 +333,33 @@ class TilePool {
     }
   }
 
+  List<(Object?, Map<String, Object?>)> _states = const [];
+
+  /// Jobs started before the states changed, whose tiles are dropped.
+  final Set<int> _stale = {};
+
+  /// Builds tiles with the state the app gave each feature from now on;
+  /// tiles being built already are built again.
+  void useStates(List<(Object?, Map<String, Object?>)> states) {
+    _states = states;
+    for (final w in _workers) {
+      _sendStates(w);
+    }
+    _stale.addAll(_inflight.keys);
+  }
+
+  void _sendStates(_Worker worker) =>
+      worker.link.send(UseStates(_nextJob++, _states).toWire());
+
   void _onResult(_Worker worker, TileOutcome outcome) {
     worker.busy--;
     final id = _inflight.remove(outcome.job);
     if (id == null || _closed) return;
     _inflightIds.remove(id);
+    if (_stale.remove(outcome.job)) {
+      _dispatch();
+      return;
+    }
     _wanted = [
       for (final w in _wanted)
         if (w != id) w,
@@ -545,8 +569,11 @@ Future<void> tileWorkerMain(
         : MvtTile.decode(bytes).layers.values;
   }
 
-  Future<WorkerReply> reply(WorkerRequest request) async {
+  Future<WorkerReply?> reply(WorkerRequest request) async {
     switch (request) {
+      case UseStates(:final states):
+        builder.states = {for (final (id, state) in states) id: state};
+        return null;
       case BuildTile(:final job, :final tile, :final maxZoom):
         dataMaxZoom = maxZoom;
         try {
@@ -645,7 +672,9 @@ Future<void> tileWorkerMain(
 
   await for (final message in inbox) {
     unawaited(
-      reply(WorkerRequest.fromWire(message! as List<Object?>)).then(answer),
+      reply(WorkerRequest.fromWire(message! as List<Object?>)).then((r) {
+        if (r != null) answer(r);
+      }),
     );
   }
 }
