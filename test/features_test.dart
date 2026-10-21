@@ -185,4 +185,50 @@ void main() {
     expect(built.labels.first.angle, closeTo(1.5708, 0.001));
     expect(built.labels.every((l) => l.spaced && l.icon == 'arrow'), isTrue);
   });
+
+  test('a level name along a line skips anchors near one of the same text', () {
+    const shields = [
+      {
+        'type': 'symbol',
+        'source-layer': 'roads',
+        'layout': {
+          'text-field': ['get', 'ref'],
+          'symbol-placement': 'line',
+          'symbol-spacing': 250,
+          'text-rotation-alignment': 'viewport',
+        },
+      },
+    ];
+    final roads = tile('roads', [
+      (
+        line,
+        {'ref': '406'},
+        [
+          [100, 1000, 3000, 1000],
+        ],
+      ),
+      (
+        line,
+        {'ref': '406'},
+        [
+          [3000, 1040, 100, 1040],
+        ],
+      ),
+    ]);
+    final one = build(
+      shields,
+      tile('roads', [
+        (
+          line,
+          {'ref': '406'},
+          [
+            [100, 1000, 3000, 1000],
+          ],
+        ),
+      ]),
+    );
+    final both = build(shields, roads);
+    expect(one.labels, isNotEmpty);
+    expect(both.labels, hasLength(one.labels.length));
+  });
 }

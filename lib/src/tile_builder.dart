@@ -886,6 +886,7 @@ class TileBuilder {
     }
 
     for (final MapEntry(key: layer, value: lines) in levelLines.entries) {
+      final seen = <String, List<(double, double)>>{};
       for (final line in mergeNamedLines(lines)) {
         _anchorsAlong(
           line.spacing,
@@ -893,19 +894,22 @@ class TileBuilder {
           line.em,
           line.maxBend,
           false,
-          (x, y, angle) => labels.add(
-            BuiltLabel(
-              layer,
-              line.priority,
-              line.text,
-              x,
-              y,
-              null,
-              icon: line.icon,
-              angle: line.spin,
-              spaced: true,
-            )..props = line.props,
-          ),
+          (x, y, angle) {
+            if (_repeats(seen, line, x, y)) return;
+            labels.add(
+              BuiltLabel(
+                layer,
+                line.priority,
+                line.text,
+                x,
+                y,
+                null,
+                icon: line.icon,
+                angle: line.spin,
+                spaced: true,
+              )..props = line.props,
+            );
+          },
           rings: line.rings,
         );
       }
@@ -1226,6 +1230,25 @@ class TileBuilder {
     return width;
   }
 
+  /// Whether an anchor of [named] at [x], [y] lies nearer one of the same
+  /// text in [seen] than half the spacing, as MapLibre's
+  /// `anchorIsTooClose`; when not, it joins [seen].
+  bool _repeats(
+    Map<String, List<(double, double)>> seen,
+    NamedLine named,
+    double x,
+    double y,
+  ) {
+    final repeat = named.spacing / 2;
+    final others = seen[named.text] ??= [];
+    for (final (ox, oy) in others) {
+      final dx = ox - x, dy = oy - y;
+      if (dx * dx + dy * dy < repeat * repeat) return true;
+    }
+    others.add((x, y));
+    return false;
+  }
+
   /// A name along each line of [named], as MapLibre's `getAnchors` places
   /// them: the line cut to the tile, anchors its spacing apart from an
   /// offset of half the label's length and two ems, where the whole name
@@ -1241,17 +1264,8 @@ class TileBuilder {
     bool center = false,
     Map<String, List<(double, double)>>? seen,
   }) {
-    final repeat = named.spacing / 2;
-    bool tooClose(double x, double y) {
-      if (seen == null) return false;
-      final others = seen[named.text] ??= [];
-      for (final (ox, oy) in others) {
-        final dx = ox - x, dy = oy - y;
-        if (dx * dx + dy * dy < repeat * repeat) return true;
-      }
-      others.add((x, y));
-      return false;
-    }
+    bool tooClose(double x, double y) =>
+        seen != null && _repeats(seen, named, x, y);
 
     final out = <BuiltLabel>[];
     final window = 3 / 5 * named.em;
