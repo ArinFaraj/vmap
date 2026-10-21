@@ -738,8 +738,15 @@ class TileBuilder {
             if (f.type == mvtPoint) {
               if (along) continue;
               scaled();
-              final label = _pointLabel(s, base + order, text, icon, spin);
-              if (label != null) labels.add(label..props = carried);
+              for (final label in _pointLabels(
+                s,
+                base + order,
+                text,
+                icon,
+                spin,
+              )) {
+                labels.add(label..props = carried);
+              }
               continue;
             }
             scaled();
@@ -1097,27 +1104,30 @@ class TileBuilder {
     return value is num ? value.round().clamp(0, 4095) : 50;
   }
 
-  BuiltLabel? _pointLabel(
+  /// A label at each of the feature's points that lies in the tile, as
+  /// MapLibre places one at every point of a MultiPoint.
+  Iterable<BuiltLabel> _pointLabels(
     int layer,
     int priority,
     String text,
     String icon,
     double angle,
-  ) {
-    if (_sink.coordCount < 2) return null;
-    final x = _sink.coords[0];
-    final y = _sink.coords[1];
-    if (x < 0 || y < 0 || x >= tileExtent || y >= tileExtent) return null;
-    return BuiltLabel(
-      layer,
-      priority,
-      text,
-      x,
-      y,
-      null,
-      icon: icon,
-      angle: angle,
-    );
+  ) sync* {
+    final c = _sink.coords;
+    for (var i = 0; i + 1 < _sink.coordCount; i += 2) {
+      final x = c[i], y = c[i + 1];
+      if (x < 0 || y < 0 || x >= tileExtent || y >= tileExtent) continue;
+      yield BuiltLabel(
+        layer,
+        priority,
+        text,
+        x,
+        y,
+        null,
+        icon: icon,
+        angle: angle,
+      );
+    }
   }
 
   /// How long [text] is in ems at [symbol]'s letter spacing, as MapLibre
