@@ -1361,51 +1361,51 @@ Float32List _joinChunks(List<Float32List> chunks) {
 /// [line], x and y in turn, cut where it leaves the tile into the pieces
 /// inside it, as MapLibre's `clipLine` cuts a line before placing names.
 List<Float32List> clipLineToTile(Float32List line) {
-  const lo = 0.0, hi = tileExtent + 0.0;
+  const x1 = 0.0, y1 = 0.0, x2 = tileExtent, y2 = tileExtent;
+  // MapLibre's Point._round, on its tile's grid of twice as many units.
+  double round(double v) => (v * 2 + 0.5).floorToDouble() / 2;
   final out = <Float32List>[];
-  var piece = <double>[];
+  List<double>? piece;
   void flush() {
-    if (piece.length >= 4) out.add(Float32List.fromList(piece));
-    piece = <double>[];
+    final done = piece;
+    if (done != null && done.length >= 4) out.add(Float32List.fromList(done));
   }
 
   for (var i = 2; i < line.length; i += 2) {
-    var x0 = line[i - 2].toDouble(), y0 = line[i - 1].toDouble();
-    var x1 = line[i].toDouble(), y1 = line[i + 1].toDouble();
-    var t0 = 0.0, t1 = 1.0;
-    final dx = x1 - x0, dy = y1 - y0;
-    var inside = true;
-    for (final (p, q) in [
-      (-dx, x0 - lo),
-      (dx, hi - x0),
-      (-dy, y0 - lo),
-      (dy, hi - y0),
-    ]) {
-      if (p == 0) {
-        if (q < 0) inside = false;
-        continue;
-      }
-      final r = q / p;
-      if (p < 0) {
-        if (r > t1) inside = false;
-        if (r > t0) t0 = r;
-      } else {
-        if (r < t0) inside = false;
-        if (r < t1) t1 = r;
-      }
+    var ax = line[i - 2].toDouble(), ay = line[i - 1].toDouble();
+    var bx = line[i].toDouble(), by = line[i + 1].toDouble();
+    if (ax < x1 && bx < x1) continue;
+    if (ax < x1) {
+      (ax, ay) = (x1, round(ay + (by - ay) * ((x1 - ax) / (bx - ax))));
+    } else if (bx < x1) {
+      (bx, by) = (x1, round(ay + (by - ay) * ((x1 - ax) / (bx - ax))));
     }
-    if (!inside) {
+    if (ay < y1 && by < y1) continue;
+    if (ay < y1) {
+      (ax, ay) = (round(ax + (bx - ax) * ((y1 - ay) / (by - ay))), y1);
+    } else if (by < y1) {
+      (bx, by) = (round(ax + (bx - ax) * ((y1 - ay) / (by - ay))), y1);
+    }
+    if (ax >= x2 && bx >= x2) continue;
+    if (ax >= x2) {
+      (ax, ay) = (x2, round(ay + (by - ay) * ((x2 - ax) / (bx - ax))));
+    } else if (bx >= x2) {
+      (bx, by) = (x2, round(ay + (by - ay) * ((x2 - ax) / (bx - ax))));
+    }
+    if (ay >= y2 && by >= y2) continue;
+    if (ay >= y2) {
+      (ax, ay) = (round(ax + (bx - ax) * ((y2 - ay) / (by - ay))), y2);
+    } else if (by >= y2) {
+      (bx, by) = (round(ax + (bx - ax) * ((y2 - ay) / (by - ay))), y2);
+    }
+    final last = piece;
+    if (last == null ||
+        last[last.length - 2] != ax ||
+        last[last.length - 1] != ay) {
       flush();
-      continue;
+      piece = [ax, ay];
     }
-    final ax = x0 + dx * t0, ay = y0 + dy * t0;
-    final bx = x0 + dx * t1, by = y0 + dy * t1;
-    if (piece.isEmpty || piece[piece.length - 2] != ax || piece.last != ay) {
-      flush();
-      piece.addAll([ax, ay]);
-    }
-    piece.addAll([bx, by]);
-    if (t1 < 1) flush();
+    piece!.addAll([bx, by]);
   }
   flush();
   return out;
