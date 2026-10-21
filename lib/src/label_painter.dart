@@ -448,6 +448,11 @@ class LabelPainter {
     final pixelH = sprite.pixelH;
     final textW = sprite.textWidth * st.scale;
     final n = RoadLabels.stripCount(textW, sprite.textHeight * st.scale);
+    OffsetLine? lifted;
+    if (st.roadLift != 0) {
+      final (screen, middle) = _view.onScreen(st.curve!, st.curveMid);
+      lifted = offsetPath(screen, middle, st.roadLift);
+    }
     final strips = _roads.strips(st, n, textW / n / _view.world);
     final flip =
         st.keepUpright &&
@@ -459,14 +464,26 @@ class LabelPainter {
     final rects = Float32List(n * 4);
     for (var j = 0; j < n; j++) {
       final i = flip ? n - 1 - j : j;
-      final a =
-          _view.screenAngle(
-            strips[i * 3],
-            strips[i * 3 + 1],
-            strips[i * 3 + 2],
-          ) +
-          (flip ? math.pi : 0);
-      _view.project(strips[i * 3], strips[i * 3 + 1]);
+      final double a, px, py;
+      if (lifted != null) {
+        // As the glyph path lays a moved name: along a moved copy of the
+        // road on the screen, as placement weighed it.
+        lifted.at((i + 0.5 - n / 2) * textW / n, _along);
+        a = _along[2] + (flip ? math.pi : 0);
+        px = _along[0];
+        py = _along[1];
+      } else {
+        a =
+            _view.screenAngle(
+              strips[i * 3],
+              strips[i * 3 + 1],
+              strips[i * 3 + 2],
+            ) +
+            (flip ? math.pi : 0);
+        _view.project(strips[i * 3], strips[i * 3 + 1]);
+        px = _view.x;
+        py = _view.y;
+      }
       final left = j == 0 ? 0.0 : pad + j * slice - 0.5;
       final right = j == n - 1 ? pixelW : pad + (j + 1) * slice + 0.5;
       final anchorX = pad + (j + 0.5) * slice - left;
@@ -475,8 +492,8 @@ class LabelPainter {
       final ssin = math.sin(a) * k;
       transforms[j * 4] = scos;
       transforms[j * 4 + 1] = ssin;
-      transforms[j * 4 + 2] = _view.x + st.dx - scos * anchorX + ssin * anchorY;
-      transforms[j * 4 + 3] = _view.y + st.dy - ssin * anchorX - scos * anchorY;
+      transforms[j * 4 + 2] = px + st.dx - scos * anchorX + ssin * anchorY;
+      transforms[j * 4 + 3] = py + st.dy - ssin * anchorX - scos * anchorY;
       rects[j * 4] = left;
       rects[j * 4 + 1] = 0;
       rects[j * 4 + 2] = right;

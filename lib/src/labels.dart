@@ -1200,7 +1200,7 @@ class LabelEngine {
         : fontSize <= 12.5
         ? _minorRoadRoom
         : _majorRoadRoom;
-    final (roadX, roadY) = layer == null
+    var (roadX, roadY) = layer == null
         ? (0.0, 0.0)
         : _view.moved(
             layer.textTranslate,
@@ -1222,6 +1222,7 @@ class LabelEngine {
     st.screenAngle = turn;
     if (st.curve != null) {
       final reach = (textH + room) / 2 + textPad;
+      st.roadLift = (_lineShift(st.candidate)?.$4 ?? 0) * fontSize;
       if (_roads.curveHits(
         st,
         textW,
@@ -1229,16 +1230,28 @@ class LabelEngine {
         reach,
         check: !overlaps,
         add: !ignored,
-        lift: (_lineShift(st.candidate)?.$4 ?? 0) * fontSize,
+        lift: st.roadLift,
       )) {
         return;
       }
     } else {
-      if (_boxes.offGridAround(sx, sy, textW + room, textH + room)) return;
+      st.roadLift = 0;
+      // Text shaped from glyphs carries its text-offset; an image of it is
+      // moved by it across the text, as MapLibre shapes the offset in.
+      var bx = sx, by = sy;
+      if (sprite is! GlyphSprite) {
+        final lift = (_lineShift(st.candidate)?.$4 ?? 0) * fontSize;
+        final liftX = -math.sin(turn) * lift, liftY = math.cos(turn) * lift;
+        roadX += liftX;
+        roadY += liftY;
+        bx += liftX;
+        by += liftY;
+      }
+      if (_boxes.offGridAround(bx, by, textW + room, textH + room)) return;
       if (!overlaps &&
           _boxes.collides(
-            sx,
-            sy,
+            bx,
+            by,
             textW + room,
             textH + room,
             turn,
@@ -1247,7 +1260,7 @@ class LabelEngine {
         return;
       }
       if (!ignored) {
-        _boxes.take(sx, sy, textW + room, textH + room, turn, pad: textPad);
+        _boxes.take(bx, by, textW + room, textH + room, turn, pad: textPad);
       }
     }
     st

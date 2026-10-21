@@ -135,6 +135,10 @@ final class MarkerName extends LabelCandidate {
 class LabelState {
   LabelState(this.candidate);
 
+  /// How far across its road a road name drawn as an image is moved, in
+  /// pixels: its `text-offset` at its size, as placement weighed it.
+  double roadLift = 0;
+
   /// Hidden by a building, as last found.
   bool occluded = false;
 
