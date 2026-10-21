@@ -11,8 +11,8 @@
 - `VMap`, a map widget of vmap's own: it tilts up to 60 degrees and stands
   `fill-extrusion` buildings up, and its gestures and
   `VMapController.flyTo` and `easeTo` keep their speed.
-- `vmap_gpu`, a renderer on Flutter GPU: `VmapEngine(renderer:
-  GpuMap.create())`. It draws buildings with a depth buffer and the
+- `GpuMap`, a renderer on Flutter GPU: `VmapEngine(renderer:
+  GpuMap.create())`. vmap now needs Flutter 3.47.1 or newer. It draws buildings with a depth buffer and the
   style's `terrain` with the map draped over it.
 - `VmapOverlay.images`: pictures of the app's own that the style draws by
   name, as MapLibre's `addImage`.

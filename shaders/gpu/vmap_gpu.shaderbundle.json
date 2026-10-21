@@ -1,58 +1,58 @@
 {
   "MapVertex": {
     "type": "vertex",
-    "file": "shaders/map.vert"
+    "file": "shaders/gpu/map.vert"
   },
   "MapFragment": {
     "type": "fragment",
-    "file": "shaders/map.frag"
+    "file": "shaders/gpu/map.frag"
   },
   "BuildingVertex": {
     "type": "vertex",
-    "file": "shaders/building.vert"
+    "file": "shaders/gpu/building.vert"
   },
   "BuildingFragment": {
     "type": "fragment",
-    "file": "shaders/building.frag"
+    "file": "shaders/gpu/building.frag"
   },
   "StencilVertex": {
     "type": "vertex",
-    "file": "shaders/stencil.vert"
+    "file": "shaders/gpu/stencil.vert"
   },
   "StencilFragment": {
     "type": "fragment",
-    "file": "shaders/stencil.frag"
+    "file": "shaders/gpu/stencil.frag"
   },
   "TerrainVertex": {
     "type": "vertex",
-    "file": "shaders/terrain.vert"
+    "file": "shaders/gpu/terrain.vert"
   },
   "GlobeVertex": {
     "type": "vertex",
-    "file": "shaders/globe.vert"
+    "file": "shaders/gpu/globe.vert"
   },
   "GlobeFragment": {
     "type": "fragment",
-    "file": "shaders/globe.frag"
+    "file": "shaders/gpu/globe.frag"
   },
   "TerrainFragment": {
     "type": "fragment",
-    "file": "shaders/terrain.frag"
+    "file": "shaders/gpu/terrain.frag"
   },
   "HeatVertex": {
     "type": "vertex",
-    "file": "shaders/heat.vert"
+    "file": "shaders/gpu/heat.vert"
   },
   "HeatFragment": {
     "type": "fragment",
-    "file": "shaders/heat.frag"
+    "file": "shaders/gpu/heat.frag"
   },
   "SdfVertex": {
     "type": "vertex",
-    "file": "shaders/sdf.vert"
+    "file": "shaders/gpu/sdf.vert"
   },
   "SdfFragment": {
     "type": "fragment",
-    "file": "shaders/sdf.frag"
+    "file": "shaders/gpu/sdf.frag"
   }
 }

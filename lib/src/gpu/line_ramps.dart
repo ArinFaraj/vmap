@@ -144,7 +144,7 @@ class LineRamps {
     } catch (e) {
       _gradients.clear();
       _dashes.clear();
-      debugPrint('vmap_gpu: the line ramps are not on the GPU: $e');
+      debugPrint('vmap: the line ramps are not on the GPU: $e');
     }
   }
 

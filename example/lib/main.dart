@@ -13,7 +13,6 @@ import 'package:latlong2/latlong.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart' as vmt;
 import 'package:vmap/vmap.dart';
-import 'package:vmap_gpu/vmap_gpu.dart';
 
 import 'showcase.dart';
 

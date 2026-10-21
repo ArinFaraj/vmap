@@ -621,7 +621,7 @@ class _Drape {
         )..overwrite(pixels),
       );
     } catch (e) {
-      debugPrint('vmap_gpu: a raster tile is not on the GPU: $e');
+      debugPrint('vmap: a raster tile is not on the GPU: $e');
     } finally {
       filtered?.dispose();
       _inFlight[image] = false;

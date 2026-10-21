@@ -42,7 +42,7 @@ class _BenchState extends State<_Bench> {
 
   Future<void> _setUp() async {
     final library = await gpu.ShaderLibrary.fromAsset(
-      'packages/vmap_gpu/build/shaderbundles/vmap_gpu.shaderbundle',
+      'packages/vmap/build/shaderbundles/vmap_gpu.shaderbundle',
     );
     SchedulerBinding.instance.addPostFrameCallback((_) {
       final vertex = library!['BuildingVertex']!;

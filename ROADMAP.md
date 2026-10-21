@@ -83,7 +83,11 @@ To do before publishing:
    have it, and the example has no iOS, Windows or Linux target yet.
 4. Packaging: a `.pubignore` so scratch files and the untracked `docs/` folder
    are not published, `payv: ^0.1.2` instead of an exact pin, and a version and
-   changelog for the engine release.
+   changelog for the engine release. `vmap_flutter_map` depends on vmap by
+   path and has `publish_to: none` until then. The shader bundle is declared
+   as an asset under `build/`, which the build hook writes; check it still
+   lands when vmap comes from pub.dev rather than a path (see the shader
+   delivery note in [doc/api-review.md](doc/api-review.md)).
 5. CI that builds the web and Android example as well as running the checks on
    Linux.
 6. Run it on an iPhone, a Windows PC, a Linux PC, Safari and Firefox, and fix

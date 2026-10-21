@@ -6,7 +6,7 @@ void main(List<String> args) async {
     await buildShaderBundleJson(
       buildInput: input,
       buildOutput: output,
-      manifestFileName: 'shaders/vmap_gpu.shaderbundle.json',
+      manifestFileName: 'shaders/gpu/vmap_gpu.shaderbundle.json',
     );
   });
 }

@@ -7,7 +7,6 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
 import 'package:vmap/vmap.dart';
-import 'package:vmap_gpu/vmap_gpu.dart';
 
 import 'render_suite/pixelmatch.dart';
 

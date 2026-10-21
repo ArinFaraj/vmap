@@ -28,7 +28,7 @@ and halo and an icon's size, colour and opacity, and all of them may read
 
 - 3D under flutter_map: its camera does not tilt, so `VmapMap` and
   `VmapLayer` draw flat buildings. `VMap` tilts and stands buildings up;
-  with `vmap_gpu` it also raises the style's `terrain`.
+  with `GpuMap` it also raises the style's `terrain`.
 - Globe projection and `sky`.
 - `video` sources, and line patterns on round caps.
 - `line-gradient` together with dashes, a pattern, `line-blur`, or a width

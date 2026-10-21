@@ -15,7 +15,6 @@ import 'package:vmap/src/style_model.dart';
 import 'package:vmap/src/tiles.dart' show TileDraw;
 import 'package:path_provider/path_provider.dart';
 import 'package:vmap/vmap.dart';
-import 'package:vmap_gpu/vmap_gpu.dart';
 
 const _out = String.fromEnvironment('OUT', defaultValue: '/tmp/vmap_fly');
 const _styleName = String.fromEnvironment('STYLE');

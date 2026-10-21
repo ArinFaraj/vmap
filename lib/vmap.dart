@@ -1,6 +1,7 @@
 export 'src/camera.dart' show VmapCamera;
 export 'src/engine.dart' show VmapEngine;
 export 'src/glyphs/vmap_font.dart' show VmapFont;
+export 'src/gpu/gpu_map.dart' show GpuMap;
 export 'src/gestures.dart' show VmapGestures;
 export 'src/text_style.dart' show VmapTextStyle;
 export 'src/view.dart' show EdgeInsets2, MapView;

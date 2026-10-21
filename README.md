@@ -490,7 +490,7 @@ table, the caveats and how to run it are in
 
 `VMap` is vmap's own map widget, without flutter_map. It tilts up to 60
 degrees and stands the style's `fill-extrusion` buildings up. With the GPU
-renderer from `vmap_gpu` the buildings are drawn with a depth buffer and the
+renderer (`GpuMap`) the buildings are drawn with a depth buffer and the
 style's `terrain` raises the ground:
 
 ```dart
@@ -509,8 +509,9 @@ VMap(controller: controller, engine: engine)
 canvas draws the map, tilted and with buildings, on flat ground.
 Flutter GPU is switched on in the app: `io.flutter.embedding.android.EnableFlutterGPU`
 in the Android manifest's `<application>`, `FLTEnableFlutterGPU` in the iOS
-and macOS `Info.plist`. `vmap_gpu` needs Flutter 3.47 or newer and is not on
-pub.dev yet; depend on it from this repository.
+and macOS `Info.plist`, `project.set_enable_flutter_gpu(true)` in the Windows
+runner and `fl_dart_project_set_enable_flutter_gpu(project, TRUE)` in the
+Linux one. vmap needs Flutter 3.47.1 or newer.
 
 `controller.flyTo` and `controller.easeTo` move the camera as MapLibre's do.
 Terrain comes from the style's root `terrain`, or from a `VmapOverlay`:

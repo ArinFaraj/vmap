@@ -4,7 +4,6 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:vmap/vmap.dart';
-import 'package:vmap_gpu/vmap_gpu.dart';
 
 /// Liberty over Erbil in a browser, flying a fixed tour and printing the
 /// frame times, on the GPU renderer, or on the canvas with `?gpu=off`.

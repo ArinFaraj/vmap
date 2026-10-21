@@ -118,7 +118,7 @@ class _SdfTextGpu implements SdfText {
       );
       return true;
     } catch (e) {
-      debugPrint('vmap_gpu: text is drawn by the canvas: $e');
+      debugPrint('vmap: text is drawn by the canvas: $e');
       _pipeline = null;
       _failed = true;
       return false;

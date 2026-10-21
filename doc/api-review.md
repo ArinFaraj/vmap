@@ -128,10 +128,15 @@ Added by the second pass:
   (`engine.featuresAt`), bare `latitude` and `longitude` doubles in `onTap`
   and the camera. Use `LatLng` everywhere a point is taken or given.
 - **Shader delivery.** The GPU shaders are compiled by a native assets build
-  hook when the app builds (`vmap_gpu/hook/build.dart`, flutter_gpu_shaders),
+  hook when the app builds (`hook/build.dart`, flutter_gpu_shaders),
   which Flutter's Flutter-GPU.md calls experimental. It works for macOS builds
   on stable 3.47.7; check web, Android, iOS, Windows and Linux builds before
   release, and if any fail, ship the compiled `.shaderbundle` in the package.
+- **Markers on `VMap`.** The engine keeps labels clear of markers and writes
+  their names (`VmapEngine.markers`), but only the flutter_map layers pass
+  markers to it and draw the marker widgets; `VMap` has neither. Give `VMap`
+  a list of markers with their widgets, drawn above the map and following
+  the camera, tilt included.
 - **A setup command, later.** A `dart run` command that adds the Flutter GPU
   switch to the manifest, `Info.plist` and the Windows and Linux runners.
   Useful, but it edits the app's files, so it waits until after 0.1.

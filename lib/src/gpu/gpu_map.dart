@@ -19,7 +19,7 @@ import 'layer_presence.dart';
 part 'sdf_text_gpu.dart';
 part 'terrain_drape.dart';
 
-const _bundle = 'packages/vmap_gpu/build/shaderbundles/vmap_gpu.shaderbundle';
+const _bundle = 'packages/vmap/build/shaderbundles/vmap_gpu.shaderbundle';
 
 /// Draws vmap's fill and line layers and its buildings on the GPU: every
 /// tile in one call (or a few, past 80 style slots), lines widened in the
@@ -38,7 +38,7 @@ class GpuMap implements MapRenderer {
       gpu.gpuContext;
       return GpuMap._(multisample);
     } catch (e) {
-      debugPrint('vmap_gpu: no Flutter GPU, the canvas draws the map: $e');
+      debugPrint('vmap: no Flutter GPU, the canvas draws the map: $e');
       return null;
     }
   }
@@ -178,7 +178,7 @@ class GpuMap implements MapRenderer {
     try {
       _library = await gpu.loadShaderLibraryAsync(_bundle);
     } catch (e) {
-      debugPrint('vmap_gpu: shaders did not load: $e');
+      debugPrint('vmap: shaders did not load: $e');
     }
   }
 
@@ -199,7 +199,7 @@ class GpuMap implements MapRenderer {
     try {
       return _makePipelines(library);
     } catch (e) {
-      debugPrint('vmap_gpu: no pipelines on this device, the canvas draws: $e');
+      debugPrint('vmap: no pipelines on this device, the canvas draws: $e');
       _flat = _buildings = _stencil = null;
       _failed = true;
       return false;
@@ -455,7 +455,7 @@ class GpuMap implements MapRenderer {
         _transient = false;
       }
     }
-    throw StateError('vmap_gpu: no texture for the map pass');
+    throw StateError('vmap: no texture for the map pass');
   }
 
   /// Every tile holding GPU memory.
@@ -1077,7 +1077,7 @@ class GpuMap implements MapRenderer {
         format: gpu.PixelFormat.r8g8b8a8UNormInt,
       )..overwrite(pixels);
     } catch (e) {
-      debugPrint('vmap_gpu: the sprite sheet is not on the GPU: $e');
+      debugPrint('vmap: the sprite sheet is not on the GPU: $e');
     } finally {
       _spritesLoading = false;
     }
