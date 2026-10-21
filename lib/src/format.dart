@@ -67,8 +67,9 @@ const formatKey = r'$format';
     return (trimLines((value ?? '').toString()), null);
   }
   final sections = value.sections;
-  if (sections.every((s) => s.plain))
+  if (sections.every((s) => s.plain)) {
     return (trimLines(value.toString()), null);
+  }
   final out = StringBuffer();
   for (var i = 0; i < sections.length; i++) {
     var text = sections[i].text;

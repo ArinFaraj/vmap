@@ -1,6 +1,6 @@
 /// A tile of a source: its zoom, column and row.
 class TileId {
-  const TileId(this.z, this.x, this.y, {int over = 0}) : _over = over;
+  const TileId(this.z, this.x, this.y, {this._over = 0});
 
   final int z;
   final int x;

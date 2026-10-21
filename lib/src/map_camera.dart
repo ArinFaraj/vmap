@@ -274,6 +274,7 @@ class FlyPath {
       zoom: zoom,
       bearing: MapCameraPosition._normal(from.bearing + turn * t),
       pitch: from.pitch + (to.pitch - from.pitch) * t,
+      roll: from.roll + (to.roll - from.roll) * t,
       pad: EdgeInsets2.lerp(from.pad, to.pad, t),
       fov: from.fov + (to.fov - from.fov) * t,
     );

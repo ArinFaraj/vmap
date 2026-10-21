@@ -136,7 +136,6 @@ class VmapEngine extends ChangeNotifier {
   /// What draws buildings standing on a tilted map: the canvas unless set.
   set buildingRenderer(BuildingRenderer value) {
     _buildings.dispose();
-    renderer?.dispose();
     _buildings = value;
     notifyListeners();
   }
@@ -1549,6 +1548,7 @@ class VmapEngine extends ChangeNotifier {
       ..clear()
       ..disposeGlyphs();
     _buildings.dispose();
+    renderer?.dispose();
     _resources.dispose();
     _meshes.dispose();
     for (final r in _rasters) {

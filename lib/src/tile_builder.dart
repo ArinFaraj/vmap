@@ -471,7 +471,7 @@ class TileBuilder {
           if (sheet.buckets[b].sortKey case final sortKey?)
             (_bySortKey(layer, sortKey, idKey), [b], const <int>[]),
       ];
-      for (final (features, buckets, symbols) in passes)
+      for (final (features, buckets, symbols) in passes) {
         for (final f in features) {
           final tags = f.allTags(layer);
           if (idKey != null && tags[idKey] != null) tags[r'$id'] = tags[idKey];
@@ -593,8 +593,9 @@ class TileBuilder {
               void add(int i) {
                 final x = _sink.coords[i];
                 final y = _sink.coords[i + 1];
-                if (x < 0 || y < 0 || x >= tileExtent || y >= tileExtent)
+                if (x < 0 || y < 0 || x >= tileExtent || y >= tileExtent) {
                   return;
+                }
                 points
                   ..add(x)
                   ..add(y);
@@ -709,7 +710,7 @@ class TileBuilder {
                       k: k.startsWith(r'$geometry:')
                           ? geometryExpr(k)?.call(context)
                           : context.props[k],
-                    if (format != null) formatKey: format,
+                    formatKey: ?format,
                   };
             // As MapLibre, a polygon placed along a line is placed along its
             // rings.
@@ -883,6 +884,7 @@ class TileBuilder {
             );
           }
         }
+      }
     }
 
     for (final MapEntry(key: layer, value: lines) in levelLines.entries) {

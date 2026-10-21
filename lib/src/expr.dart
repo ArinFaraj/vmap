@@ -941,8 +941,9 @@ Expr _op(String op, List<Object?> args) {
         final h = haystack(c);
         final n = needle(c);
         if (h is List) return h.contains(n);
-        if (h is String)
+        if (h is String) {
           return n != null && h.contains(_jsText(n)) && h.isNotEmpty;
+        }
         return false;
       };
     case 'at':

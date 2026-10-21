@@ -96,4 +96,29 @@ void main() {
     const inside = MapCameraPosition(latitude: 36, longitude: 44, zoom: 5);
     expect(inside.constrained(800), same(inside));
   });
+
+  test('a flight turns its roll on the way, not at the end', () {
+    final path = FlyPath(
+      _erbil,
+      _sulaymaniyah.copyWith(roll: 20),
+      width: 1080,
+      height: 2200,
+    );
+    expect(path.at(0.5).roll, closeTo(10, 1e-9));
+  });
+
+  test('easing keeps the padding, roll and lens it is asked for', () async {
+    final controller = VMapController(
+      _erbil.copyWith(pad: const EdgeInsets2(bottom: 300)),
+    );
+    final to = _sulaymaniyah.copyWith(
+      pad: const EdgeInsets2(bottom: 200, left: 40),
+      roll: 12,
+      fov: 0.9,
+    );
+    await controller.easeTo(to);
+    expect(controller.camera.pad, to.pad);
+    expect(controller.camera.roll, closeTo(12, 1e-9));
+    expect(controller.camera.fov, closeTo(0.9, 1e-9));
+  });
 }

@@ -132,6 +132,9 @@ class VMapController extends ChangeNotifier {
           zoom: mix(from.zoom, to.zoom),
           bearing: from.bearing + turn * k,
           pitch: mix(from.pitch, to.pitch),
+          roll: mix(from.roll, to.roll),
+          pad: EdgeInsets2.lerp(from.pad, to.pad, k),
+          fov: mix(from.fov, to.fov),
         );
       }),
     );
@@ -197,10 +200,10 @@ class VMapController extends ChangeNotifier {
     );
   }
 
-  /// Stops any animation where it is.
   /// Where the running camera animation ends, while one runs.
   MapCameraPosition? get destination => _motion?.at(1);
 
+  /// Stops any animation where it is.
   void stop() {
     final motion = _motion;
     if (motion == null) return;
@@ -264,6 +267,9 @@ class _Motion {
         zoom: base.zoom + v.zoom * k,
         bearing: base.bearing + v.bearing * k,
         pitch: base.pitch + v.pitch * k,
+        roll: base.roll,
+        pad: base.pad,
+        fov: base.fov,
       );
     });
   }
