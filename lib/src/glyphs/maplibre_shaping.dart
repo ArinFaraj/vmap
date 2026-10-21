@@ -294,10 +294,11 @@ List<int> mapLibreLineBreaks(
   if (spacing >= 0 && total > 0 && total <= maxWidth && !newline) {
     return _atParagraphs(codes, [codes.length]);
   }
+  // As MapLibre, a width of 0 asks for lines of no width: every break.
   final lineCount = maxWidth > 0 && maxWidth.isFinite
       ? (total / maxWidth).ceil()
       : 1;
-  final target = total / math.max(1, lineCount);
+  final target = maxWidth == 0 ? 0.0 : total / math.max(1, lineCount);
 
   double badness(double width, double penalty, bool last) {
     final ragged = (width - target) * (width - target);

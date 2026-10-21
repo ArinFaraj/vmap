@@ -66,6 +66,10 @@ void main() {
     expect(wrapped.width, closeTo(9 * 10 / GlyphPbf.em, 1e-9));
   });
 
+  test('a width of 0 puts each word on a line of its own', () {
+    expect(layoutRanges(tenWide, 600, 'one two three', maxWidth: 0)!.lines, 3);
+  });
+
   test('a newline breaks however much room there is', () {
     expect(layoutRanges(tenWide, 600, 'a\nb')!.lines, 2);
   });
