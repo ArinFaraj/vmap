@@ -458,6 +458,9 @@ class LabelEngine {
 
   LabelRules _rules = LabelRules.vmap;
 
+  /// The camera of the frame before, which [LabelPainter.still] compares.
+  (double, ui.Offset, double, double)? _frameCamera;
+
   int get rangesPending => _sprites.ranges?.pending ?? 0;
 
   /// Glyphs drawn into pages in the last frame, and what that cost.
@@ -538,6 +541,9 @@ class LabelEngine {
         : Object.hash(view.pitch, view.bearing, view.roll).toDouble();
     if (_zooming && !zooming) _placeAgain = true;
     _zooming = _painter.moving = zooming;
+    final camera = (zoom, origin, rotation, tilt);
+    _painter.still = camera == _frameCamera;
+    _frameCamera = camera;
     final nowMs = _clock.elapsedMilliseconds;
     final moved =
         zoom != _placedZoom ||
@@ -545,7 +551,8 @@ class LabelEngine {
         rotation != _placedRotation ||
         tilt != _placedTilt ||
         sourcesKey != _placedSourcesKey;
-    var pending = false;
+    // A frame after the camera stops puts the labels back on the pixels.
+    var pending = !_painter.still;
     if (moved || _placeAgain) {
       final zoomingOut = zoom < _lastZoom;
       final interval = !zooming || zoomingOut || _placedZoom - zoom > 0.4

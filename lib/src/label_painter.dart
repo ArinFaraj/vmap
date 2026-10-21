@@ -39,6 +39,11 @@ class LabelPainter {
   /// The map is zooming, when MapLibre samples icons smoothly.
   bool moving = false;
 
+  /// The camera stands where it stood the frame before. Only then do
+  /// labels sit on whole device pixels to stay crisp: on a moving map a
+  /// label held to the pixels steps while the map under it glides.
+  bool still = true;
+
   /// The style's sprite images, which formatted labels show inline.
   SpriteSheet? images;
   final ui.Paint _imagePaint = ui.Paint()
@@ -74,8 +79,8 @@ class LabelPainter {
       image,
       ui.Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
       ui.Rect.fromLTWH(
-        (px * devicePixelRatio).roundToDouble() / devicePixelRatio,
-        (py * devicePixelRatio).roundToDouble() / devicePixelRatio,
+        _onPixel(px, devicePixelRatio),
+        _onPixel(py, devicePixelRatio),
         extent,
         extent,
       ),
@@ -151,6 +156,7 @@ class LabelPainter {
         : [(icon.source, area)];
     final (from0, to0) = pieces.first;
     final texelForPixel =
+        still &&
         turn == 0 &&
         !icon.sdf &&
         (_view.tilted?.pitch ?? 0) == 0 &&
@@ -161,6 +167,7 @@ class LabelPainter {
     // As MapLibre, an icon at its own size and density, upright and not
     // zooming, is sampled nearest, its pieces stretched or not.
     final nearest =
+        still &&
         !moving &&
         turn == 0 &&
         !icon.sdf &&
@@ -238,9 +245,9 @@ class LabelPainter {
           ),
           _imagePaint,
         );
-      } else if (turn == 0 && rules.snapIcons) {
-        final dx = (ix * devicePixelRatio).roundToDouble() / devicePixelRatio;
-        final dy = (iy * devicePixelRatio).roundToDouble() / devicePixelRatio;
+      } else if (turn == 0 && rules.snapIcons && still) {
+        final dx = _onPixel(ix, devicePixelRatio);
+        final dy = _onPixel(iy, devicePixelRatio);
         for (final (from, to) in pieces) {
           canvas.drawImageRect(
             sheet.image,
@@ -557,8 +564,8 @@ class LabelPainter {
     final left = -shaped.width * em / 2, top = -shaped.height * em / 2;
     var ox = sx, oy = sy;
     if (turn == 0) {
-      ox = _snap(sx + left, devicePixelRatio) - left;
-      oy = _snap(sy + top, devicePixelRatio) - top;
+      ox = _onPixel(sx + left, devicePixelRatio) - left;
+      oy = _onPixel(sy + top, devicePixelRatio) - top;
     }
     final ink = _faded(sprite.look.color, st.opacity);
     final halo = sprite.look.halo == null
@@ -1084,9 +1091,9 @@ class LabelPainter {
     );
   }
 
-  /// [at] moved to the nearest device pixel.
-  static double _snap(double at, double devicePixelRatio) =>
-      (at * devicePixelRatio).roundToDouble() / devicePixelRatio;
+  /// [at] moved to the nearest device pixel while the map is [still].
+  double _onPixel(double at, double devicePixelRatio) =>
+      still ? (at * devicePixelRatio).roundToDouble() / devicePixelRatio : at;
 
   void _drawRecording(
     ui.Canvas canvas,
@@ -1099,8 +1106,8 @@ class LabelPainter {
     canvas.save();
     if (turn == 0) {
       canvas.translate(
-        _snap(sx - w / 2, devicePixelRatio),
-        _snap(sy - h / 2, devicePixelRatio),
+        _onPixel(sx - w / 2, devicePixelRatio),
+        _onPixel(sy - h / 2, devicePixelRatio),
       );
     } else {
       canvas
@@ -1135,8 +1142,8 @@ class LabelPainter {
         sprite.image,
         source,
         ui.Rect.fromLTWH(
-          _snap(sx - w / 2, devicePixelRatio),
-          _snap(sy - h / 2, devicePixelRatio),
+          _onPixel(sx - w / 2, devicePixelRatio),
+          _onPixel(sy - h / 2, devicePixelRatio),
           w,
           h,
         ),
