@@ -77,4 +77,27 @@ void main() {
     expect(lineCells(0), 512);
     expect(lineCells(10), 0);
   });
+
+  test('a line is cut where it crosses the grid, in order along it', () {
+    final line = Float64List.fromList([1, 1, 25, 13, 25, 13]);
+    expect(cutLine(line, 0, 3, 10), [
+      1,
+      1,
+      10,
+      5.5,
+      19,
+      10,
+      20,
+      10.5,
+      25,
+      13,
+      25,
+      13,
+    ]);
+  });
+
+  test('a line within one cell keeps its points', () {
+    final line = Float64List.fromList([-3, 2, -8, 7]);
+    expect(cutLine(line, 0, 2, 10), [-3, 2, -8, 7]);
+  });
 }

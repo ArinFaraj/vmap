@@ -127,3 +127,38 @@ class Subdivider {
     }
   }
 }
+
+/// The points of [coords] from [start] to [end], with one added wherever
+/// a segment crosses a grid line [cell] tile units apart, as MapLibre's
+/// subdivideVertexLine cuts a line for the globe before it is stroked.
+Float64List cutLine(Float64List coords, int start, int end, double cell) {
+  final out = <double>[];
+  final cuts = <double>[];
+  void crossings(double a, double b) {
+    if (a == b) return;
+    final lo = math.min(a, b), hi = math.max(a, b);
+    for (var k = (lo / cell).floor() + 1; k * cell < hi; k++) {
+      cuts.add((k * cell - a) / (b - a));
+    }
+  }
+
+  for (var i = start; i < end; i++) {
+    final x = coords[i * 2], y = coords[i * 2 + 1];
+    if (i > start) {
+      final px = coords[i * 2 - 2], py = coords[i * 2 - 1];
+      cuts.clear();
+      crossings(px, x);
+      crossings(py, y);
+      cuts.sort();
+      for (final t in cuts) {
+        out
+          ..add(px + (x - px) * t)
+          ..add(py + (y - py) * t);
+      }
+    }
+    out
+      ..add(x)
+      ..add(y);
+  }
+  return Float64List.fromList(out);
+}

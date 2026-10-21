@@ -83,12 +83,7 @@ projection/globe/fill-planet-pole	equal	edge pixels
 projection/globe/fill-planet-tiles	equal	edge pixels
 projection/globe/fill-seams/checkerboard	equal	faint tile seams
 projection/globe/hillshade	equal	edge pixels
-projection/globe/line-dasharray	equal	edge pixels
-projection/globe/line-gradient	equal	edge pixels
 projection/globe/line-gradient-dasharray	equal	edge pixels
-projection/globe/line-pattern	equal	edge pixels
-projection/globe/line-spiral	equal	edge pixels
-projection/globe/line-translate	equal	edge pixels
 projection/globe/raster-planet	equal	edge pixels
 projection/globe/raster-pole	equal	edge pixels
 projection/globe/terrain/atmosphere/atmosphere-blend/base	equal	the globe's rim is antialiased
@@ -106,10 +101,6 @@ projection/globe/terrain/fill-planet-tiles-no-background	equal	edge pixels
 projection/globe/terrain/fill-seams/checkerboard	equal	edge pixels
 projection/globe/terrain/hillshade	equal	edge pixels
 projection/globe/terrain/hillshade-sky	equal	edge pixels
-projection/globe/terrain/line-gradient	equal	edge pixels
-projection/globe/terrain/line-gradient-on-background	equal	edge pixels
-projection/globe/terrain/line-spiral	equal	edge pixels
-projection/globe/terrain/line-translate	equal	edge pixels
 projection/identity/bounds	later	the identity projection
 projection/identity/hillshade	later	the identity projection
 projection/identity/image	later	the identity projection

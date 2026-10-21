@@ -400,6 +400,10 @@ class TileBuilder {
     final extruders = <int, ExtrusionBuilder>{};
     final deepest = z >= maxZoom;
     final lineTolerance = deepest ? 0.75 : 2.0;
+    // On the globe a line is cut along a grid before it is stroked, so the
+    // sphere bends it between its own joins.
+    final cells = sheet.projection.isGlobe ? lineCells(z) : 0;
+    final lineCell = cells > 0 ? tileExtent / cells : 0.0;
     final ringTolerance = deepest ? 0.0 : 2.0;
     final laidOut = over != null && over > z ? over : z;
     final overscale = _overscale = (1 << (laidOut - z)).toDouble();
@@ -625,10 +629,13 @@ class TileBuilder {
                     ? (f as MeasuredFeature).lineMetrics
                     : null;
                 final known = shares != null && shares.length > r * 2 + 1;
+                final line = lineCell > 0
+                    ? cutLine(_sink.coords, start, end, lineCell)
+                    : _sink.coords;
                 mesher.addLine(
-                  _sink.coords,
-                  start,
-                  end,
+                  line,
+                  lineCell > 0 ? 0 : start,
+                  lineCell > 0 ? line.length ~/ 2 : end,
                   lineTolerance,
                   cap: switch (bucket.capBy?.call(context)) {
                     'round' => LineCap.round,
@@ -661,16 +668,14 @@ class TileBuilder {
               _ring.setRange(0, count * 2, _sink.coords, start * 2);
               _ring[count * 2] = _ring[0];
               _ring[count * 2 + 1] = _ring[1];
+              final ring = lineCell > 0
+                  ? cutLine(_ring, 0, count + 1, lineCell)
+                  : _ring;
+              final points = lineCell > 0 ? ring.length ~/ 2 : count + 1;
               if (bucket.outline) {
-                mesher.addOutline(_ring, 0, count + 1);
+                mesher.addOutline(ring, 0, points);
               } else {
-                mesher.addLine(
-                  _ring,
-                  0,
-                  count + 1,
-                  lineTolerance,
-                  closed: true,
-                );
+                mesher.addLine(ring, 0, points, lineTolerance, closed: true);
               }
             }
           }
@@ -935,13 +940,7 @@ class TileBuilder {
     if (!sheet.projection.isGlobe) {
       return GpuStream.build(sheet, meshes, zoom: zoom);
     }
-    return GpuStream.build(
-      sheet,
-      meshes,
-      zoom: zoom,
-      fillCells: fillCells(z),
-      lineCells: lineCells(z),
-    );
+    return GpuStream.build(sheet, meshes, zoom: zoom, fillCells: fillCells(z));
   }
 
   /// Calls [place] at the anchors MapLibre's `getAnchors` gives a symbol
