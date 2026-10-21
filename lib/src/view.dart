@@ -86,6 +86,7 @@ class MapView {
     this.globeness = 0,
     this.groundElevation = 0,
     this.groundLowest = 0,
+    this.latitude,
   }) : pitch = pitch.clamp(0, maxPitch) {
     final b = bearing * math.pi / 180;
     final r = roll * math.pi / 180;
@@ -161,6 +162,10 @@ class MapView {
   /// over flat ground.
   final double groundElevation, groundLowest;
 
+  /// The centre's latitude when the camera was given one: past the flat
+  /// map's edge, the globe can still be centred nearer the pole.
+  final double? latitude;
+
   /// The globe this view is drawn on, or null for the flat map.
   late final Globe? globe = globeness > 0
       ? Globe(this, transition: globeness)
@@ -181,6 +186,7 @@ class MapView {
     globeness: amount,
     groundElevation: groundElevation,
     groundLowest: groundLowest,
+    latitude: latitude,
   );
 
   /// The same view over raised ground, the centre [elevation] metres high
@@ -199,6 +205,7 @@ class MapView {
     globeness: globeness,
     groundElevation: elevation,
     groundLowest: lowest,
+    latitude: latitude,
   );
 
   late final double worldSize;
@@ -258,6 +265,7 @@ class MapView {
     globeness: globeness,
     groundElevation: groundElevation,
     groundLowest: groundLowest,
+    latitude: latitude,
   );
 
   /// Where the camera is: over world point [x], [y] at [height], all in

@@ -63,6 +63,7 @@ class MapCameraPosition {
     roll: roll,
     pad: pad,
     fov: fov,
+    latitude: latitude,
   );
 
   MapCameraPosition copyWith({

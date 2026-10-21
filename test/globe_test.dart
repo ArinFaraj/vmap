@@ -89,4 +89,24 @@ void main() {
     expect(far.first.z, 3);
     expect(far.any((t) => t.z < 3), isTrue);
   });
+
+  test('zoomed out, the centre reaches the pole only while the cap fits', () {
+    MapView atPole(double zoom) => MapView(
+      centerX: 0.5,
+      centerY: 0,
+      zoom: zoom,
+      width: 512,
+      height: 512,
+      latitude: 90,
+    );
+    final out = Globe(atPole(-0.5))..projectSphere(0, 1, 0);
+    expect(out.outX, closeTo(256, 1e-6));
+    expect(out.outY, closeTo(256, 1e-6));
+    expect(
+      Globe.maxLatitude(atPole(4).worldSize, 512, 512),
+      mercator.maxLatitude,
+    );
+    final near = Globe(atPole(4))..projectSphere(0, 1, 0);
+    expect(near.outY, lessThan(200));
+  });
 }

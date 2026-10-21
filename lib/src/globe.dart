@@ -11,8 +11,12 @@ import 'view.dart';
 /// middle is as many pixels to the metre as the flat map.
 class Globe {
   Globe(this.view, {this.transition = 1}) {
-    final lat = view.centerY;
-    final latDeg = mercator.latitudeAt(lat);
+    final edge = mercator.latitudeAt(view.centerY);
+    final asked = view.latitude ?? edge;
+    final most = maxLatitude(view.worldSize, view.width, view.height);
+    final latDeg = asked.abs() > mercator.maxLatitude
+        ? asked.clamp(-most, most)
+        : edge;
     _lat = latDeg * math.pi / 180;
     _lng = mercator.longitudeAt(view.centerX) * math.pi / 180;
     radius = radiusAt(view.worldSize, latDeg);
@@ -112,6 +116,21 @@ class Globe {
       worldSize /
       (2 * math.pi) /
       math.cos(math.min(latitude.abs(), mercator.maxLatitude) * math.pi / 180);
+
+  /// MapLibre's `_getMaxLatitude`: how near a pole the centre may be on a
+  /// world [worldSize] pixels across seen on a [width] by [height] screen.
+  /// Past the flat map's edge there is no data, so the centre reaches the
+  /// pole only while that cap fits on the screen, and eases back to the
+  /// edge as it outgrows it.
+  static double maxLatitude(double worldSize, double width, double height) {
+    const edge = mercator.maxLatitude;
+    const cap = (90 - edge) * math.pi / 180;
+    final capPixels = radiusAt(worldSize, edge) * cap;
+    final reach = math.min(width, height) / 2;
+    final fade = ((capPixels - reach) / (reach * 4 - reach)).clamp(0.0, 1.0);
+    final centrePixels = math.min(capPixels, reach) * (1 - fade);
+    return edge + cap * centrePixels / capPixels * 180 / math.pi;
+  }
 
   /// MapLibre's `getZoomAdjustment`: the zoom change that keeps the
   /// globe's size on screen as its centre moves from [from] to [to].
