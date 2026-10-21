@@ -4,4 +4,4 @@ library;
 
 export 'src/gestures.dart' show VmapGestures;
 export 'src/layer.dart' show NamedMarker, VmapLayer, VmapLayerState;
-export 'src/map.dart' show VmapMap, VmapMapState;
+export 'src/flutter_map_widget.dart' show VmapFlutterMap, VmapFlutterMapState;

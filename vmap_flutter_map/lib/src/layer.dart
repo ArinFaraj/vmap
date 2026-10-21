@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_map/flutter_map.dart';
 
@@ -21,8 +20,8 @@ class NamedMarker extends Marker {
   final String name;
 }
 
-/// A flutter_map layer that draws vector tiles. Put it where a `TileLayer`
-/// would go.
+/// A flutter_map layer that draws any MapLibre style. Put it where a
+/// `TileLayer` would go.
 class VmapLayer extends StatefulWidget {
   const VmapLayer({
     this.style = VmapStyle.light,
@@ -31,21 +30,19 @@ class VmapLayer extends StatefulWidget {
     this.overlay,
     this.styleEdits = const [],
     this.featureStates = const [],
-    this.curvedLabels = true,
-    this.crossSourceCollisions = true,
-    this.textStyle,
-    this.markerTextStyle,
-    this.cacheDirectory,
-    this.userAgentPackageName = 'unknown',
-    this.headers = const {},
+    this.textStyle = const VmapTextStyle(),
+    this.labels = const VmapLabelOptions(),
+    this.network = const VmapNetworkOptions(),
+    this.rendering = const VmapRenderOptions(),
+    this.fonts = const [],
     this.onError,
     this.minZoom = 0,
     this.maxZoom = double.infinity,
     super.key,
   }) : engine = null;
 
-  /// Draws with an engine the app owns, for reading its stats or keeping
-  /// loaded tiles across pages.
+  /// Draws with an engine the app owns, for keeping loaded tiles across
+  /// pages or sharing them.
   const VmapLayer.engine(
     VmapEngine this.engine, {
     this.minZoom = 0,
@@ -57,18 +54,16 @@ class VmapLayer extends StatefulWidget {
        overlay = null,
        styleEdits = const [],
        featureStates = const [],
-       curvedLabels = true,
-       crossSourceCollisions = true,
-       textStyle = null,
-       markerTextStyle = null,
-       cacheDirectory = null,
-       headers = const {},
-       onError = null,
-       userAgentPackageName = 'unknown';
+       textStyle = const VmapTextStyle(),
+       labels = const VmapLabelOptions(),
+       network = const VmapNetworkOptions(),
+       rendering = const VmapRenderOptions(),
+       fonts = const [],
+       onError = null;
 
   final VmapEngine? engine;
 
-  /// A MapLibre style, by address or as JSON, or one of the built in ones.
+  /// A MapLibre style, by address or as JSON, or the built in one.
   final VmapStyle style;
 
   /// The markers drawn above the map: pass the list given to `MarkerLayer`.
@@ -77,10 +72,9 @@ class VmapLayer extends StatefulWidget {
   final List<Marker> markers;
 
   /// Draws places of interest as round pins instead of the style's icons.
-  /// [VmapPins.standard] covers the usual kinds of place.
   final VmapPins? pins;
 
-  /// Sources and layers of your own, drawn with the style.
+  /// Sources and layers of the app's own, drawn with the style.
   final VmapOverlay? overlay;
 
   /// Changes to single layers of the style: a colour, a filter, whether a
@@ -91,40 +85,33 @@ class VmapLayer extends StatefulWidget {
   /// `['feature-state', name]`.
   final List<VmapFeatureState> featureStates;
 
-  /// Road names follow bends. Off, a name is written only where its road is
-  /// straight enough.
-  final bool curvedLabels;
+  /// The fonts of labels, their scale, and the look of markers' names.
+  final VmapTextStyle textStyle;
 
-  /// Labels of different sources keep clear of each other. Off, each
-  /// source's labels only keep clear of their own, as MapLibre's
-  /// `crossSourceCollisions: false`.
-  final bool crossSourceCollisions;
+  /// Which labels are written and how they are placed.
+  final VmapLabelOptions labels;
 
-  /// The font of every label: family and fallbacks. Sizes and colours come
-  /// from the style.
-  final TextStyle? textStyle;
+  /// How the layer fetches and keeps what it loads. Read when the layer is
+  /// first built. Set its user agent to the app's name, as `TileLayer`'s
+  /// `userAgentPackageName`.
+  final VmapNetworkOptions network;
 
-  /// Size, weight and colour of the names beside markers.
-  final TextStyle? markerTextStyle;
+  /// What draws the map. Read when the layer is first built.
+  final VmapRenderOptions rendering;
 
-  /// Downloaded tiles and styles are kept here between runs.
-  final String? cacheDirectory;
+  /// Fonts labels may be shaped with, beyond the app's own. Read when the
+  /// layer is first built.
+  final List<VmapFont> fonts;
 
-  /// Sent to the tile server as the user agent, as `TileLayer` does.
-  final String userAgentPackageName;
+  /// Told of everything the layer could not load or draw.
+  final void Function(VmapError error)? onError;
 
-  /// Sent with every request the map makes, for a server that wants a key or
-  /// a token in a header. Read once, when the layer is first built.
-  final Map<String, String> headers;
-
-  /// Told of every style, tile or sprite that could not be loaded. The map
-  /// keeps trying on its own; this is for the app to log or show.
-  final void Function(Object error)? onError;
-
-  /// The layer draws nothing, and asks for no tiles, below this zoom.
+  /// The layer draws nothing, and asks for no tiles, below this zoom, in
+  /// flutter_map's zoom.
   final double minZoom;
 
-  /// The layer draws nothing, and asks for no tiles, above this zoom.
+  /// The layer draws nothing, and asks for no tiles, above this zoom, in
+  /// flutter_map's zoom.
   final double maxZoom;
 
   @override
@@ -137,19 +124,12 @@ class VmapLayerState extends State<VmapLayer> with WidgetsBindingObserver {
 
   /// What draws the layer: ask it what is on the map, about clusters, to
   /// download a region or clear the cache, and for the sources' credits.
+  /// Its zooms are vmap's, one below flutter_map's.
   VmapEngine get engine => widget.engine ?? _owned!;
 
   /// A browser fetches the font for a script the first time it is drawn,
   /// and a phone can have its font changed while the app runs.
   void _fontsChanged() => engine.fontsChanged();
-
-  VmapTextStyle get _text => VmapTextStyle(
-    fontFamily: widget.textStyle?.fontFamily,
-    fontFamilyFallback: widget.textStyle?.fontFamilyFallback,
-    markerSize: widget.markerTextStyle?.fontSize ?? 12.5,
-    markerWeight: widget.markerTextStyle?.fontWeight?.value ?? 600,
-    markerColor: widget.markerTextStyle?.color,
-  );
 
   @override
   void initState() {
@@ -158,19 +138,16 @@ class VmapLayerState extends State<VmapLayer> with WidgetsBindingObserver {
       _owned =
           VmapEngine(
               style: widget.style,
-              text: _text,
+              network: widget.network,
+              rendering: widget.rendering,
+              labels: widget.labels,
+              text: widget.textStyle,
+              fonts: widget.fonts,
               pins: widget.pins,
               overlay: widget.overlay,
               edits: widget.styleEdits,
-              curvedLabels: widget.curvedLabels,
-              source: TileSourceConfig(
-                cacheDirectory: widget.cacheDirectory,
-                userAgent: widget.userAgentPackageName,
-                headers: widget.headers,
-              ),
             )
             ..onError = widget.onError
-            ..crossSourceCollisions = widget.crossSourceCollisions
             ..markers = _vmapMarkers(widget.markers)
             ..featureStates = widget.featureStates;
     }
@@ -191,12 +168,11 @@ class VmapLayerState extends State<VmapLayer> with WidgetsBindingObserver {
       ..pins = widget.pins
       ..overlay = widget.overlay
       ..edits = widget.styleEdits
-      ..curvedLabels = widget.curvedLabels
-      ..crossSourceCollisions = widget.crossSourceCollisions
+      ..labels = widget.labels
       ..onError = widget.onError
-      ..text = _text;
+      ..text = widget.textStyle;
     final markers = _vmapMarkers(widget.markers);
-    if (!listEquals(_vmapMarkers(oldWidget.markers), markers)) {
+    if (!VmapMarker.sameRooms(_vmapMarkers(oldWidget.markers), markers)) {
       owned.markers = markers;
     }
     if (!identical(oldWidget.featureStates, widget.featureStates)) {

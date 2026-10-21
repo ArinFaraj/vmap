@@ -322,15 +322,18 @@ class _Session {
   VmapEngine _make() =>
       VmapEngine(
           style: VmapStyle.json(_localize(_document) as Map<String, Object?>),
-          maxCachedTiles: 200,
-          source: TileSourceConfig(spritePixelRatio: ratio),
-          styleGlyphs: true,
-          renderer: _gpu ? VmapRenderer.gpu : VmapRenderer.canvas,
-          antialias: _multisample,
+          network: VmapNetworkOptions(spritePixelRatio: ratio),
+          rendering: VmapRenderOptions(
+            renderer: _gpu ? VmapRenderer.gpu : VmapRenderer.canvas,
+            antialias: _multisample,
+            maxCachedTiles: 200,
+          ),
+          labels: VmapLabelOptions(
+            crossSourceCollisions: crossSourceCollisions,
+          ),
         )
         ..onError = onError
-        ..showCollisionBoxes = collisionBoxes
-        ..crossSourceCollisions = crossSourceCollisions;
+        ..showCollisionBoxes = collisionBoxes;
 
   Future<void> settle() => _settle(_engine, () => _paintNow(false));
 

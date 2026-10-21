@@ -6,7 +6,7 @@ import 'glyphs/glyph_layout.dart';
 import 'glyphs/vmap_font.dart';
 import 'errors.dart';
 import 'labels.dart';
-import 'source_config.dart';
+import 'options.dart';
 import 'sprites.dart';
 
 /// What a style draws with besides its tiles: its sprite sheet, the fonts
@@ -22,7 +22,7 @@ class StyleResources {
   });
 
   final LabelEngine _labels;
-  final TileSourceConfig _config;
+  final VmapNetworkOptions _config;
 
   /// Called with the sprite sheet whenever it changes, null while none.
   final void Function(SpriteSheet? sheet) onSprites;

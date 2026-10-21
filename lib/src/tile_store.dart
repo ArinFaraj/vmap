@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'net.dart';
 import 'platform.dart';
 import 'pmtiles.dart';
-import 'source_config.dart';
+import 'options.dart';
 import 'style_model.dart' show TileCover;
 
 /// Where the tiles of one tile set come from: the cache directory first,
@@ -15,7 +15,7 @@ class TileStore {
     required TileCover cover,
     required String folder,
     required String extension,
-    required TileSourceConfig config,
+    required VmapNetworkOptions config,
     required int perHost,
   }) : this._connected(
          template,
@@ -43,7 +43,7 @@ class TileStore {
   TileStore.vector(
     String template, {
     required TileCover cover,
-    required TileSourceConfig config,
+    required VmapNetworkOptions config,
     int perHost = 4,
   }) : this._(
          template,
@@ -58,7 +58,7 @@ class TileStore {
   TileStore.raster(
     String template, {
     required TileCover cover,
-    required TileSourceConfig config,
+    required VmapNetworkOptions config,
   }) : this._(
          template,
          cover: cover,

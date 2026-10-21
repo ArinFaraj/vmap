@@ -4,7 +4,7 @@
 [flutter_map](https://pub.dev/packages/flutter_map).
 
 - `VmapLayer` draws any MapLibre style. Put it where a `TileLayer` would go.
-- `VmapMap` is a whole map in one widget: a `FlutterMap` with a `VmapLayer`,
+- `VmapFlutterMap` is a whole map in one widget: a `FlutterMap` with a `VmapLayer`,
   the markers above it, and `VmapGestures` in place of flutter_map's own.
 - `NamedMarker` is a flutter_map `Marker` with a name the map writes beside
   it, placed so it never covers another label.

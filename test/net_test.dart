@@ -10,7 +10,7 @@ import 'package:vmap/src/engine.dart';
 import 'package:vmap/src/errors.dart';
 import 'package:vmap/src/net.dart';
 import 'package:vmap/src/style.dart';
-import 'package:vmap/src/source_config.dart';
+import 'package:vmap/src/options.dart';
 
 Future<HttpServer> serve(void Function(HttpRequest request) answer) async {
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -113,7 +113,7 @@ void main() {
               style: VmapStyle.url(
                 'http://127.0.0.1:${server.port}/style.json',
               ),
-              source: TileSourceConfig(
+              network: VmapNetworkOptions(
                 cacheDirectory: cache.path,
                 headers: const {'authorization': 'Bearer token'},
               ),

@@ -592,13 +592,13 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
               ],
             )
           else
-            VmapMap(
+            VmapFlutterMap(
               controller: _map,
               initialCenter: _centre,
               initialZoom: _zoomTenths / 10,
               initialRotation: const int.fromEnvironment('ROT').toDouble(),
               rotate: _rotate,
-              curvedLabels: _curved,
+              labels: VmapLabelOptions(curved: _curved),
               backgroundColor: scheme.surface,
               onTap: (_) => _select(null),
               style: look.style,
@@ -632,16 +632,16 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
                     ),
                   );
               },
-              cacheDirectory: widget.cacheDirectory,
-              userAgentPackageName: 'dev.vmap.bench',
-              textStyle: const TextStyle(
-                fontFamily: 'GoogleSansFlex',
-                fontFamilyFallback: ['Vazirmatn'],
+              network: VmapNetworkOptions(
+                cacheDirectory: widget.cacheDirectory,
+                userAgent: 'dev.vmap.bench',
               ),
-              markerTextStyle: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: look.dark
+              textStyle: VmapTextStyle(
+                fontFamily: 'GoogleSansFlex',
+                fontFamilyFallback: const ['Vazirmatn'],
+                markerSize: 12,
+                markerWeight: 500,
+                markerColor: look.dark
                     ? const Color(0xFFE8EAED)
                     : const Color(0xFF30343A),
               ),

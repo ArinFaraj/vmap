@@ -11,7 +11,7 @@ import 'mvt.dart';
 import 'query.dart';
 import 'pmtiles.dart';
 import 'protocol.dart';
-import 'source_config.dart';
+import 'options.dart';
 import 'tile_id.dart';
 import 'tile_slice.dart';
 import 'glyphs/glyph_ranges.dart';
@@ -47,7 +47,7 @@ class TilePool {
     _starting = _start();
   }
 
-  final TileSourceConfig config;
+  final VmapNetworkOptions config;
 
   /// The fonts the workers shape labels with, or null, and their families.
   final List<Uint8List>? fonts;

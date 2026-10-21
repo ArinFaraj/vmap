@@ -6,7 +6,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/net.dart';
 import 'package:vmap/src/style_model.dart';
-import 'package:vmap/src/source_config.dart';
+import 'package:vmap/src/options.dart';
 import 'package:vmap/src/worker.dart';
 
 Future<HttpServer> _serve(void Function(HttpRequest request) answer) async {
@@ -59,7 +59,7 @@ void main() {
         ],
       };
       final pool = TilePool(
-        const TileSourceConfig(workers: 1),
+        const VmapNetworkOptions(workers: 1),
         style: style,
         nameKeys: null,
         sheet: StyleSheet.compile(style),
@@ -106,7 +106,7 @@ void main() {
       ],
     };
     final pool = TilePool(
-      TileSourceConfig(cacheDirectory: cache.path, workers: 1),
+      VmapNetworkOptions(cacheDirectory: cache.path, workers: 1),
       style: style,
       nameKeys: null,
       sheet: StyleSheet.compile(style),

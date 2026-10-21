@@ -10,7 +10,7 @@ import 'pmtiles.dart';
 import 'raster_style.dart';
 import 'style_model.dart';
 import 'terrain/dem_tile.dart';
-import 'source_config.dart';
+import 'options.dart';
 import 'tile_store.dart';
 import 'net.dart';
 import 'platform.dart';
@@ -68,7 +68,7 @@ sealed class RasterDrawing<L extends RasterLayer> {
   /// The drawing for [layer].
   static RasterDrawing<RasterLayer> of(
     RasterLayer layer, {
-    required TileSourceConfig config,
+    required VmapNetworkOptions config,
     required void Function() onLoaded,
     void Function(Object error)? onError,
   }) => switch (layer) {
@@ -116,7 +116,7 @@ sealed class RasterDrawing<L extends RasterLayer> {
   }
 
   /// How pictures are fetched and kept.
-  final TileSourceConfig config;
+  final VmapNetworkOptions config;
   final void Function() onLoaded;
   final void Function(Object error)? onError;
 

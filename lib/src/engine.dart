@@ -30,7 +30,7 @@ import 'terrain/terrain.dart';
 import 'view.dart' show MapView;
 import 'mesh_painter.dart';
 import 'offline.dart';
-import 'source_config.dart';
+import 'options.dart';
 import 'stats.dart';
 import 'style.dart';
 import 'style_model.dart';
@@ -44,66 +44,69 @@ import 'protocol.dart';
 import 'tile_id.dart';
 import 'net.dart' show cacheKey;
 
-/// What draws the map.
-enum VmapRenderer {
-  /// Flutter GPU, through WebGL2 on the web: buildings with depth, terrain
-  /// and the globe. Where it does not run, the canvas draws instead.
-  gpu,
-
-  /// Flutter's canvas, which runs everywhere: a tilted map with flat
-  /// buildings, and no terrain or globe.
-  canvas,
-}
-
 /// Owns the tiles and labels and draws one frame of the map for a camera.
 class VmapEngine extends ChangeNotifier {
-  /// In a browser, the address of the script that builds tiles off the
-  /// page's thread. vmap ships one and uses it without being asked. Set
-  /// another before the first map is shown, or null to build tiles on the
-  /// page's own thread; a script the browser refuses or that does not load
-  /// is replaced by the page's thread too. Other platforms build tiles on isolates and ignore
+  /// In a browser, tiles are built by a web worker vmap ships, off the
+  /// page's thread. Call this before the first map to use another worker
+  /// script, or with null to build tiles on the page's own thread. A worker
+  /// the browser refuses, or that does not load, falls back to the page's
+  /// thread by itself. Other platforms build tiles on isolates and ignore
   /// it.
-  static String? webWorker = defaultWorkerScript;
+  static void useWebWorker(String? script) => _webWorker = script;
+
+  static String? _webWorker = defaultWorkerScript;
 
   VmapEngine({
     this._style = VmapStyle.light,
-    this.source = const TileSourceConfig(),
+    this.network = const VmapNetworkOptions(),
+    this.rendering = const VmapRenderOptions(),
+    VmapLabelOptions labels = const VmapLabelOptions(),
     VmapTextStyle text = const VmapTextStyle(),
-    this.maxCachedTiles = 56,
-    this.showLabels = true,
+    List<VmapFont> fonts = const [],
     VmapPins? pins,
     this._overlay,
     this._edits = const [],
-    bool curvedLabels = true,
-    bool glyphText = false,
-    this.styleGlyphs = false,
-    List<VmapFont> fonts = const [],
-    VmapRenderer renderer = VmapRenderer.gpu,
-    bool antialias = true,
     @visibleForTesting MapRenderer? debugRenderer,
-  }) : _labels = LabelEngine(text)
+  }) : _labelOptions = labels,
+       _labels = LabelEngine(text)
          ..pins = pins
-         ..curvedRoads = curvedLabels,
+         ..curvedRoads = labels.curved
+         ..crossSourceCollisions = labels.crossSourceCollisions,
        _renderer =
            debugRenderer ??
-           (renderer == VmapRenderer.gpu
-               ? GpuMap.create(multisample: antialias)
+           (rendering.renderer == VmapRenderer.gpu
+               ? GpuMap.create(multisample: rendering.antialias)
                : null) {
     _labels.stateOf = (source, id) =>
         _states[_sources[source].def.name]?[featureStateKey(id)];
-    if (renderer == VmapRenderer.gpu && _renderer == null) {
+    if (rendering.renderer == VmapRenderer.gpu && _renderer == null) {
       scheduleMicrotask(() => _gpuFailed(_gpuOff));
     }
     _renderer?.onFailure = _gpuFailed;
-    if (glyphText || styleGlyphs) {
-      _resources.loadFonts(fonts, shapeInWorkers: !styleGlyphs).whenComplete(
-        () {
-          if (!_disposed) _loadStyle();
-        },
-      );
-    } else {
-      _loadStyle();
-    }
+    _resources.loadFonts(fonts, shapeInWorkers: !_styleGlyphs).whenComplete(() {
+      if (!_disposed) _loadStyle();
+    });
+  }
+
+  /// How the map is drawn, fixed when the engine is made.
+  final VmapRenderOptions rendering;
+
+  bool get _styleGlyphs => rendering.glyphs == VmapGlyphs.style;
+
+  VmapLabelOptions _labelOptions;
+
+  /// Which labels the map writes and how they are placed.
+  VmapLabelOptions get labels => _labelOptions;
+  set labels(VmapLabelOptions value) {
+    if (value == _labelOptions) return;
+    final collisions =
+        value.crossSourceCollisions != _labelOptions.crossSourceCollisions;
+    _labelOptions = value;
+    _labels
+      ..curvedRoads = value.curved
+      ..crossSourceCollisions = value.crossSourceCollisions;
+    if (collisions) _labels.restyle();
+    notifyListeners();
   }
 
   /// Draws the vector layers and buildings on the GPU, or null where the
@@ -141,19 +144,9 @@ class VmapEngine extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Labels are laid out and drawn from the style's `glyphs` ranges, as
-  /// MapLibre draws them, instead of from font files. The ranges place
-  /// glyphs by their advances alone, without OpenType shaping, so Arabic
-  /// script comes out unjoined; this is for drawing a style as MapLibre
-  /// does, not for Kurdish or Arabic labels.
-  final bool styleGlyphs;
-
-  /// The font labels are shaped with when the app gives none.
-  static const defaultGlyphFont = StyleResources.defaultGlyphFont;
-
   late final StyleResources _resources = StyleResources(
     _labels,
-    source,
+    network,
     onSprites: (sheet) => _meshes.sprites = _labels.sheet = sheet,
     onChange: () {
       if (!_disposed) notifyListeners();
@@ -167,10 +160,9 @@ class VmapEngine extends ChangeNotifier {
   final _zoomOutHold = ZoomOutHold();
   final ui.Paint _layerPaint = ui.Paint();
 
-  final TileSourceConfig source;
-  final int maxCachedTiles;
+  /// How the map fetches what it loads, fixed when the engine is made.
+  final VmapNetworkOptions network;
 
-  bool showLabels;
   StyleSheet? _sheet;
   final LabelEngine _labels;
 
@@ -249,7 +241,7 @@ class VmapEngine extends ChangeNotifier {
   /// Deletes what this map keeps in the cache directory, then loads it again
   /// from the network. Other files in the directory are left alone.
   Future<void> clearCache() async {
-    final directory = source.cacheDirectory;
+    final directory = network.cacheDirectory;
     if (directory != null) {
       await deleteCached(directory, _kept.hasMatch);
     }
@@ -276,7 +268,7 @@ class VmapEngine extends ChangeNotifier {
     void Function(int done, int total)? onProgress,
     bool Function()? cancelled,
   }) async {
-    if (!hasFiles || source.cacheDirectory == null) {
+    if (!hasFiles || network.cacheDirectory == null) {
       throw StateError('A region is downloaded into a cache directory');
     }
     return downloadTiles(
@@ -314,9 +306,9 @@ class VmapEngine extends ChangeNotifier {
     return color == null ? null : ui.Color(color.toArgb());
   }
 
-  String? _styleFile(String url) => source.cacheDirectory == null
+  String? _styleFile(String url) => network.cacheDirectory == null
       ? null
-      : '${source.cacheDirectory}/style-${cacheKey(url)}.json';
+      : '${network.cacheDirectory}/style-${cacheKey(url)}.json';
 
   /// Uses the style right away when it is at hand. One named by address is
   /// drawn from the copy kept from the last run while the current one
@@ -341,11 +333,11 @@ class VmapEngine extends ChangeNotifier {
     } catch (_) {
       remembered = null;
     }
-    final client = Net(userAgent: source.userAgent);
+    final client = Net(userAgent: network.userAgent);
     try {
       final reply = await client.get(
         url,
-        source.headers,
+        network.headers,
         timeout: const Duration(seconds: 10),
       );
       if (reply.status != 200) throw HttpFailure(reply.status, url);
@@ -506,7 +498,7 @@ class VmapEngine extends ChangeNotifier {
       nameKeys: from.nameKeys,
       zoomOffset: from.zoomOffset,
     );
-    _resources.useGlyphRanges(styleGlyphs ? sheet.glyphs : null);
+    _resources.useGlyphRanges(_styleGlyphs ? sheet.glyphs : null);
     final sameShape = _sheet != null && _sheet!.shape == sheet.shape;
     final rasterKey = [for (final r in sheet.rasters) r.signature].join('\n');
     final rasters = _sheet == null || rasterKey != _rasterKey;
@@ -522,7 +514,7 @@ class VmapEngine extends ChangeNotifier {
           for (final layer in sheet.rasters)
             RasterDrawing.of(
               layer,
-              config: source,
+              config: network,
               onLoaded: _requestFrame,
               onError: (e) => _report(VmapErrorKind.tiles, e),
             ),
@@ -561,7 +553,7 @@ class VmapEngine extends ChangeNotifier {
       }
       final made = TileSource(def);
       made.pool = TilePool(
-        source,
+        network,
         style: document,
         nameKeys: from.nameKeys,
         sheet: sheet,
@@ -575,7 +567,7 @@ class VmapEngine extends ChangeNotifier {
           );
           _report(VmapErrorKind.tiles, error);
         },
-        script: webWorker,
+        script: _webWorker,
         fonts: _resources.fontBytes,
         families: _resources.families,
         gpu: _renderer != null,
@@ -618,7 +610,7 @@ class VmapEngine extends ChangeNotifier {
         ? null
         : RasterDrawing.of(
             layer,
-            config: source,
+            config: network,
             onLoaded: _requestFrame,
             onError: (e) => _report(VmapErrorKind.tiles, e),
           ) as TerrainTiles;
@@ -735,7 +727,10 @@ class VmapEngine extends ChangeNotifier {
   /// Markers the app draws above the map. Map labels keep clear of each
   /// one, and a marker's name is placed beside it ahead of every map label;
   /// when there is no room the name hides and the marker stays.
+  List<VmapMarker> get markers => _markers;
+  List<VmapMarker> _markers = const [];
   set markers(List<VmapMarker> value) {
+    _markers = value;
     final areas = <(double, double, double, double, double, double)>[];
     _markerLabels.clear();
     for (var i = 0; i < value.length; i++) {
@@ -766,7 +761,10 @@ class VmapEngine extends ChangeNotifier {
   /// with `['feature-state', name]`. Changing it repaints, and builds again
   /// only the tiles of a source whose buildings' height, base or colour
   /// read it.
+  List<VmapFeatureState> get featureStates => _featureStates;
+  List<VmapFeatureState> _featureStates = const [];
   set featureStates(List<VmapFeatureState> value) {
+    _featureStates = value;
     if (value.isEmpty && _states.isEmpty) return;
     final before = Map.of(_states);
     _states.clear();
@@ -816,27 +814,6 @@ class VmapEngine extends ChangeNotifier {
   set pins(VmapPins? value) {
     if (identical(value, _labels.pins)) return;
     _labels.pins = value;
-    notifyListeners();
-  }
-
-  /// Road names follow bends. Off, a name is written only where its road is
-  /// straight enough, which is a little cheaper to draw.
-  bool get curvedLabels => _labels.curvedRoads;
-  set curvedLabels(bool value) {
-    if (value == _labels.curvedRoads) return;
-    _labels.curvedRoads = value;
-    notifyListeners();
-  }
-
-  /// Labels of different sources keep clear of each other, as MapLibre's
-  /// `crossSourceCollisions` map option. Off, each source's labels only
-  /// keep clear of their own.
-  bool get crossSourceCollisions => _labels.crossSourceCollisions;
-  set crossSourceCollisions(bool value) {
-    if (value == _labels.crossSourceCollisions) return;
-    _labels
-      ..crossSourceCollisions = value
-      ..restyle();
     notifyListeners();
   }
 
@@ -899,6 +876,8 @@ class VmapEngine extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The fonts of labels, their scale, and the look of markers' names.
+  VmapTextStyle get text => _labels.text;
   set text(VmapTextStyle value) {
     if (value == _labels.text) return;
     _labels
@@ -1109,7 +1088,7 @@ class VmapEngine extends ChangeNotifier {
 
   /// Draws one frame of the map, [size] logical pixels, as [camera] sees
   /// it. This is what a widget hosting the engine calls from its painter:
-  /// [Vmap] does, and so does the flutter_map layer in `vmap_flutter_map`.
+  /// `Vmap` does, and so does the flutter_map layer in `vmap_flutter_map`.
   /// [ahead] is where the camera is headed while an animation moves it, so
   /// the tiles there load on the way.
   void paint(
@@ -1428,7 +1407,7 @@ class VmapEngine extends ChangeNotifier {
         (sheet.dashed && _zoomHistory.fading) ||
         _rasters.any((r) => r is TileDrawing && r.fading);
     final labelsStarted = _clock.elapsedMicroseconds;
-    if (showLabels) {
+    if (_labelOptions.visible) {
       final shown = [
         for (final s in _sources) ...[...s.ideal, ...s.fallback],
       ];
@@ -1583,7 +1562,7 @@ class VmapEngine extends ChangeNotifier {
       ..drawCalls = draws
       ..gpuFramesReused = _renderer?.framesReused ?? 0;
     for (final s in _sources) {
-      s.evict(maxCachedTiles, _frame);
+      s.evict(rendering.maxCachedTiles, _frame);
     }
   }
 

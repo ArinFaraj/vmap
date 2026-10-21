@@ -55,11 +55,11 @@ void main() {
       'sources': <String, Object?>{},
       'layers': <Object?>[],
     });
-    final mapKey = GlobalKey<VmapMapState>();
+    final mapKey = GlobalKey<VmapFlutterMapState>();
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: VmapMap(
+        child: VmapFlutterMap(
           key: mapKey,
           initialCenter: const LatLng(36.19, 44.01),
           style: empty,

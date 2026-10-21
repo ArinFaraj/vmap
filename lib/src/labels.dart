@@ -26,7 +26,7 @@ import 'pins.dart';
 import 'point_labels.dart';
 import 'road_labels.dart';
 import 'sdf_text.dart';
-import 'source_config.dart';
+import 'options.dart';
 import 'sprites.dart';
 import 'stats.dart';
 import 'style_model.dart';
@@ -437,7 +437,7 @@ class LabelEngine {
   /// when it is null. [onArrived] runs as each range lands.
   void useRanges(
     String? url,
-    TileSourceConfig config,
+    VmapNetworkOptions config,
     void Function() onArrived, {
     void Function(Object error)? onError,
   }) {

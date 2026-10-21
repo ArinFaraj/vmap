@@ -10,7 +10,7 @@ import 'package:vmap/src/style_model.dart';
 import 'package:vmap/src/tile_builder.dart';
 import 'package:vmap/src/protocol.dart';
 import 'package:vmap/src/tile_id.dart';
-import 'package:vmap/src/source_config.dart';
+import 'package:vmap/src/options.dart';
 import 'package:vmap/src/worker.dart';
 
 import 'support/mvt_fixture.dart';
@@ -38,7 +38,7 @@ TilePool _pool(
   TileFailed? onFailed,
 }) {
   final pool = TilePool(
-    const TileSourceConfig(workers: 1),
+    const VmapNetworkOptions(workers: 1),
     style: style,
     nameKeys: null,
     sheet: StyleSheet.compile(style),

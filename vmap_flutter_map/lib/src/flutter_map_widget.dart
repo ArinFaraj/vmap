@@ -11,8 +11,8 @@ import 'layer.dart';
 ///
 /// Reach for [VmapLayer] instead to add vector tiles to a `FlutterMap` you
 /// already have.
-class VmapMap extends StatefulWidget {
-  const VmapMap({
+class VmapFlutterMap extends StatefulWidget {
+  const VmapFlutterMap({
     required this.initialCenter,
     this.initialZoom = 13,
     this.initialRotation = 0,
@@ -26,13 +26,11 @@ class VmapMap extends StatefulWidget {
     this.overlay,
     this.styleEdits = const [],
     this.featureStates = const [],
-    this.curvedLabels = true,
-    this.crossSourceCollisions = true,
-    this.textStyle,
-    this.markerTextStyle,
-    this.cacheDirectory,
-    this.userAgentPackageName = 'unknown',
-    this.headers = const {},
+    this.textStyle = const VmapTextStyle(),
+    this.labels = const VmapLabelOptions(),
+    this.network = const VmapNetworkOptions(),
+    this.rendering = const VmapRenderOptions(),
+    this.fonts = const [],
     this.onError,
     this.backgroundColor,
     this.onTap,
@@ -77,22 +75,25 @@ class VmapMap extends StatefulWidget {
   /// `['feature-state', name]`: the way to highlight what was tapped.
   final List<VmapFeatureState> featureStates;
 
-  /// Road names follow bends.
-  final bool curvedLabels;
+  /// The fonts of labels, their scale, and the look of markers' names.
+  final VmapTextStyle textStyle;
 
-  /// Labels of different sources keep clear of each other.
-  final bool crossSourceCollisions;
-  final TextStyle? textStyle;
-  final TextStyle? markerTextStyle;
-  final String? cacheDirectory;
-  final String userAgentPackageName;
+  /// Which labels are written and how they are placed.
+  final VmapLabelOptions labels;
 
-  /// Sent with every request the map makes, for a server that wants a key or
-  /// a token in a header. Read once, when the map is first built.
-  final Map<String, String> headers;
+  /// How the map fetches and keeps what it loads. Read when the map is
+  /// first built.
+  final VmapNetworkOptions network;
 
-  /// Told of every style, tile or sprite that could not be loaded.
-  final void Function(Object error)? onError;
+  /// What draws the map. Read when the map is first built.
+  final VmapRenderOptions rendering;
+
+  /// Fonts labels may be shaped with, beyond the app's own. Read when the
+  /// map is first built.
+  final List<VmapFont> fonts;
+
+  /// Told of everything the map could not load or draw.
+  final void Function(VmapError error)? onError;
 
   /// Shown where no tile has loaded yet.
   final Color? backgroundColor;
@@ -109,11 +110,11 @@ class VmapMap extends StatefulWidget {
   final List<Widget> children;
 
   @override
-  State<VmapMap> createState() => VmapMapState();
+  State<VmapFlutterMap> createState() => VmapFlutterMapState();
 }
 
-/// Reached through a `GlobalKey<VmapMapState>` on the map.
-class VmapMapState extends State<VmapMap> {
+/// Reached through a `GlobalKey<VmapFlutterMapState>` on the map.
+class VmapFlutterMapState extends State<VmapFlutterMap> {
   MapController? _owned;
   final _layer = GlobalKey<VmapLayerState>();
 
@@ -175,13 +176,11 @@ class VmapMapState extends State<VmapMap> {
             overlay: widget.overlay,
             styleEdits: widget.styleEdits,
             featureStates: widget.featureStates,
-            curvedLabels: widget.curvedLabels,
-            crossSourceCollisions: widget.crossSourceCollisions,
             textStyle: widget.textStyle,
-            markerTextStyle: widget.markerTextStyle,
-            cacheDirectory: widget.cacheDirectory,
-            userAgentPackageName: widget.userAgentPackageName,
-            headers: widget.headers,
+            labels: widget.labels,
+            network: widget.network,
+            rendering: widget.rendering,
+            fonts: widget.fonts,
             onError: widget.onError,
           ),
           if (widget.markers.isNotEmpty) MarkerLayer(markers: widget.markers),

@@ -116,8 +116,8 @@ class _BenchState extends State<_Bench> with SingleTickerProviderStateMixin {
   final controller = VmapController(_erbil);
   final engine = VmapEngine(
     style: const VmapStyle.builtIn(),
-    showLabels: false,
-    maxCachedTiles: 400,
+    labels: const VmapLabelOptions(visible: false),
+    rendering: const VmapRenderOptions(maxCachedTiles: 400),
   );
   final boundary = GlobalKey();
   final counters = _Counters();

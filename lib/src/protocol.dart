@@ -5,7 +5,7 @@ library;
 
 import 'dart:typed_data';
 
-import 'source_config.dart';
+import 'options.dart';
 import 'tile_builder.dart' show BuiltTile;
 import 'tile_id.dart';
 
@@ -31,7 +31,7 @@ class WorkerSetup {
 
   factory WorkerSetup.fromWire(List<Object?> wire) => WorkerSetup(
     template: wire[0]! as String,
-    config: TileSourceConfig(
+    config: VmapNetworkOptions(
       cacheDirectory: wire[1] as String?,
       userAgent: wire[2]! as String,
       headers: (wire[3]! as Map).cast<String, String>(),
@@ -53,7 +53,7 @@ class WorkerSetup {
   final String template;
 
   /// How the tiles are fetched and kept.
-  final TileSourceConfig config;
+  final VmapNetworkOptions config;
   final Map<String, Object?> style;
   final List<String>? nameKeys;
   final double zoomOffset;

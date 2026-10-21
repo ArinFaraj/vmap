@@ -6,7 +6,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/engine.dart';
 import 'package:vmap/src/style.dart';
-import 'package:vmap/src/source_config.dart';
+import 'package:vmap/src/options.dart';
 
 void main() {
   setUp(() => HttpOverrides.global = null);
@@ -43,7 +43,7 @@ void main() {
           },
         ],
       }),
-      source: TileSourceConfig(cacheDirectory: cache.path),
+      network: VmapNetworkOptions(cacheDirectory: cache.path),
     );
     addTearDown(engine.dispose);
     for (var i = 0; i < 100 && engine.backgroundColor == null; i++) {

@@ -53,7 +53,10 @@ class _BenchState extends State<_Bench> {
   late final controller = VmapController(widget.start);
   late final VmapEngine engine = VmapEngine(
     style: VmapStyle.url('https://tiles.openfreemap.org/styles/liberty'),
-    maxCachedTiles: 400,
+    rendering: VmapRenderOptions(
+      renderer: widget.gpu ? VmapRenderer.gpu : VmapRenderer.canvas,
+      maxCachedTiles: 400,
+    ),
     overlay: widget.terrain
         ? const VmapOverlay(
             sources: {
@@ -69,7 +72,6 @@ class _BenchState extends State<_Bench> {
             terrain: {'source': 'dem', 'exaggeration': 1.5},
           )
         : null,
-    renderer: widget.gpu ? VmapRenderer.gpu : VmapRenderer.canvas,
   );
   final List<ui.FrameTiming> _timings = [];
   String _status = 'loading';

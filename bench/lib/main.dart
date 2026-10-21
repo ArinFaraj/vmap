@@ -165,7 +165,7 @@ class _BenchAppState extends State<BenchApp>
             zoomOffset: const int.fromEnvironment('ZOFF').toDouble(),
             nameKeys: names,
           ),
-    source: TileSourceConfig(
+    network: VmapNetworkOptions(
       cacheDirectory: widget.cacheDirectory,
       userAgent: 'dev.vmap.bench',
     ),
@@ -173,8 +173,10 @@ class _BenchAppState extends State<BenchApp>
       fontFamily: 'GoogleSansFlex',
       fontFamilyFallback: ['Vazirmatn'],
     ),
-    showLabels: flags['labels'] != 'off',
-    renderer: gpuRenderer ? VmapRenderer.gpu : VmapRenderer.canvas,
+    labels: VmapLabelOptions(visible: flags['labels'] != 'off'),
+    rendering: VmapRenderOptions(
+      renderer: gpuRenderer ? VmapRenderer.gpu : VmapRenderer.canvas,
+    ),
   );
   late final Ticker ticker;
   final laps = <List<FrameTiming>>[
