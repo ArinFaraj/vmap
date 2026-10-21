@@ -780,7 +780,7 @@ class TileBuilder {
                 priority: base + (symbol.build.sortKey == null ? 50 : order),
                 text: text,
                 spacing: spacing,
-                labelLength: _textEms(symbol, text, format) * em,
+                labelLength: _textEms(symbol, text, format, size) * em,
                 em: em,
                 maxBend: symbol.maxBend ?? math.pi / 4,
                 props: carried,
@@ -831,7 +831,7 @@ class TileBuilder {
                       em /
                       GlyphPbf.em;
             final labelLength = math.max(
-              text.isEmpty ? 0.0 : _textEms(symbol, text, format) * em,
+              text.isEmpty ? 0.0 : _textEms(symbol, text, format, size) * em,
               iconWidth,
             );
             if (placement == 'line' && text.isNotEmpty) {
@@ -1143,10 +1143,15 @@ class TileBuilder {
   /// measures a label: from the style's glyph ranges, its letters joined,
   /// when the labels are drawn from them; else as the fonts set it, or
   /// about half an em a letter.
-  double _textEms(SymbolLayer symbol, String text, [List<Object?>? format]) {
+  double _textEms(
+    SymbolLayer symbol,
+    String text, [
+    List<Object?>? format,
+    double textSize = 16,
+  ]) {
     final ranges = this.ranges;
     if (format != null && ranges != null) {
-      final width = _formattedEms(symbol, text, format, ranges);
+      final width = _formattedEms(symbol, text, format, ranges, textSize);
       if (width != null) return width;
     }
     final plain = plainText(text);
@@ -1192,11 +1197,15 @@ class TileBuilder {
 
   /// The width in ems of a formatted [text], each section in its own font
   /// and scale, as MapLibre shapes it; null until its glyphs are here.
+  /// The width in ems of formatted [text]: its glyphs, and its images as
+  /// MapLibre's shaping weighs one, its width against the [textSize] it is
+  /// laid out at.
   double? _formattedEms(
     SymbolLayer symbol,
     String text,
     List<Object?> format,
     GlyphRanges ranges,
+    double textSize,
   ) {
     var width = 0.0;
     var section = 0;
@@ -1211,9 +1220,14 @@ class TileBuilder {
         section = runes[++i] - formatIndexBase;
         continue;
       }
-      if (r == formatImage) continue;
       final spec = section < format.length ? format[section] : null;
       final scale = spec is List ? (spec[0] as num?)?.toDouble() ?? 1 : 1.0;
+      if (r == formatImage) {
+        final name = spec is List && spec.length > 4 ? spec[4] : null;
+        final w = name is String ? iconSizes[name]?.$1 : null;
+        if (w != null) width += w * scale / textSize + spacing;
+        continue;
+      }
       final fonts = spec is List && spec[1] is List
           ? (spec[1] as List).cast<String>()
           : symbol.fontStack;

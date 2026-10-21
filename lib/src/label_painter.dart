@@ -750,6 +750,87 @@ class LabelPainter {
     );
   }
 
+  /// The image run of a formatted label at glyph [i] of [g] on the GPU,
+  /// its top left corner at [ox], [oy] and one of its pixels across the
+  /// screen by [ux], [uy] and down it by [vx], [vy], as [_inlineImage]
+  /// places one.
+  void _gpuInlineImage(
+    SdfText sdf,
+    RangeSprite sprite,
+    Float32List g,
+    int i,
+    double ox,
+    double oy,
+    double ux,
+    double uy,
+    double vx,
+    double vy,
+    LabelState st,
+  ) {
+    final spec = sprite.look.format?[g[i + 1].toInt()];
+    final sheet = images;
+    if (spec is! List || spec[4] is! String || sheet == null) return;
+    final image = sheet.entries[spec[4]];
+    if (image == null) return;
+    final k = image.width / image.source.width;
+    sdf.icon(
+      image.source,
+      image.source,
+      ox,
+      oy,
+      ux * k,
+      uy * k,
+      vx * k,
+      vy * k,
+      sdf: false,
+      linear: true,
+      look: SdfLook(
+        Float32List.fromList([st.opacity, st.opacity, st.opacity, st.opacity]),
+        null,
+        0,
+        0,
+        1,
+      ),
+      layer: switch (st.candidate) {
+        TileLabel(:final tile) => tile.layer,
+        _ => -1,
+      },
+    );
+  }
+
+  /// [_gpuInlineImage] for a label turned by [c], [s] about [cx], [cy],
+  /// the image's box corner at [lx], [ly] from there.
+  void _turnedInlineImage(
+    SdfText sdf,
+    RangeSprite sprite,
+    Float32List g,
+    int i,
+    double cx,
+    double cy,
+    double lx,
+    double ly,
+    double c,
+    double s,
+    double em,
+    LabelState st,
+  ) {
+    final unit = em / GlyphPbf.em * (sprite.shaped.scales?[i ~/ 5] ?? 1);
+    final x = lx + unit, y = ly + 3 * unit;
+    _gpuInlineImage(
+      sdf,
+      sprite,
+      g,
+      i,
+      cx + c * x - s * y,
+      cy + s * x + c * y,
+      c * unit,
+      s * unit,
+      -s * unit,
+      c * unit,
+      st,
+    );
+  }
+
   /// How many quarter turns [turn] is, 1 to 3, or 0 when it is none of
   /// them.
   static int _quarters(double turn) {
@@ -975,7 +1056,6 @@ class LabelPainter {
           depth / math.cos((_view.tilted?.pitch ?? 0) * math.pi / 180);
       final look0 = lookOf(0, size / GlyphPbf.em, soften);
       for (var i = 0; i < g.length; i += 5) {
-        if (g[i] < 0) continue;
         final advance = g[i + 4] * unit;
         var along = g[i + 2] * unit + advance / 2 - half;
         if (flip) along = -along;
@@ -988,6 +1068,31 @@ class LabelPainter {
         final px = _along[0] - tx * advance / 2 + nx * down;
         final py = _along[1] - ty * advance / 2 + ny * down;
         final gu = unit * (scales?[i ~/ 5] ?? 1) / GlyphPbf.em;
+        if (g[i] < 0) {
+          // As _inlineImage: a pixel in from the box's corner, three down.
+          final qx = px + tx * gu + nx * 3 * gu;
+          final qy = py + ty * gu + ny * 3 * gu;
+          _view.project(qx, qy);
+          final ox = _view.x, oy = _view.y;
+          _view.project(qx + tx * gu, qy + ty * gu);
+          final ux = _view.x - ox, uy = _view.y - oy;
+          _view.project(qx + nx * gu, qy + ny * gu);
+          final vx = _view.x - ox, vy = _view.y - oy;
+          _gpuInlineImage(
+            sdf,
+            sprite,
+            g,
+            i,
+            ox + st.dx,
+            oy + st.dy,
+            ux,
+            uy,
+            vx,
+            vy,
+            st,
+          );
+          continue;
+        }
         _view.project(px, py);
         final ox = _view.x, oy = _view.y;
         _view.project(px + tx * gu, py + ty * gu);
@@ -1039,7 +1144,6 @@ class LabelPainter {
       final half = shaped.width * em / 2;
       final top = -shaped.height * em / 2;
       for (var i = 0; i < g.length; i += 5) {
-        if (g[i] < 0) continue;
         final advance = g[i + 4] * em;
         var mid = g[i + 2] * em + advance / 2 - half;
         if (flip) mid = -mid;
@@ -1053,6 +1157,10 @@ class LabelPainter {
         final c = math.cos(angle), s = math.sin(angle);
         final cx = (x0 + x1) / 2 + st.dx, cy = (y0 + y1) / 2 + st.dy;
         final lx = -advance / 2, ly = top + (g[i + 3] - lift) * em;
+        if (g[i] < 0) {
+          _turnedInlineImage(sdf, sprite, g, i, cx, cy, lx, ly, c, s, em, st);
+          continue;
+        }
         put(i, cx + c * lx - s * ly, cy + s * lx + c * ly, c, s);
       }
       return;
@@ -1064,6 +1172,7 @@ class LabelPainter {
     final c = math.cos(turn), s = math.sin(turn);
     final left = -shaped.width * em / 2, top = -shaped.height * em / 2;
     for (var i = 0; i < g.length; i += 5) {
+      final lx = left + g[i + 2] * em, ly = top + g[i + 3] * em;
       if (g[i] < 0) {
         // An image in a formatted label is drawn from the sprite sheet.
         if (turn == 0) {
@@ -1078,10 +1187,11 @@ class LabelPainter {
             em,
             st,
           );
+        } else {
+          _turnedInlineImage(sdf, sprite, g, i, mx, my, lx, ly, c, s, em, st);
         }
         continue;
       }
-      final lx = left + g[i + 2] * em, ly = top + g[i + 3] * em;
       put(i, mx + c * lx - s * ly, my + s * lx + c * ly, c, s);
     }
   }
