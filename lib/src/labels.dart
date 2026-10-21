@@ -229,6 +229,11 @@ class LabelEngine {
           },
         },
   ];
+
+  /// The collision boxes the last placement took: see
+  /// [CollisionBoxes.taken].
+  List<double> get debugBoxes => _boxes.taken;
+
   int get spriteCount => _sprites.length;
 
   int get shown => _allStates.where((s) => s.opacity > 0).length;
@@ -284,8 +289,6 @@ class LabelEngine {
     return reach;
   }
 
-  /// The key [st]'s text sprite is kept under: its candidate's, and with
-  /// `text-justify: auto` the side its lines are flush on.
   /// How a name along a line is moved off its anchor, as MapLibre shapes
   /// it: its `text-anchor`'s alignment and its `text-offset`. Null when it
   /// is not moved.
@@ -311,6 +314,8 @@ class LabelEngine {
     return (alignX, alignY, offsetX, offsetY);
   }
 
+  /// The key [st]'s text sprite is kept under: its candidate's, and with
+  /// `text-justify: auto` the side its lines are flush on.
   String _spriteKey(LabelState st) {
     final c = st.candidate;
     final symbol = _symbolOf(c);
@@ -816,7 +821,9 @@ class LabelEngine {
     final styleZoom = zoom - 1 + zoomOffset;
     _layoutZoom = styleZoom.floorToDouble();
     final states = _frameStates..clear();
-    const margin = 60.0;
+    // As MapLibre's viewportPadding: its collision grid reaches this far
+    // past the screen, and a label whose box reaches into it is placed.
+    const margin = 100.0;
     for (final list in sources) {
       for (final c in list) {
         if (!_inRange(c, styleZoom)) continue;
@@ -887,9 +894,14 @@ class LabelEngine {
       st.placeOrder = order;
       final c = st.candidate;
       _stand(c);
-      _boxes.group = crossSourceCollisions || c is! TileLabel
-          ? 0
-          : symbols[c.tile.layer].source + 1;
+      _boxes
+        ..group = crossSourceCollisions || c is! TileLabel
+            ? 0
+            : symbols[c.tile.layer].source + 1
+        // MapLibre's 16 tile units to the pixel, seen through the tilt.
+        ..quantum = identical(_rules, LabelRules.mapLibre) && c is TileLabel
+            ? st.perspective / 16
+            : 0;
       // Only labels that test for collisions count towards the cap: one
       // that may overlap anything and is ignored by everything costs
       // nothing to place.

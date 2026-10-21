@@ -36,6 +36,15 @@ class CollisionBoxes {
   int group = 0;
   Int32List _groups = Int32List(256);
 
+  /// The step an unturned box's half width and height, padding included,
+  /// is cut down to, as MapLibre keeps a symbol's box in whole tile units
+  /// in 16 bits: an edge between two steps comes in to the inner one. Zero
+  /// for none.
+  double quantum = 0;
+
+  double _cut(double half) =>
+      quantum <= 0 ? half : (half / quantum).truncateToDouble() * quantum;
+
   /// MapLibre's collision grid: the screen and 100 pixels around it, as
   /// left, top, right and bottom. A box wholly outside it is not placed,
   /// whatever may overlap. Null for no such edge.
@@ -61,6 +70,10 @@ class CollisionBoxes {
     sx + w / 2 + pad,
     sy + h / 2 + pad,
   );
+
+  /// Every box taken, as left, top, right and bottom in turn, for tools
+  /// that compare placement.
+  List<double> get taken => [for (var i = 0; i < _count; i++) _boxes[i]];
 
   void clear() {
     _count = 0;
@@ -155,11 +168,12 @@ class CollisionBoxes {
     bool cooperative = false,
   }) {
     if (angle == 0) {
+      final hw = _cut(w / 2 + pad), hh = _cut(h / 2 + pad);
       return hits(
-        sx - w / 2 - pad,
-        sy - h / 2 - pad,
-        sx + w / 2 + pad,
-        sy + h / 2 + pad,
+        sx - hw,
+        sy - hh,
+        sx + hw,
+        sy + hh,
         except: except,
         cooperative: cooperative,
       );
@@ -197,13 +211,8 @@ class CollisionBoxes {
     bool never = true,
   }) {
     if (angle == 0) {
-      add(
-        sx - w / 2 - pad,
-        sy - h / 2 - pad,
-        sx + w / 2 + pad,
-        sy + h / 2 + pad,
-        never: never,
-      );
+      final hw = _cut(w / 2 + pad), hh = _cut(h / 2 + pad);
+      add(sx - hw, sy - hh, sx + hw, sy + hh, never: never);
       return;
     }
     final count = math.max(1, (w / h).ceil());

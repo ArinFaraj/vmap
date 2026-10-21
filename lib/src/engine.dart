@@ -122,6 +122,9 @@ class VmapEngine extends ChangeNotifier {
     return sheet == null ? const [] : _labels.debugLabels(sheet);
   }
 
+  /// The collision boxes the last label placement took, in screen pixels.
+  List<double> debugBoxes() => _labels.debugBoxes;
+
   final List<TileSource> _sources = [];
   final List<RasterDrawing<RasterLayer>> _rasters = [];
   final VmapStats stats = VmapStats();

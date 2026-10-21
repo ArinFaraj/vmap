@@ -252,6 +252,8 @@ Future<_Result> _runOne(String id, String dir) async {
       final out = Directory('$_out/$id')..createSync(recursive: true);
       File('${out.path}/labels.json')
           .writeAsStringSync(jsonEncode(session._engine.debugLabels()));
+      File('${out.path}/boxes.json')
+          .writeAsStringSync(jsonEncode(session._engine.debugBoxes()));
     }
     var actual = session.capture();
     // The runner reads back the bottom-left corner of that size.
