@@ -400,6 +400,7 @@ final class LineLayer extends MeshLayer
     this.dashCap = DashCap.butt,
     this.pattern,
     this.gradient,
+    this.gradientSteps = false,
     this.gap,
     this.outline = false,
   });
@@ -473,6 +474,11 @@ final class LineLayer extends MeshLayer
   /// `line-gradient`: the colour at each share of the way along a line,
   /// read with `line-progress`.
   final Expr? gradient;
+
+  /// The gradient steps from colour to colour instead of blending, which
+  /// MapLibre draws from a ramp as fine as the GPU allows so short steps
+  /// along a long line are kept.
+  final bool gradientSteps;
 
   /// `line-gap-width`: the width of the gap down the middle of a line drawn
   /// as two, in logical pixels. [width] spans both sides and the gap.

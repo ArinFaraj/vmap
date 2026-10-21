@@ -36,7 +36,6 @@ is-supported-script/layout	equal	Devanagari drawn in a different font
 line-dasharray/diagonal-dash	equal	edge pixels
 line-gradient/color-interpolation-rgb-hcl-lab	equal	gradient shade
 line-gradient/color-interpolation-transparent	equal	gradient shade
-line-gradient/gradient-shared-source	equal	edge pixels
 line-gradient/gradient-step	equal	edge pixels
 line-gradient-dasharray/color-interpolation-hcl-lab	skip	MapLibre measures dashes on a line-metrics line by its share of the whole line, so their length follows the line
 line-gradient-dasharray/gradient-shared-source	skip	MapLibre measures dashes on a line-metrics line by its share of the whole line, so their length follows the line

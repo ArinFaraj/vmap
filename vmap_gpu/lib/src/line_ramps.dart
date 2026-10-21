@@ -12,7 +12,11 @@ import 'package:vmap/renderer.dart';
 /// density to full, and a dashed layer's pattern as the signed distance to
 /// the nearest dash end.
 class LineRamps {
-  static const width = 256;
+  /// Texels a row, as MapLibre's ramp: 256, or for a stepped gradient as
+  /// many as a long line's short steps need, which MapLibre takes up to the
+  /// GPU's limit.
+  int width = 256;
+  static const _stepWidth = 4096;
 
   StyleSheet? _sheet;
   final Map<int, double> _gradients = {};
@@ -27,6 +31,18 @@ class LineRamps {
   /// Where the gradient or heatmap row of style layer [layer] is, from 0 at
   /// the texture's top to 1 at its bottom; null for a layer without one.
   double? gradientOf(int layer) => _gradients[layer];
+
+  /// [gradientOf], negated for a stepped gradient, which is sampled at the
+  /// nearest texel.
+  double? gradientRowOf(int layer) {
+    final row = _gradients[layer];
+    if (row == null) return null;
+    final steps = switch (_sheet?.layers[layer]) {
+      final LineLayer line => line.gradientSteps,
+      _ => false,
+    };
+    return steps ? -row : row;
+  }
 
   /// Where the dash row of style layer [layer] at style zoom [zoom] is, as
   /// [gradientOf]; null for a layer without dashes.
@@ -71,6 +87,9 @@ class LineRamps {
             ? [line.dash!]
             : [for (final (_, d) in line.dashStops) d],
     ];
+    width = sheet.layers.any((l) => l is LineLayer && l.gradientSteps)
+        ? _stepWidth
+        : 256;
     final rows = ramps.length + patterns.fold<int>(0, (n, p) => n + p.length);
     rowCount = rows;
     if (rows == 0) return;

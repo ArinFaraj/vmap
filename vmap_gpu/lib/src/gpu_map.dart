@@ -1262,7 +1262,7 @@ class GpuMap implements MapRenderer {
         GpuStream.kindOf(sheet.layers[layerIndex]),
         scale,
         _sheet,
-        _ramps.gradientOf(layerIndex),
+        _ramps.gradientRowOf(layerIndex),
         _ramps.dashOf(layerIndex, styleZoom, choice: paint.dashChoice),
         dashBeforeRow: paint.dashBefore > 0
             ? _ramps.dashOf(

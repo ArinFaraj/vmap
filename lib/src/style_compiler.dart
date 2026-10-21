@@ -813,6 +813,7 @@ class StyleCompiler {
             ? _withDefault(paint['line-color'], '#000000')
             : compileExpr('#ffffff'),
         gradient: _maybe(ramp),
+        gradientSteps: ramp is List && ramp.isNotEmpty && ramp.first == 'step',
         gap: between,
         opacity: _withDefault(paint['line-opacity'], 1),
         width: width,

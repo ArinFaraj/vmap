@@ -58,9 +58,13 @@ void main() {
     float inside = ring > 0.0 ? smoothstep(0.0, pixel, radius - d) : 1.0;
     color = mix(rim, v_color, inside) * shape;
   } else if (v_uv.z > 2.5) {
+    // A stepped gradient's row comes negated: as MapLibre samples its
+    // ramp, it takes the nearest texel, keeping its steps' edges sharp.
     float ramp = frag_info.sheet_size.z;
-    float u = (clamp(v_uv.x, 0.0, 1.0) * (ramp - 1.0) + 0.5) / ramp;
-    color = texture(gradient_ramp, vec2(u, v_uv.y)) * v_color.a;
+    float x = clamp(v_uv.x, 0.0, 1.0) * (ramp - 1.0);
+    if (v_uv.y < 0.0) x = floor(x + 0.5);
+    float u = (x + 0.5) / ramp;
+    color = texture(gradient_ramp, vec2(u, abs(v_uv.y))) * v_color.a;
   } else if (v_uv.z > 1.5) {
     // As MapLibre's atlas, the pattern is padded by a texel of itself
     // wrapped around, and the padded pattern spans the line.
