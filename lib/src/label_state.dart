@@ -138,6 +138,9 @@ class LabelState {
   /// Hidden by a building, as last found.
   bool occluded = false;
 
+  /// The [BuildingOcclusion.view] [occluded] was found for.
+  int occludedFor = 0;
+
   LabelCandidate candidate;
   LabelSprite? sprite;
 

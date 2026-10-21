@@ -37,7 +37,9 @@ class BuildingOcclusion {
   ) {
     _buildings.clear();
     _view = view;
+    this.view = 0;
     if (view == null || view.pitch < 15) return;
+    final eye = view.eye;
     final shown = {
       for (final layer in sheet.extrusions)
         if (styleZoom >= layer.minZoom && styleZoom < layer.maxZoom)
@@ -52,7 +54,12 @@ class BuildingOcclusion {
     _perMetre =
         view.worldSize /
         (40075016.686 * math.cos(latitudeAt(view.centerY) * math.pi / 180));
+    this.view = Object.hash(eye.x, eye.y, eye.height, _buildings.length);
   }
+
+  /// Which camera and buildings the answers of [hides] hold for: an answer
+  /// found for the same value still stands.
+  int view = 0;
 
   /// Whether a building hides the ground point [wx], [wy], in fractions of
   /// the world, or null once this placement's budget is spent.

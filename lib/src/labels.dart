@@ -561,6 +561,7 @@ class LabelEngine {
         _placedRotation = rotation;
         _placedTilt = tilt;
         _placedSourcesKey = sourcesKey;
+        if (_placeAgain) pending = true;
       } else {
         pending = true;
       }
@@ -941,9 +942,22 @@ class LabelEngine {
       // ground would make flip from frame to frame; there hills hide them.
       // Buildings hide only markers: the name of an area or a street stays
       // up over the roofs, as on Apple's and Google's maps.
-      st.occluded = _view.ground == null
-          ? _marker(c) && (occlusion.hides(c.worldX, c.worldY) ?? st.occluded)
-          : _view.behindHill(c.worldX, c.worldY);
+      if (_view.ground != null) {
+        st.occluded = _view.behindHill(c.worldX, c.worldY);
+      } else if (!_marker(c)) {
+        st.occluded = false;
+      } else if (st.occludedFor != occlusion.view) {
+        // Past the time budget a label keeps what it had, and placing again
+        // asks the rest, until every label has its answer for this camera.
+        final hidden = occlusion.hides(c.worldX, c.worldY);
+        if (hidden == null) {
+          _placeAgain = true;
+        } else {
+          st
+            ..occluded = hidden
+            ..occludedFor = occlusion.view;
+        }
+      }
       if (st.occluded) {
         st.placed = false;
         continue;
