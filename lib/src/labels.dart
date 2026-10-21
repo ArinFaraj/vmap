@@ -801,6 +801,9 @@ class LabelEngine {
     return a.sortKey - b.sortKey;
   }
 
+  static bool _marker(LabelCandidate c) =>
+      c is TileLabel && c.tile.line == null && c.tile.icon.isNotEmpty;
+
   /// The tile units MapLibre sorts symbols in, `EXTENT`.
   static const _sortExtent = 8192.0;
 
@@ -936,8 +939,10 @@ class LabelEngine {
       }
       // Buildings hiding labels are worked out at sea level, which raised
       // ground would make flip from frame to frame; there hills hide them.
+      // Buildings hide only markers: the name of an area or a street stays
+      // up over the roofs, as on Apple's and Google's maps.
       st.occluded = _view.ground == null
-          ? (occlusion.hides(c.worldX, c.worldY) ?? st.occluded)
+          ? _marker(c) && (occlusion.hides(c.worldX, c.worldY) ?? st.occluded)
           : _view.behindHill(c.worldX, c.worldY);
       if (st.occluded) {
         st.placed = false;
