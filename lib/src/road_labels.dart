@@ -217,14 +217,16 @@ class RoadLabels {
     double reach, {
     required bool check,
     required bool add,
+    double lift = 0,
   }) {
     if (!check && !add) return false;
     final count = stripCount(textW, textH);
-    final (onScreen, middle) = _view.onScreen(st.curve!, st.curveMid);
+    final (screen, mid) = _view.onScreen(st.curve!, st.curveMid);
+    final line = offsetPath(screen, mid, lift);
     final step = textW / count;
     if (_slices.length < count * 2) _slices = Float64List(count * 4);
     for (var j = 0; j < count; j++) {
-      pointAlong(onScreen, middle + (j + 0.5 - count / 2) * step, _at);
+      line.at((j + 0.5 - count / 2) * step, _at);
       final x = _at[0], y = _at[1];
       if (check && _boxes.hits(x - reach, y - reach, x + reach, y + reach)) {
         return true;

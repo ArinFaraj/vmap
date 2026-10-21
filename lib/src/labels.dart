@@ -1178,6 +1178,7 @@ class LabelEngine {
         reach,
         check: !overlaps,
         add: !ignored,
+        lift: (_lineShift(st.candidate)?.$4 ?? 0) * fontSize,
       )) {
         return;
       }

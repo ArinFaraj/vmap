@@ -739,7 +739,8 @@ class LabelPainter {
     final cells = sprite.cells, ems = sprite.cellEms;
     final shaped = sprite.shaped;
     final path = st.curve!;
-    final (onScreen, middle) = _view.onScreen(path, st.curveMid);
+    final line = _onScreenOffset(st, sprite, path, em);
+    final lift = _lift(sprite);
     final flip =
         st.keepUpright &&
         math.cos(_view.screenAngle(st.worldX, st.worldY, st.angle)) < 0;
@@ -758,15 +759,15 @@ class LabelPainter {
       var mid = g[i + 2] * em + advance / 2 - half;
       if (flip) mid = -mid;
       final reach = math.max(advance / 2, 1.0);
-      pointAlong(onScreen, middle + mid - reach, _along);
+      line.at(mid - reach, _along);
       final ax = _along[0], ay = _along[1];
-      pointAlong(onScreen, middle + mid + reach, _along);
+      line.at(mid + reach, _along);
       final bx = _along[0], by = _along[1];
       var angle = math.atan2(by - ay, bx - ax);
       if (flip) angle += math.pi;
       final c = math.cos(angle), s = math.sin(angle);
       final cx = (ax + bx) / 2 + st.dx, cy = (ay + by) / 2 + st.dy;
-      final lx = -advance / 2, ly = top + g[i + 3] * em;
+      final lx = -advance / 2, ly = top + (g[i + 3] - lift) * em;
       pages.add(
         cell,
         cx + c * lx - s * ly,
@@ -817,6 +818,8 @@ class LabelPainter {
       ]);
       middle = half * 2;
     }
+    final lift = _lift(sprite);
+    final line = offsetPath(path, middle, lift * unit);
     final ink = _faded(sprite.look.color, st.opacity);
     final halo = sprite.look.halo == null
         ? null
@@ -828,12 +831,12 @@ class LabelPainter {
       final advance = g[i + 4] * unit;
       var along = g[i + 2] * unit + advance / 2 - half;
       if (flip) along = -along;
-      pointAlong(path, middle + along, _along);
+      line.at(along, _along);
       var angle = _along[2];
       if (flip) angle += math.pi;
       final tx = math.cos(angle), ty = math.sin(angle);
       final nx = -ty, ny = tx;
-      final down = (g[i + 3] - shaped.height / 2) * unit;
+      final down = (g[i + 3] - lift - shaped.height / 2) * unit;
       final px = _along[0] - tx * advance / 2 + nx * down;
       final py = _along[1] - ty * advance / 2 + ny * down;
       _view.project(px, py);
@@ -909,18 +912,20 @@ class LabelPainter {
         ]);
         middle = half * 2;
       }
+      final lift = _lift(sprite);
+      final line = offsetPath(path, middle, lift * unit);
       final look0 = lookOf(0, size / GlyphPbf.em, depth);
       for (var i = 0; i < g.length; i += 5) {
         if (g[i] < 0) continue;
         final advance = g[i + 4] * unit;
         var along = g[i + 2] * unit + advance / 2 - half;
         if (flip) along = -along;
-        pointAlong(path, middle + along, _along);
+        line.at(along, _along);
         var angle = _along[2];
         if (flip) angle += math.pi;
         final tx = math.cos(angle), ty = math.sin(angle);
         final nx = -ty, ny = tx;
-        final down = (g[i + 3] - shaped.height / 2) * unit;
+        final down = (g[i + 3] - lift - shaped.height / 2) * unit;
         final px = _along[0] - tx * advance / 2 + nx * down;
         final py = _along[1] - ty * advance / 2 + ny * down;
         final gu = unit * (scales?[i ~/ 5] ?? 1) / GlyphPbf.em;
@@ -967,7 +972,8 @@ class LabelPainter {
     }
 
     if (st.curve case final path?) {
-      final (onScreen, middle) = _view.onScreen(path, st.curveMid);
+      final line = _onScreenOffset(st, sprite, path, em);
+      final lift = _lift(sprite);
       final flip =
           st.keepUpright &&
           math.cos(_view.screenAngle(st.worldX, st.worldY, st.angle)) < 0;
@@ -979,15 +985,15 @@ class LabelPainter {
         var mid = g[i + 2] * em + advance / 2 - half;
         if (flip) mid = -mid;
         final reach = math.max(advance / 2, 1.0);
-        pointAlong(onScreen, middle + mid - reach, _along);
+        line.at(mid - reach, _along);
         final x0 = _along[0], y0 = _along[1];
-        pointAlong(onScreen, middle + mid + reach, _along);
+        line.at(mid + reach, _along);
         final x1 = _along[0], y1 = _along[1];
         var angle = math.atan2(y1 - y0, x1 - x0);
         if (flip) angle += math.pi;
         final c = math.cos(angle), s = math.sin(angle);
         final cx = (x0 + x1) / 2 + st.dx, cy = (y0 + y1) / 2 + st.dy;
-        final lx = -advance / 2, ly = top + g[i + 3] * em;
+        final lx = -advance / 2, ly = top + (g[i + 3] - lift) * em;
         put(i, cx + c * lx - s * ly, cy + s * lx + c * ly, c, s);
       }
       return;
@@ -1019,6 +1025,21 @@ class LabelPainter {
       final lx = left + g[i + 2] * em, ly = top + g[i + 3] * em;
       put(i, mx + c * lx - s * ly, my + s * lx + c * ly, c, s);
     }
+  }
+
+  /// A name along a line's `text-offset` across the line, in ems.
+  static double _lift(GlyphSprite sprite) => sprite.look.lineShift?.$4 ?? 0;
+
+  /// [path] on the screen, moved across by [st]'s `text-offset`, and where
+  /// its middle lands along it.
+  OffsetLine _onScreenOffset(
+    LabelState st,
+    GlyphSprite sprite,
+    Float64List path,
+    double em,
+  ) {
+    final (onScreen, middle) = _view.onScreen(path, st.curveMid);
+    return offsetPath(onScreen, middle, _lift(sprite) * em);
   }
 
   /// Where the middle of [st]'s text is on the screen, and its size there.

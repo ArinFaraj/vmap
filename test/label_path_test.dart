@@ -41,4 +41,34 @@ void main() {
     expect(out[1], 0);
     expect(out[5], 0);
   });
+
+  test('a moved line keeps the glyph spacing on the inside of a bend', () {
+    // Going right then down, so the right of the line is inside the bend.
+    final line = offsetPath(corner, 5, 2);
+    final out = Float64List(3);
+    line.at(0, out);
+    expect([out[0], out[1]], [5, 2]);
+    line.at(3, out);
+    expect(out[0], closeTo(8, 1e-9));
+    expect(out[1], closeTo(2, 1e-9));
+    line.at(4, out);
+    expect(out[0], closeTo(8, 1e-9));
+    expect(out[1], closeTo(3, 1e-9));
+  });
+
+  test('a middle on a corner starts each half beside its own segment', () {
+    final line = offsetPath(corner, 10, -2);
+    final out = Float64List(3);
+    line.at(-1, out);
+    expect([out[0], out[1]], [9, -2]);
+    line.at(1, out);
+    expect([out[0], out[1]], [12, 1]);
+  });
+
+  test('no offset leaves the line as it is', () {
+    final line = offsetPath(corner, 4, 0);
+    expect(line.path, same(corner));
+    expect(line.middle, 4);
+    expect(line.gap, 0);
+  });
 }
