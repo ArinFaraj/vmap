@@ -63,9 +63,12 @@ const formatKey = r'$format';
 /// fonts, colour as a 32 bit ARGB or null, and vertical alignment, for the
 /// label to carry. Sections are null for plain text.
 (String, List<Object?>?) labelText(Object? value) {
-  if (value is! FormattedText) return ((value ?? '').toString().trim(), null);
+  if (value is! FormattedText) {
+    return (trimLines((value ?? '').toString()), null);
+  }
   final sections = value.sections;
-  if (sections.every((s) => s.plain)) return (value.toString().trim(), null);
+  if (sections.every((s) => s.plain))
+    return (trimLines(value.toString()), null);
   final out = StringBuffer();
   for (var i = 0; i < sections.length; i++) {
     var text = sections[i].text;
@@ -103,4 +106,13 @@ String plainText(String text) {
     out.writeCharCode(runes[i]);
   }
   return out.toString();
+}
+
+/// [text] with each line trimmed, as MapLibre's shaping trims them, or
+/// empty when no line holds anything. An empty line keeps its place: a
+/// name with nothing before its newline stands a line lower.
+String trimLines(String text) {
+  if (!text.contains('\n')) return text.trim();
+  final lines = [for (final line in text.split('\n')) line.trim()];
+  return lines.every((l) => l.isEmpty) ? '' : lines.join('\n');
 }

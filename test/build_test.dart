@@ -187,6 +187,17 @@ void main() {
     );
   });
 
+  test('a text field keeps an empty first line and trims each line', () {
+    final field = compileText([
+      'concat',
+      ['get', 'name:latin'],
+      '\n',
+      ['get', 'name:nonlatin'],
+    ]);
+    expect(field(at(0, {'name:nonlatin': ' كرزات '})), '\nكرزات');
+    expect(field(at(0, {'name:latin': ' '})), '');
+  });
+
   group('compiling a style', () {
     final style = <String, Object?>{
       'version': 8,

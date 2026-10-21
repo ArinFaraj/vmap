@@ -70,6 +70,11 @@ void main() {
     expect(layoutRanges(tenWide, 600, 'a\nb')!.lines, 2);
   });
 
+  test('an empty first line keeps its place', () {
+    final shaped = layoutRanges(tenWide, 600, '\nab')!;
+    expect(shaped.lines, 2);
+  });
+
   test('lines are justified within the widest', () {
     final left = layoutRanges(tenWide, 600, 'aaaa\nb', justify: -1)!.glyphs;
     final right = layoutRanges(tenWide, 600, 'aaaa\nb', justify: 1)!.glyphs;

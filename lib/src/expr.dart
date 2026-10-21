@@ -167,12 +167,12 @@ Expr compileText(Object? json) {
       if (value is String && value.contains('{')) {
         return (filled[value] ??= _tokens(value))(c);
       }
-      return value is FormattedText ? value : asText(value).trim();
+      return value is FormattedText ? value : trimLines(asText(value));
     };
   }
   return (c) {
     final value = inner(c);
-    return value is FormattedText ? value : asText(value).trim();
+    return value is FormattedText ? value : trimLines(asText(value));
   };
 }
 
@@ -192,7 +192,7 @@ Expr _tokens(String text) {
     for (final p in parts) {
       out.write(p is String ? p : asText(c.props[(p as List).first]));
     }
-    return out.toString().trim();
+    return trimLines(out.toString());
   };
 }
 
