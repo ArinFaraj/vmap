@@ -1,40 +1,64 @@
-## Unreleased
+## 0.27.0
 
-- `VmapLayer`, `VmapMap`, `VmapGestures` and `NamedMarker` move to the
-  `vmap_flutter_map` package, so vmap no longer depends on flutter_map.
-  `VmapEngine.markers` takes `VmapMarker`s.
-- `VMap` on a flat map keeps the camera to the world, as MapLibre does: it
-  does not zoom out past a world as tall as the map, nor show past the
-  poles. `MapCameraPosition.constrained` applies the same rule.
+vmap is now a map engine of its own, drawn on the GPU, with flutter_map
+moved to an adapter package. This release changes most of the public API;
+"Moving from vmap 0.26" in the README lists what to rename.
+
+### The engine
+
+- `Vmap`, a map widget of vmap's own, takes every setting as a parameter:
+  style, overlay, style edits, feature state, markers that are widgets,
+  pins, text, labels, network and rendering. It tilts, stands
+  `fill-extrusion` buildings up, and has gestures for touch, mouse wheel,
+  right drag, trackpad and keyboard, long press, a loading builder, the
+  style's attribution in a corner, and callbacks for camera moves, the
+  camera coming to rest, the style loaded, the map idle and errors.
+- `VmapController` moves it: `flyTo`, `easeTo` and `fitBounds` as
+  MapLibre's do, `featuresAt` and `featuresIn`, and `toScreen` and
+  `toLatLng`. A moving camera carries its speed into the next animation.
+- `VmapCamera` says where the map looks: a `LatLng` center, a zoom in
+  MapLibre's convention, bearing, pitch, roll, `EdgeInsets` padding and a
+  field of view in degrees. Every zoom the engine takes or gives is
+  MapLibre's.
+- The GPU renderer is built in and used by default, the canvas where
+  Flutter GPU does not run. `VmapEngine.drawingWith` says which draws, and
+  a debug build says which switch is missing. vmap needs Flutter 3.47.1 or
+  newer. It draws buildings with a depth buffer, the style's `terrain`
+  with the map draped over it, the globe, sky and fog.
+- Engine settings are grouped in `VmapNetworkOptions`,
+  `VmapRenderOptions` and `VmapLabelOptions`. Labels take letters from the
+  style's glyph ranges by default, as MapLibre does, with the app's fonts
+  for what ranges cannot shape; `VmapGlyphs.fonts` uses fonts for all.
+- Errors arrive as `VmapError`, saying what failed (style, tiles, sprite,
+  fonts, GPU) and its address.
+- A feature found under a tap carries its geometry; cluster members a
+  `LatLng`.
+- The credit a source's TileJSON asks for is part of
+  `VmapEngine.attributions`.
+- `VmapLayer`, `VmapFlutterMap` (was `VmapMap`), `VmapGestures` and
+  `NamedMarker` are in the `vmap_flutter_map` package, so vmap no longer
+  depends on flutter_map.
+- Statistics are in `package:vmap/debug.dart`. `VmapPalette` names its
+  colours. `VmapEngine.useWebWorker` sets the web worker.
+
+### Drawing
+
+- On a flat map the camera keeps to the world, as MapLibre's does: it does
+  not zoom out past a world as tall as the map, nor show past the poles.
 - A vector source that names no `maxzoom`, in the style or its TileJSON,
   has tiles down to zoom 22, as the style spec and MapLibre say, not 14.
   Give the source its `maxzoom` when its server stops sooner.
 - Vector tiles in the MapLibre Tile format (MLT): a `vector` source with
   `"encoding": "mlt"` is read as MapLibre reads it.
-- `VMap`, a map widget of vmap's own: it tilts up to 60 degrees and stands
-  `fill-extrusion` buildings up, and its gestures and
-  `VMapController.flyTo` and `easeTo` keep their speed.
-- `GpuMap`, a renderer on Flutter GPU: `VmapEngine(renderer:
-  GpuMap.create())`. vmap now needs Flutter 3.47.1 or newer. It draws buildings with a depth buffer and the
-  style's `terrain` with the map draped over it.
 - `VmapOverlay.images`: pictures of the app's own that the style draws by
   name, as MapLibre's `addImage`.
-- `VmapEngine(styleGlyphs: true)` draws labels from the style's glyph
-  ranges, as MapLibre does.
 - Every `background` layer is drawn, in the style's order.
-- Labels are placed at MapLibre's anchors; road names lie on the ground of
-  a tilted map.
-- `MapCameraPosition.pad` keeps space free around the map, so an app can
-  set its view under a sheet: the camera looks at the middle of what the
-  padding leaves, as MapLibre's padding does. `EdgeInsets2` carries it,
-  `MapView.copyWithPad` changes it on a view, and `flyTo` and `easeTo`
-  blend to new padding as they fly.
+- Labels are placed at MapLibre's anchors, with its collision circles for
+  road names, and road names lie on the ground of a tilted map.
 - The map lets go of tiles, label images and GPU memory out of view when
-  the system is short of memory (`VmapEngine.trimMemory`), as `VMap` and
-  `VmapLayer` do on their own.
-- `crossSourceCollisions: false` on `VmapMap`, `VmapLayer` or
-  `VmapEngine` lets each source's labels keep clear of their own only, as
-  MapLibre's map option.
+  the system is short of memory.
+- `VmapLabelOptions.crossSourceCollisions: false` lets each source's labels
+  keep clear of their own only, as MapLibre's map option.
 - Raster tiles fade in over `raster-fade-duration`, over the tiles they
   replace, instead of appearing at once.
 - A building whose height, base or colour reads `feature-state` changes

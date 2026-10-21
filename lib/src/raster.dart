@@ -409,6 +409,9 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
   String? _template;
   int _maxZoom;
   int _loading = 0;
+
+  /// The credit the layer's TileJSON asks for, once it has been read.
+  String? attribution;
   int _frame = 0;
 
   /// The tiles the last frame drew without a picture yet: fetching,
@@ -440,6 +443,7 @@ sealed class TileDrawing<L extends TiledRasterLayer> extends RasterDrawing<L> {
       final json = jsonDecode(utf8.decode(reply.bytes)) as Map<String, dynamic>;
       final deepest = json['maxzoom'];
       if (deepest is num) _maxZoom = deepest.toInt();
+      if (json['attribution'] case final String credit) attribution = credit;
       if (tileTemplate(json['tiles']) case final template?) {
         _use(template, cover);
       }

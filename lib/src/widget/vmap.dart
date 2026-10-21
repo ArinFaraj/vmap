@@ -994,7 +994,12 @@ class _Attribution extends StatelessWidget {
           ),
           child: Text(
             text,
-            style: const TextStyle(fontSize: 10, color: Color(0xFF333333)),
+            style: const TextStyle(
+              inherit: false,
+              fontSize: 10,
+              height: 1.2,
+              color: Color(0xFF333333),
+            ),
           ),
         ),
       );

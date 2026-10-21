@@ -96,7 +96,7 @@ like that.
 
 ### A worker for the tiles
 
-`VmapEngine.webWorker` moves tile building off the page's thread. One lap
+`VmapEngine.useWebWorker` sets the worker that moves tile building off the page's thread. One lap
 each, JavaScript build, tiles already in the browser's cache:
 
 | | frames a second | frames skipped | longest gap |

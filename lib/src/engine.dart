@@ -285,8 +285,13 @@ class VmapEngine extends ChangeNotifier {
     _loadStyle();
   }
 
-  /// The credit the style's sources ask for, once the style has loaded.
-  List<String> get attributions => _sheet?.attributions ?? const [];
+  /// The credit the style's sources ask for, from the style and from
+  /// their TileJSON, once each has been read.
+  List<String> get attributions => {
+    ...?_sheet?.attributions,
+    for (final s in _sources) ?s.pool.attribution,
+    for (final r in _rasters.whereType<TileDrawing>()) ?r.attribution,
+  }.toList();
 
   /// Whether the style has loaded and compiled.
   bool get styleLoaded => _sheet != null;

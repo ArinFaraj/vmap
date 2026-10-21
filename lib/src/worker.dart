@@ -92,6 +92,9 @@ class TilePool {
   Future<void>? _starting;
   Object? startError;
 
+  /// The credit the source's TileJSON asks for, once it has been read.
+  String? attribution;
+
   /// Longest the UI isolate spent unpacking one finished tile, in
   /// microseconds, since this was last read.
   int takeMaxUnpackMicros() {
@@ -170,6 +173,7 @@ class TilePool {
         final saved = utf8.decode(await readFile(file)).split('\n');
         remembered = saved.first;
         if (saved.length > 1) maxZoom = int.tryParse(saved[1]) ?? maxZoom;
+        if (saved.length > 2 && saved[2].isNotEmpty) attribution = saved[2];
       }
       if (remembered != null) {
         _use(remembered);
@@ -280,9 +284,15 @@ class TilePool {
       final template = tileTemplate(json['tiles'])!;
       final deepest = json['maxzoom'];
       if (deepest is num) maxZoom = deepest.toInt();
+      if (json['attribution'] case final String credit) {
+        attribution = credit.replaceAll('\n', ' ');
+      }
       final file = _templateFile(tileJsonUrl);
       if (file != null) {
-        await writeFile(file, utf8.encode('$template\n$maxZoom'));
+        await writeFile(
+          file,
+          utf8.encode('$template\n$maxZoom\n${attribution ?? ''}'),
+        );
       }
       return template;
     } finally {

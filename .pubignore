@@ -1,0 +1,14 @@
+# Development only: the benchmark app, tools, the flutter_map adapter
+# (published on its own), internal notes and generated files.
+/bench/
+/tool/
+/vmap_flutter_map/
+/docs/
+/doc/design/
+/doc/api-review.md
+/doc/review.md
+/doc/naming.md
+/ROADMAP.md
+/.github/
+/build/
+/.dart_tool/

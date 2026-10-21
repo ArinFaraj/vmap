@@ -1,22 +1,22 @@
 name: vmap
 description: >-
-  Vector maps for flutter_map: draws any MapLibre style with the plain Flutter
-  canvas, with labels in every script, pins, overlays and offline tiles.
-version: 0.26.0
+  A map engine for Flutter drawn on the GPU: any MapLibre style, 3D buildings,
+  terrain and the globe, labels in every script, on every platform.
+version: 0.27.0
 repository: https://github.com/ArinFaraj/vmap
 issue_tracker: https://github.com/ArinFaraj/vmap/issues
 topics:
   - map
   - maps
-  - flutter-map
-  - vector-tiles
   - maplibre
+  - vector-tiles
+  - gpu
 
 screenshots:
-  - description: One place in Erbil drawn in three styles by vmap.
+  - description: Erbil's citadel in 3D, in OpenFreeMap's Liberty style.
     path: doc/screenshots/hero.webp
-  - description: The example app in a light and a dark style.
-    path: doc/screenshots/app.webp
+  - description: Erbil in vmap's built in style, with Kurdish street names.
+    path: doc/screenshots/builtin.webp
 
 environment:
   sdk: ">=3.13.0 <4.0.0"
@@ -32,7 +32,7 @@ dependencies:
   flutter_gpu_shaders: ^0.5.2
   latlong2: ">=0.9.0 <0.11.0"
   hooks: ^2.0.0
-  payv: 0.1.2
+  payv: ^0.1.2
   vector_math: ^2.2.0
   web: ^1.1.1
 

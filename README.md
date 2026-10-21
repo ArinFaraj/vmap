@@ -1,78 +1,87 @@
-![vmap: vector maps for flutter_map, one place in three styles](https://raw.githubusercontent.com/ArinFaraj/vmap/v0.26.0/doc/images/hero.png)
+![vmap drawing Erbil's old town in 3D](doc/images/hero.png)
 
-Vector maps for [flutter_map](https://pub.dev/packages/flutter_map), drawn
-with the plain Flutter canvas, in any MapLibre style.
+A map engine for Flutter, drawn on the GPU. It reads any MapLibre style and
+draws it the way MapLibre does, with 3D buildings, terrain, the globe and
+labels in every script, on Android, iOS, macOS, Windows, Linux and the web.
 
-- Reads any MapLibre style: colours, roads, labels, icons, dashes, patterns.
-- Runs on the stable channel, on Skia or Impeller. No GPU package.
-- Redraws from vectors every frame, so nothing goes soft between zoom levels.
-- Tiles are loaded and built on background isolates.
-- Labels in any script, in your app's own fonts.
-- Its own gestures, with rotation, and optional round pins for places.
-- Your own GeoJSON drawn with the style, and a lookup of what is under a tap.
+- **Any MapLibre style**: 1,399 of the 1,530 MapLibre render tests that
+  apply, and real styles within a few percent of MapLibre GL JS.
+- **3D**: buildings with depth, terrain draped with the map, sky and fog,
+  the globe, tilt up to 85 degrees.
+- **Labels in every script**, Arabic and Kurdish shaped correctly, placed
+  and kept apart as MapLibre places them, and steady while the map moves.
+- **Flutter all the way down**: one widget, markers that are widgets,
+  gestures for touch, mouse, trackpad and keyboard, no platform views.
+- **Your own data**: GeoJSON with clustering, feature state for
+  highlighting, a lookup of what is under a tap with its geometry.
+- **Offline**: a disk cache, regions downloaded ahead, and PMTiles archives.
 
 ## Install
 
 ```bash
-flutter pub add vmap flutter_map latlong2
+flutter pub add vmap
 ```
+
+vmap needs Flutter 3.47.1 or newer. Switch Flutter GPU on in your app, once
+per platform:
+
+| Platform | Where | What |
+| --- | --- | --- |
+| Android | `android/app/src/main/AndroidManifest.xml`, inside `<application>` | `<meta-data android:name="io.flutter.embedding.android.EnableFlutterGPU" android:value="true" />` |
+| iOS, macOS | `ios/Runner/Info.plist`, `macos/Runner/Info.plist` | `<key>FLTEnableFlutterGPU</key><true/>` |
+| Windows | `windows/runner/main.cpp`, after `DartProject project(...)` | `project.set_enable_flutter_gpu(true);` |
+| Linux | `linux/runner/my_application.cc`, after `fl_dart_project_new()` | `fl_dart_project_set_enable_flutter_gpu(project, TRUE);` |
+| Web | nothing | vmap draws through WebGL2 |
+
+`flutter run --enable-flutter-gpu` switches it on for one run. Where
+Flutter GPU is off or missing, the map is drawn with Flutter's canvas
+instead: flat buildings, no terrain or globe. In debug builds vmap says so
+in the console, and `onError` hears it as a `VmapErrorKind.gpu` error.
+
+On macOS the app also needs the `com.apple.security.network.client`
+entitlement to load tiles.
 
 ## Quick start
 
 ```dart
-import 'package:latlong2/latlong.dart';
+import 'package:flutter/material.dart';
 import 'package:vmap/vmap.dart';
 
-VmapMap(
-  initialCenter: const LatLng(36.19, 44.01),
-  initialZoom: 14,
-)
+class MapPage extends StatelessWidget {
+  const MapPage({super.key});
+
+  @override
+  Widget build(BuildContext context) => const Scaffold(
+    body: Vmap(
+      initialCamera: VmapCamera(center: LatLng(36.19, 44.01), zoom: 14),
+    ),
+  );
+}
 ```
 
-That is a full map: the built in style, tiles from
-[OpenFreeMap](https://openfreemap.org) (no API key), and gestures.
-
-### Already using flutter_map?
-
-Keep your `FlutterMap` and swap the tile layer:
-
-```diff
- FlutterMap(
-   options: MapOptions(initialCenter: LatLng(36.19, 44.01), initialZoom: 14),
-   children: [
--    TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
-+    VmapLayer(),
-     MarkerLayer(markers: markers),
-   ],
- )
-```
-
-`VmapMap` and `VmapLayer` take the same options below. The snippets leave out
-`initialCenter` to stay short.
+That is a whole map: vmap's built in style over
+[OpenFreeMap](https://openfreemap.org) tiles (no key), gestures, and the
+credit the tiles ask for in the corner. The [example](example/lib/main.dart)
+adds a style switcher, a marker, taps and 3D in a hundred lines.
 
 ## Styles
 
-![The same place in six styles](https://raw.githubusercontent.com/ArinFaraj/vmap/v0.26.0/doc/images/styles.png)
-
 ```dart
-VmapMap(style: VmapStyle.light)  // built in, the default
-VmapMap(style: VmapStyle.dark)   // built in
-VmapMap(style: VmapStyle.url('https://tiles.openfreemap.org/styles/liberty'))
-VmapMap(style: VmapStyle.json(jsonDecode(myStyle)))
+Vmap(style: VmapStyle.light)  // built in, the default
+Vmap(style: VmapStyle.dark)   // built in
+Vmap(style: VmapStyle.url('https://tiles.openfreemap.org/styles/liberty'))
+Vmap(style: VmapStyle.json(myStyleDocument))
 ```
 
-The style decides the look and where the tiles come from. Light and dark
-versions of one style switch without reloading a tile.
+The style decides the look and where the tiles come from. A style given as
+JSON is compared by identity: decode it once and keep it, rather than in
+`build`, or the map loads it again on every build.
 
-![One style from a country down to a street](https://raw.githubusercontent.com/ArinFaraj/vmap/v0.26.0/doc/images/zooms.png)
-
-### Changing a layer
-
-To recolour, hide or filter one layer of a style without writing the whole
-style out again, name the layer by its `id`:
+To change one layer of a style without writing it out again, name the layer
+by its `id`:
 
 ```dart
-VmapMap(
+Vmap(
   style: VmapStyle.url('https://tiles.openfreemap.org/styles/liberty'),
   styleEdits: [
     const VmapStyleEdit.paint('water', 'fill-color', '#2a6fdb'),
@@ -84,124 +93,115 @@ VmapMap(
 ```
 
 These are MapLibre's `setPaintProperty`, `setLayoutProperty`, `setFilter`
-and `setLayerZoomRange`, given as a list instead of called. A change of
-colour, width or opacity keeps the tiles already loaded; a filter, a zoom
-range or a layout property builds them again behind what is on screen.
-Layers of your own are changed the same way, or by passing a new overlay.
+and `setLayerZoomRange`, given as a list. A change of paint keeps the tiles
+loaded and animates as the style's transitions say; a filter, a zoom range
+or a layout property builds the tiles again behind what is on screen.
 
-### Tiles from one file
+## The camera
 
-A source whose address starts with `pmtiles://` is read from a
-[PMTiles](https://docs.protomaps.com/pmtiles/) archive: a whole tile set in
-one file, on any web server that answers range requests or on the device
-itself. It works for vector, raster and hillshade sources.
+A `VmapController` moves the map and reads where it looks. Zooms are
+MapLibre's: the world is 512 pixels wide at zoom 0.
 
 ```dart
-'sources': {
-  'city': {
-    'type': 'vector',
-    'url': 'pmtiles://https://example.org/city.pmtiles',
-  },
-  'offline': {
-    'type': 'vector',
-    'url': 'pmtiles:///data/user/0/my.app/files/region.pmtiles',
-  },
-}
-```
-
-An archive on the device needs no network at all, which is the way to ship
-a map that works offline. Archives packed with gzip are read; brotli and
-zstd are not.
-
-## Pins
-
-Styles draw places with small sprite icons. Pass `pins` to draw them as round
-pins instead:
-
-```dart
-VmapMap(pins: VmapPins.standard)
-```
-
-![Places drawn as pins on two styles](https://raw.githubusercontent.com/ArinFaraj/vmap/v0.26.0/doc/images/pins.png)
-
-The standard set covers the usual kinds of place: food, cafes, hotels, shops,
-parks, sights, health, transport. It uses Material icons, so the app needs
-`uses-material-design: true` in its pubspec.
-
-To change it:
-
-```dart
-const pins = VmapPins(
-  size: 26,
-  byIcon: {
-    ...standardPins,
-    'cafe': VmapPin(Icons.coffee_rounded, Color(0xFF6F4E37)),
-  },
+final controller = VmapController(
+  const VmapCamera(center: LatLng(36.19, 44.01), zoom: 14),
 );
+
+Vmap(controller: controller)
+
+controller.flyTo(const VmapCamera(center: LatLng(35.56, 45.44), zoom: 15, pitch: 55));
+controller.easeTo(controller.camera.copyWith(bearing: 90));
+controller.fitBounds(
+  VmapBounds.around(points),
+  padding: const EdgeInsets.all(40),
+  duration: const Duration(milliseconds: 600),
+);
+controller.camera = someCamera; // jump
 ```
 
-A pin is looked up by the icon name the style gives a place. For OpenMapTiles
-styles that is the place's class, such as `cafe` or `lodging`. Places with no
-pin of their own get `other`, a grey pin; set `other: null` to leave them
-with the style's icon.
+`flyTo` follows MapLibre's path, rising over long distances. A moving camera
+carries its speed into the next animation, and a released gesture glides.
+`VmapCamera.padding` keeps part of the map free, under a sheet for example:
+the camera looks at the middle of what is left. `toScreen` and `toLatLng`
+convert between places and points on the map.
 
-These pins are part of the map and do not take taps. For places the user can
-tap, use markers.
+Gestures: one finger pans; two pinch, turn, and tilt when dragged up or down
+together; a double tap zooms in, a two finger tap out, and a double tap held
+and dragged zooms. A mouse wheel zooms, a right drag turns and tilts, a
+trackpad pans, pinches and turns, and the arrow keys, `+` and `-` work once
+the map has focus. `rotate`, `tilt`, `keyboard` and `interactive` switch
+them off.
 
 ## Markers
 
-Markers are flutter_map `Marker`s. Map labels keep out of their way. A
-`NamedMarker` also gets its name written beside it, wherever there is room.
+Markers are widgets placed at points. Map labels keep out of their way, and
+a marker's `name` is written beside it wherever there is room.
 
 ```dart
-VmapMap(
+Vmap(
   markers: [
-    NamedMarker(
-      name: 'Machko Chaikhana',
+    VmapMarker(
       point: const LatLng(36.18946, 44.00970),
-      width: 34,
-      height: 34,
-      child: const CafePin(),
+      name: 'Machko Chaikhana',
+      width: 32,
+      height: 32,
+      alignment: Alignment.topCenter, // the box sits above the point
+      child: GestureDetector(
+        onTap: () => showCafe(),
+        child: const Icon(Icons.location_on, size: 32),
+      ),
     ),
   ],
 )
 ```
 
-With `VmapLayer`, pass the same list to both layers:
+A tap on a marker is the marker's; it does not reach `onTap`.
+
+For the places the style shows, `pins: VmapPins.standard` draws round pins
+in place of the style's small icons (the app needs
+`uses-material-design: true`). Spread `VmapPins.standardIcons` into `byIcon`
+to change some of them.
+
+## What is under a tap
 
 ```dart
-VmapLayer(markers: markers),
-MarkerLayer(markers: markers),
+Vmap(
+  controller: controller,
+  onTap: (point) async {
+    final features = await controller.featuresAt(point);
+    if (features.isEmpty) return;
+    final top = features.first;
+    print('${top.properties['name']} from ${top.layers.first}');
+  },
+)
 ```
 
-## Gestures
+`featuresAt` gives what the style draws at that point, topmost first: roads,
+buildings, places, and the features of your overlay, each with its
+properties, its source, the ids of the style layers drawing it, and its
+geometry. It reads the tiles off the UI thread, so it answers a moment
+later. `featuresIn` gives everything touching an area.
 
-`VmapMap` comes with its own gestures: drag with a glide, pinch around the
-fingers, turn with two fingers, double tap, two finger tap, and double tap
-then drag. Labels stay upright while the map turns. `rotate: false` switches
-turning off.
-
-Move the map from code with a flutter_map `MapController`:
+To highlight a feature, give it state that the style reads with
+`['feature-state', name]`:
 
 ```dart
-final controller = MapController();
-
-VmapMap(controller: controller, onTap: (point) {})
-
-controller.move(const LatLng(36.19, 44.01), 15);
+Vmap(
+  featureStates: [
+    if (picked != null) VmapFeatureState.of(picked!, const {'picked': true}),
+  ],
+)
 ```
 
-To get the same gestures on your own `FlutterMap`, wrap it in `VmapGestures`
-and set `InteractionOptions(flags: InteractiveFlag.none)`. flutter_map's own
-gestures also work with `VmapLayer`.
+with a paint property such as
+`['case', ['==', ['feature-state', 'picked'], true], '#E5484D', '#1A73E8']`.
+The feature needs an id: a GeoJSON feature's `id`, the id its vector tile
+carries, or a property named by the source's `promoteId`.
 
 ## Your own data
 
-An overlay adds sources and layers of your own to whatever style is showing.
-
-![A route and clusters of points over the built in style](https://raw.githubusercontent.com/ArinFaraj/vmap/v0.26.0/doc/images/own-data.png)
-Both are written the way a MapLibre style writes them, so anything a style
-can draw, you can draw: lines, fills, circles, text, icons, heatmaps.
+An overlay adds sources and layers to whatever style is showing, written as
+a MapLibre style writes them:
 
 ```dart
 const route = VmapOverlay(
@@ -210,7 +210,7 @@ const route = VmapOverlay(
       'type': 'geojson',
       'data': {
         'type': 'Feature',
-        'properties': {'name': 'Evening walk'},
+        'properties': {},
         'geometry': {
           'type': 'LineString',
           'coordinates': [[44.0053, 36.1930], [44.0087, 36.1890]],
@@ -229,292 +229,81 @@ const route = VmapOverlay(
   ],
 );
 
-VmapMap(overlay: route)
+Vmap(overlay: route)
 ```
 
 A layer with `'before': 'some-layer-id'` is drawn under that layer of the
-style instead of on top. `data` may also be the address of a GeoJSON file.
-
-To change what is shown, build a new overlay with a new `data` object. Only
-that source is read again, and what it drew stays up until the new data is
-ready, so a dot that moves a few times a second does not blink. Keep the
-overlay between builds: a new one in every `build` is treated as a change
-every time.
-
-### Many points
+style. `data` may also be the address of a GeoJSON file. To change what is
+shown, build a new overlay with a new `data` object; what it drew stays up
+until the new data is ready, so a moving dot does not blink.
 
 A GeoJSON source with `'cluster': true` gathers its points into clusters
-that split apart as the map zooms in, with MapLibre's options and
-properties:
+with MapLibre's options and properties. `clusterExpansionZoom`,
+`clusterChildren` and `clusterLeaves` on `controller.engine` say where a
+cluster comes apart and what it holds.
+
+## Fonts and languages
+
+By default letters come from the style's glyph ranges, as MapLibre draws
+them, and the app's fonts take over for what ranges cannot shape: Arabic
+script letters that need joining forms, such as Kurdish ڵ and ێ, and styles
+without glyphs. `VmapRenderOptions(glyphs: VmapGlyphs.fonts)` draws every
+label from fonts instead.
 
 ```dart
-VmapOverlay(
-  sources: {
-    'shops': {
-      'type': 'geojson',
-      'data': shops,
-      'cluster': true,
-      'clusterRadius': 45,
-      'clusterMaxZoom': 14,
-    },
-  },
-  layers: [
-    {
-      'id': 'clusters',
-      'type': 'circle',
-      'source': 'shops',
-      'filter': ['has', 'point_count'],
-      'paint': {
-        'circle-color': '#1A73E8',
-        'circle-radius': ['step', ['get', 'point_count'], 14, 20, 19, 80, 25],
-      },
-    },
-    {
-      'id': 'counts',
-      'type': 'symbol',
-      'source': 'shops',
-      'filter': ['has', 'point_count'],
-      'layout': {
-        'text-field': ['get', 'point_count_abbreviated'],
-        'text-allow-overlap': true,
-      },
-      'paint': {'text-color': '#FFFFFF'},
-    },
-    {
-      'id': 'shop',
-      'type': 'circle',
-      'source': 'shops',
-      'filter': ['!', ['has', 'point_count']],
-      'paint': {'circle-color': '#1A73E8', 'circle-radius': 5},
-    },
-  ],
-)
-```
-
-Tapping a cluster finds it like any other feature. Ask the map's engine,
-through a `GlobalKey<VmapMapState>` on the map, where it comes apart and
-move there, or list what it holds:
-
-```dart
-final engine = mapKey.currentState!.engine!;
-final id = feature.properties['cluster_id']! as int;
-final zoom = await engine.clusterExpansionZoom('shops', id);
-if (zoom != null) mapController.move(tapped, zoom);
-final shops = await engine.clusterLeaves('shops', id, limit: 20);
-```
-
-With your own `FlutterMap`, a `GlobalKey<VmapLayerState>` on the layer
-gives the same engine as `key.currentState!.engine`.
-
-## What is under a tap
-
-```dart
-VmapMap(
-  onFeatureTap: (point, features) {
-    if (features.isEmpty) return;
-    final top = features.first;
-    print('${top.properties['name']} from ${top.layers.first}');
-  },
-)
-```
-
-`features` holds what the style draws at that point, topmost first: roads,
-buildings, places, and the features of your overlay, each with its
-properties, its source and the ids of the style layers drawing it. The answer
-comes from the tiles off the UI thread, so it arrives a moment after the tap.
-
-With your own `FlutterMap`, give the layer a `GlobalKey<VmapLayerState>` and
-call `key.currentState!.engine.featuresAt(point)`.
-
-For everything in an area instead of at a point, for a selection box or a
-list of what is on screen:
-
-```dart
-final shown = await mapKey.currentState!.engine!.featuresIn(
-  southWest,
-  northEast,
-);
-```
-
-It returns what touches the box. A feature with an id comes once, the id
-being taken as its own within its source layer, the way feature state takes
-it. One without an id that lies over the edge of a tile comes once for each
-tile it is in.
-
-### Highlighting it
-
-A paint property can read state you give a feature, with
-`['feature-state', 'picked']`. Changing the state repaints and rebuilds
-nothing:
-
-```dart
-'paint': {
-  'fill-color': [
-    'case',
-    ['==', ['feature-state', 'picked'], true], '#E5484D',
-    '#1A73E8',
-  ],
-},
-```
-
-```dart
-VmapMap(
-  featureStates: [
-    if (picked != null) VmapFeatureState.of(picked, const {'picked': true}),
-  ],
-  onFeatureTap: (_, features) =>
-      setState(() => picked = features.firstOrNull),
-)
-```
-
-The feature needs an id: the `id` of a GeoJSON feature, or the id its vector
-tile carries. `'promoteId': 'some_property'` on the source uses a property
-as the id instead, and `'generateId': true` on a GeoJSON source numbers its
-features. A layer painted this way is drawn one feature at a time, so
-keep it for layers with hundreds of features in view, not tens of thousands.
-
-## Fonts and language
-
-Labels use the fonts your app bundles. Sizes and colours come from the style.
-
-```dart
-VmapMap(
-  textStyle: const TextStyle(
+Vmap(
+  textStyle: const VmapTextStyle(
     fontFamily: 'Inter',
     fontFamilyFallback: ['Vazirmatn'],
   ),
+  style: VmapStyle.url(styleUrl, nameKeys: ['name:en', 'name']),
 )
 ```
 
-`nameKeys` picks the label language, tried in order:
+`nameKeys` picks the label language, tried in order. vmap ships Vazirmatn
+and Noto Sans Syriac Eastern (300 KB together) so Arabic script and Syriac
+are shaped with no setup.
+
+## Offline
 
 ```dart
-VmapStyle.url(styleUrl, nameKeys: ['name:en', 'name'])
+Vmap(network: VmapNetworkOptions(cacheDirectory: '${dir.path}/vmap'))
 ```
 
-![Local names and English names](https://raw.githubusercontent.com/ArinFaraj/vmap/v0.26.0/doc/images/labels.png)
+With a cache directory, tiles, styles and sprites are kept between runs; the
+next start draws from disk at once and checks the server behind it.
+`controller.engine!.downloadRegion(...)` fetches every tile the style draws
+for an area and range of zooms into the cache ahead of time.
 
-## Cache
+A source whose address starts with `pmtiles://` is read from a
+[PMTiles](https://docs.protomaps.com/pmtiles/) archive, on a server that
+answers range requests or on the device, for vector, raster and hillshade
+sources. Archives packed with gzip are read; brotli and zstd are not.
 
-Give it a directory and tiles and the style are kept between runs. The next
-start draws from disk at once and checks the server in the background.
+`VmapNetworkOptions` also sets the user agent and headers sent with every
+request, for servers that want a key or a token.
 
-```dart
-VmapMap(cacheDirectory: '${cacheDir.path}/vmap')
-```
-
-`clearCache()` on the engine deletes what the map kept there and loads it
-again. `reload()` loads again without deleting.
-
-### A region for offline use
-
-`downloadRegion` on the engine fetches every tile
-the style draws for an area into the same directory, so that part of the
-map shows with no network:
+## Loading, events and errors
 
 ```dart
-final result = await mapKey.currentState!.engine!.downloadRegion(
-  west: 43.9, south: 36.1, east: 44.1, north: 36.3,
-  minZoom: 10, maxZoom: 16,
-  onProgress: (done, total) => setState(() => progress = done / total),
-);
-print('${result.fetched} fetched, ${result.failed} failed');
-```
-
-Tiles already kept are skipped, so a download that was cut short carries on
-where it stopped. Each zoom has four times the tiles of the one before:
-look at the size of a small range first, and at the terms of the tile
-server before downloading in bulk. The style and its icons are kept the
-first time the map shows them. There is nothing to download into in a
-browser.
-
-## Servers that want a key
-
-`headers` go out with every request: the style, its tiles, sprites and
-archives. `onError` hears of anything that could not be loaded. The map keeps
-retrying on its own, so this is for logging or for telling the user.
-
-```dart
-VmapMap(
-  style: const VmapStyle.url('https://maps.example.org/style.json'),
-  headers: {'Authorization': 'Bearer $token'},
-  onError: (error) => log('map: $error'),
+Vmap(
+  loadingBuilder: (context) => const Center(child: CircularProgressIndicator()),
+  onStyleLoaded: () {},
+  onCameraMove: (camera) {},
+  onCameraIdle: (camera) {},
+  onIdle: () {},
+  onError: (error) => log('${error.kind} ${error.url}: ${error.cause}'),
 )
 ```
 
-A source that lists several `tiles` addresses has its tiles spread over
-them, and the next one is asked when one fails.
+The loading builder covers the map until it first draws tiles. `onError`
+hears every style, tile, sprite, font or GPU failure as a `VmapError`; the
+map keeps retrying where that can help.
 
-## Related packages
+## 3D, terrain and the globe
 
-Other ways to draw vector maps in Flutter, as their own pages describe them
-in October 2026:
-
-| Package | What it is | Draws with | Web |
-| --- | --- | --- | --- |
-| [vector_map_tiles](https://pub.dev/packages/vector_map_tiles) | flutter_map layer | 9.x: tiles rendered to images. 10.x beta: `flutter_gpu` | not listed |
-| [flutter_map_vector_tiles](https://pub.dev/packages/flutter_map_vector_tiles) | flutter_map layer, a rewrite of vector_map_tiles' ideas | tiles drawn once into images, labels each frame | yes |
-| [flutter_map_maplibre](https://pub.dev/packages/flutter_map_maplibre) | flutter_map layer | MapLibre's own renderer | yes |
-| [flutter_map_maplibre_gpu](https://pub.dev/packages/flutter_map_maplibre_gpu) | flutter_map layer | Flutter GPU, through maplibre_flutter_gpu | no |
-| [maplibre_gl](https://pub.dev/packages/maplibre_gl) | a map widget of its own | MapLibre's own renderer, MapLibre GL JS on the web | yes |
-| [maplibre](https://pub.dev/packages/maplibre) | a map widget of its own | MapLibre's own renderer, MapLibre GL JS on the web | yes |
-| [maplibre_flutter_gpu](https://pub.dev/packages/maplibre_flutter_gpu) | a map widget of its own | Flutter GPU | no |
-| vmap | its own widget and a flutter_map layer | Flutter GPU, WebGL2 on the web, `Canvas` where neither runs | yes |
-
-vmap has been measured against one of them so far.
-
-### vmap and vector_map_tiles
-
-[vector_map_tiles](https://pub.dev/packages/vector_map_tiles) is the
-established vector layer for flutter_map.
-
-| | vmap | vector_map_tiles |
-| --- | --- | --- |
-| Drawing | vectors, every frame, with `Canvas` | 9.x: tiles rendered to images. 10.x beta: `flutter_gpu` |
-| Flutter channel | stable | 9.x: stable. 10.x beta: main, with Flutter GPU on |
-| Renderer | Skia or Impeller | 10.x beta needs Impeller |
-| Hillshade layers | yes | yes |
-| Rotation | yes | yes |
-| Labels that avoid your markers | yes | no |
-| Pins for places | yes | no |
-
-The 10.x rows are taken from that version's own README.
-
-On one Android phone at 60 Hz, flying the same tour over the same style, vmap
-lost 0 frames in each of four runs and vector_map_tiles 9.0.0-beta.13 lost
-between 10 and 196. vmap does more work per frame to get there. The full
-table, the caveats and how to run it are in
-[doc/benchmark.md](https://github.com/ArinFaraj/vmap/blob/v0.26.0/doc/benchmark.md).
-
-## Tilt, 3D buildings and terrain (preview)
-
-`VMap` is vmap's own map widget, without flutter_map. It tilts up to 60
-degrees and stands the style's `fill-extrusion` buildings up. With the GPU
-renderer (`GpuMap`) the buildings are drawn with a depth buffer and the
-style's `terrain` raises the ground:
-
-```dart
-final controller = VMapController(
-  const MapCameraPosition(latitude: 36.19, longitude: 44.01, zoom: 15, pitch: 50),
-);
-final engine = VmapEngine(
-  style: VmapStyle.url('https://tiles.openfreemap.org/styles/liberty'),
-  renderer: GpuMap.create(),
-);
-
-VMap(controller: controller, engine: engine)
-```
-
-`GpuMap.create()` gives null where the device has no Flutter GPU, and the
-canvas draws the map, tilted and with buildings, on flat ground.
-Flutter GPU is switched on in the app: `io.flutter.embedding.android.EnableFlutterGPU`
-in the Android manifest's `<application>`, `FLTEnableFlutterGPU` in the iOS
-and macOS `Info.plist`, `project.set_enable_flutter_gpu(true)` in the Windows
-runner and `fl_dart_project_set_enable_flutter_gpu(project, TRUE)` in the
-Linux one. vmap needs Flutter 3.47.1 or newer.
-
-`controller.flyTo` and `controller.easeTo` move the camera as MapLibre's do.
-Terrain comes from the style's root `terrain`, or from a `VmapOverlay`:
+Styles with `fill-extrusion` layers stand their buildings up when the map is
+tilted. A style's root `terrain` raises the ground, or an overlay adds one:
 
 ```dart
 VmapOverlay(
@@ -530,60 +319,56 @@ VmapOverlay(
 )
 ```
 
-## Limits
+A style with `"projection": {"type": "globe"}` draws the globe at low zooms,
+and `sky` draws the sky and fog past the horizon.
 
-- Under flutter_map (`VmapMap`, `VmapLayer`) the map does not tilt and
-  buildings are flat; tilt and 3D need `VMap`.
-- Fonts come from the app, not from the style's glyph server, unless the
-  engine is made with `styleGlyphs: true`.
-- On the web there is no disk cache and a PMTiles archive has to be at an
-  `https://` address. It has been run in Chrome only. Use the default
-  JavaScript build: the `--wasm` build froze its tab in three of about a
-  dozen runs and showed labels with letters missing for a moment. Label
-  halos in the JavaScript build are the text's outline, so they look
-  slightly sharper than on a phone.
-- Run so far on one Android phone, on macOS and in Chrome. iOS and low end
-  devices are untested.
+## Platforms
 
-The full list of what is read from a style, and how the renderer works, is in
-[doc/style-support.md](https://github.com/ArinFaraj/vmap/blob/v0.26.0/doc/style-support.md).
+| Platform | Draws with | Run so far |
+| --- | --- | --- |
+| Android 10 and newer | the GPU, on Vulkan or OpenGL ES | one phone and the emulator |
+| Android 9 and older | the canvas | not yet |
+| iOS | the GPU | not yet |
+| macOS | the GPU | yes, most development |
+| Windows, Linux | the GPU | not yet |
+| Web | the GPU, through WebGL2 | Chrome |
 
-## On the web
+The details, with sources, are in
+[doc/platform-support.md](doc/platform-support.md). Flutter GPU is still a
+preview in Flutter itself.
 
-vmap runs in a browser. There Dart has one thread and nothing is kept on
-disk. To draw with MapLibre GL JS in the browser instead,
-[flutter_map_maplibre](https://pub.dev/packages/flutter_map_maplibre)
-offers a MapLibre layer for flutter_map, and
-[maplibre_gl](https://pub.dev/packages/maplibre_gl) a MapLibre map of its
-own. Both read the same styles as vmap.
+On the web, tiles are built in a web worker vmap ships, so loading an area
+does not hold up the page; `VmapEngine.useWebWorker(null)` before the first
+map builds them on the page instead. There is no disk cache in a browser,
+and a PMTiles archive has to be at an `https://` address. Use the default
+JavaScript build: the `--wasm` build has frozen its tab in some runs.
 
-Tiles are built in a web worker that ships with vmap, so drawing a new
-area does not hold up the page, with nothing to set up. Set
-`VmapEngine.webWorker = null` before the first map to build them on the
-page instead; a worker that does not load falls back to the page by itself.
+## flutter_map
 
-## Attribution
+Apps that already use [flutter_map](https://pub.dev/packages/flutter_map)
+can draw vmap's maps in it with the `vmap_flutter_map` package: a layer that
+goes where a `TileLayer` would, without tilt or 3D.
 
-Show the credit your tile source asks for. For OpenFreeMap that is
-`© OpenFreeMap © OpenMapTiles © OpenStreetMap`. `attributions` on the
-engine lists what the sources of a style ask for in their `attribution`.
+## Moving from vmap 0.26
 
-## Example
-
-```bash
-cd example
-flutter run
-```
-
-![The example app in a light and a dark style](https://raw.githubusercontent.com/ArinFaraj/vmap/v0.26.0/doc/images/app.png)
-
-A map of Erbil's old town with a bar across the top: the style, the place
-icons (none, the style's own, or pins), and layers to switch on, such as a
-walking route and clusters. [example/README.md](https://github.com/ArinFaraj/vmap/blob/v0.26.0/example/README.md) lists its
-switches.
+- `VmapLayer`, `VmapMap` (now `VmapFlutterMap`), `VmapGestures` and
+  `NamedMarker` are in `vmap_flutter_map`.
+- `VMap` and `VMapController` are `Vmap` and `VmapController`.
+  `MapCameraPosition` is `VmapCamera`, with a `LatLng` center, `EdgeInsets`
+  padding and a field of view in degrees.
+- The GPU renderer is built in and used by default; `GpuMap` is gone. Pick
+  the canvas with `VmapRenderOptions(renderer: VmapRenderer.canvas)`.
+- Engine settings are grouped: `VmapNetworkOptions` (was
+  `TileSourceConfig`), `VmapRenderOptions` and `VmapLabelOptions`.
+  `glyphText` and `styleGlyphs` are one setting, `VmapRenderOptions.glyphs`.
+- Every zoom the engine takes or gives is MapLibre's, one below
+  flutter_map's.
+- `onError` receives a `VmapError`. Statistics are in
+  `package:vmap/debug.dart`.
 
 ## License
 
-MIT. The example bundles Google Sans Flex and Vazirmatn under the SIL Open
-Font License. Place names in the example and the pictures are from
-OpenStreetMap.
+MIT. vmap bundles Vazirmatn and Noto Sans Syriac Eastern under the SIL Open
+Font License, and its WebGL2 backend comes from
+[flutter_scene](https://pub.dev/packages/flutter_scene) (MIT). Map data in
+the pictures is from OpenStreetMap.
