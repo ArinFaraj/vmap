@@ -1430,8 +1430,10 @@ class VmapEngine extends ChangeNotifier {
         animating = true;
       }
     }
+    // Tiles held while zooming out are swapped for the new zoom's once the
+    // hold ends, which a frame then has to draw.
     stats
-      ..busy = animating || waiting || _budget.stale
+      ..busy = animating || waiting || _budget.stale || hold > 0
       ..preparing = waiting;
     if (stats.busy) {
       _requestFrame();
