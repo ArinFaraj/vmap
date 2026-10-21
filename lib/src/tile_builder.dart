@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'expr.dart';
+import 'glyphs/cursive.dart';
 import 'glyphs/glyph_ranges.dart';
 import 'glyphs/glyph_pbf.dart';
 import 'glyphs/arabic_forms.dart';
@@ -326,7 +327,7 @@ class TileBuilder {
         fonts,
         text,
         weight: symbol.weight,
-        letterSpacing: symbol.letterSpacing,
+        letterSpacing: letterSpacingFor(text, symbol.letterSpacing),
         lineHeight: symbol.lineHeight ?? 1.15,
         maxWidth: road ? 60 : symbol.maxWidth,
         align: switch (symbol.justify) {
@@ -1142,6 +1143,7 @@ class TileBuilder {
     }
     final plain = plainText(text);
     final label = symbol.uppercase ? plain.toUpperCase() : plain;
+    final spacing = letterSpacingFor(label, symbol.letterSpacing);
     if (ranges != null) {
       final face = ranges.face(symbol.fontStack);
       final forms = [
@@ -1154,12 +1156,12 @@ class TileBuilder {
         for (final c in forms) {
           final g = ranges.glyph(face, c);
           if (g != null) {
-            width += g.advance / GlyphPbf.em + symbol.letterSpacing;
+            width += g.advance / GlyphPbf.em + spacing;
             glyphs++;
           }
         }
         // As MapLibre's shaping, no spacing follows the last letter.
-        return glyphs == 0 ? 0 : width - symbol.letterSpacing;
+        return glyphs == 0 ? 0 : width - spacing;
       }
       missedGlyphs = true;
     }
@@ -1170,7 +1172,7 @@ class TileBuilder {
             fonts,
             label,
             weight: symbol.weight,
-            letterSpacing: symbol.letterSpacing,
+            letterSpacing: spacing,
             singleLine: true,
             stack: symbol.fontStack,
           )?.width ??
@@ -1191,6 +1193,7 @@ class TileBuilder {
     var width = 0.0;
     var section = 0;
     final runes = text.runes.toList();
+    final spacing = letterSpacingFor(plainText(text), symbol.letterSpacing);
     for (var i = 0; i < runes.length; i++) {
       final r = runes[i];
       if (r == formatMark && i + 1 < runes.length) {
@@ -1213,7 +1216,7 @@ class TileBuilder {
       }
       final g = ranges.glyph(face, c);
       if (g != null) {
-        width += (g.advance / GlyphPbf.em + symbol.letterSpacing) * scale;
+        width += (g.advance / GlyphPbf.em + spacing) * scale;
       }
     }
     return width;

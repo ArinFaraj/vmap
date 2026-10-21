@@ -11,6 +11,7 @@ import 'text_style.dart';
 import 'label_sprites.dart';
 import 'label_state.dart';
 import 'occlusion.dart';
+import 'glyphs/cursive.dart';
 import 'glyphs/glyph_layout.dart';
 import 'glyphs/glyph_pages.dart';
 import 'glyphs/glyph_ranges.dart';
@@ -1251,7 +1252,7 @@ class LabelEngine {
     } else {
       final layout = _layoutContext(c);
       label = symbol.transformed(c.text, layout);
-      letterSpacing = symbol.letterSpacingAt(layout);
+      letterSpacing = letterSpacingFor(label, symbol.letterSpacingAt(layout));
       maxWidth = symbol.maxWidthAt(layout);
       fontStack = symbol.fontStackAt(layout);
       align = symbol.justifyAutoAt(layout)
