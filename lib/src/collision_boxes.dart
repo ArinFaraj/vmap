@@ -30,6 +30,12 @@ class CollisionBoxes {
   /// which even a cooperative one keeps clear of.
   Uint8List _never = Uint8List(256);
 
+  /// The collision group boxes are taken and tested in, as MapLibre's
+  /// `CollisionGroups`: a box of one group is invisible to another, and
+  /// group 0's boxes are in every group.
+  int group = 0;
+  Int32List _groups = Int32List(256);
+
   void clear() {
     _count = 0;
     for (final i in _used) {
@@ -55,8 +61,11 @@ class CollisionBoxes {
     if (number >= _seen.length) {
       _seen = Int32List(_seen.length * 2)..setRange(0, _seen.length, _seen);
       _never = Uint8List(_never.length * 2)..setRange(0, _never.length, _never);
+      _groups = Int32List(_groups.length * 2)
+        ..setRange(0, _groups.length, _groups);
     }
     _seen[number] = 0;
+    _groups[number] = group;
     _never[number] = never ? 1 : 0;
     final x1 = _at(r), y1 = _at(b);
     for (var cy = _at(t); cy <= y1; cy++) {
@@ -90,6 +99,8 @@ class CollisionBoxes {
         for (final number in cell) {
           if (number == except || _seen[number] == query) continue;
           _seen[number] = query;
+          final owner = _groups[number];
+          if (owner != 0 && owner != group) continue;
           if (cooperative && _never[number] == 0) continue;
           final i = number * 4;
           if (l < boxes[i + 2] &&

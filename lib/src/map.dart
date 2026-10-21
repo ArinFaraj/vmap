@@ -30,6 +30,7 @@ class VmapMap extends StatefulWidget {
     this.styleEdits = const [],
     this.featureStates = const [],
     this.curvedLabels = true,
+    this.crossSourceCollisions = true,
     this.textStyle,
     this.markerTextStyle,
     this.cacheDirectory,
@@ -81,6 +82,9 @@ class VmapMap extends StatefulWidget {
 
   /// Road names follow bends.
   final bool curvedLabels;
+
+  /// Labels of different sources keep clear of each other.
+  final bool crossSourceCollisions;
   final TextStyle? textStyle;
   final TextStyle? markerTextStyle;
   final String? cacheDirectory;
@@ -175,6 +179,7 @@ class VmapMapState extends State<VmapMap> {
             styleEdits: widget.styleEdits,
             featureStates: widget.featureStates,
             curvedLabels: widget.curvedLabels,
+            crossSourceCollisions: widget.crossSourceCollisions,
             textStyle: widget.textStyle,
             markerTextStyle: widget.markerTextStyle,
             cacheDirectory: widget.cacheDirectory,

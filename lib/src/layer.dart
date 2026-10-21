@@ -37,6 +37,7 @@ class VmapLayer extends StatefulWidget {
     this.styleEdits = const [],
     this.featureStates = const [],
     this.curvedLabels = true,
+    this.crossSourceCollisions = true,
     this.textStyle,
     this.markerTextStyle,
     this.cacheDirectory,
@@ -62,6 +63,7 @@ class VmapLayer extends StatefulWidget {
        styleEdits = const [],
        featureStates = const [],
        curvedLabels = true,
+       crossSourceCollisions = true,
        textStyle = null,
        markerTextStyle = null,
        cacheDirectory = null,
@@ -97,6 +99,11 @@ class VmapLayer extends StatefulWidget {
   /// Road names follow bends. Off, a name is written only where its road is
   /// straight enough.
   final bool curvedLabels;
+
+  /// Labels of different sources keep clear of each other. Off, each
+  /// source's labels only keep clear of their own, as MapLibre's
+  /// `crossSourceCollisions: false`.
+  final bool crossSourceCollisions;
 
   /// The font of every label: family and fallbacks. Sizes and colours come
   /// from the style.
@@ -168,6 +175,7 @@ class VmapLayerState extends State<VmapLayer> with WidgetsBindingObserver {
               ),
             )
             ..onError = widget.onError
+            ..crossSourceCollisions = widget.crossSourceCollisions
             ..markers = widget.markers
             ..featureStates = widget.featureStates;
     }
@@ -189,6 +197,7 @@ class VmapLayerState extends State<VmapLayer> with WidgetsBindingObserver {
       ..overlay = widget.overlay
       ..edits = widget.styleEdits
       ..curvedLabels = widget.curvedLabels
+      ..crossSourceCollisions = widget.crossSourceCollisions
       ..onError = widget.onError
       ..text = _text;
     if (!_sameMarkers(oldWidget.markers, widget.markers)) {

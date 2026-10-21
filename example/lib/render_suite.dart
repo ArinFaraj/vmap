@@ -228,6 +228,7 @@ Future<_Result> _runOne(String id, String dir) async {
             height: height,
             ratio: ratio,
             collisionBoxes: test['collisionDebug'] == true,
+            crossSourceCollisions: test['crossSourceCollisions'] != false,
             onError: (e) => result.note ??= 'engine: $e',
           )
           ..camera.showPadding = test['showPadding'] == true
@@ -295,6 +296,7 @@ class _Session {
     required this.height,
     required this.ratio,
     required this.collisionBoxes,
+    required this.crossSourceCollisions,
     required this.onError,
   }) {
     _readCamera(_document, _camera);
@@ -304,6 +306,7 @@ class _Session {
   final int width, height;
   final double ratio;
   final bool collisionBoxes;
+  final bool crossSourceCollisions;
   final void Function(Object error) onError;
   final _camera = _Camera();
   _Camera get camera => _camera;
@@ -323,7 +326,8 @@ class _Session {
           renderer: _gpu ? GpuMap.create(multisample: _multisample) : null,
         )
         ..onError = onError
-        ..showCollisionBoxes = collisionBoxes;
+        ..showCollisionBoxes = collisionBoxes
+        ..crossSourceCollisions = crossSourceCollisions;
 
   Future<void> settle() => _settle(_engine, () => _paintNow(false));
 

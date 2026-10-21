@@ -34,4 +34,16 @@ void main() {
     expect(boxes.hits(59975, 5, 59980, 10), isTrue);
     expect(boxes.hits(59992, 5, 59998, 10), isFalse);
   });
+
+  test('a box of one group is unseen by another, group 0 by all', () {
+    final boxes = CollisionBoxes()..add(0, 0, 10, 10);
+    boxes
+      ..group = 1
+      ..add(20, 0, 30, 10);
+    expect(boxes.hits(22, 2, 28, 8), isTrue);
+    expect(boxes.hits(2, 2, 8, 8), isTrue);
+    boxes.group = 2;
+    expect(boxes.hits(22, 2, 28, 8), isFalse);
+    expect(boxes.hits(2, 2, 8, 8), isTrue);
+  });
 }

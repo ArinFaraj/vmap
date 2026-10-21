@@ -179,6 +179,11 @@ class LabelEngine {
 
   final LabelView _view = LabelView();
   final CollisionBoxes _boxes = CollisionBoxes();
+
+  /// Labels of different sources keep clear of each other, as MapLibre's
+  /// `crossSourceCollisions`. Off, each source's labels only mind their
+  /// own, and the app's reserved areas.
+  bool crossSourceCollisions = true;
   late final RoadLabels _roads = RoadLabels(_view, _boxes);
   late final LabelPainter _painter = LabelPainter(_view, _roads);
   late final PointLabels _points = PointLabels(_view, _boxes, _roads);
@@ -836,7 +841,9 @@ class LabelEngine {
       states.sort((a, b) => a.sortKey - b.sortKey);
     }
 
-    _boxes.clear();
+    _boxes
+      ..clear()
+      ..group = 0;
     _points.debugBoxes?.clear();
     _roads.startPass();
     _points.startPass();
@@ -845,6 +852,9 @@ class LabelEngine {
     for (final st in states) {
       final c = st.candidate;
       _stand(c);
+      _boxes.group = crossSourceCollisions || c is! TileLabel
+          ? 0
+          : symbols[c.tile.layer].source + 1;
       // Only labels that test for collisions count towards the cap: one
       // that may overlap anything and is ignored by everything costs
       // nothing to place.

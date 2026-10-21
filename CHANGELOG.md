@@ -21,6 +21,15 @@
 - The map lets go of tiles, label images and GPU memory out of view when
   the system is short of memory (`VmapEngine.trimMemory`), as `VMap` and
   `VmapLayer` do on their own.
+- `crossSourceCollisions: false` on `VmapMap`, `VmapLayer` or
+  `VmapEngine` lets each source's labels keep clear of their own only, as
+  MapLibre's map option.
+- Raster tiles fade in over `raster-fade-duration`, over the tiles they
+  replace, instead of appearing at once.
+- A building whose height, base or colour reads `feature-state` changes
+  when the app sets that state, so a tapped building can be highlighted.
+- On the globe: `background-pattern` is drawn, and the map can be centred
+  on a pole while the polar cap fits on the screen.
 
 ## 0.26.0
 

@@ -749,6 +749,18 @@ class VmapEngine extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Labels of different sources keep clear of each other, as MapLibre's
+  /// `crossSourceCollisions` map option. Off, each source's labels only
+  /// keep clear of their own.
+  bool get crossSourceCollisions => _labels.crossSourceCollisions;
+  set crossSourceCollisions(bool value) {
+    if (value == _labels.crossSourceCollisions) return;
+    _labels
+      ..crossSourceCollisions = value
+      ..restyle();
+    notifyListeners();
+  }
+
   /// Saves [canvas] and turns it so the unrolled picture of [view] lands
   /// where its [MapView.roll] puts it.
   static void _unroll(ui.Canvas canvas, MapView view) {
