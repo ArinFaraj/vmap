@@ -2,12 +2,16 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_map/flutter_map.dart';
 
-/// Touch handling for a [FlutterMap] whose own gestures are switched off
-/// (`InteractiveFlag.none`): drag with a glide, pinch around the fingers with
-/// zoom carry-over, double tap, two finger tap, and double tap then drag.
+/// Touch, mouse, trackpad and keyboard handling for a [FlutterMap] whose own
+/// gestures are switched off (`InteractiveFlag.none`): drag with a glide,
+/// pinch around the fingers with zoom carry-over, double tap, two finger
+/// tap, double tap then drag, the mouse wheel, right or control drag to
+/// turn, a trackpad's slide, pinch and twist, and the arrow and plus and
+/// minus keys once the map has focus.
 ///
 /// It reads raw pointers rather than joining the gesture arena, so the map
 /// follows the finger from the first frame and taps on markers keep working.
@@ -19,8 +23,13 @@ class VmapGestures extends StatefulWidget {
     this.maxZoom = 19,
     this.enabled = true,
     this.rotate = true,
+    this.keyboard = true,
     super.key,
   });
+
+  /// The arrow keys pan, shift with them turns, and plus and minus zoom,
+  /// once a press on the map has given it focus.
+  final bool keyboard;
 
   final MapController controller;
   final Widget child;
@@ -35,7 +44,7 @@ class VmapGestures extends StatefulWidget {
   State<VmapGestures> createState() => _VmapGesturesState();
 }
 
-enum _Mode { idle, pending, pan, pinch, quickZoom, spent }
+enum _Mode { idle, pending, pan, pinch, quickZoom, turn, spent }
 
 class _VmapGesturesState extends State<VmapGestures>
     with SingleTickerProviderStateMixin {
@@ -94,9 +103,16 @@ class _VmapGesturesState extends State<VmapGestures>
   double _animElapsed = 0;
   Duration _lastTick = Duration.zero;
 
+  final FocusNode _focus = FocusNode(debugLabel: 'VmapGestures');
+
+  /// Where a trackpad gesture was at its last update.
+  Offset _padPan = Offset.zero;
+  double _padScale = 1, _padTurn = 0;
+
   @override
   void dispose() {
     _ticker.dispose();
+    _focus.dispose();
     super.dispose();
   }
 
@@ -148,7 +164,12 @@ class _VmapGesturesState extends State<VmapGestures>
 
   void _animateZoom(double delta, Offset focal) {
     final zoom = widget.controller.camera.zoom;
-    final target = (zoom + delta).clamp(widget.minZoom, widget.maxZoom);
+    final left = _animRemaining != 0
+        ? _animTotal *
+              (1 - _ease(_animElapsed / (_zoomAnimation.inMicroseconds / 1e6)))
+        : 0.0;
+    final from = zoom + left;
+    final target = (from + delta).clamp(widget.minZoom, widget.maxZoom);
     _stopMotion();
     _animRemaining = target - zoom;
     _animTotal = _animRemaining;
@@ -212,7 +233,19 @@ class _VmapGesturesState extends State<VmapGestures>
 
   void _down(PointerDownEvent e) {
     _stopMotion();
+    if (widget.keyboard) _focus.requestFocus();
     _pointers[e.pointer] = e.localPosition;
+    final mouse = e.kind == PointerDeviceKind.mouse;
+    if (_pointers.length == 1 &&
+        mouse &&
+        widget.rotate &&
+        (e.buttons & kSecondaryMouseButton != 0 ||
+            e.buttons & kPrimaryMouseButton != 0 &&
+                HardwareKeyboard.instance.isControlPressed)) {
+      _last = e.localPosition;
+      _mode = _Mode.turn;
+      return;
+    }
     if (_pointers.length == 1) {
       _downAt = e.localPosition;
       _downTime = e.timeStamp;
@@ -309,6 +342,16 @@ class _VmapGesturesState extends State<VmapGestures>
                 const Duration(milliseconds: 90)) {
           _zoomSamples.removeAt(0);
         }
+      case _Mode.turn:
+        final turn = (e.localPosition.dx - _last.dx) * 0.8 * math.pi / 180;
+        _last = e.localPosition;
+        final camera = widget.controller.camera;
+        _apply(
+          Offset.zero,
+          0,
+          camera.nonRotatedSize.center(Offset.zero),
+          -turn,
+        );
       case _Mode.idle || _Mode.spent:
         break;
     }
@@ -348,7 +391,7 @@ class _VmapGesturesState extends State<VmapGestures>
           _releasePinch(e.timeStamp);
         }
         _lastTapAt = null;
-      case _Mode.idle || _Mode.spent:
+      case _Mode.turn || _Mode.idle || _Mode.spent:
         break;
     }
     if (_pointers.isEmpty) _mode = _Mode.idle;
@@ -381,22 +424,109 @@ class _VmapGesturesState extends State<VmapGestures>
   }
 
   void _signal(PointerSignalEvent e) {
-    if (e is! PointerScrollEvent) return;
+    GestureBinding.instance.pointerSignalResolver.register(e, (event) {
+      switch (event) {
+        // Two fingers sliding on a trackpad, as a browser reports them.
+        case PointerScrollEvent(
+          kind: PointerDeviceKind.trackpad,
+          :final scrollDelta,
+          :final localPosition,
+        ):
+          _stopMotion();
+          _apply(-scrollDelta, 0, localPosition);
+        case PointerScrollEvent(:final scrollDelta, :final localPosition):
+          if (scrollDelta.dy != 0) {
+            _animateZoom(-scrollDelta.dy / 300, localPosition);
+          }
+        // A trackpad pinch, as a browser reports it.
+        case PointerScaleEvent(:final scale, :final localPosition):
+          if (scale > 0) {
+            _stopMotion();
+            _apply(Offset.zero, math.log(scale) / math.ln2, localPosition);
+          }
+        case PointerScrollInertiaCancelEvent():
+          _stopMotion();
+        default:
+      }
+    });
+  }
+
+  void _padStart(PointerPanZoomStartEvent e) {
     _stopMotion();
-    _apply(Offset.zero, -e.scrollDelta.dy / 240, e.localPosition);
+    _padPan = Offset.zero;
+    _padScale = 1;
+    _padTurn = 0;
+    _velocity = VelocityTracker.withKind(PointerDeviceKind.trackpad)
+      ..addPosition(e.timeStamp, Offset.zero);
+  }
+
+  void _padUpdate(PointerPanZoomUpdateEvent e) {
+    final pan = e.pan - _padPan;
+    _padPan = e.pan;
+    final zoom = e.scale > 0 && _padScale > 0
+        ? math.log(e.scale / _padScale) / math.ln2
+        : 0.0;
+    _padScale = e.scale;
+    final turn = widget.rotate ? e.rotation - _padTurn : 0.0;
+    _padTurn = e.rotation;
+    _apply(pan, zoom, e.localPosition, turn);
+    _velocity.addPosition(e.timeStamp, e.pan);
+  }
+
+  void _padEnd(PointerPanZoomEndEvent e) =>
+      _fling(_velocity.getVelocity().pixelsPerSecond);
+
+  KeyEventResult _key(FocusNode node, KeyEvent e) {
+    if (e is KeyUpEvent) return KeyEventResult.ignored;
+    final key = e.logicalKey;
+    final shift = HardwareKeyboard.instance.isShiftPressed;
+    final camera = widget.controller.camera;
+    final middle = camera.nonRotatedSize.center(Offset.zero);
+    if (key == LogicalKeyboardKey.equal ||
+        key == LogicalKeyboardKey.add ||
+        key == LogicalKeyboardKey.numpadAdd) {
+      _animateZoom(shift ? 2 : 1, middle);
+    } else if (key == LogicalKeyboardKey.minus ||
+        key == LogicalKeyboardKey.underscore ||
+        key == LogicalKeyboardKey.numpadSubtract) {
+      _animateZoom(shift ? -2 : -1, middle);
+    } else if (shift &&
+        widget.rotate &&
+        (key == LogicalKeyboardKey.arrowLeft ||
+            key == LogicalKeyboardKey.arrowRight)) {
+      final by = key == LogicalKeyboardKey.arrowLeft ? 15 : -15;
+      _apply(Offset.zero, 0, middle, by * math.pi / 180);
+    } else {
+      final step = switch (key) {
+        LogicalKeyboardKey.arrowLeft => const Offset(100, 0),
+        LogicalKeyboardKey.arrowRight => const Offset(-100, 0),
+        LogicalKeyboardKey.arrowUp => const Offset(0, 100),
+        LogicalKeyboardKey.arrowDown => const Offset(0, -100),
+        _ => null,
+      };
+      if (step == null) return KeyEventResult.ignored;
+      _stopMotion();
+      _apply(step, 0, middle);
+    }
+    return KeyEventResult.handled;
   }
 
   @override
   Widget build(BuildContext context) {
     if (!widget.enabled) return widget.child;
-    return Listener(
+    final map = Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: _down,
       onPointerMove: _move,
       onPointerUp: _up,
       onPointerCancel: _up,
       onPointerSignal: _signal,
+      onPointerPanZoomStart: _padStart,
+      onPointerPanZoomUpdate: _padUpdate,
+      onPointerPanZoomEnd: _padEnd,
       child: widget.child,
     );
+    if (!widget.keyboard) return map;
+    return Focus(focusNode: _focus, onKeyEvent: _key, child: map);
   }
 }

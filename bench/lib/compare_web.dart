@@ -108,7 +108,8 @@ class _CompareMapState extends State<_CompareMap> {
       );
       return;
     }
-    if (data is! Map || data['type'] != 'camera') return;
+    if (data is! Map || data['type'] != 'camera' || !_embedded) return;
+    if (event.source != web.window.parent) return;
     double field(String key) => (data[key] as num).toDouble();
     _following = true;
     _controller.camera = VmapCamera(
@@ -126,8 +127,13 @@ class _CompareMapState extends State<_CompareMap> {
     '*'.toJS,
   );
 
+  /// Whether the page is inside compare.html, which keeps the two maps on
+  /// one camera. Alone, its parent is itself, and its own camera coming
+  /// back would stop every animation.
+  bool get _embedded => web.window.parent != web.window;
+
   void _moved(VmapCamera camera) {
-    if (_following) return;
+    if (_following || !_embedded) return;
     web.window.parent?.postMessage(
       {
         'type': 'camera',

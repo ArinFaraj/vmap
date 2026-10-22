@@ -13,6 +13,12 @@ moved to an adapter package. This release changes most of the public API;
   right drag, trackpad and keyboard, long press, a loading builder, the
   style's attribution in a corner, and callbacks for camera moves, the
   camera coming to rest, the style loaded, the map idle and errors.
+- Gestures follow MapLibre GL JS: a shift double click zooms out, a shift
+  drag zooms to the box it draws, a control drag turns and tilts as a right
+  drag does, `+` and `-` go to the next whole zoom and two with shift, a
+  trackpad in a browser slides the map with two fingers and zooms at once
+  with a pinch, and a right drag in a browser keeps the page's menu away.
+  The pointer is a hand over the map.
 - `VmapController` moves it: `flyTo`, `easeTo` and `fitBounds` as
   MapLibre's do, `featuresAt` and `featuresIn`, and `toScreen` and
   `toLatLng`. A moving camera carries its speed into the next animation.

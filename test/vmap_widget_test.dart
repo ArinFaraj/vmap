@@ -238,4 +238,144 @@ void main() {
       expect(back.dy, closeTo(point.dy, 1e-6));
     }
   });
+
+  testWidgets('two fingers sliding on a trackpad in a browser pan the map', (
+    tester,
+  ) async {
+    final c = await _pump(tester);
+    final spot = c.toLatLng(const Offset(400, 300))!;
+    final pad = TestPointer(1, PointerDeviceKind.trackpad);
+    await tester.sendEventToBinding(pad.hover(const Offset(400, 300)));
+    await tester.sendEventToBinding(pad.scroll(const Offset(60, 0)));
+    await tester.pump();
+    expect(c.camera.zoom, closeTo(12, 1e-9));
+    final now = c.toScreen(spot)!;
+    expect(now.dx, closeTo(340, 1));
+    expect(now.dy, closeTo(300, 1));
+  });
+
+  testWidgets('a trackpad pinch in a browser zooms at once about the fingers', (
+    tester,
+  ) async {
+    final c = await _pump(tester);
+    final spot = c.toLatLng(const Offset(600, 150))!;
+    final pad = TestPointer(1, PointerDeviceKind.trackpad);
+    await tester.sendEventToBinding(pad.hover(const Offset(600, 150)));
+    await tester.sendEventToBinding(pad.scale(2));
+    await tester.pump();
+    expect(c.camera.zoom, closeTo(13, 1e-6));
+    final now = c.toScreen(spot)!;
+    expect(now.dx, closeTo(600, 1));
+    expect(now.dy, closeTo(150, 1));
+  });
+
+  testWidgets('a shift double click zooms out', (tester) async {
+    final c = await _pump(tester);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    for (var i = 0; i < 2; i++) {
+      final mouse = await tester.startGesture(
+        const Offset(300, 200),
+        kind: PointerDeviceKind.mouse,
+      );
+      await mouse.up();
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await _settle(tester);
+    expect(c.camera.zoom, closeTo(11, 1e-6));
+  });
+
+  testWidgets('a shift drag zooms to the box it draws', (tester) async {
+    final c = await _pump(tester);
+    final centre = c.toLatLng(const Offset(300, 250))!;
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    final mouse = await tester.startGesture(
+      const Offset(200, 200),
+      kind: PointerDeviceKind.mouse,
+    );
+    for (var i = 1; i <= 10; i++) {
+      await mouse.moveTo(Offset(200 + i * 20.0, 200 + i * 10.0));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(find.byType(DecoratedBox), findsWidgets);
+    await mouse.up();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await _settle(tester);
+    expect(c.camera.zoom, closeTo(14, 0.01));
+    expect(c.camera.center.latitude, closeTo(centre.latitude, 1e-4));
+    expect(c.camera.center.longitude, closeTo(centre.longitude, 1e-4));
+  });
+
+  testWidgets('a right drag or a control drag turns the map', (tester) async {
+    final c = await _pump(tester);
+    final right = await tester.startGesture(
+      const Offset(400, 300),
+      kind: PointerDeviceKind.mouse,
+      buttons: kSecondaryMouseButton,
+    );
+    for (var i = 1; i <= 10; i++) {
+      await right.moveTo(Offset(400 + i * 5.0, 300));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await right.up();
+    await _settle(tester);
+    expect(c.camera.bearing, closeTo(40, 1));
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    final left = await tester.startGesture(
+      const Offset(400, 300),
+      kind: PointerDeviceKind.mouse,
+    );
+    for (var i = 1; i <= 10; i++) {
+      await left.moveTo(Offset(400 - i * 5.0, 300));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await left.up();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await _settle(tester);
+    expect(c.camera.bearing, closeTo(0, 1));
+  });
+
+  testWidgets('shift with plus zooms two whole levels', (tester) async {
+    final c = await _pump(
+      tester,
+      camera: const VmapCamera(center: LatLng(36.19, 44.01), zoom: 12.4),
+    );
+    await tester.tapAt(const Offset(400, 300));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.equal);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await _settle(tester);
+    expect(c.camera.zoom, closeTo(14, 1e-6));
+    await tester.sendKeyEvent(LogicalKeyboardKey.minus);
+    await _settle(tester);
+    expect(c.camera.zoom, closeTo(13, 1e-6));
+  });
+
+  testWidgets('a native trackpad pans, pinches and turns the map', (
+    tester,
+  ) async {
+    final c = await _pump(tester);
+    final pad = TestPointer(1, PointerDeviceKind.trackpad);
+    await tester.sendEventToBinding(pad.panZoomStart(const Offset(400, 300)));
+    for (var i = 1; i <= 10; i++) {
+      await tester.sendEventToBinding(
+        pad.panZoomUpdate(
+          const Offset(400, 300),
+          pan: Offset(i * 4.0, 0),
+          scale: 1 + i * 0.1,
+          rotation: -i * 0.02,
+          timeStamp: Duration(milliseconds: i * 16),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await tester.sendEventToBinding(
+      pad.panZoomEnd(timeStamp: const Duration(milliseconds: 400)),
+    );
+    await _settle(tester);
+    expect(c.camera.zoom, closeTo(13, 0.05));
+    expect(c.camera.bearing, closeTo(0.2 * 180 / 3.141592653589793, 0.5));
+  });
 }

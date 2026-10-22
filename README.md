@@ -125,12 +125,22 @@ carries its speed into the next animation, and a released gesture glides.
 the camera looks at the middle of what is left. `toScreen` and `toLatLng`
 convert between places and points on the map.
 
-Gestures: one finger pans; two pinch, turn, and tilt when dragged up or down
-together; a double tap zooms in, a two finger tap out, and a double tap held
-and dragged zooms. A mouse wheel zooms, a right drag turns and tilts, a
-trackpad pans, pinches and turns, and the arrow keys, `+` and `-` work once
-the map has focus. `rotate`, `tilt`, `keyboard` and `interactive` switch
-them off.
+Gestures, as MapLibre GL JS has them:
+
+- Touch: one finger pans; two pinch, turn, and tilt when dragged up or down
+  together; a double tap zooms in, a two finger tap out, and a double tap
+  held and dragged zooms.
+- Mouse: the wheel zooms about the pointer, a double click zooms in and a
+  shift double click out, a right drag or a control drag turns and tilts,
+  and a shift drag zooms to the box it draws (escape lets it go). In a
+  browser the page's own menu stays away from a right drag.
+- Trackpad: two fingers slide the map, a pinch zooms about the fingers and
+  a twist turns it, in a browser too.
+- Keyboard, once a press has given the map focus: the arrows pan, shift with
+  them turns and tilts, and `+` and `-` zoom to the next whole level, two
+  with shift.
+
+`rotate`, `tilt`, `keyboard` and `interactive` switch them off.
 
 ## Markers
 

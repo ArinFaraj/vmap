@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -26,9 +27,12 @@ import 'vmap_controller.dart';
 ///
 /// One finger pans; two pinch, turn, and tilt when dragged up or down
 /// together; a double tap zooms in and a two finger tap out; a double tap
-/// held and dragged zooms. A mouse wheel zooms, a right drag turns and
-/// tilts, a trackpad pans, pinches and turns, and with focus the arrow keys
-/// pan, `+` and `-` zoom, and shift with the arrows turns and tilts.
+/// held and dragged zooms. A mouse wheel zooms, a double click zooms in and
+/// a shift double click out, a right or control drag turns and tilts, and a
+/// shift drag zooms to its box. Two fingers on a trackpad slide the map, a
+/// pinch zooms and a twist turns it. With focus the arrow keys pan, `+` and
+/// `-` zoom, two levels with shift, and shift with the arrows turns and
+/// tilts.
 /// Released gestures and interrupted animations keep their speed and slow
 /// down naturally.
 class Vmap extends StatefulWidget {
@@ -175,7 +179,7 @@ class Vmap extends StatefulWidget {
   State<Vmap> createState() => _VmapState();
 }
 
-enum _Gesture { undecided, pan, pinch, tilt, quickZoom, turnTilt }
+enum _Gesture { undecided, pan, pinch, tilt, quickZoom, turnTilt, box }
 
 /// Values of one gesture channel over the last tenth of a second, with the
 /// touch events' own times, so a frame that arrives late does not make the
@@ -288,6 +292,23 @@ class _VmapState extends State<Vmap>
 
   /// The zoom the mouse wheel is easing towards.
   double? _wheelZoom;
+
+  /// A double click with shift held zooms out rather than in.
+  bool _zoomOutTap = false;
+
+  /// Where a shift drag started, and the box it draws so far, which the
+  /// map zooms to when the mouse lets go.
+  Offset _boxStart = Offset.zero;
+  final ValueNotifier<Rect?> _box = ValueNotifier(null);
+
+  /// The cursor over the map: a hand, closed while the mouse drags.
+  final ValueNotifier<MouseCursor> _cursor = ValueNotifier(
+    SystemMouseCursors.grab,
+  );
+
+  /// Scroll events have no end: the camera is idle a moment after the
+  /// last one.
+  Timer? _scrollSettle;
   Offset _trackpadLast = Offset.zero;
   double _trackpadScale = 1, _trackpadTurn = 0;
 
@@ -376,6 +397,10 @@ class _VmapState extends State<Vmap>
   @override
   void dispose() {
     _longPress?.cancel();
+    _scrollSettle?.cancel();
+    _releaseContextMenu();
+    _box.dispose();
+    _cursor.dispose();
     _focus.dispose();
     WidgetsBinding.instance.removeObserver(this);
     PaintingBinding.instance.systemFonts.removeListener(_fontsChanged);
@@ -511,14 +536,27 @@ class _VmapState extends State<Vmap>
           last != null &&
           e.timeStamp - last < _doubleTapGap &&
           (e.localPosition - _tapUpPosition).distance < _doubleTapReach;
+      final mouse = e.kind == PointerDeviceKind.mouse;
+      final keys = HardwareKeyboard.instance;
       if (_secondTap) {
         _gesture = _Gesture.quickZoom;
         _quickAnchor = e.localPosition;
         _quickStartZoom = _c.camera.zoom;
-      } else if (e.kind == PointerDeviceKind.mouse &&
-          e.buttons & kSecondaryMouseButton != 0) {
+        _zoomOutTap = mouse && keys.isShiftPressed;
+      } else if (mouse &&
+          (e.buttons & kSecondaryMouseButton != 0 ||
+              e.buttons & kPrimaryMouseButton != 0 && keys.isControlPressed)) {
         _gesture = _Gesture.turnTilt;
+        _holdContextMenu();
+      } else if (mouse &&
+          widget.interactive &&
+          !onMarker &&
+          e.buttons & kPrimaryMouseButton != 0 &&
+          keys.isShiftPressed) {
+        _gesture = _Gesture.box;
+        _boxStart = e.localPosition;
       }
+      if (mouse) _cursor.value = SystemMouseCursors.grabbing;
       final onLongPress = widget.onLongPress;
       if (onLongPress != null && !onMarker) {
         final at = e.localPosition;
@@ -534,7 +572,31 @@ class _VmapState extends State<Vmap>
       if (_gesture == _Gesture.quickZoom) _gesture = _Gesture.undecided;
     }
     _longPressed = false;
+    final keep = _gesture;
     _restart(e.timeStamp, fresh: _fingers.length == 1);
+    if (keep == _Gesture.box && _fingers.length == 1) _gesture = keep;
+  }
+
+  /// A browser opens its own menu on a right click, or a control click on
+  /// a Mac, over the drag that turns the map: it is held off from the
+  /// press until a moment after the release, as some browsers open it on
+  /// the release.
+  void _holdContextMenu() {
+    if (!kIsWeb || !BrowserContextMenu.enabled) return;
+    _menuHeld = true;
+    unawaited(BrowserContextMenu.disableContextMenu());
+  }
+
+  bool _menuHeld = false;
+
+  void _releaseContextMenu() {
+    if (!_menuHeld) return;
+    _menuHeld = false;
+    Timer(const Duration(milliseconds: 100), () {
+      if (!BrowserContextMenu.enabled) {
+        unawaited(BrowserContextMenu.enableContextMenu());
+      }
+    });
   }
 
   bool _markerTouch = false;
@@ -590,6 +652,8 @@ class _VmapState extends State<Vmap>
           camera = camera.copyWith(pitch: camera.pitch - d.dy * 0.45);
         }
         _c.move(camera);
+      case _Gesture.box:
+        _box.value = Rect.fromPoints(_boxStart, focal);
       case _Gesture.undecided:
         _decide();
         if (_gesture == _Gesture.undecided) return;
@@ -709,6 +773,16 @@ class _VmapState extends State<Vmap>
       return;
     }
     _most = 0;
+    _cursor.value = SystemMouseCursors.grab;
+    _releaseContextMenu();
+    final box = _box.value;
+    _box.value = null;
+    if (gesture == _Gesture.box && box != null && _moved) {
+      _gesture = _Gesture.undecided;
+      _tapUpAt = null;
+      _zoomToBox(box);
+      return;
+    }
     final markerTouch = _markerTouch;
     _markerTouch = false;
     if (_longPressed) {
@@ -728,7 +802,7 @@ class _VmapState extends State<Vmap>
     if (gesture == _Gesture.quickZoom) {
       _tapUpAt = null;
       if (!_moved) {
-        _zoomBy(1, e.localPosition);
+        _zoomBy(_zoomOutTap ? -1 : 1, e.localPosition);
         return;
       }
       _coastAll(focal, end);
@@ -768,6 +842,28 @@ class _VmapState extends State<Vmap>
     _gesture = _Gesture.undecided;
   }
 
+  /// Zooms so the box a shift drag drew fills the map, as MapLibre's box
+  /// zoom does.
+  void _zoomToBox(Rect box) {
+    final view = _c.view;
+    if (box.width < 4 || box.height < 4 || !widget.interactive) return;
+    final centre = _c.toLatLng(box.center);
+    if (centre == null) return;
+    final by =
+        math.log(math.min(view.width / box.width, view.height / box.height)) /
+        math.ln2;
+    final camera = _c.camera;
+    unawaited(
+      _c.easeTo(
+        camera.copyWith(
+          center: centre,
+          zoom: (camera.zoom + by).clamp(widget.minZoom, widget.maxZoom),
+        ),
+        duration: const Duration(milliseconds: 300),
+      ),
+    );
+  }
+
   void _zoomBy(double levels, Offset at) {
     final to = _c.camera.around(
       _c.view,
@@ -789,14 +885,59 @@ class _VmapState extends State<Vmap>
     if (!widget.interactive) return;
     GestureBinding.instance.pointerSignalResolver.register(e, (event) {
       switch (event) {
+        case PointerScrollEvent(
+          kind: PointerDeviceKind.trackpad,
+          :final scrollDelta,
+          :final localPosition,
+        ):
+          _trackpadScroll(scrollDelta, localPosition);
         case PointerScrollEvent(:final scrollDelta, :final localPosition):
           if (scrollDelta.dy == 0) return;
           _wheel(-scrollDelta.dy / 300, localPosition);
         case PointerScaleEvent(:final scale, :final localPosition):
           if (scale <= 0) return;
-          _wheel(math.log(scale) / math.ln2, localPosition);
+          _pinchStep(math.log(scale) / math.ln2, localPosition);
+        case PointerScrollInertiaCancelEvent():
+          _c.stop();
         default:
       }
+    });
+  }
+
+  /// Two fingers sliding on a trackpad, as a browser reports them: the map
+  /// slides with them, as it does on a trackpad elsewhere, with the
+  /// system's own momentum.
+  void _trackpadScroll(Offset delta, Offset at) {
+    if (delta == Offset.zero) return;
+    _c.stop();
+    _wheelZoom = null;
+    _c.move(
+      _c.camera.panned(
+        _c.view,
+        at.dx,
+        at.dy,
+        at.dx - delta.dx,
+        at.dy - delta.dy,
+      ),
+    );
+    _settleScroll();
+  }
+
+  /// A step of a pinch on a trackpad, as a browser reports it: applied at
+  /// once about the fingers, as the many small steps already glide.
+  void _pinchStep(double levels, Offset at) {
+    _c.stop();
+    _wheelZoom = null;
+    final camera = _c.camera;
+    final zoom = (camera.zoom + levels).clamp(widget.minZoom, widget.maxZoom);
+    _c.move(camera.around(_c.view, at.dx, at.dy, newZoom: zoom));
+    _settleScroll();
+  }
+
+  void _settleScroll() {
+    _scrollSettle?.cancel();
+    _scrollSettle = Timer(const Duration(milliseconds: 150), () {
+      if (mounted) _checkIdleCamera();
     });
   }
 
@@ -873,6 +1014,13 @@ class _VmapState extends State<Vmap>
     if (!widget.interactive || e is KeyUpEvent) return KeyEventResult.ignored;
     final key = e.logicalKey;
     final shift = HardwareKeyboard.instance.isShiftPressed;
+    if (key == LogicalKeyboardKey.escape && _box.value != null) {
+      _box.value = null;
+      _gesture = _Gesture.undecided;
+      return KeyEventResult.handled;
+    }
+    // As MapLibre's: from the nearest whole zoom, two levels with shift.
+    final zoomStep = shift ? 2 : 1;
     final camera = _c.camera;
     final view = _c.view;
     final middle = Offset(view.width / 2, view.height / 2);
@@ -880,10 +1028,21 @@ class _VmapState extends State<Vmap>
     if (key == LogicalKeyboardKey.equal ||
         key == LogicalKeyboardKey.add ||
         key == LogicalKeyboardKey.numpadAdd) {
-      to = camera.copyWith(zoom: camera.zoom + 1);
+      to = camera.copyWith(
+        zoom: (camera.zoom.roundToDouble() + zoomStep).clamp(
+          widget.minZoom,
+          widget.maxZoom,
+        ),
+      );
     } else if (key == LogicalKeyboardKey.minus ||
+        key == LogicalKeyboardKey.underscore ||
         key == LogicalKeyboardKey.numpadSubtract) {
-      to = camera.copyWith(zoom: camera.zoom - 1);
+      to = camera.copyWith(
+        zoom: (camera.zoom.roundToDouble() - zoomStep).clamp(
+          widget.minZoom,
+          widget.maxZoom,
+        ),
+      );
     } else if (shift && key == LogicalKeyboardKey.arrowLeft && widget.rotate) {
       to = camera.copyWith(bearing: normalBearing(camera.bearing - 15));
     } else if (shift && key == LogicalKeyboardKey.arrowRight && widget.rotate) {
@@ -950,6 +1109,24 @@ class _VmapState extends State<Vmap>
                   markers: widget.markers,
                   onMarkerDown: () => _onMarker = true,
                 ),
+              ValueListenableBuilder(
+                valueListenable: _box,
+                builder: (context, box, _) => box == null
+                    ? const SizedBox.shrink()
+                    : Positioned.fromRect(
+                        rect: box,
+                        child: const IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Color(0x1A3887BE),
+                              border: Border.fromBorderSide(
+                                BorderSide(color: Color(0xFF3887BE), width: 2),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+              ),
               if (widget.attribution) _Attribution(engine),
               if (loading != null)
                 IgnorePointer(
@@ -962,6 +1139,14 @@ class _VmapState extends State<Vmap>
             ],
           ),
         );
+        if (widget.interactive) {
+          final child = map;
+          map = ValueListenableBuilder(
+            valueListenable: _cursor,
+            builder: (context, cursor, _) =>
+                MouseRegion(cursor: cursor, child: child),
+          );
+        }
         if (widget.keyboard) {
           map = Focus(focusNode: _focus, onKeyEvent: _onKey, child: map);
         }
