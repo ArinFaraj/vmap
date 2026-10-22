@@ -2,7 +2,7 @@
 
 vmap is now a map engine of its own, drawn on the GPU, with flutter_map
 moved to an adapter package. This release changes most of the public API;
-"Moving from vmap 0.26" in the README lists what to rename.
+"Coming from vmap 0.26" in the README lists what to rename.
 
 ### The engine
 
@@ -19,6 +19,20 @@ moved to an adapter package. This release changes most of the public API;
   trackpad in a browser slides the map with two fingers and zooms at once
   with a pinch, and a right drag in a browser keeps the page's menu away.
   The pointer is a hand over the map.
+- `dart run vmap:setup` switches Flutter GPU on in an app's Android,
+  iOS, macOS, Windows and Linux folders and lets the app load tiles;
+  `--check` only reports, for CI.
+- `Vmap.onFeatureTap` hands over the topmost feature under a tap, and
+  `tappableLayers` limits it to some style layers, so finding what was
+  tapped needs no controller.
+- `VmapController` asks about clusters (`clusterExpansionZoom`,
+  `clusterChildren`, `clusterLeaves`) and downloads regions
+  (`downloadRegion`) itself, and every method that takes an area takes a
+  `VmapBounds`.
+- Styles, overlays and feature states are compared by content, so ones
+  built afresh in `build` cost nothing while they say the same.
+- vmap is a Dart package with no platform code of its own: it does not ask
+  Android for a refresh rate. The example app shows how an app can.
 - `VmapController` moves it: `flyTo`, `easeTo` and `fitBounds` as
   MapLibre's do, `featuresAt` and `featuresIn`, and `toScreen` and
   `toLatLng`. A moving camera carries its speed into the next animation.

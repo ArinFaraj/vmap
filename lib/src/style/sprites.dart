@@ -10,8 +10,10 @@ import '../platform.dart';
 /// A picture of the app's own for the style to draw by name, as an icon or
 /// a pattern, as if it were in the style's sprite sheet.
 class VmapImage {
+  /// [image] drawn at [pixelRatio] of its pixels to a logical pixel.
   const VmapImage(this.image, {this.pixelRatio = 1, this.sdf = false});
 
+  /// The picture.
   final ui.Image image;
 
   /// The picture's pixels to a logical pixel: 2 for a picture drawn for
@@ -21,6 +23,16 @@ class VmapImage {
   /// The picture is a distance field: a shape with no colour of its own,
   /// drawn in the style's `icon-color`.
   final bool sdf;
+
+  @override
+  bool operator ==(Object other) =>
+      other is VmapImage &&
+      identical(other.image, image) &&
+      other.pixelRatio == pixelRatio &&
+      other.sdf == sdf;
+
+  @override
+  int get hashCode => Object.hash(identityHashCode(image), pixelRatio, sdf);
 }
 
 /// One image of a sprite sheet.

@@ -3,12 +3,14 @@ import 'dart:typed_data';
 import 'package:latlong2/latlong.dart';
 
 import '../style/expr.dart';
+import '../style/json_equals.dart';
 import 'mvt.dart';
 import 'protocol.dart' show TileHit;
 import '../style/style_model.dart';
 
 /// One map feature found at a point.
 class VmapFeature {
+  /// A feature as [VmapController.featuresAt] finds it.
   const VmapFeature({
     required this.source,
     required this.sourceLayer,
@@ -21,6 +23,8 @@ class VmapFeature {
 
   /// The name of the style source it comes from.
   final String source;
+
+  /// The layer of its vector tile, or empty for a GeoJSON source.
   final String sourceLayer;
 
   /// The ids of the style layers that draw it, topmost first.
@@ -28,6 +32,8 @@ class VmapFeature {
 
   /// `Point`, `LineString` or `Polygon`.
   final String geometryType;
+
+  /// Its properties, such as `name` and `class`.
   final Map<String, Object?> properties;
 
   /// Where it is, as lists of places: for a Point one list of its points,
@@ -48,30 +54,42 @@ class VmapFeature {
 
 /// How a download of a region for use offline went.
 class VmapDownload {
+  /// How a region download ended, in tiles.
   const VmapDownload({
     required this.tiles,
     required this.fetched,
     required this.failed,
   });
 
-  /// The tiles the region takes, and how many of them had to be fetched and
-  /// could not be. The rest were in the cache already or do not exist.
+  /// The tiles the region takes. Those neither [fetched] nor [failed] were
+  /// in the cache already or do not exist.
   final int tiles;
+
+  /// The tiles fetched from the network.
   final int fetched;
+
+  /// The tiles that could not be fetched.
   final int failed;
 }
 
 /// What a cluster of a clustered source holds: a smaller cluster, or one of
 /// the points of the data.
 class VmapClusterMember {
+  /// A point or cluster inside a cluster.
   const VmapClusterMember({
     required this.point,
     required this.properties,
     this.id,
   });
 
+  /// Where it is: a point of the data, or a cluster's centre.
   final LatLng point;
+
+  /// The point's properties, or a cluster's `cluster_id`, `point_count` and
+  /// the properties the source sums up.
   final Map<String, Object?> properties;
+
+  /// The point's id in the data, or null.
   final Object? id;
 
   /// It is a cluster itself, with a `cluster_id` to ask about in turn.
@@ -85,6 +103,7 @@ class VmapClusterMember {
 /// `['feature-state', name]` in a paint property: the way to highlight what
 /// was tapped without rebuilding anything.
 class VmapFeatureState {
+  /// [state] for the feature with [id] in [source].
   const VmapFeatureState({
     required this.source,
     required this.id,
@@ -102,7 +121,19 @@ class VmapFeatureState {
   /// The feature's id: the `id` of a GeoJSON feature, or the id the tiles
   /// carry.
   final Object? id;
+
+  /// The values the style reads with `['feature-state', name]`.
   final Map<String, Object?> state;
+
+  @override
+  bool operator ==(Object other) =>
+      other is VmapFeatureState &&
+      other.source == source &&
+      other.id == id &&
+      jsonEquals(other.state, state);
+
+  @override
+  int get hashCode => Object.hash(source, id, state.length);
 }
 
 /// The features of [layers] within [radius] tile units of ([px], [py]) that a

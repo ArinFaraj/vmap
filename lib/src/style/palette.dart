@@ -40,6 +40,7 @@ abstract final class Tone {
 /// The colours of the built in style, by what they paint.
 @immutable
 class VmapPalette {
+  /// A palette of every colour the built in style paints.
   const VmapPalette({
     required this.background,
     required this.residential,
@@ -75,34 +76,86 @@ class VmapPalette {
 
   /// Land with nothing else on it.
   final Color background;
+
+  /// Residential areas.
   final Color residential;
+
+  /// Shops, offices and industry.
   final Color commercial;
+
+  /// School and university grounds.
   final Color school;
+
+  /// Hospital grounds.
   final Color hospital;
+
+  /// Sand and beaches.
   final Color sand;
+
+  /// Grass and farmland.
   final Color grass;
+
+  /// Parks.
   final Color park;
+
+  /// Woods and forests.
   final Color wood;
+
+  /// Sports pitches.
   final Color pitch;
+
+  /// Water.
   final Color water;
+
+  /// Runways and aprons.
   final Color aeroway;
+
+  /// Pedestrian streets and squares.
   final Color pedestrian;
+
+  /// Buildings.
   final Color building;
 
   /// The edges of ordinary roads.
   final Color casing;
+
+  /// Ordinary roads.
   final Color road;
+
+  /// Primary and secondary roads.
   final Color roadMajor;
+
+  /// Trunk roads.
   final Color trunk;
+
+  /// The edges of trunk roads.
   final Color trunkCasing;
+
+  /// Motorways.
   final Color motorway;
+
+  /// The edges of motorways.
   final Color motorwayCasing;
+
+  /// Paths and tracks.
   final Color path;
+
+  /// Railways.
   final Color rail;
+
+  /// Country and state borders.
   final Color boundary;
+
+  /// The names of places.
   final Color labelPrimary;
+
+  /// Lesser names, such as of points of interest.
   final Color labelSecondary;
+
+  /// Road names.
   final Color labelRoad;
+
+  /// The names of seas, lakes and rivers.
   final Color labelWater;
 
   /// The outline around label text.
@@ -111,6 +164,7 @@ class VmapPalette {
   /// The names written beside the app's markers.
   final Color labelMarker;
 
+  /// This palette with the given colours changed.
   VmapPalette copyWith({
     Color? background,
     Color? residential,

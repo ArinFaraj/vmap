@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 /// and the marker stays.
 @immutable
 class VmapMarker {
+  /// A marker at [point] drawing [child] in a [width] by [height] box.
   const VmapMarker({
     required this.point,
     this.child,
@@ -17,17 +18,23 @@ class VmapMarker {
     this.key,
   });
 
+  /// The place the marker stands at.
   final LatLng point;
 
   /// What is drawn. Null keeps the box clear of labels and draws nothing,
   /// for an app that draws its markers itself.
   final Widget? child;
+
+  /// The box's size in logical pixels, which map labels keep clear of.
   final double width;
   final double height;
 
   /// Which way the box sits from [point]: `Alignment.topCenter` puts it
   /// above. Centred on the point when null.
   final Alignment? alignment;
+
+  /// Written beside the marker, ahead of every map label, when there is
+  /// room for it.
   final String? name;
 
   /// Keeps a marker's widget state when markers are added or removed

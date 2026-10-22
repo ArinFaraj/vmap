@@ -68,7 +68,11 @@ const _style = VmapStyle.json({
   ],
 });
 
-Future<VmapController> _drawn(WidgetTester tester) async {
+Future<VmapController> _drawn(
+  WidgetTester tester, {
+  void Function(VmapFeature feature, LatLng point)? onFeatureTap,
+  List<String>? tappableLayers,
+}) async {
   final controller = VmapController(
     const VmapCamera(center: LatLng(36.19, 44.01), zoom: 13),
   );
@@ -81,6 +85,8 @@ Future<VmapController> _drawn(WidgetTester tester) async {
         style: _style,
         rendering: const VmapRenderOptions(renderer: VmapRenderer.canvas),
         attribution: false,
+        onFeatureTap: onFeatureTap,
+        tappableLayers: tappableLayers,
       ),
     ),
   );
@@ -143,7 +149,6 @@ void main() {
 
   testWidgets('a cluster lists its points at their places', (tester) async {
     final controller = await _drawn(tester);
-    final engine = controller.engine!;
     final hits = (await tester.runAsync(
       () => controller.featuresIn(
         const VmapBounds(LatLng(36.3, 44.2), LatLng(36.5, 44.4)),
@@ -152,7 +157,7 @@ void main() {
     final cluster = hits.firstWhere((f) => f.properties['cluster'] == true);
     final id = cluster.properties['cluster_id']! as int;
     final leaves = (await tester.runAsync(
-      () => engine.clusterLeaves('spots', id),
+      () => controller.clusterLeaves('spots', id),
     ))!;
     expect(leaves, hasLength(2));
     for (final leaf in leaves) {
@@ -160,8 +165,38 @@ void main() {
       expect(leaf.point.longitude, closeTo(44.3, 0.01));
     }
     final zoom = (await tester.runAsync(
-      () => engine.clusterExpansionZoom('spots', id),
+      () => controller.clusterExpansionZoom('spots', id),
     ))!;
     expect(zoom, greaterThan(13));
+  });
+
+  testWidgets('a tap on a feature is told the feature', (tester) async {
+    final tapped = <VmapFeature>[];
+    await _drawn(tester, onFeatureTap: (f, _) => tapped.add(f));
+    await tester.tapAt(tester.getCenter(find.byType(Vmap)));
+    for (var i = 0; i < 50 && tapped.isEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(tapped.single.id, 7);
+  });
+
+  testWidgets('a tap reports only the layers asked for', (tester) async {
+    final tapped = <VmapFeature>[];
+    await _drawn(
+      tester,
+      onFeatureTap: (f, _) => tapped.add(f),
+      tappableLayers: const ['dots'],
+    );
+    await tester.tapAt(tester.getCenter(find.byType(Vmap)));
+    for (var i = 0; i < 20; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(tapped, isEmpty);
   });
 }

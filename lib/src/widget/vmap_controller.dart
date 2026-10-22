@@ -8,9 +8,10 @@ import 'package:flutter/scheduler.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../engine.dart';
-import 'frame_rate.dart';
+import '../camera/bounds.dart';
 import '../camera/map_camera.dart';
 import '../camera/mercator.dart';
+import '../options.dart';
 import '../tiles/query.dart';
 import '../camera/view.dart';
 
@@ -34,42 +35,10 @@ double _turn(double from, double to) {
   return d > 180 ? d - 360 : d;
 }
 
-/// The area between two corners, for [VmapController.fitBounds] and
-/// [VmapController.featuresIn].
-@immutable
-class VmapBounds {
-  const VmapBounds(this.southWest, this.northEast);
-
-  /// The smallest bounds holding every one of [points], which must not be
-  /// empty.
-  factory VmapBounds.around(Iterable<LatLng> points) {
-    var south = 90.0, west = 180.0, north = -90.0, east = -180.0;
-    for (final p in points) {
-      south = math.min(south, p.latitude);
-      north = math.max(north, p.latitude);
-      west = math.min(west, p.longitude);
-      east = math.max(east, p.longitude);
-    }
-    if (south > north) throw ArgumentError.value(points, 'points', 'empty');
-    return VmapBounds(LatLng(south, west), LatLng(north, east));
-  }
-
-  final LatLng southWest;
-  final LatLng northEast;
-
-  @override
-  bool operator ==(Object other) =>
-      other is VmapBounds &&
-      other.southWest == southWest &&
-      other.northEast == northEast;
-
-  @override
-  int get hashCode => Object.hash(southWest, northEast);
-}
-
 /// Moves a [Vmap] and reads where it looks. Give one to a [Vmap] to move
 /// it from code; a map without one makes its own.
 class VmapController extends ChangeNotifier {
+  /// A controller starting at [camera].
   VmapController([
     VmapCamera camera = const VmapCamera(center: LatLng(0, 0), zoom: 1),
   ]) : _camera = camera;
@@ -164,8 +133,55 @@ class VmapController extends ChangeNotifier {
   /// What the map shows inside [bounds]: the features the style draws that
   /// touch it, topmost first.
   Future<List<VmapFeature>> featuresIn(VmapBounds bounds) =>
-      _engine?.featuresIn(bounds.southWest, bounds.northEast) ??
+      _engine?.featuresIn(bounds) ?? Future.value(const []);
+
+  /// The zoom at which cluster [clusterId] of the clustered GeoJSON source
+  /// named [source] comes apart, to zoom in on a tapped cluster. Null when
+  /// there is no such cluster. A cluster's id is the `cluster_id` property
+  /// of the feature [featuresAt] finds.
+  Future<double?> clusterExpansionZoom(String source, int clusterId) =>
+      _engine?.clusterExpansionZoom(source, clusterId) ?? Future.value();
+
+  /// What cluster [clusterId] comes apart into at its expansion zoom.
+  Future<List<VmapClusterMember>> clusterChildren(
+    String source,
+    int clusterId,
+  ) => _engine?.clusterChildren(source, clusterId) ?? Future.value(const []);
+
+  /// The points inside cluster [clusterId], [limit] of them from [offset].
+  Future<List<VmapClusterMember>> clusterLeaves(
+    String source,
+    int clusterId, {
+    int limit = 10,
+    int offset = 0,
+  }) =>
+      _engine?.clusterLeaves(source, clusterId, limit: limit, offset: offset) ??
       Future.value(const []);
+
+  /// Fetches every tile the style draws inside [bounds] at zooms [minZoom]
+  /// to [maxZoom] into the map's cache directory, so that part of the map
+  /// shows without a network: see [VmapEngine.downloadRegion]. Needs
+  /// [VmapNetworkOptions.cacheDirectory], and a map that has loaded its
+  /// style.
+  Future<VmapDownload> downloadRegion(
+    VmapBounds bounds, {
+    required double minZoom,
+    required double maxZoom,
+    void Function(int done, int total)? onProgress,
+    bool Function()? cancelled,
+  }) {
+    final engine = _engine;
+    if (engine == null) {
+      throw StateError('Give the controller to a Vmap before downloading');
+    }
+    return engine.downloadRegion(
+      bounds,
+      minZoom: minZoom,
+      maxZoom: maxZoom,
+      onProgress: onProgress,
+      cancelled: cancelled,
+    );
+  }
 
   void _set(VmapCamera to) {
     var clamped = to.copyWith(
@@ -180,7 +196,6 @@ class VmapController extends ChangeNotifier {
     }
     if (clamped == _camera) return;
     _camera = clamped;
-    FrameRateVote.moving();
     notifyListeners();
   }
 

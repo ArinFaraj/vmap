@@ -15,6 +15,7 @@ export 'package:latlong2/latlong.dart' show LatLng;
 export 'src/engine.dart' show VmapEngine;
 export 'src/errors.dart' show VmapError, VmapErrorKind;
 export 'src/labels/glyphs/vmap_font.dart' show VmapFont;
+export 'src/camera/bounds.dart' show VmapBounds;
 export 'src/camera/map_camera.dart' show VmapCamera;
 export 'src/widget/marker.dart' show VmapMarker;
 export 'src/options.dart'
@@ -32,4 +33,4 @@ export 'src/style/sprites.dart' show VmapImage;
 export 'src/style/style.dart' show VmapOverlay, VmapStyle, VmapStyleEdit;
 export 'src/labels/text_style.dart' show VmapTextStyle;
 export 'src/widget/vmap.dart' show Vmap;
-export 'src/widget/vmap_controller.dart' show VmapBounds, VmapController;
+export 'src/widget/vmap_controller.dart' show VmapController;

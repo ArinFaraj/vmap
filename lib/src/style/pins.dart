@@ -5,9 +5,13 @@ import 'package:flutter/widgets.dart' show IconData;
 
 /// A round pin: an icon in white on a coloured disc.
 class VmapPin {
+  /// A pin of [icon] on a disc of [color].
   const VmapPin(this.icon, this.color);
 
+  /// The icon, drawn white.
   final IconData icon;
+
+  /// The disc's colour.
   final ui.Color color;
 }
 
@@ -22,6 +26,7 @@ class VmapPin {
 /// For the standard set that means `uses-material-design: true` in the app's
 /// pubspec.
 class VmapPins {
+  /// Pins by icon name, [other] for the rest, [size] logical pixels across.
   const VmapPins({
     this.byIcon = _standard,
     this.other = const VmapPin(Icons.place_rounded, ui.Color(0xFF8A93A0)),
@@ -35,6 +40,7 @@ class VmapPins {
   /// sights, health, transport. Spread it into [byIcon] to change a few.
   static const Map<String, VmapPin> standardIcons = _standard;
 
+  /// The pin of each icon name the style uses.
   final Map<String, VmapPin> byIcon;
 
   /// The pin of a place whose icon has none in [byIcon]. Null leaves those

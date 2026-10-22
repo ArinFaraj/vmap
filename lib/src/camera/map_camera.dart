@@ -12,6 +12,7 @@ import 'view.dart';
 /// clockwise from north, and a [pitch] in degrees from straight down.
 @immutable
 class VmapCamera {
+  /// A camera over [center] at [zoom], turned and tilted as given.
   const VmapCamera({
     required this.center,
     required this.zoom,
@@ -25,9 +26,17 @@ class VmapCamera {
   /// MapLibre's vertical field of view, in degrees.
   static const double defaultFieldOfView = 36.86989764584402;
 
+  /// The place at the middle of the map, or of what [padding] leaves.
   final LatLng center;
+
+  /// MapLibre's zoom: 0 shows the world 512 logical pixels wide, and each
+  /// level doubles it.
   final double zoom;
+
+  /// Degrees clockwise from north that the top of the map faces.
   final double bearing;
+
+  /// Degrees the camera tilts from looking straight down.
   final double pitch;
 
   /// Degrees the camera turns about its line of sight, as MapLibre's roll.
@@ -41,6 +50,7 @@ class VmapCamera {
   /// through a wider lens.
   final double fieldOfView;
 
+  /// This camera with the given parts changed.
   VmapCamera copyWith({
     LatLng? center,
     double? zoom,

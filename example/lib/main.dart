@@ -41,16 +41,15 @@ class _MapPageState extends State<MapPage> {
     super.dispose();
   }
 
-  Future<void> _tapped(LatLng point) async {
-    final features = await _controller.featuresAt(point);
-    if (!mounted || features.isEmpty) return;
-    final top = features.first;
-    final name = top.properties['name:en'] ?? top.properties['name'];
+  void _tapped(VmapFeature feature, LatLng point) {
+    final name = feature.properties['name:en'] ?? feature.properties['name'];
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(
         SnackBar(
-          content: Text('${name ?? top.sourceLayer} (${top.layers.first})'),
+          content: Text(
+            '${name ?? feature.sourceLayer} (${feature.layers.first})',
+          ),
         ),
       );
   }
@@ -85,7 +84,7 @@ class _MapPageState extends State<MapPage> {
           child: Icon(Icons.location_on, color: Colors.red, size: 32),
         ),
       ],
-      onTap: _tapped,
+      onFeatureTap: _tapped,
       loadingBuilder: (context) =>
           const Center(child: CircularProgressIndicator()),
     ),

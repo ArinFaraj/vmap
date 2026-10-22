@@ -4,6 +4,8 @@ library;
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:vmap/src/camera/bounds.dart';
 import 'package:vmap/src/engine.dart';
 import 'package:vmap/src/style/style.dart';
 import 'package:vmap/src/options.dart';
@@ -52,10 +54,7 @@ void main() {
 
     final steps = <int>[];
     final first = await engine.downloadRegion(
-      west: 1,
-      south: 1,
-      east: 60,
-      north: 60,
+      const VmapBounds(LatLng(1, 1), LatLng(60, 60)),
       minZoom: 0,
       maxZoom: 8,
       onProgress: (done, total) => steps.add(done),
@@ -70,10 +69,7 @@ void main() {
 
     asked.clear();
     final again = await engine.downloadRegion(
-      west: 1,
-      south: 1,
-      east: 60,
-      north: 60,
+      const VmapBounds(LatLng(1, 1), LatLng(60, 60)),
       minZoom: 0,
       maxZoom: 2,
     );

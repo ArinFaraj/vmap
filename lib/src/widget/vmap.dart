@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, listEquals;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -10,7 +10,6 @@ import 'package:latlong2/latlong.dart';
 
 import '../engine.dart';
 import '../errors.dart';
-import 'frame_rate.dart';
 import '../labels/glyphs/vmap_font.dart';
 import '../camera/map_camera.dart';
 import 'marker.dart';
@@ -36,6 +35,7 @@ import 'vmap_controller.dart';
 /// Released gestures and interrupted animations keep their speed and slow
 /// down naturally.
 class Vmap extends StatefulWidget {
+  /// A map of [style], at [initialCamera] or where [controller] says.
   const Vmap({
     this.controller,
     this.initialCamera = const VmapCamera(center: LatLng(0, 0), zoom: 1),
@@ -59,9 +59,10 @@ class Vmap extends StatefulWidget {
     this.tilt = true,
     this.keyboard = true,
     this.attribution = true,
-    this.highRefreshRate = true,
     this.loadingBuilder,
     this.onTap,
+    this.onFeatureTap,
+    this.tappableLayers,
     this.onLongPress,
     this.onCameraMove,
     this.onCameraIdle,
@@ -122,6 +123,7 @@ class Vmap extends StatefulWidget {
   /// engine are then ignored: set them on this one.
   final VmapEngine? engine;
 
+  /// The zooms gestures and animations keep to.
   final double minZoom;
   final double maxZoom;
 
@@ -131,7 +133,11 @@ class Vmap extends StatefulWidget {
   /// Whether gestures, the mouse and the keyboard move the map. Off, only
   /// [controller] does, and taps are still reported.
   final bool interactive;
+
+  /// Whether gestures turn the map.
   final bool rotate;
+
+  /// Whether gestures tilt the map.
   final bool tilt;
 
   /// Whether the map takes key presses once tapped or focused.
@@ -142,17 +148,23 @@ class Vmap extends StatefulWidget {
   /// [VmapEngine.attributions].
   final bool attribution;
 
-  /// On Android, asks for the display's fastest refresh rate while the map
-  /// moves and gives it back a few seconds after it rests. Many Android 15
-  /// phones draw an app at 60 Hz otherwise, whatever its window prefers.
-  final bool highRefreshRate;
-
   /// Shown over the map until it first draws tiles, or until it fails.
   final WidgetBuilder? loadingBuilder;
 
   /// Called with the place tapped. [VmapController.featuresAt] tells what
   /// the style draws there.
   final void Function(LatLng point)? onTap;
+
+  /// Called with the topmost feature under a tap, when there is one: a
+  /// road, a place, a building, a feature of the [overlay]. It reads the
+  /// tiles off the UI thread, so it comes a moment after [onTap].
+  final void Function(VmapFeature feature, LatLng point)? onFeatureTap;
+
+  /// The ids of the style layers [onFeatureTap] reports features of, as
+  /// MapLibre's `map.on('click', layerId)`; every layer when null.
+  final List<String>? tappableLayers;
+
+  /// Called with the place a finger was held on.
   final void Function(LatLng point)? onLongPress;
 
   /// Called as the camera moves, by a gesture or from code.
@@ -331,7 +343,6 @@ class _VmapState extends State<Vmap>
   @override
   void initState() {
     super.initState();
-    if (widget.highRefreshRate) FrameRateVote.attach();
     _attach();
     _lastCamera = _c.camera;
     _c.addListener(_cameraChanged);
@@ -358,9 +369,6 @@ class _VmapState extends State<Vmap>
   @override
   void didUpdateWidget(Vmap old) {
     super.didUpdateWidget(old);
-    if (old.highRefreshRate != widget.highRefreshRate) {
-      widget.highRefreshRate ? FrameRateVote.attach() : FrameRateVote.detach();
-    }
     final oldController = old.controller ?? _ownController;
     if (widget.controller != null && oldController != widget.controller) {
       oldController
@@ -386,7 +394,7 @@ class _VmapState extends State<Vmap>
       ..pins = widget.pins
       ..text = widget.textStyle
       ..labels = widget.labels;
-    if (!identical(old.featureStates, widget.featureStates)) {
+    if (!listEquals(old.featureStates, widget.featureStates)) {
       owned.featureStates = widget.featureStates;
     }
     if (!VmapMarker.sameRooms(old.markers, widget.markers)) {
@@ -404,7 +412,6 @@ class _VmapState extends State<Vmap>
     _focus.dispose();
     WidgetsBinding.instance.removeObserver(this);
     PaintingBinding.instance.systemFonts.removeListener(_fontsChanged);
-    if (widget.highRefreshRate) FrameRateVote.detach();
     _c
       ..removeListener(_cameraChanged)
       ..detach();
@@ -519,7 +526,6 @@ class _VmapState extends State<Vmap>
     final onMarker = _onMarker;
     _onMarker = false;
     if (widget.keyboard) _focus.requestFocus();
-    FrameRateVote.moving();
     _c.stop();
     _wheelZoom = null;
     _fingers[e.pointer] = e.localPosition;
@@ -875,10 +881,23 @@ class _VmapState extends State<Vmap>
   }
 
   void _tap(Offset at) {
-    final onTap = widget.onTap;
-    if (onTap == null) return;
     final point = _c.toLatLng(at);
-    if (point != null) onTap(point);
+    if (point == null) return;
+    widget.onTap?.call(point);
+    if (widget.onFeatureTap != null) unawaited(_featureTap(point));
+  }
+
+  Future<void> _featureTap(LatLng point) async {
+    final features = await _c.featuresAt(point);
+    final onFeatureTap = widget.onFeatureTap;
+    if (!mounted || onFeatureTap == null) return;
+    final layers = widget.tappableLayers;
+    for (final f in features) {
+      if (layers == null || f.layers.any(layers.contains)) {
+        onFeatureTap(f, point);
+        return;
+      }
+    }
   }
 
   void _onSignal(PointerSignalEvent e) {

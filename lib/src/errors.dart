@@ -22,9 +22,11 @@ enum VmapErrorKind {
 /// Something the map could not load or draw. The map keeps trying where
 /// trying again can help; this is for the app to log or show.
 class VmapError implements Exception {
+  /// A failure of [kind], caused by [cause], fetching [url] when given.
   VmapError(this.kind, this.cause, {String? url})
     : url = url ?? (cause is HttpFailure ? cause.url : null);
 
+  /// What failed: the style, tiles, a sprite, fonts or the GPU.
   final VmapErrorKind kind;
 
   /// The address that failed, when there was one.

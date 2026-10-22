@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 /// and keeps it between runs.
 @immutable
 class VmapNetworkOptions {
+  /// Network settings; the defaults fetch with no disk cache.
   const VmapNetworkOptions({
     this.cacheDirectory,
     this.userAgent = 'vmap',
@@ -78,6 +79,7 @@ enum VmapGlyphs {
 /// How the map is drawn.
 @immutable
 class VmapRenderOptions {
+  /// Drawing settings; the defaults draw on the GPU.
   const VmapRenderOptions({
     this.renderer = VmapRenderer.gpu,
     this.antialias = true,
@@ -85,6 +87,7 @@ class VmapRenderOptions {
     this.maxCachedTiles = 56,
   });
 
+  /// What draws the map: the GPU, or Flutter's canvas.
   final VmapRenderer renderer;
 
   /// Smooths the edges of buildings, raised ground and the globe on the
@@ -92,6 +95,7 @@ class VmapRenderOptions {
   /// `antialias` option. The web never smooths them this way.
   final bool antialias;
 
+  /// Where the letters of labels come from.
   final VmapGlyphs glyphs;
 
   /// Tiles kept in memory per source beyond those on screen.
@@ -101,12 +105,14 @@ class VmapRenderOptions {
 /// Which labels the map writes and how they are placed.
 @immutable
 class VmapLabelOptions {
+  /// Label settings; the defaults write every label the style has.
   const VmapLabelOptions({
     this.visible = true,
     this.curved = true,
     this.crossSourceCollisions = true,
   });
 
+  /// Whether the map writes labels at all.
   final bool visible;
 
   /// Road names follow bends. Off, a name is written only where its road is

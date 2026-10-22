@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'builtin_style.dart';
+import 'json_equals.dart';
 import 'palette.dart';
 import 'sprites.dart' show VmapImage;
 
@@ -33,12 +34,22 @@ class VmapStyle {
   }) : url = null,
        json = null;
 
+  /// The built in style in light colours, over OpenFreeMap's tiles.
   static const light = VmapStyle.builtIn();
+
+  /// The built in style in dark colours, over OpenFreeMap's tiles.
   static const dark = VmapStyle.builtIn(palette: VmapPalette.dark);
 
+  /// The address of the style JSON, for a style by address.
   final String? url;
+
+  /// The style document, for a style given as JSON.
   final Map<String, Object?>? json;
+
+  /// The colours, for the built in style.
   final VmapPalette? palette;
+
+  /// Where the built in style reads its tiles' TileJSON.
   final String? tileJsonUrl;
 
   /// Feature properties tried in order for every name on the map, for example
@@ -65,7 +76,7 @@ class VmapStyle {
   bool operator ==(Object other) =>
       other is VmapStyle &&
       other.url == url &&
-      identical(other.json, json) &&
+      jsonEquals(other.json, json) &&
       identical(other.palette, palette) &&
       other.tileJsonUrl == tileJsonUrl &&
       other.zoomOffset == zoomOffset &&
@@ -75,7 +86,7 @@ class VmapStyle {
   @override
   int get hashCode => Object.hash(
     url,
-    json,
+    json?.length,
     palette,
     tileJsonUrl,
     zoomOffset,
@@ -86,10 +97,11 @@ class VmapStyle {
 /// Sources and layers of your own, drawn with the style: a route, a set of
 /// points, an area. Both are written as a MapLibre style writes them.
 ///
-/// A GeoJSON source is read again when its `data` is a different object, so
-/// build a new document to change what is shown, and keep the overlay itself
-/// between builds.
+/// Overlays are compared by content, so one built afresh in `build` costs
+/// nothing while it says the same; a GeoJSON source whose `data` changes is
+/// read again, its old features staying up until the new ones are ready.
 class VmapOverlay {
+  /// An overlay of [sources] and [layers], with [terrain] and [images].
   const VmapOverlay({
     this.sources = const {},
     this.layers = const [],
@@ -113,6 +125,18 @@ class VmapOverlay {
   /// of the style's or [sources]' `raster-dem` sources, for example
   /// `{'source': 'dem', 'exaggeration': 1.5}`.
   final Map<String, Object?>? terrain;
+
+  @override
+  bool operator ==(Object other) =>
+      other is VmapOverlay &&
+      jsonEquals(other.sources, sources) &&
+      jsonEquals(other.layers, layers) &&
+      jsonEquals(other.terrain, terrain) &&
+      other.images.length == images.length &&
+      images.entries.every((e) => other.images[e.key] == e.value);
+
+  @override
+  int get hashCode => Object.hash(sources.length, layers.length, terrain);
 
   /// [document] with these sources and layers added.
   Map<String, Object?> applyTo(Map<String, Object?> document) {
@@ -181,7 +205,11 @@ class VmapStyleEdit {
 
   /// The `id` of the style layer changed; null for a state edit.
   final String? layer;
+
+  /// The property or global state set, such as `fill-color`.
   final String? name;
+
+  /// The value it is set to.
   final Object? value;
   final String _part;
 

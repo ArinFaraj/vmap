@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show listEquals;
 /// How text on the map is set. Sizes and colours of map labels come from the
 /// style; the name beside a marker is the app's own.
 class VmapTextStyle {
+  /// Text set in the app's own font unless [fontFamily] names another.
   const VmapTextStyle({
     this.fontFamily,
     this.fontFamilyFallback,
@@ -14,11 +15,17 @@ class VmapTextStyle {
     this.markerColor,
   });
 
+  /// The font labels are set in when they are drawn from fonts, and the
+  /// font of markers' names.
   final String? fontFamily;
+
+  /// Fonts tried in order for letters [fontFamily] lacks.
   final List<String>? fontFamilyFallback;
 
   /// Multiplies every label's size.
   final double scale;
+
+  /// The size and weight of the name beside a marker.
   final double markerSize;
   final int markerWeight;
 

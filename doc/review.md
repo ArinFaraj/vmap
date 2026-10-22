@@ -276,7 +276,7 @@ suites drew as before where drawing was touched.
 | 22 | Fixed: `lib/src` is in folders by area. |
 | 23 | Kept: the adapter's gestures drive flutter_map's controller and the widget's drive vmap's; sharing them needs a gesture core both can use. |
 | 24 | Fixed: one public camera type, `VmapCamera`. |
-| 25 | Changed: `Vmap.highRefreshRate`, on by default, so the app decides. |
+| 25 | Fixed: vmap no longer asks for a refresh rate at all, and has no Android plugin; the example app shows how an app can ask. |
 | 26 | Kept: the standard pins use Material's icon font. |
 | 27 to 35, 37 | Fixed. |
 | 36 | Partly: statistics are in `package:vmap/debug.dart`; `debugLabels`, `debugBoxes` and `showCollisionBoxes` stay on the engine under their debug names. |

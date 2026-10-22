@@ -12,6 +12,7 @@ import 'canvas/canvas_map.dart';
 import 'camera/camera.dart';
 import 'errors.dart';
 import 'gpu/gpu_map.dart';
+import 'camera/bounds.dart';
 import 'camera/map_camera.dart';
 import 'style/expr.dart';
 import 'tiles/feature_queries.dart';
@@ -56,6 +57,8 @@ class VmapEngine extends ChangeNotifier {
 
   static String? _webWorker = defaultWorkerScript;
 
+  /// An engine for an app to own and give to [Vmap.engine], with the
+  /// settings [Vmap] takes.
   VmapEngine({
     this._style = VmapStyle.light,
     this.network = const VmapNetworkOptions(),
@@ -242,21 +245,17 @@ class VmapEngine extends ChangeNotifier {
     if (!_disposed) reload();
   }
 
-  /// Fetches into the cache directory every tile the style draws between
-  /// [west], [south], [east] and [north] at zooms [minZoom] to [maxZoom],
-  /// so that part of the map shows without a network. Call it
-  /// once the style has loaded. [onProgress] is told how many tiles are
-  /// dealt with out of how many, and the download stops early once
-  /// [cancelled] answers true.
+  /// Fetches into the cache directory every tile the style draws inside
+  /// [bounds] at zooms [minZoom] to [maxZoom], so that part of the map
+  /// shows without a network. Call it once the style has loaded.
+  /// [onProgress] is told how many tiles are dealt with out of how many,
+  /// and the download stops early once [cancelled] answers true.
   ///
   /// The number of tiles grows fourfold with each zoom: check
   /// [VmapDownload.tiles] of a small range before asking for a large one,
   /// and the terms of the tile server before downloading in bulk.
-  Future<VmapDownload> downloadRegion({
-    required double west,
-    required double south,
-    required double east,
-    required double north,
+  Future<VmapDownload> downloadRegion(
+    VmapBounds bounds, {
     required double minZoom,
     required double maxZoom,
     void Function(int done, int total)? onProgress,
@@ -268,10 +267,10 @@ class VmapEngine extends ChangeNotifier {
     return downloadTiles(
       pools: [for (final s in _sources) s.pool],
       rasters: _rasters.whereType<TileDrawing>(),
-      west: west,
-      south: south,
-      east: east,
-      north: north,
+      west: bounds.southWest.longitude,
+      south: bounds.southWest.latitude,
+      east: bounds.northEast.longitude,
+      north: bounds.northEast.latitude,
       minZoom: minZoom + 1,
       maxZoom: maxZoom + 1,
       onProgress: onProgress,
@@ -279,6 +278,7 @@ class VmapEngine extends ChangeNotifier {
     );
   }
 
+  /// The style drawn; setting it loads the new one.
   VmapStyle get style => _style;
   set style(VmapStyle value) {
     if (value == _style) return;
@@ -366,7 +366,7 @@ class VmapEngine extends ChangeNotifier {
   /// Sources and layers of the app's own, drawn with the style.
   VmapOverlay? get overlay => _overlay;
   set overlay(VmapOverlay? value) {
-    if (identical(value, _overlay)) return;
+    if (value == _overlay) return;
     final sameLayers =
         value != null &&
         jsonEncode(value.layers) == jsonEncode(_overlay?.layers);
@@ -577,6 +577,7 @@ class VmapEngine extends ChangeNotifier {
   List<VmapFeatureState> get featureStates => _featureStates;
   List<VmapFeatureState> _featureStates = const [];
   set featureStates(List<VmapFeatureState> value) {
+    if (listEquals(value, _featureStates)) return;
     _featureStates = value;
     if (value.isEmpty && _states.isEmpty) return;
     final before = Map.of(_states);
@@ -736,8 +737,8 @@ class VmapEngine extends ChangeNotifier {
   /// A feature with an id comes once. One without, lying over the edge of a
   /// tile, comes once for each tile it is in. A box much larger than the
   /// screen is read from shallower tiles, which carry less.
-  Future<List<VmapFeature>> featuresIn(LatLng southWest, LatLng northEast) =>
-      _queries.featuresIn(southWest, northEast);
+  Future<List<VmapFeature>> featuresIn(VmapBounds bounds) =>
+      _queries.featuresIn(bounds.southWest, bounds.northEast);
 
   /// The zoom at which cluster [clusterId] of the clustered GeoJSON source
   /// named [source] comes apart, for zooming in on a tapped cluster. Null

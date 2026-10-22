@@ -18,6 +18,14 @@ screenshots:
   - description: Erbil in vmap's built in style, with Kurdish street names.
     path: doc/screenshots/builtin.webp
 
+platforms:
+  android:
+  ios:
+  linux:
+  macos:
+  web:
+  windows:
+
 environment:
   sdk: ">=3.13.0 <4.0.0"
   flutter: ">=3.47.1"
@@ -41,11 +49,6 @@ dev_dependencies:
     sdk: flutter
 
 flutter:
-  plugin:
-    platforms:
-      android:
-        package: dev.vmap.vmap
-        pluginClass: VmapPlugin
   shaders:
     - shaders/atmosphere.frag
     - shaders/sky.frag
