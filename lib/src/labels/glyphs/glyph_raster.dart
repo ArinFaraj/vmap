@@ -1,10 +1,8 @@
 import 'dart:async';
-import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
-
+import '../../platform.dart';
 import '../../text/font/font.dart';
 import '../../tiles/typed_buffer.dart';
 import 'glyph_layout.dart';
@@ -506,54 +504,35 @@ class GlyphRasterizer {
   }
 }
 
-/// A [GlyphRasterizer] in its own isolate, so glyphs never cost a frame. A
-/// browser has no isolates: there each batch is drawn on the page's thread,
-/// as a task of its own.
+/// A [GlyphRasterizer] in a worker of its own, so glyphs never cost a
+/// frame: an isolate, or in a browser, which has none, the page's own
+/// thread, a batch at a time.
 class GlyphRasterWorker {
   GlyphRasterWorker(GlyphFonts fonts) {
-    if (kIsWeb) {
-      _inline = GlyphRasterizer(fonts);
-      return;
-    }
-    final ready = ReceivePort();
-    _replies.listen(_reply);
-    _gone.listen((_) => _fail());
-    Isolate.spawn(
+    startWorker(
       _main,
-      (
-        ready.sendPort,
-        _replies.sendPort,
-        [
-          for (final b in fonts.faceBytes) TransferableTypedData.fromList([b]),
-        ],
+      [
+        [for (final b in fonts.faceBytes) pack(b)],
         fonts.familyNames,
-      ),
+      ],
+      _reply,
       debugName: 'vmap glyphs',
-      onExit: _gone.sendPort,
-    ).then((isolate) {
-      _isolate = isolate;
-      if (_disposed) isolate.kill();
-    }, onError: (Object _) => _fail());
-    ready.first.then((port) {
-      ready.close();
-      _port = port as SendPort;
+    ).then((worker) {
+      if (_disposed) return worker.close();
+      _worker = worker;
       for (final m in _queued) {
-        _port!.send(m);
+        worker.send(m);
       }
       _queued.clear();
-    });
+    }, onError: (Object _) => _fail());
   }
 
-  GlyphRasterizer? _inline;
-  late final _replies = ReceivePort();
-  late final _gone = ReceivePort();
-
-  /// The isolate died: every batch waiting and asked for later fails, so
-  /// no page waits forever.
+  /// The worker could not start: every batch waiting and asked for later
+  /// fails, so no page waits forever.
   void _fail() {
     _dead = true;
     for (final c in _waiting.values) {
-      c.completeError(StateError('vmap glyphs: the isolate is gone'));
+      c.completeError(StateError('vmap glyphs: the worker did not start'));
     }
     _waiting.clear();
   }
@@ -561,17 +540,13 @@ class GlyphRasterWorker {
   bool _dead = false;
   final Map<int, Completer<GlyphRaster>> _waiting = {};
   final List<_Request> _queued = [];
-  SendPort? _port;
-  Isolate? _isolate;
+  Worker? _worker;
   int _next = 0;
   bool _disposed = false;
 
   Future<GlyphRaster> draw(PageKey key, List<int> ids) {
-    if (_inline case final rasterizer?) {
-      return Future(() => _drawSafely(rasterizer, key, ids));
-    }
     if (_dead) {
-      return Future.error(StateError('vmap glyphs: the isolate is gone'));
+      return Future.error(StateError('vmap glyphs: the worker did not start'));
     }
     final id = _next++;
     final done = _waiting[id] = Completer<GlyphRaster>();
@@ -579,19 +554,10 @@ class GlyphRasterWorker {
     return done.future;
   }
 
-  void forget(PageKey key) {
-    if (_inline case final rasterizer?) return rasterizer.forget(key);
-    _send(_Forget(key));
-  }
+  void forget(PageKey key) => _send(_Forget(key));
 
   /// Hands the rasterizer the glyphs of a style glyph range for [face].
-  void addPbf(int face, List<PbfGlyph> glyphs) {
-    if (_inline case final rasterizer?) {
-      _addPbf(rasterizer, face, glyphs);
-      return;
-    }
-    _send(_AddPbf(face, glyphs));
-  }
+  void addPbf(int face, List<PbfGlyph> glyphs) => _send(_AddPbf(face, glyphs));
 
   static void _addPbf(
     GlyphRasterizer rasterizer,
@@ -619,11 +585,11 @@ class GlyphRasterWorker {
 
   void _send(_Request request) {
     if (_disposed) return;
-    final port = _port;
-    if (port == null) {
+    final worker = _worker;
+    if (worker == null) {
       _queued.add(request);
     } else {
-      port.send(request);
+      worker.send(request);
     }
   }
 
@@ -635,7 +601,7 @@ class GlyphRasterWorker {
           GlyphRaster(
             drawn.width,
             drawn.height,
-            drawn.pixels.materialize().asUint8List(),
+            unpackBytes(drawn.pixels),
             drawn.cells,
           ),
         );
@@ -643,43 +609,31 @@ class GlyphRasterWorker {
 
   void dispose() {
     _disposed = true;
-    if (_inline != null) return;
-    _isolate?.kill();
-    _replies.close();
-    _gone.close();
+    _worker?.close();
     _waiting.clear();
   }
 
-  static void _main(
-    (SendPort, SendPort, List<TransferableTypedData>, List<String>?) setup,
-  ) {
-    final (ready, replies, faces, families) = setup;
+  static Future<void> _main(
+    List<Object?> init,
+    void Function(Object? message) send,
+    Stream<Object?> inbox,
+  ) async {
     final rasterizer = GlyphRasterizer(
       GlyphFonts([
-        for (final f in faces) f.materialize().asUint8List(),
-      ], families: families),
+        for (final f in init[0]! as List) unpackBytes(f!),
+      ], families: (init[1] as List?)?.cast<String>()),
     );
-    final requests = ReceivePort();
-    ready.send(requests.sendPort);
-    requests.listen((request) {
-      switch (request as _Request) {
+    await for (final request in inbox) {
+      switch (request! as _Request) {
         case _Forget(:final key):
           rasterizer.forget(key);
         case _AddPbf(:final face, :final glyphs):
           _addPbf(rasterizer, face, glyphs);
         case _Draw(:final id, :final key, :final ids):
           final r = _drawSafely(rasterizer, key, ids);
-          replies.send(
-            _Drawn(
-              id,
-              r.width,
-              r.height,
-              TransferableTypedData.fromList([r.pixels]),
-              r.cells,
-            ),
-          );
+          send(_Drawn(id, r.width, r.height, pack(r.pixels), r.cells));
       }
-    });
+    }
   }
 }
 
@@ -710,6 +664,8 @@ final class _Drawn {
   _Drawn(this.id, this.width, this.height, this.pixels, this.cells);
 
   final int id, width, height;
-  final TransferableTypedData pixels;
+
+  /// The raster's pixels, packed to move between workers without a copy.
+  final Object pixels;
   final Float64List cells;
 }

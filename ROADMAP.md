@@ -17,9 +17,14 @@ What the API looks like and what should change before release:
 - **Done, 2026-10-21:** steps 1 to 5 and 7 below, and the fixes from
   [doc/review.md](doc/review.md), whose last table gives each finding's
   state. vmap is 0.27.0 on the `engine` branch, unpublished.
+- **Done, 2026-10-22 and 23:** the web made fast (uniform blocks, shared
+  fetches, earlier loading), gestures matching MapLibre GL JS, vmap's own
+  OpenType shaper in place of payv, and the release pass: `vmap:setup`,
+  `onFeatureTap`, content comparison of styles and overlays, no refresh
+  rate requests, all six platforms in the pubspec, the README rewritten.
 - **Open before publishing:** step 6 (runs on an iPhone, Windows, Linux,
   Safari and Firefox). The web, JavaScript and WebAssembly builds both,
-  was checked in headless Chrome on 2026-10-21.
+  was checked in headless Chrome.
 - **Then:** step 8, publishing, which waits for Arin's yes: merging
   `engine` to `main` and tagging publishes vmap to pub.dev.
 - Work happens on the `engine` branch of `ArinFaraj/vmap`.

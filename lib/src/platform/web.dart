@@ -115,6 +115,8 @@ Float32List unpackFloats(Object packed) => packed as Float32List;
 
 Uint16List unpackShorts(Object packed) => packed as Uint16List;
 
+Uint8List unpackBytes(Object packed) => packed as Uint8List;
+
 /// The worker script vmap ships as a web only asset.
 final String defaultWorkerScript = ui_web.assetManager.getAssetUrl(
   'packages/vmap/assets/vmap_worker.js',
@@ -191,9 +193,13 @@ void _onPage(
   List<Object?> init,
   void Function(Object? message) onMessage,
 ) {
+  // Each message is a task of its own, as it would be in a worker, so a
+  // frame can be drawn between two of them.
   final inbox = StreamController<Object?>();
   worker
-    .._send = inbox.add
+    .._send = ((message) => Timer.run(() {
+      if (!inbox.isClosed) inbox.add(message);
+    }))
     .._stop = inbox.close;
   unawaited(
     body(init, (message) {

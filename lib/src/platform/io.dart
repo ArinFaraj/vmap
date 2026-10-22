@@ -112,6 +112,9 @@ Float32List unpackFloats(Object packed) =>
 Uint16List unpackShorts(Object packed) =>
     (packed as TransferableTypedData).materialize().asUint16List();
 
+Uint8List unpackBytes(Object packed) =>
+    (packed as TransferableTypedData).materialize().asUint8List();
+
 class Worker {
   Worker._(this._isolate, this._inbox, this._port);
 
