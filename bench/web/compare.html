@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>vmap and MapLibre GL JS</title>
+  <link rel="stylesheet" href="dist/maplibre-gl.css">
+  <style>
+    html, body { margin: 0; height: 100%; font: 14px system-ui, sans-serif; }
+    body { display: flex; flex-direction: column; background: #f4f4f6; }
+    header {
+      display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+      padding: 8px 12px; background: #fff; border-bottom: 1px solid #ddd;
+    }
+    header label { display: flex; gap: 6px; align-items: center; }
+    header .grow { flex: 1; }
+    #camera { color: #666; font-variant-numeric: tabular-nums; }
+    main { flex: 1; position: relative; display: flex; min-height: 0; }
+    .pane { position: relative; flex: 1; min-width: 0; }
+    .pane + .pane { border-left: 2px solid #fff; }
+    .pane iframe, .pane .map { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+    .tag {
+      position: absolute; top: 8px; left: 8px; z-index: 5; pointer-events: none;
+      background: rgba(0, 0, 0, .65); color: #fff; padding: 3px 8px; border-radius: 4px;
+    }
+    main.swipe .pane { position: absolute; inset: 0; }
+    main.swipe .pane + .pane { border-left: 0; }
+    main.swipe #maplibre-pane { clip-path: inset(0 0 0 var(--split)); }
+    #handle {
+      display: none; position: absolute; top: 0; bottom: 0; left: var(--split);
+      width: 4px; margin-left: -2px; background: #fff; z-index: 6; cursor: ew-resize;
+      box-shadow: 0 0 4px rgba(0, 0, 0, .4);
+    }
+    main.swipe #handle { display: block; }
+    main.swipe #maplibre-pane .tag { left: auto; right: 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <label>Style
+      <select id="style">
+        <option value="https://tiles.openfreemap.org/styles/liberty">Liberty</option>
+        <option value="https://tiles.openfreemap.org/styles/bright">Bright</option>
+        <option value="https://tiles.openfreemap.org/styles/positron">Positron</option>
+      </select>
+    </label>
+    <label>Place
+      <select id="place">
+        <option value="36.1912,44.0092,14">Erbil</option>
+        <option value="35.5613,45.4329,14">Sulaymaniyah</option>
+        <option value="36.8665,42.9885,14">Duhok</option>
+        <option value="33.3152,44.3661,13">Baghdad</option>
+        <option value="30.0444,31.2357,13">Cairo</option>
+        <option value="48.8566,2.3522,13">Paris</option>
+        <option value="40.7128,-74.0060,13">New York</option>
+        <option value="35.6762,139.6503,13">Tokyo</option>
+        <option value="20,10,1.5">World</option>
+      </select>
+    </label>
+    <button id="tilt">Tilt</button>
+    <label><input type="checkbox" id="swipe"> Swipe</label>
+    <span class="grow"></span>
+    <span id="camera"></span>
+  </header>
+  <main id="main" style="--split: 50%">
+    <div class="pane" id="vmap-pane">
+      <span class="tag">vmap (Flutter web)</span>
+      <iframe id="vmap" title="vmap"></iframe>
+    </div>
+    <div class="pane" id="maplibre-pane">
+      <span class="tag">MapLibre GL JS</span>
+      <div class="map" id="maplibre"></div>
+    </div>
+    <div id="handle"></div>
+  </main>
+  <script type="module">
+    import * as m from './dist/maplibre-gl.mjs';
+    const maplibregl = m.default ?? m;
+    await maplibregl.setRTLTextPlugin(new URL('rtl.js', location).href, false);
+
+    const $ = (id) => document.getElementById(id);
+    const frame = $('vmap');
+    const [lat, lng, zoom] = $('place').value.split(',').map(Number);
+    const map = new maplibregl.Map({
+      container: 'maplibre',
+      style: $('style').value,
+      center: [lng, lat],
+      zoom,
+      maxPitch: 85,
+    });
+
+    const camera = () => {
+      const c = map.getCenter();
+      return {type: 'camera', lat: c.lat, lng: c.lng, zoom: map.getZoom(),
+        bearing: map.getBearing(), pitch: map.getPitch()};
+    };
+    const show = (c) => {
+      $('camera').textContent = `${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}  ` +
+        `z${c.zoom.toFixed(2)}  bearing ${c.bearing.toFixed(0)}  pitch ${c.pitch.toFixed(0)}`;
+    };
+    const loadVmap = () => {
+      const c = camera();
+      frame.src = `index.html?style=${encodeURIComponent($('style').value)}` +
+        `&lat=${c.lat}&lng=${c.lng}&zoom=${c.zoom}&bearing=${c.bearing}&pitch=${c.pitch}`;
+    };
+    loadVmap();
+
+    // Whichever map someone is moving leads; the other follows it.
+    let maplibreLeadsUntil = 0;
+    map.on('move', (e) => {
+      show(camera());
+      if (!e.originalEvent) return;
+      maplibreLeadsUntil = performance.now() + 400;
+      frame.contentWindow?.postMessage(camera(), '*');
+    });
+    window.addEventListener('message', (e) => {
+      const c = e.data;
+      if (e.source !== frame.contentWindow || c?.type !== 'camera') return;
+      if (performance.now() < maplibreLeadsUntil) return;
+      map.jumpTo({center: [c.lng, c.lat], zoom: c.zoom, bearing: c.bearing, pitch: c.pitch});
+    });
+    const moveBoth = (options) => {
+      map.jumpTo(options);
+      frame.contentWindow?.postMessage(camera(), '*');
+    };
+
+    $('style').onchange = () => {
+      map.setStyle($('style').value);
+      loadVmap();
+    };
+    $('place').onchange = () => {
+      const [lat, lng, zoom] = $('place').value.split(',').map(Number);
+      moveBoth({center: [lng, lat], zoom, bearing: 0, pitch: 0});
+    };
+    $('tilt').onclick = () => {
+      const flat = map.getPitch() > 1;
+      moveBoth(flat ? {pitch: 0, bearing: 0} : {pitch: 60, bearing: -30});
+    };
+    $('swipe').onchange = () => {
+      $('main').classList.toggle('swipe', $('swipe').checked);
+      map.resize();
+    };
+    $('handle').onpointerdown = (down) => {
+      $('handle').setPointerCapture(down.pointerId);
+      const box = $('main').getBoundingClientRect();
+      $('handle').onpointermove = (e) => {
+        const split = Math.min(100, Math.max(0, (e.clientX - box.left) / box.width * 100));
+        $('main').style.setProperty('--split', `${split}%`);
+      };
+      $('handle').onpointerup = () => { $('handle').onpointermove = null; };
+    };
+    show(camera());
+  </script>
+</body>
+</html>
