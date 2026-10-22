@@ -7,6 +7,7 @@ import '../labels/glyphs/vmap_font.dart';
 import '../errors.dart';
 import '../labels/labels.dart';
 import '../options.dart';
+import '../tiles/net.dart';
 import 'sprites.dart';
 
 /// What a style draws with besides its tiles: its sprite sheet, the fonts
@@ -65,16 +66,14 @@ class StyleResources {
     required bool shapeInWorkers,
   }) async {
     try {
+      final bundled = await Future.wait([
+        rootBundle.load(defaultGlyphFont),
+        rootBundle.load(syriacGlyphFont),
+      ]);
       final all = [
         ...given,
-        VmapFont(
-          'Vazirmatn',
-          (await rootBundle.load(defaultGlyphFont)).buffer.asUint8List(),
-        ),
-        VmapFont(
-          'Noto Sans Syriac Eastern',
-          (await rootBundle.load(syriacGlyphFont)).buffer.asUint8List(),
-        ),
+        VmapFont('Vazirmatn', bundled[0].buffer.asUint8List()),
+        VmapFont('Noto Sans Syriac Eastern', bundled[1].buffer.asUint8List()),
       ];
       if (_closed) return;
       final faces = [for (final f in all) f.bytes];
@@ -90,9 +89,21 @@ class StyleResources {
 
   /// Draws labels from the glyph ranges at [url], or from font files when
   /// it is null.
-  void useGlyphRanges(String? url) => _labels.useRanges(url, _config, () {
-    if (!_closed) onChange();
-  }, onError: (e) => onError(VmapError(VmapErrorKind.fonts, e)));
+  void useGlyphRanges(String? url) => _labels.useRanges(
+    url,
+    _config,
+    () {
+      if (!_closed) onChange();
+    },
+    onError: (e) => onError(VmapError(VmapErrorKind.fonts, e)),
+    fetch: shared.fetch,
+  );
+
+  /// What the page fetches once for itself and every tile worker.
+  late final SharedFetches shared = SharedFetches(
+    userAgent: _config.userAgent,
+    headers: _config.headers,
+  );
 
   /// Loads the sprite [sheets], each its images' prefix and its address,
   /// when they are not the ones in use.
@@ -173,6 +184,7 @@ class StyleResources {
 
   void dispose() {
     _closed = true;
+    shared.close();
     _labels.useRanges(null, _config, () {});
     _joined?.dispose();
     _styleSprites?.dispose();

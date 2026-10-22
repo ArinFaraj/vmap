@@ -65,6 +65,7 @@ void main() {
         sheet: StyleSheet.compile(style),
         source: 0,
         onLoaded: (_, _) {},
+        shared: SharedFetches().fetch,
         onFailed: (_, _) {},
       );
       addTearDown(pool.close);
@@ -112,6 +113,7 @@ void main() {
       sheet: StyleSheet.compile(style),
       source: 0,
       onLoaded: (_, _) {},
+      shared: SharedFetches().fetch,
       onFailed: (_, _) {},
     );
     addTearDown(pool.close);

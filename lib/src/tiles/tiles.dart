@@ -265,6 +265,19 @@ class LoadedTile {
     return true;
   }
 
+  /// Puts [built] in place of the tile's labels, which come late when the
+  /// glyph ranges they are measured with did.
+  void replaceLabels(List<BuiltLabel> built) {
+    final span = 1 / (1 << id.z);
+    labels
+      ..clear()
+      ..addAll([
+        for (final l in built)
+          TileLabel(l.key, l, id.x * span, id.y * span, span),
+      ]);
+    _copies.clear();
+  }
+
   bool _labels(BuiltTile built, Stopwatch clock, int deadline) {
     final span = 1 / (1 << id.z);
     final tx = id.x * span;

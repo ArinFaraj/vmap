@@ -40,6 +40,7 @@ abstract base class WebBackend {
   PixelFormat get reversedDepthStencilFormat;
   ({DeviceBuffer vertex, DeviceBuffer index, int indexBaseOffset})
   createGeometryBuffers(int vertexBytes, int indexBytes);
+  DeviceBuffer createUniformBuffer(int sizeInBytes);
   bool writeGeometryData(
     DeviceBuffer buffer,
     TypedData source, {
@@ -298,6 +299,10 @@ PixelFormat get reversedDepthStencilFormat =>
 ({DeviceBuffer vertex, DeviceBuffer index, int indexBaseOffset})
 createGeometryBuffers(int vertexBytes, int indexBytes) =>
     _backend.createGeometryBuffers(vertexBytes, indexBytes);
+
+/// A host-visible buffer for uniform data rewritten every frame.
+DeviceBuffer createUniformBuffer(int sizeInBytes) =>
+    _backend.createUniformBuffer(sizeInBytes);
 
 bool writeGeometryData(
   DeviceBuffer buffer,

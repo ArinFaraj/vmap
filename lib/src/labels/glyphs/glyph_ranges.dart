@@ -1,3 +1,6 @@
+import 'dart:typed_data';
+
+import '../../style/style_model.dart';
 import '../../tiles/net.dart';
 import 'glyph_pbf.dart';
 
@@ -8,9 +11,13 @@ class GlyphRanges {
     this.template, {
     required this.onLoaded,
     this.onError,
+    this.fetch,
     this.userAgent = 'vmap',
     this.headers = const {},
   });
+
+  /// Where ranges come from; fetched directly when null.
+  final FetchBytes? fetch;
 
   /// The style's `glyphs`, with `{fontstack}` and `{range}` in it.
   final String template;
@@ -49,6 +56,14 @@ class GlyphRanges {
   PbfGlyph? glyph(int face, int codePoint) =>
       _glyphs[face - GlyphPbf.firstFace][codePoint];
 
+  /// Asks for the range of Latin letters, which nearly every label needs,
+  /// in each font stack [sheet]'s text names, ahead of any tile.
+  void prefetch(StyleSheet sheet) {
+    for (final symbol in sheet.symbols) {
+      if (symbol.fontStack.isNotEmpty) ready(face(symbol.fontStack), 'a');
+    }
+  }
+
   /// Whether every range [text] needs in [face] has been answered, asking
   /// for those that have not. A range that failed counts as answered: its
   /// characters are left out, as MapLibre leaves them.
@@ -72,14 +87,8 @@ class GlyphRanges {
         .replaceAll('{range}', '${block * 256}-${block * 256 + 255}');
     var glyphs = const <PbfGlyph>[];
     try {
-      final reply = await (_net ??= Net(
-        userAgent: userAgent,
-      )).get(url, headers);
-      if (reply.status == 200) {
-        glyphs = GlyphPbf.parse(reply.bytes);
-      } else if (reply.status != 404 && !_closed) {
-        onError?.call(HttpFailure(reply.status, url));
-      }
+      final bytes = await (fetch ?? _fetchDirectly)(url);
+      if (bytes != null) glyphs = GlyphPbf.parse(bytes);
     } catch (e) {
       if (!_closed) onError?.call(e);
     }
@@ -90,6 +99,13 @@ class GlyphRanges {
     }
     _arrived.add(key);
     onLoaded(face, glyphs);
+  }
+
+  Future<Uint8List?> _fetchDirectly(String url) async {
+    final reply = await (_net ??= Net(userAgent: userAgent)).get(url, headers);
+    if (reply.status == 200) return reply.bytes;
+    if (reply.status == 404) return null;
+    throw HttpFailure(reply.status, url);
   }
 
   void close() {

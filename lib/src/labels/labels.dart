@@ -22,6 +22,7 @@ import 'glyphs/maplibre_shaping.dart' show allowsVerticalText;
 import 'label_rules.dart';
 import 'label_view.dart';
 import '../camera/view.dart';
+import '../tiles/net.dart' show FetchBytes;
 import '../style/pins.dart';
 import 'point_labels.dart';
 import 'road_labels.dart';
@@ -439,6 +440,7 @@ class LabelEngine {
     VmapNetworkOptions config,
     void Function() onArrived, {
     void Function(Object error)? onError,
+    FetchBytes? fetch,
   }) {
     if (url == _rangesUrl) return;
     _rangesUrl = url;
@@ -449,6 +451,7 @@ class LabelEngine {
             url,
             userAgent: config.userAgent,
             headers: config.headers,
+            fetch: fetch,
             onLoaded: (face, glyphs) {
               _glyphPages?.addPbf(face, glyphs);
               onArrived();

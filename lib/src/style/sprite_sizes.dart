@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import '../platform.dart';
+import '../tiles/net.dart';
 
 /// The size each image of the style's sprite [sheets] is drawn at, in
 /// logical pixels, by its name: the prefix of its sheet and its own name.
@@ -9,8 +9,7 @@ import '../platform.dart';
 /// that cannot be read adds nothing.
 Future<Map<String, (double, double)>> spriteSizes(
   List<(String, String)> sheets,
-  Net client,
-  Map<String, String> headers,
+  FetchBytes fetch,
 ) async {
   final out = <String, (double, double)>{};
   for (final (prefix, url) in sheets) {
@@ -19,9 +18,9 @@ Future<Map<String, (double, double)>> spriteSizes(
     final tail = query < 0 ? '' : url.substring(query);
     for (final density in const ['', '@2x']) {
       try {
-        final reply = await client.get('$stem$density.json$tail', headers);
-        if (reply.status != 200) continue;
-        final index = jsonDecode(utf8.decode(reply.bytes)) as Map;
+        final bytes = await fetch('$stem$density.json$tail');
+        if (bytes == null) continue;
+        final index = jsonDecode(utf8.decode(bytes)) as Map;
         for (final MapEntry(:key, :value) in index.entries) {
           if (value is! Map) continue;
           final ratio = (value['pixelRatio'] as num? ?? 1).toDouble();

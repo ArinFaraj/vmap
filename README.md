@@ -347,8 +347,24 @@ preview in Flutter itself.
 On the web, tiles are built in a web worker vmap ships, so loading an area
 does not hold up the page; `VmapEngine.useWebWorker(null)` before the first
 map builds them on the page instead. There is no disk cache in a browser,
-and a PMTiles archive has to be at an `https://` address. Both the
-JavaScript build and the WebAssembly one (`--wasm`) draw the map.
+and a PMTiles archive has to be at an `https://` address.
+
+Build for the web with `flutter build web --wasm`. Its renderer draws on a
+thread of its own, which leaves the page's thread to the map: panning over
+Erbil on an Apple silicon Mac, the page's thread sat idle about two thirds
+of the time, against a tenth in the JavaScript build, whose renderer copies
+every frame of the map on the page's thread. That thread needs the page
+served cross-origin isolated, with these headers:
+
+```
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+`--no-web-resources-cdn` serves Flutter's engine from the app's own host,
+so the first load does not wait on Google's CDN. A browser without
+WebAssembly garbage collection gets the JavaScript build, which also draws
+the map.
 
 ## flutter_map
 

@@ -37,7 +37,9 @@ class TilePool {
     required this.source,
     required this.onLoaded,
     required this.onFailed,
+    this.onRelabeled,
     this.script,
+    required this.shared,
     this.fonts,
     this.families,
     this.gpu = false,
@@ -48,6 +50,9 @@ class TilePool {
   }
 
   final VmapNetworkOptions config;
+
+  /// What the page fetches once for every worker.
+  final FetchBytes shared;
 
   /// The fonts the workers shape labels with, or null, and their families.
   final List<Uint8List>? fonts;
@@ -80,6 +85,9 @@ class TilePool {
       _def is TiledSource ? math.max(maxZoom, splitZoom) : maxZoom;
   final TileLoaded onLoaded;
   final TileFailed onFailed;
+
+  /// Takes the labels of a tile sent before its glyph ranges arrived.
+  final TileLoaded? onRelabeled;
 
   static const int _perWorker = 6;
 
@@ -175,31 +183,30 @@ class TilePool {
         if (saved.length > 1) maxZoom = int.tryParse(saved[1]) ?? maxZoom;
         if (saved.length > 2 && saved[2].isNotEmpty) attribution = saved[2];
       }
+      // The workers start while the TileJSON is asked for, and are told
+      // the address once it is known.
+      final spawned = _spawnWorkers(remembered ?? '');
+      final fetched = _fetchTemplate(tileJsonUrl);
+      await spawned;
+      if (_closed) return;
       if (remembered != null) {
         _use(remembered);
-        await _spawnWorkers(remembered);
-        if (_closed) return;
         _dispatch();
       }
 
       String? current;
       try {
-        current = await _fetchTemplate(tileJsonUrl);
+        current = await fetched;
       } catch (_) {
         if (remembered == null) rethrow;
       }
       if (_closed) return;
       if (current != null && current != remembered) {
+        _stale.addAll(_inflight.keys);
         for (final w in _workers) {
-          w.close();
+          w.link.send(UseTemplate(current).toWire());
         }
-        _workers.clear();
-        _inflight.clear();
-        _inflightIds.clear();
-        _stale.clear();
         _use(current);
-        await _spawnWorkers(current);
-        if (_closed) return;
         final directory = config.cacheDirectory;
         if (remembered != null && directory != null) {
           final stale = TileStore.vectorFolder(remembered);
@@ -261,6 +268,10 @@ class TilePool {
         switch (WorkerReply.fromWire(message! as List<Object?>)) {
           case final TileOutcome outcome:
             _onResult(worker, outcome);
+          case FetchWanted(:final url):
+            _sendFetched(worker, url);
+          case TileRelabeled(:final tile, :final labels):
+            if (!_closed) onRelabeled?.call(tile, labels);
           case final reply:
             _queries.remove(reply.job)?.complete(reply);
         }
@@ -270,6 +281,14 @@ class TilePool {
     );
     if (_states.isNotEmpty) _sendStates(worker);
     return worker;
+  }
+
+  Future<void> _sendFetched(_Worker worker, String url) async {
+    Uint8List? bytes;
+    try {
+      bytes = await shared(url);
+    } catch (_) {}
+    if (!_closed) worker.link.send(Fetched(url, bytes).toWire());
   }
 
   Future<String> _fetchTemplate(String tileJsonUrl) async {
@@ -493,14 +512,25 @@ Future<void> tileWorkerMain(
   final glyphs = sheet.glyphs;
   // Without fonts the labels are drawn from the style's glyph ranges, and
   // names along lines are measured with them, as MapLibre measures them.
+  final asked = <String, Completer<Uint8List?>>{};
+  Future<Uint8List?> fromPage(String url) {
+    final waiting = asked[url];
+    if (waiting != null) return waiting.future;
+    final made = asked[url] = Completer<Uint8List?>();
+    send(FetchWanted(url).toWire());
+    return made.future;
+  }
+
   final ranges = fonts == null && glyphs != null
       ? GlyphRanges(
           glyphs,
           onLoaded: (_, _) {},
           userAgent: setup.config.userAgent,
           headers: setup.config.headers,
+          fetch: fromPage,
         )
       : null;
+  ranges?.prefetch(sheet);
   final builder = TileBuilder(
     sheet,
     source: source,
@@ -515,8 +545,7 @@ Future<void> tileWorkerMain(
       ? null
       : spriteSizes(
           sheet.spriteSheets,
-          client,
-          setup.config.headers,
+          fromPage,
         ).then((sizes) => builder.iconSizes = sizes);
 
   Future<GeoJsonTiles>? geoJson;
@@ -540,16 +569,20 @@ Future<void> tileWorkerMain(
         return GeoJsonTiles(null);
       }
     }();
-  } else if (def is TiledSource) {
-    store = TileStore.vector(
-      setup.template,
-      cover: def.cover,
-      config: setup.config,
-    );
   }
 
   /// The bytes of the tiles built last, which a lookup reads again.
   final recent = <int, Uint8List>{};
+  final storeReady = Completer<void>();
+  void useTemplate(String template) {
+    if (def is! TiledSource) return;
+    store?.close();
+    store = TileStore.vector(template, cover: def.cover, config: setup.config);
+    recent.clear();
+    if (!storeReady.isCompleted) storeReady.complete();
+  }
+
+  if (setup.template.isNotEmpty) useTemplate(setup.template);
 
   Future<Uint8List> fetch(TileId id) async {
     final key = tileKey(id.z, id.x, id.y);
@@ -558,6 +591,7 @@ Future<void> tileWorkerMain(
       recent[key] = kept;
       return kept;
     }
+    if (store == null) await storeReady.future;
     final bytes = await store!.read(id.z, id.x, id.y) ?? Uint8List(0);
     recent[key] = bytes;
     if (recent.length > 24) recent.remove(recent.keys.first);
@@ -585,6 +619,13 @@ Future<void> tileWorkerMain(
     switch (request) {
       case UseStates(:final states):
         builder.states = {for (final (id, state) in states) id: state};
+        return null;
+      case UseTemplate(:final template):
+        useTemplate(template);
+        return null;
+      case Fetched(:final url, :final bytes):
+        final waiting = asked[url];
+        if (waiting != null && !waiting.isCompleted) waiting.complete(bytes);
         return null;
       case BuildTile(:final job, :final tile, :final maxZoom):
         dataMaxZoom = maxZoom;
@@ -618,12 +659,22 @@ Future<void> tileWorkerMain(
           if (iconSizes != null) await iconSizes;
           var built = layers.isEmpty ? BuiltTile(const [], const []) : build();
           if (layers.isNotEmpty && builder.missedGlyphs && ranges != null) {
-            // The ranges a name was measured without are on their way: once
-            // they land, built again with the names where MapLibre puts them.
-            for (var i = 0; i < 300 && ranges.pending > 0; i++) {
-              await Future<void>.delayed(const Duration(milliseconds: 10));
-            }
-            built = build();
+            // The ranges some names were measured without are on their way:
+            // the tile goes now without names, and its names follow once
+            // the ranges land, measured where MapLibre puts them.
+            unawaited(() async {
+              for (var i = 0; i < 300 && ranges.pending > 0; i++) {
+                await Future<void>.delayed(const Duration(milliseconds: 10));
+              }
+              final labelled = build();
+              answer(TileRelabeled(tile, BuiltTile(const [], labelled.labels)));
+            }());
+            built = BuiltTile(
+              built.meshes,
+              const [],
+              built.extrusions,
+              built.gpu,
+            );
           }
           Timeline.instantSync(
             'vmap.tile.built',

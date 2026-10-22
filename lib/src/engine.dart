@@ -83,10 +83,13 @@ class VmapEngine extends ChangeNotifier {
       scheduleMicrotask(() => _gpuFailed(_gpuOff));
     }
     _renderer?.onFailure = _gpuFailed;
-    _resources.loadFonts(fonts, shapeInWorkers: !_styleGlyphs).whenComplete(() {
-      if (!_disposed) _loadStyle();
-    });
+    _fontsLoaded = _resources.loadFonts(fonts, shapeInWorkers: !_styleGlyphs);
+    _loadStyle();
   }
+
+  /// The fonts the tile workers and labels start with. The style is
+  /// fetched meanwhile and applied once they are in.
+  late final Future<void> _fontsLoaded;
 
   /// How the map is drawn, fixed when the engine is made.
   final VmapRenderOptions rendering;
@@ -314,6 +317,8 @@ class VmapEngine extends ChangeNotifier {
     _styleError = null;
     final document = wanted.document;
     if (document != null) {
+      await _fontsLoaded;
+      if (_disposed || wanted != _style) return;
       _apply(document, wanted);
       return;
     }
@@ -323,6 +328,7 @@ class VmapEngine extends ChangeNotifier {
     try {
       if (file != null && fileExists(file)) {
         remembered = utf8.decode(await readFile(file));
+        await _fontsLoaded;
         if (_disposed || wanted != _style) return;
         _apply(jsonDecode(remembered) as Map<String, Object?>, wanted);
       }
@@ -338,6 +344,7 @@ class VmapEngine extends ChangeNotifier {
       );
       if (reply.status != 200) throw HttpFailure(reply.status, url);
       final body = utf8.decode(reply.bytes);
+      await _fontsLoaded;
       if (_disposed || wanted != _style || body == remembered) return;
       _apply(jsonDecode(body) as Map<String, Object?>, wanted);
       if (file != null) await writeFile(file, reply.bytes);
@@ -475,6 +482,7 @@ class VmapEngine extends ChangeNotifier {
         sheet: sheet,
         source: i,
         onLoaded: (id, built) => _onLoaded(made, id, built),
+        onRelabeled: (id, built) => _onRelabeled(made, id, built),
         onFailed: (id, error) {
           made.fail(
             id,
@@ -484,6 +492,7 @@ class VmapEngine extends ChangeNotifier {
           _report(VmapErrorKind.tiles, error);
         },
         script: _webWorker,
+        shared: _resources.shared.fetch,
         fonts: _resources.fontBytes,
         families: _resources.families,
         gpu: _renderer != null,
@@ -695,6 +704,14 @@ class VmapEngine extends ChangeNotifier {
     from.tiles[id]?.dispose();
     from.tiles[id] = LoadedTile(id, built, _sheet!)..usedFrame = _frame;
     from.failed.remove(id);
+    notifyListeners();
+  }
+
+  void _onRelabeled(TileSource from, TileId id, BuiltTile built) {
+    if (_disposed || !_sources.contains(from)) return;
+    final tile = from.tiles[id];
+    if (tile == null) return;
+    tile.replaceLabels(built.labels);
     notifyListeners();
   }
 

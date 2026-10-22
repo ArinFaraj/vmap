@@ -15,7 +15,8 @@ const framesInFlight = 4;
 /// Uniform data for the frames the GPU may still be reading, in host
 /// visible blocks reused frame after frame. Flutter's HostBuffer checks a
 /// block's room without the write's length and never reuses a block it
-/// added (flutter/flutter#186526, #192392).
+/// added (flutter/flutter#186526, #192392). The blocks are typed buffers,
+/// so on the web each write reaches WebGL as the floats it is.
 class UniformArena {
   static const _blockBytes = 1 << 20;
   final List<List<gpu.DeviceBuffer>> _blocks = [
@@ -42,15 +43,16 @@ class UniformArena {
       at = 0;
     }
     while (blocks.length <= _block) {
-      blocks.add(
-        gpu.gpuContext.createDeviceBuffer(
-          gpu.StorageMode.hostVisible,
-          math.max(_blockBytes, length),
-        ),
-      );
+      blocks.add(gpu.createUniformBuffer(math.max(_blockBytes, length)));
     }
     final buffer = blocks[_block];
-    buffer.overwrite(bytes, destinationOffsetInBytes: at);
+    gpu.writeGeometryData(
+      buffer,
+      bytes.offsetInBytes % 4 == 0 && length % 4 == 0
+          ? bytes.buffer.asFloat32List(bytes.offsetInBytes, length ~/ 4)
+          : bytes,
+      destinationOffsetInBytes: at,
+    );
     _offset = at + length;
     return gpu.BufferView(buffer, offsetInBytes: at, lengthInBytes: length);
   }

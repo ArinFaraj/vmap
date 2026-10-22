@@ -44,6 +44,10 @@ class _SdfTextGpu implements SdfText {
   Uint8List _overlaps = Uint8List(256);
 
   final List<(gpu.Texture, ui.Image)> _targets = [];
+
+  /// On the web a texture's image is a copy taken when it is asked for:
+  /// the last frame's copy, let go when the next one is taken.
+  ui.Image? _webCopy;
   int _next = 0;
   final Float32List _frameInfo = Float32List(8);
   late final ByteData _frameBytes = ByteData.sublistView(_frameInfo);
@@ -450,8 +454,13 @@ class _SdfTextGpu implements SdfText {
       }
     }
     commands.submit();
+    var shown = image;
+    if (kIsWeb) {
+      _webCopy?.dispose();
+      shown = _webCopy = target.asImage();
+    }
     canvas.drawImageRect(
-      image,
+      shown,
       ui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
       ui.Offset.zero & _size,
       ui.Paint()..filterQuality = ui.FilterQuality.none,

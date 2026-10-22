@@ -48,8 +48,8 @@ class WorkerSetup {
   /// The fonts labels are shaped with, or null to leave shaping to the page.
   final List<Uint8List>? fonts;
 
-  /// The addresses of the tiles, `geojson` for data the style holds, or a
-  /// `pmtiles://` archive.
+  /// The addresses of the tiles, `geojson` for data the style holds, a
+  /// `pmtiles://` archive, or empty until a [UseTemplate] gives it.
   final String template;
 
   /// How the tiles are fetched and kept.
@@ -106,6 +106,8 @@ sealed class WorkerRequest {
         limit: wire[4]! as int,
         offset: wire[5]! as int,
       ),
+      'template' => UseTemplate(wire[2]! as String),
+      'fetched' => Fetched(wire[2]! as String, wire[3] as Uint8List?),
       'states' => UseStates(job, [
         for (final pair in wire[2]! as List)
           ((pair as List)[0], (pair[1]! as Map).cast<String, Object?>()),
@@ -139,6 +141,29 @@ final class BuildTile extends WorkerRequest {
     maxZoom,
     tile.over,
   ];
+}
+
+/// The tile address a worker fetches from, which a worker started before
+/// the source's TileJSON answered waits for. Not answered.
+final class UseTemplate extends WorkerRequest {
+  const UseTemplate(this.template) : super(0);
+
+  final String template;
+
+  @override
+  List<Object?> toWire() => [job, 'template', template];
+}
+
+/// The bytes at an address a worker asked the page for, null when the
+/// server has none or they could not be fetched. Not answered.
+final class Fetched extends WorkerRequest {
+  const Fetched(this.url, this.bytes) : super(0);
+
+  final String url;
+  final Uint8List? bytes;
+
+  @override
+  List<Object?> toWire() => [job, 'fetched', url, bytes];
 }
 
 /// The state the app gave each feature, which buildings are built from.
@@ -244,6 +269,15 @@ sealed class WorkerReply {
       'found' => FeaturesFound(job, [
         for (final hit in body! as List) TileHit.fromWire(hit! as List),
       ]),
+      'fetch' => FetchWanted(body! as String),
+      'labels' => switch (body! as List) {
+        [final int z, final int x, final int y, final int over, final List b] =>
+          TileRelabeled(
+            TileId(z, x, y).at(over),
+            BuiltTile.fromMessage(b.cast()),
+          ),
+        _ => throw ArgumentError('A labels reply needs a tile and labels'),
+      },
       'zoom' => ClusterZoom(job, body as int?),
       'members' => ClusterMembers(job, [
         for (final member in body! as List)
@@ -261,6 +295,37 @@ sealed class WorkerReply {
   final int job;
 
   List<Object?> toWire();
+}
+
+/// An address whose bytes a worker needs, a glyph range or a sprite index,
+/// which the page fetches once for every worker and answers with
+/// [Fetched].
+final class FetchWanted extends WorkerReply {
+  const FetchWanted(this.url) : super(0);
+
+  final String url;
+
+  @override
+  List<Object?> toWire() => [job, 'fetch', url];
+}
+
+/// A tile's labels, sent after the tile itself when the glyph ranges they
+/// are measured with arrived only once the tile had been sent without
+/// them: its roads and buildings show without waiting for its names.
+final class TileRelabeled extends WorkerReply {
+  const TileRelabeled(this.tile, this.labels) : super(0);
+
+  final TileId tile;
+
+  /// A built tile holding only the labels.
+  final BuiltTile labels;
+
+  @override
+  List<Object?> toWire() => [
+    job,
+    'labels',
+    [tile.z, tile.x, tile.y, tile.over, labels.toMessage()],
+  ];
 }
 
 /// How building a tile ended.

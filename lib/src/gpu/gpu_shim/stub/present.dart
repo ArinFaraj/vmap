@@ -19,6 +19,10 @@ createGeometryBuffers(int vertexBytes, int indexBytes) {
   return (vertex: buffer, index: buffer, indexBaseOffset: vertexBytes);
 }
 
+/// A host-visible buffer for uniform data rewritten every frame.
+DeviceBuffer createUniformBuffer(int sizeInBytes) =>
+    gpuContext.createDeviceBuffer(StorageMode.hostVisible, sizeInBytes);
+
 /// Writes mesh data into a buffer from [createGeometryBuffers] (or an arena's).
 /// The web backend uses [source]'s element type; here bytes are bytes.
 bool writeGeometryData(

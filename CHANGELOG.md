@@ -53,6 +53,21 @@ moved to an adapter package. This release changes most of the public API;
   with Kurdish shaped and the style's glyph ranges placed right; road shield
   numbers and names in Latin script showed blank, and halos came out grey.
 - Tiles reach WebGL as the lists they are built in.
+- A draw's uniforms reach WebGL as one uniform block bound to a buffer
+  range, not one `uniform*` call per member, which took half the page's
+  time while panning; uniform data is written straight from the lists it
+  is built in.
+- Text from the style's glyph ranges is drawn on the GPU in the browser
+  too, as on other platforms.
+- The map loads sooner: the style is fetched while vmap's fonts load, tile
+  workers start while the source's TileJSON is asked for, every glyph
+  range and sprite index is fetched once for the page and all workers
+  instead of once by each, the Latin glyph range of each font in the style
+  is asked for before the first tile, and a tile shows while the glyph
+  ranges its names need are still coming. Layers no longer fade in when
+  they first load, only when the zoom crosses into their range.
+- The README says how to build and serve for the web: `--wasm`,
+  cross-origin isolated, with `--no-web-resources-cdn`.
 
 ### Drawing
 

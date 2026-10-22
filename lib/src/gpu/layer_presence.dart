@@ -8,7 +8,8 @@ import '../tiles/tiles.dart';
 /// appearing at once, and fades out when the camera leaves the range. A
 /// footprint layer's range has no end here: its buildings take it over.
 /// The fade starts once a tile on screen has something of the layer, so it
-/// is not over before the tiles bringing the layer arrive.
+/// is not over before the tiles bringing the layer arrive. A layer already
+/// in range when its tiles arrive, as on the first load, shows at once.
 class LayerPresence {
   LayerPresence(this._clock);
 
@@ -17,6 +18,7 @@ class LayerPresence {
   static const micros = 250000;
 
   List<double> _presence = const [];
+  List<bool> _inRange = const [], _entering = const [];
   StyleSheet? _sheet;
   int _at = 0;
 
@@ -32,6 +34,8 @@ class LayerPresence {
     if (fresh) {
       _sheet = sheet;
       _presence = List.filled(layers.length, 0);
+      _inRange = List.filled(layers.length, false);
+      _entering = List.filled(layers.length, false);
     }
     animating = false;
     final drawn = List.filled(layers.length, false);
@@ -50,12 +54,22 @@ class LayerPresence {
           ? double.infinity
           : layer.maxZoom;
       final inRange = styleZoom >= layer.minZoom && styleZoom < end;
-      final target = inRange && drawn[p] ? 1.0 : 0.0;
-      final was = fresh ? target : _presence[p];
+      if (fresh) {
+        _inRange[p] = inRange;
+        _presence[p] = inRange ? 1 : 0;
+        continue;
+      }
+      if (inRange != _inRange[p]) {
+        _inRange[p] = inRange;
+        _entering[p] = inRange;
+      }
+      final target = inRange && !(_entering[p] && !drawn[p]) ? 1.0 : 0.0;
+      final was = _presence[p];
       final next = was < target
           ? math.min(target, was + step)
           : math.max(target, was - step);
       _presence[p] = next;
+      if (next == 1) _entering[p] = false;
       if (next != target) animating = true;
     }
   }

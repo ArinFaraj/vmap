@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../platform.dart';
 
 export '../platform.dart' show HttpFailure, Net, Reply;
@@ -72,4 +74,37 @@ String cacheKey(String text) {
         0xffffffff;
   }
   return hash.toRadixString(36);
+}
+
+/// The bytes at [url], or null when the server has none (404).
+typedef FetchBytes = Future<Uint8List?> Function(String url);
+
+/// The small things the page fetches once for itself and every tile
+/// worker, glyph ranges and sprite indexes, so each crosses the network
+/// once however many ask for it.
+class SharedFetches {
+  SharedFetches({this.userAgent = 'vmap', this.headers = const {}});
+
+  final String userAgent;
+  final Map<String, String> headers;
+  final Map<String, Future<Uint8List?>> _fetched = {};
+  Net? _net;
+
+  Future<Uint8List?> fetch(String url) => _fetched[url] ??= _load(url);
+
+  Future<Uint8List?> _load(String url) async {
+    try {
+      final reply = await (_net ??= Net(
+        userAgent: userAgent,
+      )).get(url, headers);
+      if (reply.status == 200) return reply.bytes;
+      if (reply.status == 404) return null;
+      throw HttpFailure(reply.status, url);
+    } catch (_) {
+      _fetched.remove(url);
+      rethrow;
+    }
+  }
+
+  void close() => _net?.close();
 }

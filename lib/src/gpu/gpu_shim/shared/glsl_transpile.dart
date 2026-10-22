@@ -47,6 +47,37 @@ final RegExp _precisionLine = RegExp(
   multiLine: true,
 );
 
+final RegExp _structDeclaration = RegExp(r'struct\s+(\w+)\s*\{([^{}]*)\}\s*;');
+final RegExp _member = RegExp(r'^\s*(?:(lowp|mediump|highp)\s+)?(.*;)\s*$');
+
+/// [source] with each uniform struct, `struct T { ... }; uniform T t;`,
+/// declared as a std140 uniform block, `uniform T { ... } t;`, which reads
+/// the same in the shader. A block is bound with one `bindBufferRange`
+/// where a struct takes a `uniform*` call for every member of every draw.
+/// Members get `highp` unless they name a precision, as a block shared by
+/// the vertex and fragment stages must agree on it.
+String uniformStructsToBlocks(String source) {
+  var out = source;
+  for (final m in _structDeclaration.allMatches(source).toList().reversed) {
+    final type = m.group(1)!;
+    final uniform = RegExp('uniform\\s+$type\\s+(\\w+)\\s*;');
+    final instance = uniform.firstMatch(out);
+    if (instance == null) continue;
+    final members = [
+      for (final line in m.group(2)!.split('\n'))
+        if (_member.firstMatch(line) case final f?)
+          '    ${f.group(1) ?? 'highp'} ${f.group(2)}',
+    ].join('\n');
+    out = out.replaceRange(
+      instance.start,
+      instance.end,
+      'layout(std140) uniform $type\n{\n$members\n} ${instance.group(1)};',
+    );
+    out = out.replaceRange(m.start, m.end, '');
+  }
+  return out;
+}
+
 /// Replace `#extension` directives that WebGL2 doesn't honor in GLSL ES
 /// 1.00 mode with a `// stripped by shim:` comment. Preserves line numbers
 /// so info-log references stay aligned with the original source.
@@ -71,6 +102,7 @@ String stripWebGl2CoreExtensions(String source) {
 ///   * `#version 100` -> `#version 300 es`
 ///   * Drop `#extension GL_OES_standard_derivatives` and
 ///     `#extension GL_EXT_shader_texture_lod` (core in 300 es)
+///   * uniform structs -> std140 uniform blocks ([uniformStructsToBlocks])
 ///   * `attribute` -> `in`
 ///   * `varying` -> `in` (fragment) or `out` (vertex)
 ///   * `texture2D` / `textureCube` -> `texture` (overloaded on sampler)
@@ -94,6 +126,7 @@ String transpileGlslEs100To300(String source, {required bool isFragment}) {
   out = out.replaceFirst(_versionDirective, '#version 300 es');
   out = out.replaceAll(_dropExtensionLines, '');
 
+  out = uniformStructsToBlocks(out);
   out = out.replaceAll(_attributeKeyword, 'in');
   out = out.replaceAll(_varyingKeyword, isFragment ? 'in' : 'out');
 

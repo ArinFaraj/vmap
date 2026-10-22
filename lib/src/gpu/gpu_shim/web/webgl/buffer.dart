@@ -38,21 +38,18 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
   WebGlDeviceBuffer._initializeTyped(
     WebGlContext webGlContext,
     this.sizeInBytes,
-    int target,
-  ) : _gpuContext = webGlContext,
-      storageMode = StorageMode.hostVisible,
-      _typedTarget = target {
+    int target, {
+    int usage = web.WebGL2RenderingContext.STATIC_DRAW,
+  }) : _gpuContext = webGlContext,
+       storageMode = StorageMode.hostVisible,
+       _typedTarget = target {
     final gl = webGlContext._gl;
     final buffer = gl.createBuffer();
     if (buffer == null) {
       throw StateError('Failed to create WebGL buffer');
     }
     _bindTypedForUpload(gl, target, buffer);
-    gl.bufferData(
-      target,
-      sizeInBytes.toJS,
-      web.WebGL2RenderingContext.STATIC_DRAW,
-    );
+    gl.bufferData(target, sizeInBytes.toJS, usage);
     if (target == web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER) {
       _glElementBuffer = buffer;
     } else {

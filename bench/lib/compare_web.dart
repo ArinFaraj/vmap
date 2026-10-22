@@ -1,6 +1,7 @@
 import 'dart:js_interop';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:vmap/vmap.dart';
 import 'package:web/web.dart' as web;
 
@@ -14,6 +15,8 @@ void main() {
   runApp(
     _CompareMap(
       style: q['style'] ?? 'https://tiles.openfreemap.org/styles/liberty',
+      workers: int.tryParse(q['workers'] ?? ''),
+      labelStats: q['labels'] == 'stats',
       camera: VmapCamera(
         center: LatLng(param('lat', 36.1912), param('lng', 44.0092)),
         zoom: param('zoom', 14),
@@ -25,9 +28,21 @@ void main() {
 }
 
 class _CompareMap extends StatefulWidget {
-  const _CompareMap({required this.style, required this.camera});
+  const _CompareMap({
+    required this.style,
+    required this.camera,
+    this.workers,
+    this.labelStats = false,
+  });
+
+  /// Whether to count labels that blink, shown, hidden and shown again
+  /// within a second, for the page to read.
+  final bool labelStats;
 
   final String style;
+
+  /// Tile workers per source, from the address, to compare pool sizes.
+  final int? workers;
   final VmapCamera camera;
 
   @override
@@ -45,6 +60,9 @@ class _CompareMapState extends State<_CompareMap> {
   void initState() {
     super.initState();
     web.window.addEventListener('message', _onMessage);
+    if (widget.labelStats) {
+      SchedulerBinding.instance.scheduleFrameCallback(_countLabels);
+    }
   }
 
   @override
@@ -54,8 +72,42 @@ class _CompareMapState extends State<_CompareMap> {
     super.dispose();
   }
 
+  final Map<String, (bool, int, int)> _seen = {};
+  int _blinks = 0, _hides = 0;
+
+  void _countLabels(Duration _) {
+    if (!mounted) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final shownNow = <String>{};
+    for (final l in _controller.engine?.debugLabels() ?? const []) {
+      if (l['text_shown'] != true && l['icon_shown'] != true) continue;
+      final x = ((l['x']! as num) * 4096).round();
+      final y = ((l['y']! as num) * 4096).round();
+      shownNow.add('${l['layer']}|${l['text']}|$x|$y');
+    }
+    for (final key in {..._seen.keys, ...shownNow}) {
+      final (was, hiddenAt, _) = _seen[key] ?? (false, 0, 0);
+      final shown = shownNow.contains(key);
+      if (was && !shown) {
+        _hides++;
+        _seen[key] = (false, now, 0);
+      } else if (!was && shown) {
+        if (hiddenAt > 0 && now - hiddenAt < 1000) _blinks++;
+        _seen[key] = (true, 0, 0);
+      }
+    }
+    SchedulerBinding.instance.scheduleFrameCallback(_countLabels);
+  }
+
   void _received(web.MessageEvent event) {
     final data = event.data.dartify();
+    if (data is Map && data['type'] == 'labelstats?') {
+      web.window.postMessage(
+        {'type': 'labelstats', 'blinks': _blinks, 'hides': _hides}.jsify(),
+        '*'.toJS,
+      );
+      return;
+    }
     if (data is! Map || data['type'] != 'camera') return;
     double field(String key) => (data[key] as num).toDouble();
     _following = true;
@@ -67,6 +119,12 @@ class _CompareMapState extends State<_CompareMap> {
     );
     _following = false;
   }
+
+  /// Tells the page when the map reached a milestone, for timing.
+  void _mark(String what) => web.window.parent?.postMessage(
+    {'type': what, 'at': web.window.performance.now()}.jsify(),
+    '*'.toJS,
+  );
 
   void _moved(VmapCamera camera) {
     if (_following) return;
@@ -89,8 +147,13 @@ class _CompareMapState extends State<_CompareMap> {
     home: Scaffold(
       body: Vmap(
         style: VmapStyle.url(widget.style),
+        network: widget.workers == null
+            ? const VmapNetworkOptions()
+            : VmapNetworkOptions(workers: widget.workers!),
         controller: _controller,
         onCameraMove: _moved,
+        onStyleLoaded: () => _mark('style'),
+        onIdle: () => _mark('idle'),
       ),
     ),
   );

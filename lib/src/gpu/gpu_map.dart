@@ -64,7 +64,7 @@ class GpuMap implements MapRenderer {
   late final _sdf = _SdfTextGpu(this);
 
   @override
-  SdfText? get sdfText => !kIsWeb && _sdf.ready ? _sdf : null;
+  SdfText? get sdfText => _sdf.ready ? _sdf : null;
   gpu.RenderPipeline? _flat, _buildings, _stencil, _ground;
   gpu.UniformSlot? _groundFrame, _groundDrape, _groundDem, _groundHeights;
   gpu.RenderPipeline? _globe;

@@ -191,6 +191,17 @@ final class WebGlContext extends GpuContext {
     );
   }
 
+  /// Web-only. A vertex-role buffer rewritten often, such as uniform data
+  /// written for every draw, hinted DYNAMIC_DRAW: a STATIC_DRAW store
+  /// rewritten that often makes ANGLE copy it on each write.
+  DeviceBuffer createUniformBuffer(int sizeInBytes) =>
+      WebGlDeviceBuffer._initializeTyped(
+        this,
+        sizeInBytes,
+        web.WebGL2RenderingContext.ARRAY_BUFFER,
+        usage: web.WebGL2RenderingContext.DYNAMIC_DRAW,
+      );
+
   @override
   DeviceBuffer createDeviceBufferWithCopy(ByteData data) {
     final buffer = WebGlDeviceBuffer._initialize(

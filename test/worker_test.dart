@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/camera/mercator.dart';
 import 'package:vmap/src/style/style_model.dart';
 import 'package:vmap/src/tiles/tile_builder.dart';
+import 'package:vmap/src/tiles/net.dart';
 import 'package:vmap/src/tiles/protocol.dart';
 import 'package:vmap/src/tiles/tile_id.dart';
 import 'package:vmap/src/options.dart';
@@ -44,6 +45,7 @@ TilePool _pool(
     sheet: StyleSheet.compile(style),
     source: 0,
     onLoaded: onLoaded ?? (_, _) {},
+    shared: SharedFetches().fetch,
     onFailed: onFailed ?? (_, _) {},
   );
   addTearDown(pool.close);

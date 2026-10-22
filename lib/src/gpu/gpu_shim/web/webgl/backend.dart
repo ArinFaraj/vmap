@@ -70,6 +70,10 @@ final class _WebGlBackend extends WebBackend {
       _createGeometryBuffers(vertexBytes, indexBytes);
 
   @override
+  DeviceBuffer createUniformBuffer(int sizeInBytes) =>
+      webGlContext.createUniformBuffer(sizeInBytes);
+
+  @override
   bool writeGeometryData(
     DeviceBuffer buffer,
     TypedData source, {

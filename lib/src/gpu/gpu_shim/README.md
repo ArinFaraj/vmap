@@ -18,5 +18,11 @@ Changed here:
 - `web/webgl/render_pass.dart`: a uniform member crosses to WebGL as just
   its floats. Under dart2wasm `toJS` copied the whole uniform block for each
   member of each draw.
+- `shared/glsl_transpile.dart`: a GLSL ES 1.00 uniform struct becomes a
+  std140 uniform block, so `render_pass.dart` binds a draw's uniforms with
+  one `bindBufferRange` instead of a `uniform*` call per member.
+- `createUniformBuffer`: a host-visible buffer for uniform data written every
+  frame, on the web typed and hinted `DYNAMIC_DRAW`; `_initializeTyped`
+  takes the usage hint.
 - `render_pass_compat.dart` and `raster_sync.dart` are left out; they reach
   into flutter_scene's renderer.
