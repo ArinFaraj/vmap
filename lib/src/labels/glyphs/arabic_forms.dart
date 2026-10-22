@@ -1,20 +1,27 @@
 /// Arabic-script letters joined into their contextual presentation forms,
 /// as MapLibre joins them before drawing from glyph ranges, which hold a
-/// glyph per code point and no shaping tables. The tables come from the
-/// Unicode database; see tool/gen_arabic_tables.py.
+/// glyph per code point and no shaping tables.
 library;
 
-part 'arabic_tables.g.dart';
+import '../../text/unicode.dart';
 
-const _transparent = 1, _dual = 2, _right = 3, _left = 4, _causing = 5;
-
-int _typeOf(int c) => _joiningTypes[c] ?? 0;
+/// [c]'s joining type within the Arabic blocks, the only letters MapLibre
+/// joins, the Syriac joining groups counting as right-joining letters.
+int _typeOf(int c) {
+  if (!(c >= 0x0600 && c <= 0x08FF ||
+      c >= 0xFB50 && c <= 0xFDFF ||
+      c >= 0xFE70 && c <= 0xFEFF)) {
+    return joinNone;
+  }
+  final type = joiningOf(c);
+  return type == joinAlaph || type == joinDalathRish ? joinRight : type;
+}
 
 bool _joinsForward(int type) =>
-    type == _dual || type == _left || type == _causing;
+    type == joinDual || type == joinLeft || type == joinCausing;
 
 bool _joinsBack(int type) =>
-    type == _dual || type == _right || type == _causing;
+    type == joinDual || type == joinRight || type == joinCausing;
 
 /// Whether [text] has a letter this joins.
 bool hasJoiningLetters(String text) {
@@ -28,9 +35,9 @@ bool hasJoiningLetters(String text) {
 /// presentation forms, which only shaping with a font can join.
 bool needsFontShaping(String text) {
   for (final c in text.runes) {
-    if (c < 0x0600 || c > 0x08FF || _presentation.containsKey(c)) continue;
+    if (c < 0x0600 || c > 0x08FF || presentationForms(c) != null) continue;
     final type = _typeOf(c);
-    if (type == _dual || type == _right || type == _left) return true;
+    if (type == joinDual || type == joinRight || type == joinLeft) return true;
   }
   return false;
 }
@@ -50,7 +57,7 @@ List<int> joinArabic(List<int> codes) => [
 List<int> joinedForms(List<int> codes) {
   int? next(int i) {
     for (var k = i + 1; k < codes.length; k++) {
-      if (_typeOf(codes[k]) != _transparent) return k;
+      if (_typeOf(codes[k]) != joinTransparent) return k;
     }
     return null;
   }
@@ -60,13 +67,13 @@ List<int> joinedForms(List<int> codes) {
   for (var i = 0; i < codes.length; i++) {
     final c = codes[i];
     final type = _typeOf(c);
-    if (type == _transparent) {
+    if (type == joinTransparent) {
       out.add(c);
       continue;
     }
     final after = next(i);
     final ligature = c == 0x0644 && after != null
-        ? _lamLigatures[codes[after]]
+        ? lamAlefForms(codes[after])
         : null;
     if (ligature != null) {
       final form = ligature[joinedBefore ? 1 : 0];
@@ -84,7 +91,7 @@ List<int> joinedForms(List<int> codes) {
         _joinsForward(type) &&
         after != null &&
         _joinsBack(_typeOf(codes[after]));
-    final forms = _presentation[c];
+    final forms = presentationForms(c);
     final form = forms == null
         ? 0
         : forms[back ? (forward ? 3 : 1) : (forward ? 2 : 0)];

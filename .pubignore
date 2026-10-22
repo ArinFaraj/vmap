@@ -12,3 +12,4 @@
 /.github/
 /build/
 /.dart_tool/
+/test/fixtures/

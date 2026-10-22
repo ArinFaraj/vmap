@@ -29,6 +29,10 @@ moved to an adapter package. This release changes most of the public API;
   `VmapRenderOptions` and `VmapLabelOptions`. Labels take letters from the
   style's glyph ranges by default, as MapLibre does, with the app's fonts
   for what ranges cannot shape; `VmapGlyphs.fonts` uses fonts for all.
+- Labels drawn from fonts are shaped by vmap's own OpenType shaper,
+  checked glyph for glyph against HarfBuzz, and right-to-left text is
+  ordered by the Unicode bidirectional algorithm, which passes all of
+  Unicode's conformance cases. vmap no longer depends on payv.
 - Errors arrive as `VmapError`, saying what failed (style, tiles, sprite,
   fonts, GPU) and its address.
 - A feature found under a tap carries its geometry; cluster members a

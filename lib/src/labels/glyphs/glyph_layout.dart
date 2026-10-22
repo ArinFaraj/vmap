@@ -1,8 +1,10 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:payv/payv.dart';
-
+import '../../text/bidi.dart';
+import '../../text/font/font.dart';
+import '../../text/scripts.dart';
+import '../../text/shaper.dart';
 import 'maplibre_shaping.dart';
 
 /// Whether [text] is written right to left, by its first strong letter.
@@ -24,7 +26,7 @@ class GlyphFonts {
   GlyphFonts(List<Uint8List> faces, {List<String>? families})
     : faceBytes = faces,
       familyNames = families,
-      _faces = [for (final bytes in faces) OpenTypeFont.parse(bytes)],
+      _faces = [for (final bytes in faces) Font.parse(bytes)],
       _families = [
         for (var i = 0; i < faces.length; i++)
           _family(families != null && i < families.length ? families[i] : ''),
@@ -34,7 +36,7 @@ class GlyphFonts {
   final List<Uint8List> faceBytes;
   final List<String>? familyNames;
 
-  final List<OpenTypeFont> _faces;
+  final List<Font> _faces;
   final List<String> _families;
   final Map<String, List<int>> _orders = {};
 
@@ -92,21 +94,17 @@ class GlyphFonts {
     }();
   }
 
-  final Map<int, OpenTypeFont> _instances = {};
+  final Map<int, Font> _instances = {};
   final Map<int, Shaper> _shapers = {};
 
   int get length => _faces.length;
 
   /// [face] at [weight], snapped to a hundred.
-  OpenTypeFont font(int face, int weight) {
+  Font font(int face, int weight) {
     final w = snapWeight(weight);
-    return _instances[face * 1000 + w] ??= () {
-      final base = _faces[face];
-      if (!base.isVariable) return base;
-      return base.withVariationCoords(
-        base.normalizeAxisValues({'wght': w.toDouble()}),
-      );
-    }();
+    return _instances[face * 1000 + w] ??= _faces[face].withAxes({
+      'wght': w.toDouble(),
+    });
   }
 
   Shaper shaper(int face, int weight) =>
@@ -115,12 +113,8 @@ class GlyphFonts {
   /// The font's ascent and descent in ems, both positive.
   (double, double) metrics(int face) {
     final f = _faces[face];
-    final hhea = f.sfnt.requireTable(Tag.hhea);
     final em = f.unitsPerEm.toDouble();
-    return (
-      hhea.int16At(hhea.position + 4) / em,
-      -hhea.int16At(hhea.position + 6) / em,
-    );
+    return (f.file.ascender / em, -f.file.descender / em);
   }
 
   double unitsPerEm(int face) => _faces[face].unitsPerEm.toDouble();
@@ -161,21 +155,6 @@ class ShapedText {
   int get count => glyphs.length ~/ 5;
 }
 
-/// Characters that may come out of shaping as no glyph without anything
-/// being missing: joiners and direction marks.
-bool _ignorable(int c) =>
-    c == 0x200B ||
-    c == 0x200C ||
-    c == 0x200D ||
-    c == 0x200E ||
-    c == 0x200F ||
-    c == 0x061C ||
-    c == 0xFEFF ||
-    c == 0x00AD ||
-    (c >= 0x202A && c <= 0x202E) ||
-    (c >= 0x2066 && c <= 0x2069) ||
-    (c >= 0xFE00 && c <= 0xFE0F);
-
 bool _space(int c) => c == 0x20 || c == 0xA0 || c == 0x3000;
 
 /// One line's glyphs, its width in ems, or null when no font has them all.
@@ -189,32 +168,20 @@ bool _space(int c) => c == 0x20 || c == 0xA0 || c == 0x3000;
   final out = <double>[];
   var pen = 0.0;
   if (scalars.isEmpty) return (out, 0.0);
-  final bidi = Bidi.resolve(scalars);
-  for (final run in bidi.visualRuns) {
+  for (final run in Bidi.resolve(scalars).visualRuns) {
     final sub = scalars.sublist(run.start, run.end);
-    final rtl = run.level.isOdd;
-    final pieces = ScriptItemizer.itemize(sub);
+    final rtl = run.rightToLeft;
+    final pieces = scriptRuns(sub);
     for (final piece in rtl ? pieces.reversed : pieces) {
       final text = sub.sublist(piece.start, piece.end);
-      ShapedRun? shaped;
+      ShapedGlyphs? shaped;
       var face = 0;
       for (final next in order) {
         face = next;
         final candidate = fonts
             .shaper(face, weight)
-            .shapeScalars(
-              text,
-              script: piece.scriptTag,
-              direction: rtl ? TextDirection.rtl : TextDirection.ltr,
-            );
-        var complete = true;
-        for (final g in candidate.infos) {
-          if (g.glyphId == 0 && !_ignorable(g.codepoint)) {
-            complete = false;
-            break;
-          }
-        }
-        if (complete) {
+            .shape(text, script: piece.script, rtl: rtl);
+        if (!candidate.glyphs.contains(0)) {
           shaped = candidate;
           break;
         }
@@ -222,18 +189,14 @@ bool _space(int c) => c == 0x20 || c == 0xA0 || c == 0x3000;
       if (shaped == null) return null;
       final em = fonts.unitsPerEm(face);
       for (var i = 0; i < shaped.length; i++) {
-        final info = shaped.infos[i];
-        final p = shaped.positions[i];
-        final advance = p.xAdvance / em;
-        if (info.glyphId != 0) {
-          out.addAll([
-            face.toDouble(),
-            info.glyphId.toDouble(),
-            pen + p.xOffset / em,
-            -p.yOffset / em,
-            advance,
-          ]);
-        }
+        final advance = shaped.advances[i] / em;
+        out.addAll([
+          face.toDouble(),
+          shaped.glyphs[i].toDouble(),
+          pen + shaped.xOffsets[i] / em,
+          -shaped.yOffsets[i] / em,
+          advance,
+        ]);
         pen += advance;
         if (!rtl && letterSpacing != 0 && advance > 0) pen += letterSpacing;
       }

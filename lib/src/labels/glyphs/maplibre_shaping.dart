@@ -1,8 +1,7 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:payv/payv.dart';
-
+import '../../text/bidi.dart';
 import 'glyph_layout.dart';
 import '../../style/format.dart';
 import 'glyph_pbf.dart';

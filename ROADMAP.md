@@ -18,9 +18,8 @@ What the API looks like and what should change before release:
   [doc/review.md](doc/review.md), whose last table gives each finding's
   state. vmap is 0.27.0 on the `engine` branch, unpublished.
 - **Open before publishing:** step 6 (runs on an iPhone, Windows, Linux,
-  Safari and Firefox), and payv exporting its glyph path commands so vmap
-  stops importing a private file. The web, JavaScript and WebAssembly
-  builds both, was checked in headless Chrome on 2026-10-21.
+  Safari and Firefox). The web, JavaScript and WebAssembly builds both,
+  was checked in headless Chrome on 2026-10-21.
 - **Then:** step 8, publishing, which waits for Arin's yes: merging
   `engine` to `main` and tagging publishes vmap to pub.dev.
 - Work happens on the `engine` branch of `ArinFaraj/vmap`.
@@ -82,7 +81,7 @@ To do before publishing:
    [doc/api-review.md](doc/api-review.md) and [doc/review.md](doc/review.md).
 3. Done: `example/` targets every platform with Flutter GPU switched on;
    the benchmark app is `bench/`.
-4. Done: a `.pubignore`, `payv: ^0.1.2`, version 0.27.0 and its changelog,
+4. Done: a `.pubignore`, version 0.27.0 and its changelog,
    and the shader bundle shown to land when vmap comes as published files.
    `vmap_flutter_map` depends on vmap by path and has `publish_to: none`
    until it is published after vmap.
@@ -166,6 +165,9 @@ Render tests that still fail and could matter to some styles:
 - 2026-10-21: after a critical review, one camera and one zoom scale
   (MapLibre's) in the public API, the GPU by default, one glyph setting,
   and the canvas as a renderer behind the same interface as the GPU.
+- 2026-10-22: vmap shapes text with its own OpenType shaper and bidi
+  algorithm in `lib/src/text/`, held to HarfBuzz and Unicode's conformance
+  tests, instead of depending on payv.
 
 ## How this is measured
 

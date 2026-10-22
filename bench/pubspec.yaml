@@ -42,7 +42,6 @@ dependencies:
   flutter_displaymode: ^0.7.0
   latlong2: ^0.10.1
   path_provider: ^2.1.6
-  payv: ^0.1.2
   flutter_gpu:
     sdk: flutter
   vector_math: ^2.2.0

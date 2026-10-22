@@ -264,6 +264,13 @@ Vmap(
 and Noto Sans Syriac Eastern (300 KB together) so Arabic script and Syriac
 are shaped with no setup.
 
+Text drawn from fonts is shaped by vmap's own OpenType shaper, written in
+Dart: joining forms, the font's ligatures, kerning and mark positioning,
+variable font weights, and right-to-left text ordered by the Unicode
+bidirectional algorithm. Its tests hold it to HarfBuzz glyph for glyph.
+Fonts need TrueType outlines (`.ttf`), and the reordering that Indic and
+Southeast Asian scripts need is not done.
+
 ## Offline
 
 ```dart

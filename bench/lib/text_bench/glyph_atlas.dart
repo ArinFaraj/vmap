@@ -4,7 +4,12 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:payv/payv.dart';
+// ignore_for_file: implementation_imports
+
+import 'package:vmap/src/text/bidi.dart';
+import 'package:vmap/src/text/font/font.dart';
+import 'package:vmap/src/text/scripts.dart';
+import 'package:vmap/src/text/shaper.dart';
 
 import 'sdf.dart';
 
@@ -28,7 +33,7 @@ class ShapedLabel {
   final double width;
 }
 
-/// Shapes labels with payv and draws them from one atlas of glyph distance
+/// Shapes labels with vmap's shaper and draws them from one atlas of glyph distance
 /// fields, built off the UI thread.
 class GlyphAtlas {
   GlyphAtlas._(
@@ -105,18 +110,42 @@ class _Built {
   final int glyphs;
 }
 
+/// [text] shaped as one line, glyphs left to right: id, advance and x and y
+/// offsets in font units.
+List<(int, double, double, double)> _shape(Shaper shaper, String text) {
+  final codes = text.runes.toList();
+  final out = <(int, double, double, double)>[];
+  for (final run in Bidi.resolve(codes).visualRuns) {
+    final sub = codes.sublist(run.start, run.end);
+    final pieces = scriptRuns(sub);
+    for (final piece in run.rightToLeft ? pieces.reversed : pieces) {
+      final s = shaper.shape(
+        sub.sublist(piece.start, piece.end),
+        script: piece.script,
+        rtl: run.rightToLeft,
+      );
+      for (var i = 0; i < s.length; i++) {
+        out.add((s.glyphs[i], s.advances[i], s.xOffsets[i], s.yOffsets[i]));
+      }
+    }
+  }
+  return out;
+}
+
 _Built _shapeAndRender(Uint8List fontBytes, List<String> texts) {
-  final font = OpenTypeFont.parse(fontBytes);
+  final font = Font.parse(fontBytes);
   final shaper = Shaper(font);
   final scale = emTexels / font.unitsPerEm;
   final fields = <int, GlyphField?>{};
-  final runs = <(ShapedRun, double)>[];
+  final runs = <(List<(int, double, double, double)>, double)>[];
   for (final text in texts) {
-    final run = shaper.shape(text);
-    for (final g in run.infos) {
-      fields.putIfAbsent(g.glyphId, () => glyphField(font, g.glyphId));
+    final run = _shape(shaper, text);
+    var advance = 0.0;
+    for (final (glyph, a, _, _) in run) {
+      fields.putIfAbsent(glyph, () => glyphField(font, glyph));
+      advance += a;
     }
-    runs.add((run, run.totalXAdvance * scale));
+    runs.add((run, advance * scale));
   }
 
   const atlasWidth = 1024;
@@ -152,9 +181,8 @@ _Built _shapeAndRender(Uint8List fontBytes, List<String> texts) {
   for (final (run, width) in runs) {
     final out = <double>[];
     var pen = -width / 2;
-    for (var i = 0; i < run.length; i++) {
-      final p = run.positions[i];
-      final f = fields[run.infos[i].glyphId];
+    for (final (glyph, advance, xOffset, yOffset) in run) {
+      final f = fields[glyph];
       if (f != null) {
         final (sx, sy) = slots[f.glyphId]!;
         out.addAll([
@@ -162,13 +190,13 @@ _Built _shapeAndRender(Uint8List fontBytes, List<String> texts) {
           sy.toDouble(),
           f.width.toDouble(),
           f.height.toDouble(),
-          pen + p.xOffset * scale + f.left,
-          ascent - p.yOffset * scale + f.top,
+          pen + xOffset * scale + f.left,
+          ascent - yOffset * scale + f.top,
           width,
           f.glyphId.toDouble(),
         ]);
       }
-      pen += p.xAdvance * scale;
+      pen += advance * scale;
     }
     labels.add(Float64List.fromList(out));
   }

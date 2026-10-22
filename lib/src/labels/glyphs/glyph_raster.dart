@@ -5,10 +5,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 
-// payv exports the command type but not its cases.
-// ignore: implementation_imports
-import 'package:payv/src/font/glyph_path.dart';
-
+import '../../text/font/font.dart';
 import '../../tiles/typed_buffer.dart';
 import 'glyph_layout.dart';
 import 'glyph_pbf.dart';
@@ -97,7 +94,7 @@ class GlyphRasterizer {
   /// The glyphs of the style's glyph ranges by face, faces from
   /// [GlyphPbf.firstFace] up.
   final Map<int, Map<int, PbfGlyph>> ranges = {};
-  final Map<int, GlyphPath?> _outlines = {};
+  final Map<int, GlyphOutline?> _outlines = {};
   final Map<PageKey, Map<int, _Bitmap?>> _bitmaps = {};
 
   void forget(PageKey key) => _bitmaps.remove(key);
@@ -218,7 +215,7 @@ class GlyphRasterizer {
     return _Bitmap(w, h, ink, halo, cellLeft, cellTop);
   }
 
-  GlyphPath? _outline(int face, int weight, int glyph) {
+  GlyphOutline? _outline(int face, int weight, int glyph) {
     final key =
         (face * 10 + GlyphFonts.snapWeight(weight) ~/ 100) << 20 | glyph;
     if (_outlines.containsKey(key)) return _outlines[key];
@@ -275,80 +272,38 @@ class GlyphRasterizer {
 
   /// The outline as polylines in pixels, y down: flat pairs of points,
   /// each contour closed, consecutive points joined.
-  static DoubleBuffer _flatten(GlyphPath outline, double s, double slant) {
+  static DoubleBuffer _flatten(GlyphOutline outline, double s, double slant) {
     final out = DoubleBuffer();
-    var cx = 0.0, cy = 0.0, sx = 0.0, sy = 0.0;
-    var open = false;
-    void close() {
-      if (open && (cx != sx || cy != sy)) out.add4(cx, cy, sx, sy);
-      open = false;
-    }
-
-    double px(double x, double y) => x * s + y * slant;
-    double py(double y) => -y * s;
-    for (final c in outline.commands) {
-      switch (c) {
-        case MoveTo():
-          close();
-          cx = sx = px(c.x, c.y);
-          cy = sy = py(c.y);
-          open = true;
-        case LineTo():
-          final x = px(c.x, c.y), y = py(c.y);
-          out.add4(cx, cy, x, y);
-          cx = x;
-          cy = y;
-        case QuadTo():
-          final qx = px(c.cx, c.cy), qy = py(c.cy);
-          final x = px(c.x, c.y), y = py(c.y);
-          final dd = _len(cx - 2 * qx + x, cy - 2 * qy + y);
-          final n = math.max(1, math.min(32, math.sqrt(dd * 2).ceil()));
-          var lx = cx, ly = cy;
-          for (var i = 1; i <= n; i++) {
-            final t = i / n, u = 1 - t;
-            final nx = u * u * cx + 2 * u * t * qx + t * t * x;
-            final ny = u * u * cy + 2 * u * t * qy + t * t * y;
-            out.add4(lx, ly, nx, ny);
-            lx = nx;
-            ly = ny;
-          }
-          cx = x;
-          cy = y;
-        case CubicTo():
-          final ax = px(c.c1x, c.c1y), ay = py(c.c1y);
-          final bx = px(c.c2x, c.c2y), by = py(c.c2y);
-          final x = px(c.x, c.y), y = py(c.y);
-          final dd = math.max(
-            _len(cx - 2 * ax + bx, cy - 2 * ay + by),
-            _len(ax - 2 * bx + x, ay - 2 * by + y),
-          );
-          final n = math.max(1, math.min(48, math.sqrt(dd * 3).ceil()));
-          var lx = cx, ly = cy;
-          for (var i = 1; i <= n; i++) {
-            final t = i / n, u = 1 - t;
-            final nx =
-                u * u * u * cx +
-                3 * u * u * t * ax +
-                3 * u * t * t * bx +
-                t * t * t * x;
-            final ny =
-                u * u * u * cy +
-                3 * u * u * t * ay +
-                3 * u * t * t * by +
-                t * t * t * y;
-            out.add4(lx, ly, nx, ny);
-            lx = nx;
-            ly = ny;
-          }
-          cx = x;
-          cy = y;
-        case ClosePath():
-          close();
-          cx = sx;
-          cy = sy;
-      }
-    }
-    close();
+    var cx = 0.0, cy = 0.0;
+    outline.walk(
+      moveTo: (x, y) {
+        cx = x * s + y * slant;
+        cy = -y * s;
+      },
+      lineTo: (x, y) {
+        final nx = x * s + y * slant, ny = -y * s;
+        out.add4(cx, cy, nx, ny);
+        cx = nx;
+        cy = ny;
+      },
+      quadTo: (qx0, qy0, x0, y0) {
+        final qx = qx0 * s + qy0 * slant, qy = -qy0 * s;
+        final x = x0 * s + y0 * slant, y = -y0 * s;
+        final dd = _len(cx - 2 * qx + x, cy - 2 * qy + y);
+        final n = math.max(1, math.min(32, math.sqrt(dd * 2).ceil()));
+        var lx = cx, ly = cy;
+        for (var i = 1; i <= n; i++) {
+          final t = i / n, u = 1 - t;
+          final nx = u * u * cx + 2 * u * t * qx + t * t * x;
+          final ny = u * u * cy + 2 * u * t * qy + t * t * y;
+          out.add4(lx, ly, nx, ny);
+          lx = nx;
+          ly = ny;
+        }
+        cx = x;
+        cy = y;
+      },
+    );
     return out;
   }
 

@@ -1,9 +1,8 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:payv/payv.dart';
 // ignore: implementation_imports
-import 'package:payv/src/font/glyph_path.dart';
+import 'package:vmap/src/text/font/font.dart';
 
 /// Texels per em in the atlas, and how many texels the distance reaches
 /// past a glyph's edge on either side.
@@ -31,69 +30,45 @@ class GlyphField {
   final Uint8List alpha;
 }
 
-/// Flattens [path] in font units into line segments in texels, y down.
-List<double> _segments(GlyphPath path, double scale) {
+/// Flattens [outline] in font units into line segments in texels, y down.
+List<double> _segments(GlyphOutline outline, double scale) {
   final out = <double>[];
-  var sx = 0.0, sy = 0.0, x = 0.0, y = 0.0;
+  var x = 0.0, y = 0.0;
   void line(double nx, double ny) {
     out.addAll([x, y, nx, ny]);
     x = nx;
     y = ny;
   }
 
-  for (final c in path.commands) {
-    switch (c) {
-      case MoveTo():
-        if (x != sx || y != sy) line(sx, sy);
-        x = sx = c.x * scale;
-        y = sy = -c.y * scale;
-      case LineTo():
-        line(c.x * scale, -c.y * scale);
-      case QuadTo():
-        final x0 = x, y0 = y;
-        final cx = c.cx * scale, cy = -c.cy * scale;
-        final ex = c.x * scale, ey = -c.y * scale;
-        const n = 6;
-        for (var i = 1; i <= n; i++) {
-          final t = i / n, u = 1 - t;
-          line(
-            u * u * x0 + 2 * u * t * cx + t * t * ex,
-            u * u * y0 + 2 * u * t * cy + t * t * ey,
-          );
-        }
-      case CubicTo():
-        final x0 = x, y0 = y;
-        final c1x = c.c1x * scale, c1y = -c.c1y * scale;
-        final c2x = c.c2x * scale, c2y = -c.c2y * scale;
-        final ex = c.x * scale, ey = -c.y * scale;
-        const n = 10;
-        for (var i = 1; i <= n; i++) {
-          final t = i / n, u = 1 - t;
-          line(
-            u * u * u * x0 +
-                3 * u * u * t * c1x +
-                3 * u * t * t * c2x +
-                t * t * t * ex,
-            u * u * u * y0 +
-                3 * u * u * t * c1y +
-                3 * u * t * t * c2y +
-                t * t * t * ey,
-          );
-        }
-      case ClosePath():
-        if (x != sx || y != sy) line(sx, sy);
-    }
-  }
-  if (x != sx || y != sy) line(sx, sy);
+  outline.walk(
+    moveTo: (nx, ny) {
+      x = nx * scale;
+      y = -ny * scale;
+    },
+    lineTo: (nx, ny) => line(nx * scale, -ny * scale),
+    quadTo: (qx, qy, ex, ey) {
+      final x0 = x, y0 = y;
+      final cx = qx * scale, cy = -qy * scale;
+      final tx = ex * scale, ty = -ey * scale;
+      const n = 6;
+      for (var i = 1; i <= n; i++) {
+        final t = i / n, u = 1 - t;
+        line(
+          u * u * x0 + 2 * u * t * cx + t * t * tx,
+          u * u * y0 + 2 * u * t * cy + t * t * ty,
+        );
+      }
+    },
+  );
   return out;
 }
 
 /// The field of [glyphId] in [font], or null for a glyph with no outline
 /// such as a space.
-GlyphField? glyphField(OpenTypeFont font, int glyphId) {
-  final path = font.outline(glyphId);
-  if (path == null || path.isEmpty) return null;
-  final seg = _segments(path, emTexels / font.unitsPerEm);
+GlyphField? glyphField(Font font, int glyphId) {
+  final outline = font.outline(glyphId);
+  if (outline == null || outline.isEmpty) return null;
+  final seg = _segments(outline, emTexels / font.unitsPerEm);
   if (seg.isEmpty) return null;
   var minX = double.infinity, minY = double.infinity;
   var maxX = -double.infinity, maxY = -double.infinity;

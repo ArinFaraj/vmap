@@ -267,7 +267,7 @@ suites drew as before where drawing was touched.
 | 13 | Fixed: `.pubignore`; the dry run lists only the package. |
 | 14 | Fixed: an app built against exactly the published files draws on the GPU on macOS and builds for the web; the example builds for Android and iOS, and CI builds it for Linux and Windows. |
 | 15 | Kept on purpose: 300 KB of fonts shape Arabic script and Syriac with no setup; the README says so. |
-| 16 | Open: payv is `^0.1.2`, but vmap still imports its private glyph path file; payv has to export the command classes. |
+| 16 | Fixed: vmap shapes with its own OpenType shaper in `lib/src/text/` and no longer depends on payv. |
 | 17 | Fixed: `lib/renderer.dart` is gone. |
 | 18 | Fixed: GPU failures reach `onError` and say which switch is missing. |
 | 19 | Fixed: the canvas is a `MapRenderer` like the GPU, and the engine's drawing has no branch on which one draws. |
