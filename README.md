@@ -34,7 +34,8 @@ flutter pub add vmap
 ```
 
 **2. Switch Flutter GPU on** in your app's platform folders, and let it load
-tiles:
+tiles. Impeller is on by default, but Flutter GPU, the API vmap draws with, is
+a separate switch that Flutter leaves off:
 
 ```bash
 dart run vmap:setup
