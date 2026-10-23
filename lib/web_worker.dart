@@ -1,4 +1,4 @@
-/// The other half of [VmapEngine.webWorker]: what the worker script runs.
+/// The other half of [VmapEngine.useWebWorker]: what the worker script runs.
 ///
 /// A browser gives Dart one thread, so without a worker tiles are built on
 /// the page's own. `tool/build_web_worker.dart` compiles this into the

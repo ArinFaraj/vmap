@@ -31,8 +31,6 @@ moved to an adapter package. This release changes most of the public API;
   `VmapBounds`.
 - Styles, overlays and feature states are compared by content, so ones
   built afresh in `build` cost nothing while they say the same.
-- vmap is a Dart package with no platform code of its own: it does not ask
-  Android for a refresh rate. The example app shows how an app can.
 - `VmapController` moves it: `flyTo`, `easeTo` and `fitBounds` as
   MapLibre's do, `featuresAt` and `featuresIn`, and `toScreen` and
   `toLatLng`. A moving camera carries its speed into the next animation.
@@ -52,7 +50,7 @@ moved to an adapter package. This release changes most of the public API;
 - Labels drawn from fonts are shaped by vmap's own OpenType shaper,
   checked glyph for glyph against HarfBuzz, and right-to-left text is
   ordered by the Unicode bidirectional algorithm, which passes all of
-  Unicode's conformance cases. vmap no longer depends on payv.
+  Unicode's conformance cases.
 - Errors arrive as `VmapError`, saying what failed (style, tiles, sprite,
   fonts, GPU) and its address.
 - A feature found under a tap carries its geometry; cluster members a

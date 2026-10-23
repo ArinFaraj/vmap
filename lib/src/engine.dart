@@ -730,9 +730,9 @@ class VmapEngine extends ChangeNotifier {
   Future<List<VmapFeature>> featuresAt(LatLng point, {double radius = 6}) =>
       _queries.featuresAt(point, radius: radius);
 
-  /// What the map shows between [southWest] and [northEast]: the features
-  /// the style draws that touch the box, topmost first. It reads the tiles
-  /// again off the UI thread, so it answers a moment later.
+  /// What the map shows inside [bounds]: the features the style draws that
+  /// touch the box, topmost first. It reads the tiles again off the UI
+  /// thread, so it answers a moment later.
   ///
   /// A feature with an id comes once. One without, lying over the edge of a
   /// tile, comes once for each tile it is in. A box much larger than the
