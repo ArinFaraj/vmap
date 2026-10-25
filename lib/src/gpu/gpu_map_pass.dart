@@ -388,7 +388,22 @@ class MapPass {
   /// index buffer bound, cleared first, or these draws would read their
   /// vertices through it.
   /// Draws building layer [layer], standing, depth tested.
-  void drawBuildings(ExtrusionLayer layer) {
+  /// Draws [layer]'s buildings at [opacity]. Below 1 they are drawn as
+  /// MapLibre draws them, in this pass: their depth alone first, then their
+  /// colour where it is the nearest, each pixel once, so the walls behind
+  /// do not show through those in front.
+  void drawBuildings(ExtrusionLayer layer, {double opacity = 1}) {
+    if (opacity >= 1) {
+      _drawBuildings(layer, _Walls.whole, 1);
+    } else {
+      _drawBuildings(layer, _Walls.depth, 1);
+      _drawBuildings(layer, _Walls.colour, opacity);
+      _clearStencil();
+    }
+    renderPass.setCullMode(gpu.CullMode.none);
+  }
+
+  void _drawBuildings(ExtrusionLayer layer, _Walls walls, double opacity) {
     bool built(List<TileDraw> tiles) =>
         tiles.any((d) => d.tile.extrusions.isNotEmpty);
     for (var source = 0; source < _ideal.length; source++) {
@@ -403,24 +418,116 @@ class MapPass {
         ..setCullMode(gpu.CullMode.backFace)
         ..setWindingOrder(gpu.WindingOrder.clockwise)
         ..setColorBlendEnable(true)
-        ..setStencilConfig(gpu.StencilConfig())
-        ..setDepthWriteEnable(true)
+        ..setDepthWriteEnable(walls != _Walls.colour)
         ..setDepthCompareOperation(gpu.CompareFunction.lessEqual);
+      switch (walls) {
+        case _Walls.whole:
+          renderPass.setStencilConfig(gpu.StencilConfig());
+        case _Walls.depth:
+          renderPass
+            ..setColorBlendEquation(_keepColour)
+            ..setStencilConfig(gpu.StencilConfig());
+        case _Walls.colour:
+          renderPass
+            ..setColorBlendEquation(overBlend)
+            ..setStencilReference(_drawn)
+            ..setStencilConfig(
+              gpu.StencilConfig(
+                compareFunction: gpu.CompareFunction.notEqual,
+                depthStencilPassOperation:
+                    gpu.StencilOperation.setToReferenceValue,
+              ),
+            );
+      }
       _device.sprites.bindBuildings(
         renderPass,
         _device.pipelines,
         _device.host,
       );
-      _drawBuildingsOf(layer, _ideal[source]);
+      _drawBuildingsOf(layer, _ideal[source], opacity);
       if (standIn) {
-        _stencilEquals(0);
-        _drawBuildingsOf(layer, _fallback[source]);
+        if (walls == _Walls.colour) {
+          // Where no tile is, and so where nothing is drawn yet; drawn,
+          // the 0 inverts to [_drawn].
+          renderPass
+            ..setStencilReference(0)
+            ..setStencilConfig(
+              gpu.StencilConfig(
+                compareFunction: gpu.CompareFunction.equal,
+                depthStencilPassOperation: gpu.StencilOperation.invert,
+              ),
+            );
+        } else {
+          _stencilEquals(0);
+        }
+        _drawBuildingsOf(layer, _fallback[source], opacity);
       }
     }
-    renderPass.setCullMode(gpu.CullMode.none);
   }
 
-  void _drawBuildingsOf(ExtrusionLayer layer, List<TileDraw> tiles) {
+  /// The stencil value of a pixel translucent buildings have coloured.
+  static const _drawn = 0xFF;
+
+  /// Leaves the colour as it is, for drawing depth alone.
+  static final _keepColour = gpu.ColorBlendEquation(
+    sourceColorBlendFactor: gpu.BlendFactor.zero,
+    destinationColorBlendFactor: gpu.BlendFactor.one,
+    sourceAlphaBlendFactor: gpu.BlendFactor.zero,
+    destinationAlphaBlendFactor: gpu.BlendFactor.one,
+  );
+
+  /// Clip space from a tile's square, stretched over the whole screen.
+  static final _wholeScreen = () {
+    const k = 2 / tileExtent;
+    final m = Float32List(16);
+    m[0] = k;
+    m[5] = k;
+    m[10] = 1;
+    m[12] = -1;
+    m[13] = -1;
+    m[15] = 1;
+    return ByteData.sublistView(m);
+  }();
+
+  /// Zeroes the stencil over the whole screen, so tiles mark it again.
+  void _clearStencil() {
+    final stencil = _device.pipelines.stencil;
+    if (stencil == null) return;
+    renderPass
+      ..clearBindings()
+      ..bindPipeline(stencil)
+      ..setCullMode(gpu.CullMode.none)
+      ..setDepthWriteEnable(false)
+      ..setDepthCompareOperation(gpu.CompareFunction.always)
+      ..setColorBlendEnable(true)
+      ..setColorBlendEquation(_keepColour)
+      ..setStencilReference(0)
+      ..setStencilConfig(
+        gpu.StencilConfig(
+          depthStencilPassOperation: gpu.StencilOperation.setToReferenceValue,
+        ),
+      )
+      ..bindVertexBuffer(
+        gpu.BufferView(
+          _device.pipelines.quad!,
+          offsetInBytes: 0,
+          lengthInBytes: 48,
+        ),
+      )
+      ..bindUniform(
+        _device.pipelines.stencilFrame!,
+        _device.host.emplace(_wholeScreen),
+      )
+      ..draw(6)
+      ..clearBindings();
+    _marked = -1;
+  }
+
+  void _drawBuildingsOf(
+    ExtrusionLayer layer,
+    List<TileDraw> tiles,
+    double opacity,
+  ) {
     final view = _view;
     final perMetre = perMetreAt(view);
     final host = _device.host;
@@ -458,7 +565,7 @@ class MapPass {
           perMetre,
           d.left + mx,
           d.top + my,
-          fade,
+          fade * opacity,
         );
         renderPass
           ..bindVertexBuffer(
@@ -497,3 +604,7 @@ class MapPass {
     }
   }
 }
+
+/// What a building draw writes: everything, depth alone, or colour alone
+/// where the depth already drawn is its own.
+enum _Walls { whole, depth, colour }

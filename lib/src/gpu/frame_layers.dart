@@ -121,6 +121,12 @@ class FrameLayers {
       ..add(above);
   }
 
+  /// Draws [draw] into the image below, which draws at [opacity] itself.
+  void within(double opacity, void Function(MapPass into) draw) {
+    flush();
+    if (opacity > 0) draw(pass);
+  }
+
   /// Colours heatmap [run] over what is below it, when it draws at all.
   void heat(StyleRun run) {
     flush();

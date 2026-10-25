@@ -333,7 +333,10 @@ class GpuMap extends MapRenderer {
             0.0,
             1.0,
           );
-          layers.apart(opacity, (into) => into.drawBuildings(building));
+          layers.within(
+            opacity,
+            (into) => into.drawBuildings(building, opacity: opacity),
+          );
           continue;
         }
       }
