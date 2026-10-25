@@ -99,7 +99,7 @@ final class WebGlRenderPipeline extends RenderPipeline {
 
   void _buildUniformCaches() {
     final gl = _gpuContext._gl;
-    gl.useProgram(_program);
+    _gpuContext._state.useProgram(_program);
     final yFlipLocation = gl.getUniformLocation(_program, '_impeller_y_flip');
     if (yFlipLocation != null) {
       // Impeller's generated GLES shaders multiply gl_Position.y by this
@@ -195,7 +195,10 @@ final class WebGlRenderPipeline extends RenderPipeline {
       if (buffer == null) {
         throw StateError('Failed to create WebGL buffer');
       }
-      gl.bindBuffer(web.WebGL2RenderingContext.UNIFORM_BUFFER, buffer);
+      _gpuContext._state.bindBuffer(
+        web.WebGL2RenderingContext.UNIFORM_BUFFER,
+        buffer,
+      );
       gl.bufferData(
         web.WebGL2RenderingContext.UNIFORM_BUFFER,
         Uint8List(size).toJS,
@@ -204,7 +207,7 @@ final class WebGlRenderPipeline extends RenderPipeline {
       _defaultBlockBuffer = buffer;
     }
     for (final binding in _structBlockBindings.values) {
-      gl.bindBufferBase(
+      _gpuContext._state.bindBufferBase(
         web.WebGL2RenderingContext.UNIFORM_BUFFER,
         binding,
         buffer,

@@ -23,6 +23,7 @@ part 'backend.dart';
 part 'buffer.dart';
 part 'command_buffer.dart';
 part 'encoded_image.dart';
+part 'gl_state.dart';
 part 'gpu_context.dart';
 part 'host.dart';
 part 'mip_generator.dart';

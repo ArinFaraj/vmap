@@ -48,7 +48,7 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
     if (buffer == null) {
       throw StateError('Failed to create WebGL buffer');
     }
-    _bindTypedForUpload(gl, target, buffer);
+    _bindTypedForUpload(webGlContext, target, buffer);
     gl.bufferData(target, sizeInBytes.toJS, usage);
     if (target == web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER) {
       _glElementBuffer = buffer;
@@ -65,14 +65,14 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
   /// re-point whichever cached VAO the last draw left bound. Drop to the
   /// default VAO first; RenderPass re-binds its VAO on every draw.
   static void _bindTypedForUpload(
-    web.WebGL2RenderingContext gl,
+    WebGlContext context,
     int target,
     web.WebGLBuffer buffer,
   ) {
     if (target == web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER) {
-      gl.bindVertexArray(null);
+      context._state.bindVertexArray(null);
     }
-    gl.bindBuffer(target, buffer);
+    context._state.bindBuffer(target, buffer);
   }
 
   final WebGlContext _gpuContext;
@@ -130,7 +130,7 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
       if (buffer == null) {
         throw StateError('Failed to create WebGL buffer');
       }
-      gl.bindBuffer(target, buffer);
+      _gpuContext._state.bindBuffer(target, buffer);
       if (isElement) {
         _glElementBuffer = buffer;
         gl.bufferData(target, _staging.toJS, _usage);
@@ -144,7 +144,7 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
         gl.bufferSubData(target, 0, _staging.toJS);
       }
     } else {
-      gl.bindBuffer(target, buffer);
+      _gpuContext._state.bindBuffer(target, buffer);
     }
     return buffer;
   }
@@ -185,7 +185,10 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
       destinationOffsetInBytes + length,
     );
     if (_glOtherBuffer != null) {
-      gl.bindBuffer(web.WebGL2RenderingContext.ARRAY_BUFFER, _glOtherBuffer);
+      _gpuContext._state.bindBuffer(
+        web.WebGL2RenderingContext.ARRAY_BUFFER,
+        _glOtherBuffer,
+      );
       gl.bufferSubData(
         web.WebGL2RenderingContext.ARRAY_BUFFER,
         destinationOffsetInBytes,
@@ -196,7 +199,7 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
       // vmap: the element binding is VAO state; bound here as it was, it
       // re-pointed whichever cached VAO the last draw left bound.
       _bindTypedForUpload(
-        gl,
+        _gpuContext,
         web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER,
         _glElementBuffer!,
       );
@@ -235,7 +238,11 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
       return false;
     }
     final gl = _gpuContext._gl;
-    _bindTypedForUpload(gl, target, (_glElementBuffer ?? _glOtherBuffer)!);
+    _bindTypedForUpload(
+      _gpuContext,
+      target,
+      (_glElementBuffer ?? _glOtherBuffer)!,
+    );
     gl.bufferSubData(target, destinationOffsetInBytes, _jsViewOf(source));
     return true;
   }

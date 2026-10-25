@@ -16,7 +16,7 @@ final class WebGlRenderPass extends RenderPass {
   WebGlRenderPass._(this._gpuContext, this._target) {
     _bindFramebuffer();
     // A scissor is per pass too, and would clip the load action's clear.
-    _gpuContext._gl.disable(web.WebGL2RenderingContext.SCISSOR_TEST);
+    _gpuContext._state.disable(web.WebGL2RenderingContext.SCISSOR_TEST);
     _applyLoadActions();
     // Reset the fixed-function state that GL holds globally but Impeller
     // scopes per pass. Cull mode and winding order otherwise leak from the
@@ -26,10 +26,10 @@ final class WebGlRenderPass extends RenderPass {
     // flipped, which would then back-face cull the blit and blank the frame.
     // Mirrors Impeller's GLES backend, which re-initialises this state at the
     // start of every pass encode.
-    final gl = _gpuContext._gl;
-    gl.disable(web.WebGL2RenderingContext.CULL_FACE);
-    gl.frontFace(web.WebGL2RenderingContext.CCW);
-    gl.disable(web.WebGL2RenderingContext.STENCIL_TEST);
+    _gpuContext._state
+      ..disable(web.WebGL2RenderingContext.CULL_FACE)
+      ..frontFace(web.WebGL2RenderingContext.CCW)
+      ..disable(web.WebGL2RenderingContext.STENCIL_TEST);
   }
 
   final WebGlContext _gpuContext;
@@ -60,7 +60,7 @@ final class WebGlRenderPass extends RenderPass {
   void _ensureVao() {
     final gl = _gpuContext._gl;
     _vao ??= gl.createVertexArray();
-    gl.bindVertexArray(_vao);
+    _gpuContext._state.bindVertexArray(_vao);
   }
 
   // ---- framebuffer setup ---------------------------------------------------
@@ -196,13 +196,13 @@ final class WebGlRenderPass extends RenderPass {
       if (depth.depthLoadAction == LoadAction.clear) {
         // glClear(DEPTH) respects depthMask, which a prior draw may have
         // turned off; force it on so the clear actually writes.
-        gl.depthMask(true);
+        _gpuContext._state.depthMask(true);
         gl.clearDepth(depth.depthClearValue);
         clearMask |= web.WebGL2RenderingContext.DEPTH_BUFFER_BIT;
       }
       if (depth.stencilLoadAction == LoadAction.clear) {
         // Like depthMask, glClear(STENCIL) respects the stencil write mask.
-        gl.stencilMask(0xFF);
+        _gpuContext._state.stencilMask(0xFF);
         gl.clearStencil(depth.stencilClearValue);
         clearMask |= web.WebGL2RenderingContext.STENCIL_BUFFER_BIT;
       }
@@ -216,9 +216,8 @@ final class WebGlRenderPass extends RenderPass {
 
   @override
   void bindPipeline(RenderPipeline pipeline) {
-    final gl = _gpuContext._gl;
     _boundPipeline = pipeline.webGl;
-    gl.useProgram(pipeline.webGl._program);
+    _gpuContext._state.useProgram(pipeline.webGl._program);
     // Give every active uniform block a valid (zeroed) buffer up front, so a
     // block the caller never binds does not raise a used-but-unbound uniform
     // buffer error on this backend. Explicit bindUniform calls override it.
@@ -390,13 +389,13 @@ final class WebGlRenderPass extends RenderPass {
     var vao = cache.remove(cacheKey);
     if (vao != null) {
       cache[cacheKey] = vao;
-      gl.bindVertexArray(vao);
+      _gpuContext._state.bindVertexArray(vao);
     } else {
       vao = gl.createVertexArray();
       if (vao == null) {
         throw StateError('Failed to create WebGL vertex array');
       }
-      gl.bindVertexArray(vao);
+      _gpuContext._state.bindVertexArray(vao);
       for (final (view, slot, instanceRate) in _pendingVertexBindings) {
         if (instanceRate) continue;
         _applyVertexBinding(view, slot);
@@ -408,7 +407,7 @@ final class WebGlRenderPass extends RenderPass {
       cache[cacheKey] = vao;
       if (cache.length > WebGlContext._kMaxCachedVaos) {
         final oldest = cache.keys.first;
-        gl.deleteVertexArray(cache.remove(oldest)!);
+        _gpuContext._state.deleteVertexArray(cache.remove(oldest)!);
       }
     }
     for (final (view, slot, instanceRate) in _pendingVertexBindings) {
@@ -466,7 +465,7 @@ final class WebGlRenderPass extends RenderPass {
       if (minBindSize != null && minBindSize > lengthInBytes) {
         lengthInBytes = minBindSize;
       }
-      gl.bindBufferRange(
+      _gpuContext._state.bindBufferRange(
         web.WebGL2RenderingContext.UNIFORM_BUFFER,
         blockBinding,
         glBuffer,
@@ -698,10 +697,10 @@ final class WebGlRenderPass extends RenderPass {
     // lifetime bugs here that break on the native backends.
     final gl = _gpuContext._gl;
     if (_vao != null) {
-      gl.bindVertexArray(null);
+      _gpuContext._state.bindVertexArray(null);
     }
     for (final binding in _boundUniformBlocks) {
-      gl.bindBufferBase(
+      _gpuContext._state.bindBufferBase(
         web.WebGL2RenderingContext.UNIFORM_BUFFER,
         binding,
         null,
@@ -720,12 +719,7 @@ final class WebGlRenderPass extends RenderPass {
 
   @override
   void setColorBlendEnable(bool enable, {int colorAttachmentIndex = 0}) {
-    final gl = _gpuContext._gl;
-    if (enable) {
-      gl.enable(web.WebGL2RenderingContext.BLEND);
-    } else {
-      gl.disable(web.WebGL2RenderingContext.BLEND);
-    }
+    _gpuContext._state.setEnabled(web.WebGL2RenderingContext.BLEND, enable);
   }
 
   @override
@@ -733,7 +727,7 @@ final class WebGlRenderPass extends RenderPass {
     ColorBlendEquation equation, {
     int colorAttachmentIndex = 0,
   }) {
-    final gl = _gpuContext._gl;
+    final gl = _gpuContext._state;
     gl.blendEquationSeparate(
       _glBlendOp(equation.colorBlendOperation),
       _glBlendOp(equation.alphaBlendOperation),
@@ -748,16 +742,16 @@ final class WebGlRenderPass extends RenderPass {
 
   @override
   void setDepthWriteEnable(bool enable) {
-    _gpuContext._gl.depthMask(enable);
+    _gpuContext._state.depthMask(enable);
   }
 
   @override
   void setDepthCompareOperation(CompareFunction compareFunction) {
-    final gl = _gpuContext._gl;
     // GL skips depth writes while the test is disabled, so `always` keeps
     // the test on with GL_ALWAYS, as Impeller's GLES backend does.
-    gl.enable(web.WebGL2RenderingContext.DEPTH_TEST);
-    gl.depthFunc(_glCompare(compareFunction));
+    _gpuContext._state
+      ..enable(web.WebGL2RenderingContext.DEPTH_TEST)
+      ..depthFunc(_glCompare(compareFunction));
   }
 
   StencilConfig _stencilFront = StencilConfig();
@@ -789,7 +783,7 @@ final class WebGlRenderPass extends RenderPass {
   // GL holds the stencil state globally; the test is only enabled while a
   // config can reject or write, as Impeller's GLES backend does.
   void _applyStencil() {
-    final gl = _gpuContext._gl;
+    final gl = _gpuContext._state;
     if (_stencilInactive(_stencilFront) && _stencilInactive(_stencilBack)) {
       gl.disable(web.WebGL2RenderingContext.STENCIL_TEST);
       return;
@@ -828,7 +822,7 @@ final class WebGlRenderPass extends RenderPass {
 
   @override
   void setCullMode(CullMode cullMode) {
-    final gl = _gpuContext._gl;
+    final gl = _gpuContext._state;
     switch (cullMode) {
       case CullMode.none:
         gl.disable(web.WebGL2RenderingContext.CULL_FACE);
@@ -856,7 +850,7 @@ final class WebGlRenderPass extends RenderPass {
     // Inverted relative to the requested order: the generated GLES vertex
     // shaders multiply gl_Position.y by `_impeller_y_flip = -1`, which mirrors
     // triangle winding while storing render targets top-down.
-    _gpuContext._gl.frontFace(
+    _gpuContext._state.frontFace(
       windingOrder == WindingOrder.clockwise
           ? web.WebGL2RenderingContext.CCW
           : web.WebGL2RenderingContext.CW,
@@ -932,9 +926,13 @@ final class WebGlRenderPass extends RenderPass {
 
   @override
   void setScissor(Scissor scissor) {
-    final gl = _gpuContext._gl;
-    gl.enable(web.WebGL2RenderingContext.SCISSOR_TEST);
-    gl.scissor(scissor.x, scissor.y, scissor.width, scissor.height);
+    _gpuContext._state.enable(web.WebGL2RenderingContext.SCISSOR_TEST);
+    _gpuContext._gl.scissor(
+      scissor.x,
+      scissor.y,
+      scissor.width,
+      scissor.height,
+    );
   }
 
   @override

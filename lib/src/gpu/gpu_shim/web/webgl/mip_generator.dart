@@ -100,19 +100,21 @@ void main() {
       (texture.height >> 1).clamp(1, texture.height).toInt(),
     );
 
-    final blend = gl.isEnabled(web.WebGL2RenderingContext.BLEND);
-    final depth = gl.isEnabled(web.WebGL2RenderingContext.DEPTH_TEST);
-    final stencil = gl.isEnabled(web.WebGL2RenderingContext.STENCIL_TEST);
-    final scissor = gl.isEnabled(web.WebGL2RenderingContext.SCISSOR_TEST);
-    final cull = gl.isEnabled(web.WebGL2RenderingContext.CULL_FACE);
-    gl.disable(web.WebGL2RenderingContext.BLEND);
-    gl.disable(web.WebGL2RenderingContext.DEPTH_TEST);
-    gl.disable(web.WebGL2RenderingContext.STENCIL_TEST);
-    gl.disable(web.WebGL2RenderingContext.SCISSOR_TEST);
-    gl.disable(web.WebGL2RenderingContext.CULL_FACE);
+    final state = _context._state;
+    const caps = [
+      web.WebGL2RenderingContext.BLEND,
+      web.WebGL2RenderingContext.DEPTH_TEST,
+      web.WebGL2RenderingContext.STENCIL_TEST,
+      web.WebGL2RenderingContext.SCISSOR_TEST,
+      web.WebGL2RenderingContext.CULL_FACE,
+    ];
+    final enabled = [for (final cap in caps) state.isEnabled(cap)];
+    for (final cap in caps) {
+      state.disable(cap);
+    }
 
-    gl.useProgram(_program);
-    gl.bindVertexArray(_vao);
+    _context._state.useProgram(_program);
+    _context._state.bindVertexArray(_vao);
     gl.uniform1i(_sourceLocation, _context._setupTextureUnit);
     gl.uniform1i(_modeLocation, _mode(content));
     // The source is sampled from, and copied into, on the setup unit.
@@ -136,14 +138,12 @@ void main() {
     gl.bindFramebuffer(fb, null);
     gl.deleteFramebuffer(fbo);
     gl.deleteTexture(scratch);
-    gl.bindVertexArray(null);
-    gl.useProgram(null);
+    _context._state.bindVertexArray(null);
+    _context._state.useProgram(null);
 
-    if (blend) gl.enable(web.WebGL2RenderingContext.BLEND);
-    if (depth) gl.enable(web.WebGL2RenderingContext.DEPTH_TEST);
-    if (stencil) gl.enable(web.WebGL2RenderingContext.STENCIL_TEST);
-    if (scissor) gl.enable(web.WebGL2RenderingContext.SCISSOR_TEST);
-    if (cull) gl.enable(web.WebGL2RenderingContext.CULL_FACE);
+    for (var i = 0; i < caps.length; i++) {
+      state.setEnabled(caps[i], enabled[i]);
+    }
   }
 
   void _ensureProgram(web.WebGL2RenderingContext gl) {

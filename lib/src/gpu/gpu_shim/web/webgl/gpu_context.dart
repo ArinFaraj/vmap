@@ -61,6 +61,7 @@ final class WebGlContext extends GpuContext {
   late final web.OffscreenCanvas _canvas;
 
   late final web.WebGL2RenderingContext _gl;
+  late final _GlState _state = _GlState(_gl);
 
   /// Cached vertex-array objects keyed by (pipeline, vertex streams, index
   /// buffer), in least-recently-used order; see WebGlRenderPass._applyVertexState.
@@ -292,7 +293,7 @@ final class WebGlContext extends GpuContext {
       // Far above any realistic working set; clearing keeps stale
       // hot-reload generations from accumulating without bookkeeping.
       for (final pipeline in _pipelineCache.values) {
-        _gl.deleteProgram(pipeline._program);
+        _state.deleteProgram(pipeline._program);
       }
       _pipelineCache.clear();
     }
