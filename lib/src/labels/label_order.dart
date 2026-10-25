@@ -18,8 +18,16 @@ class LabelOrder {
 
   /// Sorts [states] into placement order: by rank, then as the sources
   /// list them, or with [byTile] tile by tile as MapLibre does, a layer
-  /// placed by screen y going by each label's turned y in tile units.
-  void sortForPlacement(List<LabelState> states, {required bool byTile}) {
+  /// placed by screen y going by each label's turned y in tile units. With
+  /// [keepPlaced], labels placed in the last pass go first within their
+  /// rank, so a map turning or tilting keeps the labels it shows rather
+  /// than swapping them for equals at every placement.
+  void sortForPlacement(
+    List<LabelState> states, {
+    required bool byTile,
+    bool keepPlaced = false,
+  }) {
+    _keepPlaced = keepPlaced;
     if (!byTile) {
       states.sort((a, b) => a.sortKey - b.sortKey);
       return;
@@ -81,6 +89,7 @@ class LabelOrder {
   int _placementOrder(LabelState a, LabelState b) {
     final byRank = (a.sortKey >> 16) - (b.sortKey >> 16);
     if (byRank != 0) return byRank;
+    if (_keepPlaced && a.placed != b.placed) return a.placed ? -1 : 1;
     final ca = a.candidate, cb = b.candidate;
     if (ca is TileLabel && cb is TileLabel) {
       if (ca.tileSpan != cb.tileSpan) return ca.tileSpan.compareTo(cb.tileSpan);
@@ -103,6 +112,8 @@ class LabelOrder {
     }
     return a.sortKey - b.sortKey;
   }
+
+  bool _keepPlaced = false;
 
   /// The tile units MapLibre sorts symbols in, `EXTENT`.
   static const _sortExtent = 8192.0;

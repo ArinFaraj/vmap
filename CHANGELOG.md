@@ -119,6 +119,11 @@ moved to an adapter package. This release changes most of the public API:
 - Every `background` layer is drawn, in the style's order.
 - Labels are placed at MapLibre's anchors, with its collision circles for
   road names, and road names lie on the ground of a tilted map.
+- A map turning or tilting keeps the labels it shows instead of swapping
+  them for others of the same rank, so labels no longer blink while the
+  map rotates.
+- A map laid out with no room yet, as on Android's first frame, draws
+  nothing instead of failing on its markers.
 - The map lets go of tiles, label images and GPU memory out of view when
   the system is short of memory.
 - `VmapLabelOptions.crossSourceCollisions: false` lets each source's labels

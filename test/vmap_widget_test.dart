@@ -192,6 +192,36 @@ void main() {
     expect(mapTaps, 0);
   });
 
+  testWidgets('a map laid out with no room yet paints its markers', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Center(
+          child: SizedBox.shrink(
+            child: Vmap(
+              initialCamera: _erbil,
+              style: _empty,
+              rendering: const VmapRenderOptions(renderer: VmapRenderer.canvas),
+              attribution: false,
+              markers: [
+                VmapMarker(
+                  point: _erbil.center,
+                  width: 40,
+                  height: 40,
+                  child: const ColoredBox(color: Color(0xFFFF0000)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('holding a finger still is a long press', (tester) async {
     LatLng? held;
     var taps = 0;

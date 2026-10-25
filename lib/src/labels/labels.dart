@@ -168,6 +168,9 @@ class LabelEngine {
 
   double _placedTilt = 0;
 
+  /// Whether the map turned or tilted since the last placement.
+  bool _turning = false;
+
   /// While the zoom is changing a label's image is stretched further before
   /// it is drawn again, and sharpened once the zoom rests.
   bool _zooming = false;
@@ -209,6 +212,13 @@ class LabelEngine {
 
   /// The keys of the labels showing.
   @visibleForTesting
+  /// The keys of the labels the last placement placed.
+  @visibleForTesting
+  Set<String> get placedKeys => {
+    for (final st in _frameStates)
+      if (st.placed) st.candidate.key,
+  };
+
   Set<String> get shownKeys => {
     for (final st in _live)
       if (st.opacity > 0) st.candidate.key,
@@ -374,6 +384,7 @@ class LabelEngine {
           : _zoomingIntervalMs;
       if (nowMs - _placedAtMs >= interval) {
         final t0 = _clock.elapsedMicroseconds;
+        _turning = tilt != _placedTilt;
         _place(sources, zoom, world, origin, size);
         lastPlaceMicros = _clock.elapsedMicroseconds - t0;
         _placedAtMs = nowMs;
@@ -645,7 +656,11 @@ class LabelEngine {
         states.add(st);
       }
     }
-    _order.sortForPlacement(states, byTile: _style.rules.placesByTile);
+    _order.sortForPlacement(
+      states,
+      byTile: _style.rules.placesByTile,
+      keepPlaced: _turning,
+    );
 
     _boxes
       ..clear()

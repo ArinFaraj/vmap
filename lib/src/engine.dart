@@ -656,6 +656,7 @@ class VmapEngine extends ChangeNotifier {
     double devicePixelRatio = 1,
     VmapCamera? ahead,
   }) {
+    if (size.isEmpty) return;
     final view = camera.view(size.width, size.height);
     final center = view.center;
     final screen = view.screenCenter;

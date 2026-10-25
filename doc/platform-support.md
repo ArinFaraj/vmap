@@ -14,15 +14,15 @@ WebGL2, and Flutter's test runner.
 
 | Platform | Flutter's renderer | Flutter GPU | The map draws with | Run so far |
 |---|---|---|---|---|
-| iOS | Impeller, the only one | yes, `FLTEnableFlutterGPU` in `Info.plist` | GPU | not yet |
+| iOS | Impeller, the only one | yes, `FLTEnableFlutterGPU` in `Info.plist` | GPU | the simulator |
 | Android 10+ with Vulkan 1.1 | Impeller on Vulkan | yes, `io.flutter.embedding.android.EnableFlutterGPU` in the manifest | GPU | one phone, the emulator |
-| Android 10+ without usable Vulkan | Impeller on OpenGL ES | yes, the same flag | GPU, on OpenGL ES | not yet |
+| Android 10+ without usable Vulkan | Impeller on OpenGL ES | yes, the same flag | GPU, on OpenGL ES | the emulator, flat and 3D with terrain |
 | Android 9 and older | Skia on OpenGL ES, unless forced (below) | no, unless forced | canvas | not yet |
 | Android with a Vivante GPU | Skia on OpenGL ES, unless forced | no, unless forced | canvas | not yet |
 | macOS | Impeller, default since 3.47 | yes, `FLTEnableFlutterGPU` in `Info.plist` | GPU | yes, most development |
 | Windows | Impeller, default since 3.47 | yes from 3.47.1: `project.set_enable_flutter_gpu(true)` on the `DartProject` | GPU | not yet |
 | Linux | Impeller, default since 3.47 | yes from 3.47.1: `fl_dart_project_set_enable_flutter_gpu(project, TRUE)` | GPU | not yet |
-| Web | Skia (CanvasKit) | not built in; the WebGL2 shim from flutter_scene stands in | GPU, through WebGL2 | Chrome |
+| Web | Skia (CanvasKit) | not built in; the WebGL2 shim from flutter_scene stands in | GPU, through WebGL2 | Chrome, Safari |
 | `flutter test` | the tester | not checked | canvas | yes, every unit and golden test |
 
 During development `flutter run --enable-flutter-gpu` switches Flutter GPU on
@@ -55,12 +55,13 @@ The engine's own `impeller/docs/android.md` still says the fallback is Skia
 
 ## What has not been tried
 
-- Impeller's OpenGL ES backend at all. Forcing `ImpellerBackend=opengles` on a
-  phone and running everything is planned (see the roadmap). OpenGL ES 2.0
-  hardware may lack what the renderer leans on: 32 bit index buffers,
-  depth and stencil formats, multisampling.
-- iOS, Windows and Linux devices.
-- Browsers other than Chrome.
+- Impeller's OpenGL ES backend on a real phone. The emulator runs on it
+  and draws everything; forcing `ImpellerBackend=opengles` on a phone is
+  planned (see the roadmap). OpenGL ES 2.0 hardware may lack what the
+  renderer leans on: 32 bit index buffers, depth and stencil formats,
+  multisampling.
+- A real iPhone, Windows and Linux.
+- Firefox.
 - Whether `flutter test` can run Flutter GPU. Until it can, map screens in
   widget and golden tests draw through the canvas renderer.
 

@@ -50,13 +50,19 @@ class _MarkerFlow extends FlowDelegate {
   void paintChildren(FlowPaintingContext context) {
     final view = controller.view;
     final size = context.size;
+    if (size.isEmpty) return;
     for (var i = 0; i < context.childCount; i++) {
       final m = markers[i];
       view.projectTo(
         worldX(m.point.longitude) * view.worldSize,
         worldY(m.point.latitude) * view.worldSize,
       );
-      if (view.outDepth <= 0 || view.outX < -1e5) continue;
+      if (!(view.outDepth > 0) ||
+          !view.outX.isFinite ||
+          !view.outY.isFinite ||
+          view.outX < -1e5) {
+        continue;
+      }
       final a = m.alignment ?? Alignment.center;
       final left = view.outX + (a.x - 1) * m.width / 2;
       final top = view.outY + (a.y - 1) * m.height / 2;

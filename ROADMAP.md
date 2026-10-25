@@ -22,9 +22,14 @@ What the API looks like and what should change before release:
   OpenType shaper in place of payv, and the release pass: `vmap:setup`,
   `onFeatureTap`, content comparison of styles and overlays, no refresh
   rate requests, all six platforms in the pubspec, the README rewritten.
-- **Open before publishing:** step 6 (runs on an iPhone, Windows, Linux,
-  Safari and Firefox). The web, JavaScript and WebAssembly builds both,
-  was checked in headless Chrome.
+- **Done, 2026-10-25:** the third review's fixes (no part files left,
+  `GpuMap` split into `FrameLayers` and `GpuFrames`, `canBuild` for
+  renderer switches), labels kept while the map turns, and the example
+  run on the iOS simulator (Metal), in Safari (WebAssembly) and on the
+  Android emulator on Impeller's OpenGL ES backend, flat and in 3D with
+  terrain. That run found and fixed a crash on Android's first frame.
+- **Open before publishing:** step 6 for what is left: a real iPhone,
+  Windows, Linux and Firefox.
 - **Then:** step 8, publishing, which waits for Arin's yes: merging
   `engine` to `main` and tagging publishes vmap to pub.dev.
 - Work happens on the `engine` branch of `ArinFaraj/vmap`.
@@ -109,9 +114,6 @@ To do before publishing:
 - **Phone benchmark.** The tour on a phone with peak memory and the count of
   frames reused because the GPU fell behind (both already reported), and at
   120 Hz.
-- **Labels that blink while turning.** Some labels fade in and back out while
-  the map rotates or tilts, as placement changes under motion. Make placement
-  keep what it shows unless something clearly wins the space.
 - **Building memory.** Pack the 13 floats of a building vertex tighter; a
   dense tile still holds about 9 MB of building vertices.
 - **`flutter test`.** Find out whether the tester can run Flutter GPU. If it
