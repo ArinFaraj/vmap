@@ -2,6 +2,8 @@ import 'dart:developer' show Timeline;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import 'gpu_shim/gpu.dart' as gpu;
 
 import '../tiles/extrusion.dart';
@@ -18,7 +20,10 @@ const framesInFlight = 4;
 /// added (flutter/flutter#186526, #192392). The blocks are typed buffers,
 /// so on the web each write reaches WebGL as the floats it is.
 class UniformArena {
-  static const _blockBytes = 1 << 20;
+  /// Small on the web: ANGLE copies a whole buffer that draws not yet sent
+  /// to the GPU still read when it is written again, which with 1 MB
+  /// blocks cost Chrome on Metal 15 ms a frame.
+  static const _blockBytes = kIsWeb ? 16 << 10 : 1 << 20;
   final List<List<gpu.DeviceBuffer>> _blocks = [
     for (var i = 0; i < framesInFlight; i++) [],
   ];

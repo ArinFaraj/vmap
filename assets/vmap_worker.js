@@ -1,4 +1,4 @@
-// vmap web worker, built from lib e42b2c20
+// vmap web worker, built from lib 3258d2a2
 (function dartProgram(){function copyProperties(a,b){var s=Object.keys(a)
 for(var r=0;r<s.length;r++){var q=s[r]
 b[q]=a[q]}}function mixinPropertiesHard(a,b){var s=Object.keys(a)
