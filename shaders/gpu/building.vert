@@ -123,8 +123,11 @@ void main() {
   }
   vec3 tint = frame_info.light_color.rgb;
   vec3 lit = clamp((color + 0.03) * directional * tint, 0.3 * (1.0 - tint), vec3(1.0));
-  vec2 p = dem_info.place.xy + middle / 4096.0 * dem_info.place.z;
-  float ground = height_at(p) - dem_info.scale.z;
+  // Flat ground has no heights to read: scale.x is zero there.
+  float ground = -dem_info.scale.z;
+  if (dem_info.scale.x != 0.0) {
+    ground += height_at(dem_info.place.xy + middle / 4096.0 * dem_info.place.z);
+  }
   if (position.z < 0.01) {
     ground -= dem_info.scale.w;
   }
