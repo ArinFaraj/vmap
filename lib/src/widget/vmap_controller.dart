@@ -46,6 +46,13 @@ class VmapController extends ChangeNotifier {
 
   VmapCamera _camera;
   _Motion? _motion;
+
+  /// Where the animation under way left the camera on its last frame, and
+  /// where its own path had the camera then. Something else that moves the
+  /// camera meanwhile, a wheel zooming during a glide, is kept: the
+  /// animation then adds only its own change of the frame.
+  VmapCamera? _motionLeft, _motionWas;
+  bool _motionMoved = false;
   Ticker? _ticker;
   Size _size = Size.zero;
   bool _flat = true;
@@ -347,9 +354,12 @@ class VmapController extends ChangeNotifier {
       _set(motion.at(1));
       return Future.value();
     }
-    _motion = _isStill(speed) ? motion : motion.carrying(speed);
+    final running = _motion = _isStill(speed) ? motion : motion.carrying(speed);
+    _motionLeft = _camera;
+    _motionWas = running.at(0);
+    _motionMoved = false;
     ticker.start();
-    return _motion!.done.future;
+    return running.done.future;
   }
 
   void _tick(Duration elapsed) {
@@ -361,8 +371,35 @@ class VmapController extends ChangeNotifier {
             0.0,
             1.0,
           );
-    _set(motion.at(t));
+    final next = motion.at(t);
+    final was = _motionWas ?? next;
+    _motionWas = next;
+    if (_camera != _motionLeft) _motionMoved = true;
+    _set(_motionMoved ? _movedBy(_camera, was, next) : next);
+    _motionLeft = _camera;
     if (t >= 1) stop();
+  }
+
+  /// [camera] moved as the animation's path moved from [from] to [to] in
+  /// one frame: a slide by as many screen pixels at [camera]'s zoom, and
+  /// the same change of zoom, bearing and pitch.
+  static VmapCamera _movedBy(
+    VmapCamera camera,
+    VmapCamera from,
+    VmapCamera to,
+  ) {
+    double wrapped(double d) => d - (d + 0.5).floorToDouble();
+    final scale = math.pow(2, from.zoom - camera.zoom).toDouble();
+    return cameraAt(
+      x: camera.worldX + wrapped(to.worldX - from.worldX) * scale,
+      y: camera.worldY + (to.worldY - from.worldY) * scale,
+      zoom: camera.zoom + to.zoom - from.zoom,
+      bearing: normalBearing(camera.bearing + to.bearing - from.bearing),
+      pitch: camera.pitch + to.pitch - from.pitch,
+      roll: camera.roll,
+      padding: camera.padding,
+      fieldOfView: camera.fieldOfView,
+    );
   }
 
   @override

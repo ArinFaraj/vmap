@@ -398,6 +398,27 @@ void main() {
     expect(c.camera.zoom, closeTo(13, 1e-6));
   });
 
+  testWidgets('a wheel zoom during a fling adds to its glide', (tester) async {
+    final c = await _pump(tester);
+    await tester.flingFrom(const Offset(600, 400), const Offset(-200, 0), 1500);
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(c.isMoving, isTrue);
+    final mouse = TestPointer(2, PointerDeviceKind.mouse);
+    await tester.sendEventToBinding(mouse.hover(const Offset(400, 300)));
+    var zoom = c.camera.zoom, longitude = c.camera.center.longitude;
+    for (var i = 0; i < 40; i++) {
+      if (i < 10) {
+        await tester.sendEventToBinding(mouse.scroll(const Offset(0, -3)));
+      }
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(c.camera.zoom, greaterThanOrEqualTo(zoom - 1e-9));
+      expect(c.camera.center.longitude, greaterThanOrEqualTo(longitude - 1e-9));
+      zoom = c.camera.zoom;
+      longitude = c.camera.center.longitude;
+    }
+    expect(zoom, greaterThan(12));
+  });
+
   testWidgets('a native trackpad pans, pinches and turns the map', (
     tester,
   ) async {
