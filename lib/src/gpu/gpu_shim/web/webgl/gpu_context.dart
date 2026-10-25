@@ -203,7 +203,18 @@ final class WebGlContext extends GpuContext {
         sizeInBytes,
         web.WebGL2RenderingContext.ARRAY_BUFFER,
         usage: web.WebGL2RenderingContext.DYNAMIC_DRAW,
+        held: true,
       );
+
+  /// Uniform buffers written since the last draw, each to be sent once.
+  final List<WebGlDeviceBuffer> _held = [];
+
+  void _sendHeld() {
+    for (final buffer in _held) {
+      buffer._sendHeld();
+    }
+    _held.clear();
+  }
 
   @override
   DeviceBuffer createDeviceBufferWithCopy(ByteData data) {

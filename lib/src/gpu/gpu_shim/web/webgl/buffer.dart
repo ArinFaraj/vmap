@@ -23,7 +23,8 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
     this.storageMode,
     this.sizeInBytes,
   ) : _gpuContext = webGlContext,
-      _typedTarget = null {
+      _typedTarget = null,
+      _held = null {
     _staging = Uint8List(sizeInBytes);
     _valid = true;
   }
@@ -40,9 +41,13 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
     this.sizeInBytes,
     int target, {
     int usage = web.WebGL2RenderingContext.STATIC_DRAW,
+    bool held = false,
   }) : _gpuContext = webGlContext,
        storageMode = StorageMode.hostVisible,
-       _typedTarget = target {
+       _typedTarget = target,
+       _held = held && sizeInBytes % 4 == 0
+           ? Float32List(sizeInBytes ~/ 4)
+           : null {
     final gl = webGlContext._gl;
     final buffer = gl.createBuffer();
     if (buffer == null) {
@@ -80,6 +85,25 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
 
   /// Non-null for a buffer created by [WebGlDeviceBuffer._initializeTyped].
   final int? _typedTarget;
+
+  /// For a buffer of many small writes, its floats as written, sent to GL
+  /// from [_heldFrom] to [_heldTo] in one call before the next draw: the
+  /// writes between two draws, a draw's uniform blocks, go over together.
+  final Float32List? _held;
+  int _heldFrom = 0, _heldTo = 0;
+
+  /// Sends what was written since the last draw.
+  void _sendHeld() {
+    final held = _held!;
+    final from = _heldFrom, to = _heldTo;
+    _heldFrom = _heldTo = 0;
+    _gpuContext._state.bindBuffer(_typedTarget!, _glOtherBuffer);
+    _gpuContext._gl.bufferSubData(
+      _typedTarget,
+      from,
+      Float32List.sublistView(held, from ~/ 4, to ~/ 4).toJS,
+    );
+  }
 
   /// A float view over the whole staging buffer, used by the uniform upload
   /// path with srcOffset/srcLength so no per-draw views are created.
@@ -237,6 +261,23 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
     if (destinationOffsetInBytes + source.lengthInBytes > sizeInBytes) {
       return false;
     }
+    final held = _held;
+    if (held != null &&
+        source is Float32List &&
+        destinationOffsetInBytes % 4 == 0) {
+      final from = destinationOffsetInBytes, to = from + source.lengthInBytes;
+      held.setRange(from ~/ 4, to ~/ 4, source);
+      if (_heldFrom == _heldTo) {
+        _heldFrom = from;
+        _heldTo = to;
+        _gpuContext._held.add(this);
+      } else {
+        if (from < _heldFrom) _heldFrom = from;
+        if (to > _heldTo) _heldTo = to;
+      }
+      return true;
+    }
+    if (held != null) _gpuContext._sendHeld();
     final gl = _gpuContext._gl;
     _bindTypedForUpload(
       _gpuContext,

@@ -978,6 +978,7 @@ final class WebGlRenderPass extends RenderPass {
       throw StateError('draw called before bindPipeline');
     }
     if (vertexCount == 0 || instanceCount == 0) return;
+    _gpuContext._sendHeld();
     _applyVertexState(needsIndex: false);
     _configureInlineVertexBuffer(vertexCount);
     if (instanceCount != 1) {
@@ -1002,6 +1003,7 @@ final class WebGlRenderPass extends RenderPass {
       throw StateError('Indexed inline pipelines require reflected attributes');
     }
     if (indexCount == 0 || instanceCount == 0) return;
+    _gpuContext._sendHeld();
     final indexView = _indexBufferView;
     if (indexView == null) {
       throw StateError('drawIndexed called before bindIndexBuffer');
