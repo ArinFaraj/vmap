@@ -57,9 +57,13 @@ abstract class SdfText {
   });
 
   /// Lays what was queued since [begin] on [canvas]: each layer's icons,
-  /// then its text, as MapLibre draws a symbol layer. True while a glyph
-  /// is still on its way to the GPU.
-  bool end(ui.Canvas canvas);
+  /// then its text, as MapLibre draws a symbol layer. Returns the canvas
+  /// to draw on after it: [canvas], or on the web one over a page element
+  /// that shows the text.
+  ui.Canvas end(ui.Canvas canvas);
+
+  /// Whether a glyph is still on its way to the GPU.
+  bool get loading;
 }
 
 /// How a run of glyphs is drawn: colours premultiplied and faded, halo

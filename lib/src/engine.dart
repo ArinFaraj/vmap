@@ -9,6 +9,7 @@ import 'package:latlong2/latlong.dart' show LatLng;
 import 'camera/camera.dart';
 import 'errors.dart';
 import 'frame_painter.dart';
+import 'render/frame_planes.dart';
 import 'gpu/gpu_map.dart';
 import 'camera/bounds.dart';
 import 'camera/map_camera.dart';
@@ -655,6 +656,21 @@ class VmapEngine extends ChangeNotifier {
     VmapCamera camera, {
     double devicePixelRatio = 1,
     VmapCamera? ahead,
+  }) => _paint(
+    canvas,
+    size,
+    camera,
+    devicePixelRatio: devicePixelRatio,
+    ahead: ahead,
+  );
+
+  void _paint(
+    ui.Canvas canvas,
+    ui.Size size,
+    VmapCamera camera, {
+    required double devicePixelRatio,
+    VmapCamera? ahead,
+    FramePlanes? planes,
   }) {
     if (size.isEmpty) return;
     final view = camera.view(size.width, size.height);
@@ -673,6 +689,7 @@ class VmapEngine extends ChangeNotifier {
       ),
       _sheet,
       labelsVisible: _labelOptions.visible,
+      planes: planes,
     );
   }
 
@@ -753,4 +770,27 @@ class _Host implements FrameHost {
 
   @override
   bool get transitionsRunning => _engine._transitionsRunning();
+}
+
+/// Drawing a frame as planes, for the `Vmap` widget on the web.
+extension VmapEnginePlanes on VmapEngine {
+  /// Draws one frame as [paint] does, into [planes]: the canvas's pictures
+  /// with the GPU's images handed over between them as page elements.
+  void paintPlanes(
+    FramePlanes planes,
+    ui.Size size,
+    VmapCamera camera, {
+    double devicePixelRatio = 1,
+    VmapCamera? ahead,
+  }) {
+    _paint(
+      planes.begin(),
+      size,
+      camera,
+      devicePixelRatio: devicePixelRatio,
+      ahead: ahead,
+      planes: planes,
+    );
+    planes.end();
+  }
 }

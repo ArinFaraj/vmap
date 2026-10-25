@@ -6,6 +6,7 @@ import 'package:vector_math/vector_math.dart' show Vector4;
 
 import '../camera/view.dart';
 import '../style/style_model.dart' show StyleRun;
+import '../render/frame_planes.dart';
 import 'frame_layers.dart';
 import 'gpu_buffers.dart';
 import 'gpu_device.dart';
@@ -199,11 +200,40 @@ class GpuFrames {
     );
   }
 
-  /// Keeps [layers], drawn for [view], as the frame to show.
-  void drawn(FrameLayers layers, MapView view) {
+  /// The textures behind [_last]'s images.
+  List<gpu.Texture> _textures = const [];
+
+  /// The last frame's images as browser bitmaps, their opacity, where
+  /// background and raster runs come between them, and the camera they
+  /// were drawn for.
+  ({List<(Object, double)> images, List<(int, int)> splits, MapView view})?
+  _taken;
+
+  /// Takes the last frame's images out of their textures for the page to
+  /// show, moved to the camera of a frame that shows them again.
+  void takeLast() {
+    final last = _last, view = _lastView;
+    if (last == null || view == null || _textures.length != last.length) {
+      _taken = null;
+      return;
+    }
+    _taken = (
+      images: [
+        for (var i = 0; i < last.length; i++)
+          (gpu.gpuHost.textureToBitmap(_textures[i])!, last[i].$2),
+      ],
+      splits: _splits,
+      view: view,
+    );
+  }
+
+  /// Keeps [layers], drawn for [view], as the frame to show. On the web
+  /// with [snapshot], its images are copied out of their textures now.
+  void drawn(FrameLayers layers, MapView view, {bool snapshot = true}) {
     final shown = layers.shown;
-    if (kIsWeb) _snapshot(shown, layers.textures);
+    if (kIsWeb && snapshot) _snapshot(shown, layers.textures);
     _last = shown;
+    _textures = layers.textures;
     _splits = layers.splits;
     _presented = 0;
     _lastView = _showView = view;
@@ -225,7 +255,13 @@ class GpuFrames {
   /// Lays the last frame's images before style run [run] on [canvas]. With
   /// [warps], a frame shown again for a camera that has moved is moved
   /// with it, so the map keeps up with the labels drawn for the new camera.
-  void presentUntil(ui.Canvas canvas, int run, {required bool warps}) {
+  void presentUntil(
+    ui.Canvas canvas,
+    int run, {
+    required bool warps,
+    FramePlanes? planes,
+  }) {
+    if (planes != null) return _hand(planes, run, warps: warps);
     final last = _last, view = _lastView;
     if (last == null || view == null) return;
     var upTo = last.length;
@@ -240,6 +276,26 @@ class GpuFrames {
     _presented = upTo;
   }
 
+  /// [presentUntil] on the web: hands the images [takeLast] took before
+  /// style run [run] to [planes].
+  void _hand(FramePlanes planes, int run, {required bool warps}) {
+    final taken = _taken;
+    if (taken == null) return;
+    var upTo = taken.images.length;
+    for (final (at, image) in taken.splits) {
+      if (at >= run) {
+        upTo = math.min(upTo, image);
+        break;
+      }
+    }
+    if (upTo <= _presented) return;
+    planes.hand(
+      taken.images.sublist(_presented, upTo),
+      _warp(taken.view, warps),
+    );
+    _presented = upTo;
+  }
+
   void _present(
     ui.Canvas canvas,
     Iterable<(ui.Image, double)> shown,
@@ -249,11 +305,7 @@ class GpuFrames {
     _lastView = view;
     final from = ui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble());
     final to = ui.Rect.fromLTWH(0, 0, view.width, view.height);
-    final now = _showView;
-    var warp = now == null || identical(now, view) || !warps
-        ? null
-        : now.warpFrom(view);
-    if (warp != null && _identity(warp)) warp = null;
+    final warp = _warp(view, warps);
     if (warp != null) {
       canvas
         ..save()
@@ -266,6 +318,15 @@ class GpuFrames {
       canvas.drawImageRect(image, from, to, paint);
     }
     if (warp != null) canvas.restore();
+  }
+
+  /// How a frame drawn for [view] moves to show the camera now, or null
+  /// when it need not.
+  Float64List? _warp(MapView view, bool warps) {
+    final now = _showView;
+    if (now == null || identical(now, view) || !warps) return null;
+    final warp = now.warpFrom(view);
+    return warp == null || _identity(warp) ? null : warp;
   }
 
   static bool _identity(Float64List m) {

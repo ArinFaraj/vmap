@@ -9,6 +9,7 @@ import 'canvas/canvas_map.dart';
 import 'camera/camera.dart';
 import 'style/expr.dart';
 import 'tiles/feature_states.dart';
+import 'render/frame_planes.dart';
 import 'render/map_renderer.dart';
 import 'labels/label_state.dart';
 import 'labels/labels.dart';
@@ -40,6 +41,24 @@ void _unroll(ui.Canvas canvas, MapView view) {
     ..translate(-x, -y);
 }
 
+/// The ground below [horizon] in the unrolled picture, as the screen shows
+/// it.
+List<ui.Offset> _groundOutline(MapView view, double horizon) {
+  final b = view.unrolledBounds;
+  ui.Offset at(double x, double y) {
+    if (view.roll == 0) return ui.Offset(x, y);
+    final c = view.rolled(x, y);
+    return ui.Offset(c.x, c.y);
+  }
+
+  return [
+    at(b.left, horizon),
+    at(b.right, horizon),
+    at(b.right, b.bottom),
+    at(b.left, b.bottom),
+  ];
+}
+
 /// Clips [canvas] to the ground below [horizon] in the unrolled picture.
 void _clipGround(ui.Canvas canvas, MapView view, double horizon) {
   final b = view.unrolledBounds;
@@ -47,15 +66,7 @@ void _clipGround(ui.Canvas canvas, MapView view, double horizon) {
     canvas.clipRect(ui.Rect.fromLTRB(b.left, horizon, b.right, b.bottom));
     return;
   }
-  final corners = [
-    view.rolled(b.left, horizon),
-    view.rolled(b.right, horizon),
-    view.rolled(b.right, b.bottom),
-    view.rolled(b.left, b.bottom),
-  ];
-  canvas.clipPath(
-    ui.Path()..addPolygon([for (final c in corners) ui.Offset(c.x, c.y)], true),
-  );
+  canvas.clipPath(ui.Path()..addPolygon(_groundOutline(view, horizon), true));
 }
 
 /// How many worlds east of the first the copy [d] is drawn in lies.
@@ -134,6 +145,7 @@ class FramePainter {
     MapFrame camera,
     StyleSheet? sheet, {
     required bool labelsVisible,
+    FramePlanes? planes,
   }) {
     frame++;
     lastCamera = camera;
@@ -147,7 +159,7 @@ class FramePainter {
       _paintWhileLoading(canvas, camera.size, sheet);
       return;
     }
-    final f = _startFrame(canvas, camera, sheet, now, dt)
+    final f = _startFrame(canvas, camera, sheet, now, dt, planes)
       ..labelsVisible = labelsVisible;
     _coverTiles(f);
     _drawSky(f);
@@ -181,6 +193,7 @@ class FramePainter {
     StyleSheet sheet,
     int now,
     double dt,
+    FramePlanes? planes,
   ) {
     final dataZoom = camera.zoom - 1;
     final styleZoom = dataZoom + sheet.zoomOffset;
@@ -237,6 +250,7 @@ class FramePainter {
     final farCut = threeD && !drape && view.pitch > 60;
     return _Frame(
       canvas: canvas,
+      planes: planes,
       camera: camera,
       view: view,
       sheet: sheet,
@@ -326,15 +340,12 @@ class FramePainter {
 
   /// The style's layers below its labels, and the buildings.
   void _drawBelowLabels(_Frame f) {
-    final canvas = f.canvas, sheet = f.sheet, renderer = f.renderer;
-    if (f.horizon > 0) {
-      canvas.save();
-      _clipGround(canvas, f.view, f.horizon);
-    }
+    final sheet = f.sheet, renderer = f.renderer;
+    _cutAtHorizon(f);
     final started = _clock.elapsedMicroseconds;
     _stats.drawCalls = 0;
     if (renderer.paint(
-      canvas,
+      f.canvas,
       RenderFrame(
         view: f.view,
         origin: f.camera.origin,
@@ -350,27 +361,56 @@ class FramePainter {
         states: [for (final s in _sources) _states.of(s.def.name)],
         dashFade: _zoomHistory.fade,
         stats: _stats,
+        planes: f.planes,
       ),
     )) {
       f.waiting = true;
     }
     _drawRuns(f, 0, sheet.labelsRun);
-    if (renderer.presentUntil(canvas, sheet.labelsRun)) f.waiting = true;
+    _present(f, sheet.labelsRun);
     _buildingMicros = _clock.elapsedMicroseconds - started;
-    if (f.horizon > 0) canvas.restore();
+    _uncut(f);
+  }
+
+  /// Cuts what is drawn next at the horizon, when the frame has one.
+  void _cutAtHorizon(_Frame f) {
+    if (f.horizon <= 0) return;
+    f.canvas.save();
+    _clipGround(f.canvas, f.view, f.horizon);
+    f.planes?.clip = _groundOutline(f.view, f.horizon);
+  }
+
+  void _uncut(_Frame f) {
+    if (f.horizon <= 0) return;
+    f.canvas.restore();
+    f.planes?.clip = null;
+  }
+
+  /// Lays the renderer's layers before style run [run] down. On the web
+  /// they go into a page element and the frame goes on in a new picture,
+  /// cut at the horizon as the one before was.
+  void _present(_Frame f, int run) {
+    if (f.renderer.presentUntil(f.canvas, run)) f.waiting = true;
+    final planes = f.planes;
+    if (planes == null || identical(planes.canvas, f.canvas)) return;
+    f.canvas = planes.canvas;
+    if (planes.clip != null) {
+      f.canvas.save();
+      _clipGround(f.canvas, f.view, f.horizon);
+    }
   }
 
   /// The style's backgrounds and raster layers from run [from] to [to], with
   /// the renderer's vector layers before each laid down first, so all of
   /// them come in the style's order.
   void _drawRuns(_Frame f, int from, int to) {
-    final canvas = f.canvas, sheet = f.sheet;
+    final sheet = f.sheet;
     for (var index = from; index < to; index++) {
       final run = sheet.runs[index];
       if (run.background < 0 && run.raster < 0) continue;
       if (run.background >= 0 && f.drape) continue;
-      if (f.renderer.presentUntil(canvas, index)) f.waiting = true;
-      canvas.save();
+      _present(f, index);
+      final canvas = f.canvas..save();
       if (f.canvasHorizon > 0) _clipGround(canvas, f.view, f.canvasHorizon);
       canvas.transform(f.viewMatrix);
       if (run.background >= 0) {
@@ -434,21 +474,21 @@ class FramePainter {
       terrain: f.terrain,
       sdf: f.renderer.sdfText,
     );
+    // The text may have gone into a page element, the frame on in a new
+    // picture over it.
+    if (f.planes?.canvas case final canvas?) f.canvas = canvas;
     f.animating = f.animating || moving;
   }
 
   /// What the style puts after its last symbol layer, which goes over the
   /// labels, as MapLibre draws in the style's order.
   void _drawAboveLabels(_Frame f) {
-    final sheet = f.sheet, canvas = f.canvas;
+    final sheet = f.sheet;
     if (sheet.labelsRun >= sheet.runs.length) return;
-    if (f.horizon > 0) {
-      canvas.save();
-      _clipGround(canvas, f.view, f.horizon);
-    }
+    _cutAtHorizon(f);
     _drawRuns(f, sheet.labelsRun, sheet.runs.length);
-    if (f.renderer.presentUntil(canvas, sheet.runs.length)) f.waiting = true;
-    if (f.horizon > 0) canvas.restore();
+    _present(f, sheet.runs.length);
+    _uncut(f);
   }
 
   /// The air in front of the globe.
@@ -612,6 +652,7 @@ abstract interface class FrameHost {
 class _Frame {
   _Frame({
     required this.canvas,
+    required this.planes,
     required this.camera,
     required this.view,
     required this.sheet,
@@ -628,7 +669,10 @@ class _Frame {
     required this.viewMatrix,
   });
 
-  final ui.Canvas canvas;
+  /// What the frame draws on now: on the web, a new picture after each of
+  /// the GPU's images.
+  ui.Canvas canvas;
+  final FramePlanes? planes;
   final MapFrame camera;
   final MapView view;
   final StyleSheet sheet;

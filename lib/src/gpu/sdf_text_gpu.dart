@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart' show Vector4;
 
 import '../labels/sdf_text.dart';
+import '../render/frame_planes.dart';
 import '../text/glyphs/glyph_pbf.dart';
 import 'gpu_device.dart';
 import 'gpu_shim/gpu.dart' as gpu;
@@ -331,11 +332,18 @@ class SdfTextGpu implements SdfText {
   }
 
   @override
-  bool end(ui.Canvas canvas) {
-    if (_count == 0 || !ready) return false;
+  bool get loading => false;
+
+  /// Where the text goes on the web, as a page element of its own; null
+  /// to draw it on the canvas.
+  FramePlanes? planes;
+
+  @override
+  ui.Canvas end(ui.Canvas canvas) {
+    if (_count == 0 || !ready) return canvas;
     final width = (_size.width * _dpr).round();
     final height = (_size.height * _dpr).round();
-    if (width <= 0 || height <= 0) return false;
+    if (width <= 0 || height <= 0) return canvas;
     if (_targets.isNotEmpty &&
         (_targets.first.$1.width != width ||
             _targets.first.$1.height != height)) {
@@ -464,6 +472,9 @@ class SdfTextGpu implements SdfText {
       }
     }
     commands.submit();
+    if (planes case final planes?) {
+      return planes.hand([(gpu.gpuHost.textureToBitmap(target)!, 1)], null);
+    }
     var shown = image;
     if (kIsWeb) {
       _webCopy?.dispose();
@@ -475,6 +486,6 @@ class SdfTextGpu implements SdfText {
       ui.Offset.zero & _size,
       ui.Paint()..filterQuality = ui.FilterQuality.none,
     );
-    return false;
+    return canvas;
   }
 }

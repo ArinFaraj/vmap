@@ -85,6 +85,11 @@ moved to an adapter package. This release changes most of the public API:
 
 ### The web
 
+- The map draws about six times faster in Safari: its GPU images are
+  shown in page elements of their own, which the browser lays under
+  Flutter's content, instead of being copied into Flutter's renderer,
+  which Safari does on the CPU. Label glyphs are images Flutter's
+  JavaScript renderer uploads once rather than at every draw.
 - The WebAssembly build (`--wasm`) draws as the JavaScript one does; it
   froze its tab before.
 - Labels are drawn from glyphs in the browser too, as on other platforms,

@@ -179,7 +179,8 @@ class GpuMap extends MapRenderer {
     _in = f;
     final made = _ready();
     if (made == null) return true;
-    final (:device, :drape, sdf: _) = made;
+    final (:device, :drape, :sdf) = made;
+    sdf.planes = f.planes;
     final GpuDevice(
       pipelines: p,
       :host,
@@ -214,6 +215,7 @@ class GpuMap extends MapRenderer {
     if (!_warm) _warmUp(device);
     if (_frames.showAgain(view, _frame)) {
       f.stats.gpuFramesReused++;
+      if (f.planes != null) _frames.takeLast();
       return true;
     }
     // A render pass encodes into a command buffer of its own: Metal allows
@@ -291,7 +293,8 @@ class GpuMap extends MapRenderer {
       }
     });
     Timeline.timeSync('vmap.gpu.submit', () => _frames.submit(buffers, _heap));
-    _frames.drawn(layers, view);
+    _frames.drawn(layers, view, snapshot: f.planes == null);
+    if (f.planes != null) _frames.takeLast();
     return reveal.animating ||
         presence.animating ||
         sprites.loading ||
@@ -478,7 +481,12 @@ class GpuMap extends MapRenderer {
 
   @override
   bool presentUntil(ui.Canvas canvas, int run) {
-    _frames.presentUntil(canvas, run, warps: _in?.terrain == null);
+    _frames.presentUntil(
+      canvas,
+      run,
+      warps: _in?.terrain == null,
+      planes: _in?.planes,
+    );
     return false;
   }
 

@@ -249,6 +249,10 @@ abstract base class GpuHost {
   /// backend cannot adopt it.
   Texture? imageToTexture(ui.Image image);
 
+  /// Hands [texture] over as a browser `ImageBitmap` for a page canvas to
+  /// show, or null where there is no page.
+  Object? textureToBitmap(Texture texture);
+
   /// Presents [texture] through the backend's own offscreen canvas path.
   Future<ui.Image> present(Texture texture, {bool transferOwnership = false});
 }

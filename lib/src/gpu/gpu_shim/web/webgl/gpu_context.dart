@@ -58,6 +58,7 @@ final class WebGlContext extends GpuContext {
   bool get clipDepthZeroToOne => _clipDepthZeroToOne;
 
   late final web.OffscreenCanvas _canvas;
+
   late final web.WebGL2RenderingContext _gl;
 
   /// Cached vertex-array objects keyed by (pipeline, vertex streams, index
@@ -403,6 +404,12 @@ final class WebGlContext extends GpuContext {
       'createImageFromImageBitmap returned a Future; expected a synchronous '
       'ui.Image on this renderer.',
     );
+  }
+
+  /// [texture] as an `ImageBitmap`, taken from the OffscreenCanvas.
+  web.ImageBitmap textureBitmap(Texture texture) {
+    _blitTextureToCanvas(texture);
+    return _canvas.transferToImageBitmap();
   }
 
   /// Blit [texture] onto the OffscreenCanvas and return it as a `ui.Image`

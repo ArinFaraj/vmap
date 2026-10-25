@@ -28,6 +28,9 @@ class GpuHost {
   /// routine answer callers are expected to handle by reading back instead.
   /// Resolving the context is part of that, since asking for one where Impeller
   /// is disabled throws.
+  /// Null: there is no page to show a texture in.
+  Object? textureToBitmap(Texture texture) => null;
+
   Texture? imageToTexture(ui.Image image) {
     try {
       return Texture.fromImage(gpuContext, image);

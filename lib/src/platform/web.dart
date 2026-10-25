@@ -80,17 +80,33 @@ Future<Uint8List> gunzip(Uint8List bytes) async {
 /// JavaScript renderer for milliseconds, far more when the machine is busy.
 /// The WebAssembly renderer runs out of memory drawing that much text, and
 /// makes an image at no cost, so it keeps the images.
-const bool directLabels = !bool.fromEnvironment('dart.tool.dart2wasm');
+const bool directLabels = _javaScript;
+
+const _javaScript = !bool.fromEnvironment('dart.tool.dart2wasm');
 
 /// The image to make a shader of. The web engine's image shader releases
 /// the image it is given when it is disposed, so it gets a handle of its own.
 ui.Image forShader(ui.Image image) => image.clone();
 
 /// An image of [pixels], premultiplied RGBA rows [width] wide, as Flutter
-/// takes raw pixels. Made through an `ImageBitmap`, since decoding raw
-/// pixels freezes the page under the WebAssembly renderer; `ImageData` is
+/// takes raw pixels. The JavaScript renderer, which Safari always gets,
+/// keeps an image of pixels on the GPU once drawn, but uploads an image
+/// made from an `ImageBitmap` again at every draw: a page of label glyphs
+/// fifteen times a frame. The WebAssembly renderer freezes the page
+/// decoding raw pixels, so it takes an `ImageBitmap`; `ImageData` is
 /// unpremultiplied, so the colours are divided by alpha first.
 Future<ui.Image> imageFromRgba(Uint8List pixels, int width, int height) async {
+  if (_javaScript) {
+    final done = Completer<ui.Image>();
+    ui.decodeImageFromPixels(
+      pixels,
+      width,
+      height,
+      ui.PixelFormat.rgba8888,
+      done.complete,
+    );
+    return done.future;
+  }
   final straight = Uint8ClampedList(pixels.length);
   for (var i = 0; i < pixels.length; i += 4) {
     final a = pixels[i + 3];

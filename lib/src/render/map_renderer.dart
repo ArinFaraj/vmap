@@ -8,6 +8,7 @@ import '../terrain/terrain.dart';
 import '../tiles/tiles.dart' show LoadedTile, TileDraw;
 import '../camera/view.dart';
 import '../stats.dart';
+import 'frame_planes.dart';
 import 'zoom_history.dart';
 
 /// One tile of a raster layer as drawn this frame: [source] of [image]
@@ -34,6 +35,7 @@ class RenderFrame {
     required this.styleZoom,
     required this.devicePixelRatio,
     required this.stats,
+    this.planes,
     this.sprites,
     this.terrain,
     this.rasters = const [],
@@ -70,6 +72,10 @@ class RenderFrame {
 
   /// What the renderer counts as it draws the frame.
   final VmapStats stats;
+
+  /// Where the GPU's images go on the web, as page elements between the
+  /// canvas's pictures; null to draw them on the canvas.
+  final FramePlanes? planes;
 }
 
 /// Draws the map's fill, line and circle layers and its buildings: the GPU
