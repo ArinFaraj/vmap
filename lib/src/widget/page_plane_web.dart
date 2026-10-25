@@ -1,7 +1,19 @@
+import 'dart:ui_web' as ui_web;
+
 import 'package:flutter/widgets.dart';
 import 'package:web/web.dart' as web;
 
 import '../render/frame_planes.dart';
+
+/// Whether the map shows its GPU images in page elements: in Safari and
+/// Firefox, where Flutter draws a frame on the page at once, as these
+/// elements are, and where copying an image into Flutter's own WebGL
+/// context goes through the CPU. Elsewhere Flutter shows its frame a frame
+/// or more later, from another thread, so the map is drawn into it.
+bool get pageShowsGpuImages => switch (ui_web.browser.browserEngine) {
+  ui_web.BrowserEngine.webkit || ui_web.BrowserEngine.firefox => true,
+  _ => false,
+};
 
 /// A page element showing GPU images laid over each other: a canvas for
 /// each, which takes its image without a copy.

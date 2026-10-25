@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kIsWeb, listEquals;
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:latlong2/latlong.dart';
@@ -18,6 +18,7 @@ import '../tiles/query.dart';
 import '../style/style.dart';
 import '../labels/text_style.dart';
 import 'markers.dart';
+import 'page_plane.dart' show pageShowsGpuImages;
 import 'planes_view.dart';
 import 'vmap_controller.dart';
 
@@ -394,7 +395,7 @@ class _VmapState extends State<Vmap>
               // The map paints every frame it moves; left in the semantics
               // tree it has an accessibility service walk it every frame.
               ExcludeSemantics(
-                child: kIsWeb
+                child: pageShowsGpuImages
                     ? PlanesView(
                         engine: engine,
                         controller: _c,

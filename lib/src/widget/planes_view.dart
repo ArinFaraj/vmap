@@ -6,10 +6,11 @@ import '../render/frame_planes.dart';
 import 'page_plane.dart';
 import 'vmap_controller.dart';
 
-/// The map on the web: each frame's canvas pictures painted in turn with
-/// the GPU's images in page elements between them, which the browser lays
-/// over each other on the GPU. Safari copies an image into Flutter's own
-/// WebGL context on the CPU, about 50 ms for a frame the size of a window.
+/// The map in Safari and Firefox: each frame's canvas pictures painted in
+/// turn with the GPU's images in page elements between them, which the
+/// browser lays over each other on the GPU. Safari copies an image into
+/// Flutter's own WebGL context on the CPU, about 50 ms for a frame the size
+/// of a window.
 class PlanesView extends StatefulWidget {
   const PlanesView({
     required this.engine,
