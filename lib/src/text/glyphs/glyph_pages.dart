@@ -173,25 +173,46 @@ class GlyphPages {
   /// out while its size steps. The page the cell came from is left in
   /// [found], for its scale.
   GlyphCell? cell(PageKey key, int face, int glyph) {
-    final page = this.page(key);
+    if (_lookedUpFrame != _frame || _lookedUp != key) {
+      _lookedUp = key;
+      _lookedUpFrame = _frame;
+      _exact = this.page(key);
+      _nearFound = false;
+    }
+    final page = _exact!;
     final exact = page.cell(face, glyph);
     if (exact != null) {
       found = page;
       return exact;
     }
-    for (var step = 1; step <= 4; step++) {
-      for (var sign = 1; sign >= -1; sign -= 2) {
-        final near = _pages[nearbyKey(key, step * sign)];
-        final cell = near?.peek(face, glyph);
-        if (cell != null) {
-          near!.usedFrame = _frame;
-          found = near;
-          return cell;
+    if (!_nearFound) {
+      var i = 0;
+      for (var step = 1; step <= 4; step++) {
+        for (var sign = 1; sign >= -1; sign -= 2) {
+          _near[i++] = _pages[nearbyKey(key, step * sign)];
         }
+      }
+      _nearFound = true;
+    }
+    for (final near in _near) {
+      final cell = near?.peek(face, glyph);
+      if (cell != null) {
+        near!.usedFrame = _frame;
+        found = near;
+        return cell;
       }
     }
     return null;
   }
+
+  /// The page of the key [cell] last served this frame and, once a glyph
+  /// missed there, the pages of its nearest sizes, nearest first: a
+  /// label's glyphs share one key, which is then hashed once a label.
+  PageKey? _lookedUp;
+  int _lookedUpFrame = -1;
+  GlyphPage? _exact;
+  bool _nearFound = false;
+  final List<GlyphPage?> _near = List.filled(8, null);
 
   /// Hands the rasterizer the glyphs of a style glyph range.
   void addPbf(int face, List<PbfGlyph> glyphs) => _worker.addPbf(face, glyphs);
@@ -354,6 +375,7 @@ class GlyphPages {
       p.dispose();
     }
     _pages.clear();
+    _lookedUp = null;
     _worker.dispose();
   }
 }
