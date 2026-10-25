@@ -319,7 +319,7 @@ class _VmapState extends State<Vmap>
   }
 
   void _checkIdleCamera() {
-    if (!_cameraPending || _c.isMoving || _gestures.touching) return;
+    if (!_cameraPending || _c.isMoving || _gestures.active) return;
     _cameraPending = false;
     widget.onCameraIdle?.call(_c.camera);
   }

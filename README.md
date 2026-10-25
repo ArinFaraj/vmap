@@ -21,7 +21,7 @@
   correctly, and labels are placed as MapLibre places them, steady while the
   map moves.
 - **Flutter all the way down.** One widget, markers that are widgets, and
-  gestures for touch, mouse, trackpad and keyboard. No platform views.
+  gestures for touch, mouse, trackpad and keyboard.
 - **Your data.** GeoJSON with clustering, feature state for highlighting,
   and taps that tell you what was hit.
 - **Offline.** A disk cache, regions downloaded ahead, and PMTiles archives.
@@ -148,7 +148,7 @@ of the map free, under a bottom sheet for example. `toScreen` and
 | --- | --- |
 | Touch | One finger pans. Two pinch to zoom and twist to turn, and tilt when dragged up or down together. A double tap zooms in, a two finger tap zooms out, and a double tap held and dragged zooms. |
 | Mouse | The wheel zooms about the pointer. A double click zooms in, and with shift, out. A right drag or a control drag turns and tilts. A shift drag zooms to the box it draws. |
-| Trackpad | Two fingers slide the map, a pinch zooms about the fingers, and a twist turns it. |
+| Trackpad | In a browser, as on MapLibre GL JS maps: two fingers sliding up or down zoom, as does a pinch. In an app, two fingers slide the map, a pinch zooms about the fingers, and a twist turns it. |
 | Keyboard | Once the map has focus: the arrows pan, shift with them turns and tilts, and `+` and `-` zoom a level, two with shift. |
 
 `gestures` switches them off one by one, by MapLibre GL JS's handler
@@ -160,15 +160,15 @@ Vmap(
     rotate: false, // nothing turns the map
     boxZoom: false,
     scrollZoom: false,
-    wheelZoomRate: 1 / 450,
+    wheelZoomRate: 1 / 300,
   ),
 )
 ```
 
 | Option | MapLibre GL JS | What it switches |
 | --- | --- | --- |
-| `dragPan` | `dragPan` | one finger, a mouse drag, a trackpad slide |
-| `scrollZoom` | `scrollZoom` | the mouse wheel and a trackpad pinch |
+| `dragPan` | `dragPan` | one finger, a mouse drag, two fingers sliding in an app |
+| `scrollZoom` | `scrollZoom` | the mouse wheel, and in a browser two fingers on a trackpad |
 | `boxZoom` | `boxZoom` | a shift drag zooming to a box |
 | `dragRotate`, `pitchWithRotate` | `dragRotate`, `pitchWithRotate` | a right or control drag turning, and tilting |
 | `keyboard` | `keyboard` | the arrows, `+` and `-` |

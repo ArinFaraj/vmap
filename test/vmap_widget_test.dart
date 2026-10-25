@@ -1,8 +1,9 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/gestures.dart';
 import 'package:vmap/vmap.dart';
 
 const _empty = VmapStyle.json({
@@ -51,6 +52,10 @@ Future<VmapController> _pump(
   await tester.pump();
   return controller;
 }
+
+/// The levels MapLibre GL JS zooms for [delta] pixels of wheel at [rate].
+double _wheelLevels(double delta, double rate) =>
+    math.log(2 / (1 + math.exp(-delta * rate))) / math.ln2;
 
 Future<void> _settle(WidgetTester tester) async {
   for (var i = 0; i < 40; i++) {
@@ -132,7 +137,7 @@ void main() {
     await tester.sendEventToBinding(mouse.hover(const Offset(600, 150)));
     await tester.sendEventToBinding(mouse.scroll(const Offset(0, -300)));
     await _settle(tester);
-    expect(c.camera.zoom, closeTo(13, 1e-6));
+    expect(c.camera.zoom, closeTo(12 + _wheelLevels(300, 1 / 450), 1e-6));
     final now = c.toScreen(spot)!;
     expect(now.dx, closeTo(600, 1));
     expect(now.dy, closeTo(150, 1));
@@ -288,34 +293,25 @@ void main() {
     }
   });
 
-  testWidgets('two fingers sliding on a trackpad in a browser pan the map', (
+  testWidgets('a trackpad scroll zooms frame by frame about the pointer', (
     tester,
   ) async {
-    final c = await _pump(tester);
-    final spot = c.toLatLng(const Offset(400, 300))!;
-    final pad = TestPointer(1, PointerDeviceKind.trackpad);
-    await tester.sendEventToBinding(pad.hover(const Offset(400, 300)));
-    await tester.sendEventToBinding(pad.scroll(const Offset(60, 0)));
-    await tester.pump();
-    expect(c.camera.zoom, closeTo(12, 1e-9));
-    final now = c.toScreen(spot)!;
-    expect(now.dx, closeTo(340, 1));
-    expect(now.dy, closeTo(300, 1));
-  });
-
-  testWidgets('a trackpad pinch in a browser zooms at once about the fingers', (
-    tester,
-  ) async {
-    final c = await _pump(tester);
+    var idle = 0;
+    final c = await _pump(tester, onCameraIdle: (_) => idle++);
     final spot = c.toLatLng(const Offset(600, 150))!;
     final pad = TestPointer(1, PointerDeviceKind.trackpad);
     await tester.sendEventToBinding(pad.hover(const Offset(600, 150)));
-    await tester.sendEventToBinding(pad.scale(2));
-    await tester.pump();
-    expect(c.camera.zoom, closeTo(13, 1e-6));
+    for (var i = 0; i < 10; i++) {
+      await tester.sendEventToBinding(pad.scroll(const Offset(0, -3)));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(c.camera.zoom, closeTo(12 + 10 * _wheelLevels(3, 1 / 100), 1e-6));
     final now = c.toScreen(spot)!;
     expect(now.dx, closeTo(600, 1));
     expect(now.dy, closeTo(150, 1));
+    expect(idle, 0);
+    await _settle(tester);
+    expect(idle, 1);
   });
 
   testWidgets('a shift double click zooms out', (tester) async {
@@ -401,29 +397,6 @@ void main() {
     await _settle(tester);
     expect(c.camera.zoom, closeTo(13, 1e-6));
   });
-
-  testWidgets(
-    "a pinch Safari reports with its own events zooms and turns the map",
-    (tester) async {
-      final c = await _pump(tester);
-      final spot = c.toLatLng(const Offset(500, 200))!;
-      final gestures = tester
-          .widget<MapGestureDetector>(find.byType(MapGestureDetector))
-          .recognizer;
-      gestures.pinchStart(const Offset(500, 200));
-      for (var i = 1; i <= 10; i++) {
-        gestures.pinchUpdate(const Offset(500, 200), 1 + i * 0.1, i * 1.0);
-        await tester.pump(const Duration(milliseconds: 16));
-      }
-      final now = c.toScreen(spot)!;
-      expect(c.camera.zoom, closeTo(13, 1e-6));
-      expect(c.camera.bearing, closeTo(-10, 1e-6));
-      expect(now.dx, closeTo(500, 1));
-      expect(now.dy, closeTo(200, 1));
-      gestures.pinchEnd();
-      await _settle(tester);
-    },
-  );
 
   testWidgets('a native trackpad pans, pinches and turns the map', (
     tester,
@@ -527,7 +500,7 @@ void main() {
       await tester.sendEventToBinding(mouse.hover(const Offset(400, 300)));
       await tester.sendEventToBinding(mouse.scroll(const Offset(0, -150)));
       await _settle(tester);
-      expect(c.camera.zoom, closeTo(13, 1e-6));
+      expect(c.camera.zoom, closeTo(12 + _wheelLevels(150, 1 / 150), 1e-6));
     });
 
     testWidgets('without double click zoom a double tap is two taps', (

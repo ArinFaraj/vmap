@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -41,31 +43,26 @@ Future<void> _settle(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('wheel notches add up to whole zoom steps', (tester) async {
+  testWidgets('a wheel step zooms as MapLibre GL JS does', (tester) async {
     final c = await _pump(tester);
     final mouse = TestPointer(1, PointerDeviceKind.mouse);
     await tester.sendEventToBinding(mouse.hover(const Offset(400, 300)));
-    await tester.sendEventToBinding(mouse.scroll(const Offset(0, -150)));
-    await tester.pump(const Duration(milliseconds: 50));
-    await tester.sendEventToBinding(mouse.scroll(const Offset(0, -150)));
+    await tester.sendEventToBinding(mouse.scroll(const Offset(0, -300)));
     await _settle(tester);
-    expect(c.camera.zoom, closeTo(13, 1e-6));
+    expect(
+      c.camera.zoom,
+      closeTo(12 + math.log(2 / (1 + math.exp(-300 / 450))) / math.ln2, 1e-6),
+    );
   });
 
-  testWidgets('a trackpad slide in a browser pans and a pinch zooms', (
-    tester,
-  ) async {
+  testWidgets('a trackpad scroll zooms rather than pans', (tester) async {
     final c = await _pump(tester);
     final pad = TestPointer(1, PointerDeviceKind.trackpad);
     await tester.sendEventToBinding(pad.hover(const Offset(400, 300)));
-    final before = c.camera.center;
-    await tester.sendEventToBinding(pad.scroll(const Offset(80, 0)));
-    await tester.pump();
-    expect(c.camera.center.longitude, greaterThan(before.longitude));
-    expect(c.camera.zoom, closeTo(12, 1e-9));
-    await tester.sendEventToBinding(pad.scale(2));
-    await tester.pump();
-    expect(c.camera.zoom, closeTo(13, 1e-6));
+    final before = c.camera;
+    await tester.sendEventToBinding(pad.scroll(const Offset(0, -3)));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(c.camera.zoom, greaterThan(before.zoom));
   });
 
   testWidgets('a native trackpad pans, pinches and turns', (tester) async {

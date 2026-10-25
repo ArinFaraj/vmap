@@ -27,17 +27,20 @@ moved to an adapter package. This release changes most of the public API:
 - `VmapGestureOptions` switches each gesture off by MapLibre GL JS's
   handler names (`dragPan`, `scrollZoom`, `boxZoom`, `dragRotate`,
   `keyboard`, `doubleClickZoom`, `touchZoomRotate`, `touchPitch`), with
-  `rotate`, `pitch`, `inertia`, `wheelZoomRate` and `rotateThreshold`. It
+  `rotate`, `pitch`, `inertia`, `zoomRate`, `wheelZoomRate` and
+  `rotateThreshold`. It
   takes the place of `interactive`, `rotate`, `tilt` and `keyboard`.
-- A trackpad pinch in Safari zooms and turns the map. Safari reports it
-  with gesture events of its own, which vmap takes from the page's zoom.
+- The mouse wheel and a trackpad zoom as MapLibre GL JS's scroll zoom
+  does: a wheel and a trackpad told apart by their deltas and timing, a
+  wheel's steps eased, a trackpad followed frame by frame. In a browser
+  two fingers on a trackpad zoom, as does a pinch, which vmap reads from
+  the page's own events, Safari's pinch included.
 - `package:vmap/gestures.dart` exports the gesture recognizer behind `Vmap`,
   so another host can drive its own camera with the same gestures.
 - Gestures follow MapLibre GL JS: a shift double click zooms out, a shift
   drag zooms to the box it draws, a control drag turns and tilts as a right
-  drag does, `+` and `-` go to the next whole zoom and two with shift, a
-  trackpad in a browser slides the map with two fingers and zooms at once
-  with a pinch, and a right drag in a browser keeps the page's menu away.
+  drag does, `+` and `-` go to the next whole zoom and two with shift, and
+  a right drag in a browser keeps the page's menu away.
   The pointer is a hand over the map.
 - `dart run vmap:setup` switches Flutter GPU on in an app's Android,
   iOS, macOS, Windows and Linux folders and lets the app load tiles;

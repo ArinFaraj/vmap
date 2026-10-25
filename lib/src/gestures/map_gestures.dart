@@ -6,9 +6,10 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
-import 'browser_pinch.dart';
+import 'browser_wheel.dart';
 import 'gesture_options.dart';
 import 'gesture_target.dart';
+import 'wheel_zoom.dart';
 
 enum _Gesture { undecided, pan, pinch, tilt, quickZoom, turnTilt, box }
 
@@ -116,8 +117,9 @@ class MapGestureRecognizer {
     SystemMouseCursors.grab,
   );
 
-  /// Whether a finger, or a mouse button, is down on the map.
-  bool get touching => _fingers.isNotEmpty;
+  /// Whether a gesture is under way: fingers down, or a wheel zoom not
+  /// yet come to rest.
+  bool get active => _fingers.isNotEmpty || _scrollZoom.zooming;
 
   /// The next pointer down is on something above the map that takes its
   /// own tap, as a marker: it may still pan the map.
@@ -161,17 +163,18 @@ class MapGestureRecognizer {
   bool _longPressed = false;
   Timer? _longPress;
 
-  /// The zoom the mouse wheel is easing towards.
-  double? _wheelZoom;
+  late final WheelZoom _scrollZoom = WheelZoom(
+    () => target,
+    onEnd: () {
+      if (!_disposed) onSettle?.call();
+    },
+  );
 
   /// A double click with shift held zooms out rather than in.
   bool _zoomOutTap = false;
 
   Offset _boxStart = Offset.zero;
 
-  /// Scroll events have no end: the camera is idle a moment after the
-  /// last one.
-  Timer? _scrollSettle;
   Offset _trackpadLast = Offset.zero;
   double _trackpadScale = 1, _trackpadTurn = 0;
   bool _trackpad = false;
@@ -249,7 +252,6 @@ class MapGestureRecognizer {
     _onMarker = false;
     if (options.keyboard) focus.requestFocus();
     target.stop();
-    _wheelZoom = null;
     _fingers[e.pointer] = e.localPosition;
     _downAt[e.pointer] = e.timeStamp;
     _most = math.max(_most, _fingers.length);
@@ -567,28 +569,24 @@ class MapGestureRecognizer {
     const Duration(milliseconds: 300),
   );
 
+  /// A scroll from Flutter. In a browser the map reads the page's own
+  /// wheel events instead, through [wheel].
   void signal(PointerSignalEvent e) {
     final wanted = switch (e) {
-      PointerScrollEvent(kind: PointerDeviceKind.trackpad) => options.dragPan,
-      PointerScrollEvent() || PointerScaleEvent() => options.scrollZoom,
+      PointerScrollEvent() => !kIsWeb && options.scrollZoom,
       PointerScrollInertiaCancelEvent() => options.any,
       _ => false,
     };
     if (!wanted) return;
     GestureBinding.instance.pointerSignalResolver.register(e, (event) {
       switch (event) {
-        case PointerScrollEvent(
-          kind: PointerDeviceKind.trackpad,
-          :final scrollDelta,
-          :final localPosition,
-        ):
-          _trackpadScroll(scrollDelta, localPosition);
         case PointerScrollEvent(:final scrollDelta, :final localPosition):
-          if (scrollDelta.dy == 0) return;
-          _wheel(-scrollDelta.dy * options.wheelZoomRate, localPosition);
-        case PointerScaleEvent(:final scale, :final localPosition):
-          if (scale <= 0 || _browserPinch) return;
-          _pinchStep(math.log(scale) / math.ln2, localPosition);
+          wheel((
+            deltaY: scrollDelta.dy,
+            lines: false,
+            shift: HardwareKeyboard.instance.isShiftPressed,
+            at: localPosition,
+          ));
         case PointerScrollInertiaCancelEvent():
           target.stop();
         default:
@@ -596,45 +594,13 @@ class MapGestureRecognizer {
     });
   }
 
-  /// Two fingers sliding on a trackpad, as a browser reports them: the map
-  /// slides with them, as it does on a trackpad elsewhere, with the
-  /// system's own momentum.
-  void _trackpadScroll(Offset delta, Offset at) {
-    if (delta == Offset.zero) return;
-    target.stop();
-    _wheelZoom = null;
-    target.jump(MapGestureStep(from: at, to: at - delta));
-    _settleScroll();
-  }
-
-  /// A step of a pinch on a trackpad, as a browser reports it: applied at
-  /// once about the fingers, as the many small steps already glide.
-  void _pinchStep(double levels, Offset at) {
-    target.stop();
-    _wheelZoom = null;
-    target.jump(MapGestureStep(around: at, zoomBy: levels));
-    _settleScroll();
-  }
-
-  void _settleScroll() {
-    _scrollSettle?.cancel();
-    _scrollSettle = Timer(const Duration(milliseconds: 150), () {
-      if (!_disposed) onSettle?.call();
-    });
-  }
-
-  /// Zooms by [levels] about [at], easing so a wheel's steps glide.
-  void _wheel(double levels, Offset at) {
-    final zoom = target.zoom;
-    final to = _clampZoom(
-      ((target.isMoving ? _wheelZoom : null) ?? zoom) + levels,
-    );
-    _wheelZoom = to;
-    target.ease(
-      MapGestureStep(around: at, zoomBy: to - zoom),
-      const Duration(milliseconds: 160),
-      curve: Curves.easeOut,
-    );
+  /// A wheel event, zoomed by as MapLibre GL JS's scroll zoom does.
+  void wheel(WheelInput input) {
+    if (!options.scrollZoom) return;
+    _scrollZoom
+      ..zoomRate = options.zoomRate
+      ..wheelZoomRate = options.wheelZoomRate
+      ..wheel(input);
   }
 
   void panZoomStart(PointerPanZoomStartEvent e) {
@@ -685,49 +651,6 @@ class MapGestureRecognizer {
     _coast(_lastFocal, e.timeStamp);
     onSettle?.call();
   }
-
-  /// Whether a pinch the browser reports apart from pointers is under way.
-  bool _browserPinch = false;
-
-  /// A trackpad pinch beginning about [at], as Safari reports it: with
-  /// gesture events of its own rather than as pointers or scrolls.
-  void pinchStart(Offset at) {
-    _browserPinch = _trackpadMoves;
-    if (!_browserPinch) return;
-    target.stop();
-    _wheelZoom = null;
-    _trackpadScale = 1;
-    _trackpadTurn = 0;
-    _lastFocal = at;
-    _resetChannels(_now);
-  }
-
-  /// The pinch at [scale] and turned [degrees] clockwise since it began.
-  void pinchUpdate(Offset at, double scale, double degrees) {
-    if (!_browserPinch) return;
-    final zoomBy = options.scrollZoom && scale > 0 && _trackpadScale > 0
-        ? math.log(scale / _trackpadScale) / math.ln2
-        : 0.0;
-    _trackpadScale = scale;
-    final turn = _pinchTurns ? -(degrees - _trackpadTurn) : 0.0;
-    _trackpadTurn = degrees;
-    _zoomTotal += zoomBy;
-    _turnTotal += turn;
-    target.jump(MapGestureStep(around: at, zoomBy: zoomBy, turn: turn));
-    _lastFocal = at;
-    _record(_now);
-  }
-
-  void pinchEnd() {
-    if (!_browserPinch) return;
-    _browserPinch = false;
-    _gesture = _Gesture.undecided;
-    _coast(_lastFocal, _now);
-    onSettle?.call();
-  }
-
-  static final Stopwatch _clock = Stopwatch()..start();
-  static Duration get _now => _clock.elapsed;
 
   KeyEventResult key(FocusNode node, KeyEvent e) {
     if (!options.keyboard || e is KeyUpEvent) return KeyEventResult.ignored;
@@ -792,7 +715,7 @@ class MapGestureRecognizer {
     _disposed = true;
     _options.dispose();
     _longPress?.cancel();
-    _scrollSettle?.cancel();
+    _scrollZoom.dispose();
     _releaseContextMenu();
     box.dispose();
     cursor.dispose();
@@ -820,27 +743,29 @@ class MapGestureDetector extends StatefulWidget {
 
 class _MapGestureDetectorState extends State<MapGestureDetector> {
   final _listener = GlobalKey();
-  VoidCallback? _stopPinch;
+  VoidCallback? _stopWheel;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!kIsWeb) return;
-    _stopPinch?.call();
+    _stopWheel?.call();
     final viewId = View.of(context).viewId;
-    _stopPinch = listenBrowserPinch(
+    _stopWheel = listenBrowserWheel(
       viewId: viewId,
       owns: (point) => _hits(point, viewId),
-      start: (point) => widget.recognizer.pinchStart(_local(point)),
-      update: (point, scale, degrees) =>
-          widget.recognizer.pinchUpdate(_local(point), scale, degrees),
-      end: () => widget.recognizer.pinchEnd(),
+      onWheel: (input) => widget.recognizer.wheel((
+        deltaY: input.deltaY,
+        lines: input.lines,
+        shift: input.shift,
+        at: _local(input.at),
+      )),
     );
   }
 
   @override
   void dispose() {
-    _stopPinch?.call();
+    _stopWheel?.call();
     super.dispose();
   }
 

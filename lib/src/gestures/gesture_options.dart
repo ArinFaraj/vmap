@@ -24,7 +24,8 @@ class VmapGestureOptions {
     this.rotate = true,
     this.pitch = true,
     this.inertia = true,
-    this.wheelZoomRate = 1 / 300,
+    this.zoomRate = 1 / 100,
+    this.wheelZoomRate = 1 / 450,
     this.rotateThreshold = 0.26 * 180 / math.pi,
   });
 
@@ -40,11 +41,12 @@ class VmapGestureOptions {
     touchPitch: false,
   );
 
-  /// One finger or the mouse dragging, two fingers sliding on a trackpad,
-  /// and the middle of two fingers moving while they pinch.
+  /// One finger or the mouse dragging, and the middle of two fingers
+  /// moving while they pinch.
   final bool dragPan;
 
-  /// The mouse wheel, and a pinch on a trackpad.
+  /// The mouse wheel, and two fingers sliding or pinching on a trackpad,
+  /// as MapLibre GL JS's scroll zoom takes them.
   final bool scrollZoom;
 
   /// A shift drag zooms to the box it draws.
@@ -79,7 +81,10 @@ class VmapGestureOptions {
   /// Released gestures keep their speed and slow down, rather than stop.
   final bool inertia;
 
-  /// Zoom levels per pixel the mouse wheel scrolls.
+  /// How fast a trackpad zooms, MapLibre GL JS's `setZoomRate`.
+  final double zoomRate;
+
+  /// How fast the mouse wheel zooms, MapLibre GL JS's `setWheelZoomRate`.
   final double wheelZoomRate;
 
   /// Degrees two fingers twist before they turn the map, so a pinch does
@@ -110,6 +115,7 @@ class VmapGestureOptions {
     bool? rotate,
     bool? pitch,
     bool? inertia,
+    double? zoomRate,
     double? wheelZoomRate,
     double? rotateThreshold,
   }) => VmapGestureOptions(
@@ -125,6 +131,7 @@ class VmapGestureOptions {
     rotate: rotate ?? this.rotate,
     pitch: pitch ?? this.pitch,
     inertia: inertia ?? this.inertia,
+    zoomRate: zoomRate ?? this.zoomRate,
     wheelZoomRate: wheelZoomRate ?? this.wheelZoomRate,
     rotateThreshold: rotateThreshold ?? this.rotateThreshold,
   );
@@ -144,6 +151,7 @@ class VmapGestureOptions {
       other.rotate == rotate &&
       other.pitch == pitch &&
       other.inertia == inertia &&
+      other.zoomRate == zoomRate &&
       other.wheelZoomRate == wheelZoomRate &&
       other.rotateThreshold == rotateThreshold;
 
@@ -161,6 +169,7 @@ class VmapGestureOptions {
     rotate,
     pitch,
     inertia,
+    zoomRate,
     wheelZoomRate,
     rotateThreshold,
   );
