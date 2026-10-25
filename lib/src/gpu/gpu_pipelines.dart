@@ -196,6 +196,28 @@ class GpuPipelines {
           Float32List.fromList([-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1]),
         ),
       );
+      final compositeFragment = library['CompositeFragment'];
+      if (compositeFragment != null) {
+        composite = gpu.gpuContext.createRenderPipeline(
+          heatVertex,
+          compositeFragment,
+          vertexLayout: const gpu.VertexLayout(
+            buffers: [
+              gpu.VertexBuffer(
+                strideInBytes: 8,
+                attributes: [
+                  gpu.VertexAttribute(
+                    name: 'position',
+                    format: gpu.VertexFormat.float32x2,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+        compositeInfo = compositeFragment.getUniformSlot('CompositeInfo');
+        compositeLayer = compositeFragment.getUniformSlot('layer');
+      }
     }
   }
 
@@ -215,6 +237,9 @@ class GpuPipelines {
       buildingSheet,
       buildingSprites;
   gpu.RenderPipeline? ground, globe, stencil, heat;
+
+  /// Lays an image drawn whole over the map at an opacity.
+  gpu.RenderPipeline? composite;
   gpu.UniformSlot? groundFrame,
       groundDem,
       groundHeights,
@@ -224,7 +249,9 @@ class GpuPipelines {
       stencilFrame,
       heatInfo,
       heatDensity,
-      heatRamp;
+      heatRamp,
+      compositeInfo,
+      compositeLayer;
 
   /// A tile's square in tile units, two triangles.
   gpu.DeviceBuffer? quad;

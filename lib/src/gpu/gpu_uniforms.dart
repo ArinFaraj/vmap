@@ -438,7 +438,9 @@ class LayerSlots {
   /// Writes the slots [from] to [to] of [stream] into the slot table, in
   /// tile units for a tile [scale] screen pixels to the unit on a map
   /// turned [bearing] degrees.
-  void fill(
+  /// Writes slots [from] to [to] of [d]'s stream from the start of
+  /// [slots], and returns their bytes.
+  ByteData fill(
     StyleSheet sheet,
     TileDraw d,
     TileGpu data,
@@ -484,5 +486,6 @@ class LayerSlots {
         bearing: bearing,
       );
     }
+    return ByteData.sublistView(slots, 0, (to - from) * LayerPaint.slotFloats);
   }
 }

@@ -133,12 +133,22 @@ class GpuFrames {
   /// The texture the device's state is warmed up in.
   gpu.Texture get spare => _ring.last.map;
 
-  gpu.RenderPass beginPass(gpu.CommandBuffer commands, gpu.Texture target) {
+  /// A pass drawing into [target], cleared first unless it [keeps] what
+  /// is there.
+  gpu.RenderPass beginPass(
+    gpu.CommandBuffer commands,
+    gpu.Texture target, {
+    bool keeps = false,
+  }) {
     final samples = sampled ? _samples : null;
     return commands.createRenderPass(
       gpu.RenderTarget.singleColor(
         samples == null
-            ? gpu.ColorAttachment(texture: target, clearValue: Vector4.zero())
+            ? gpu.ColorAttachment(
+                texture: target,
+                loadAction: keeps ? gpu.LoadAction.load : gpu.LoadAction.clear,
+                clearValue: Vector4.zero(),
+              )
             : gpu.ColorAttachment(
                 texture: samples,
                 resolveTexture: target,
@@ -171,7 +181,7 @@ class GpuFrames {
   /// its overlays from.
   FrameLayers begin(
     GpuDevice device, {
-    required MapPass Function(gpu.Texture target) passOn,
+    required MapPass Function(gpu.Texture target, {bool keeps}) passOn,
     required Heat? Function(StyleRun run) heatOf,
   }) {
     final frame = _ring[_next];

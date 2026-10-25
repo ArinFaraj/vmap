@@ -98,7 +98,8 @@ class VmapRenderOptions {
   /// Where the letters of labels come from.
   final VmapGlyphs glyphs;
 
-  /// Tiles kept in memory per source beyond those on screen.
+  /// The fewest tiles kept in memory per source beyond those on screen;
+  /// more are kept when the screen shows many, about five screens' worth.
   final int maxCachedTiles;
 }
 

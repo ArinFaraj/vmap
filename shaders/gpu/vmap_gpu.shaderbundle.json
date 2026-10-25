@@ -54,5 +54,9 @@
   "SdfFragment": {
     "type": "fragment",
     "file": "shaders/gpu/sdf.frag"
+  },
+  "CompositeFragment": {
+    "type": "fragment",
+    "file": "shaders/gpu/composite.frag"
   }
 }

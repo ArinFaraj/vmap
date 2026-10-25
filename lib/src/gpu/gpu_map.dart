@@ -244,11 +244,12 @@ class GpuMap extends MapRenderer {
     );
     final layers = _frames.begin(
       device,
-      passOn: (target) => MapPass(
+      passOn: (target, {keeps = false}) => MapPass(
         device,
         _frames.beginPass(
           (buffers..add(gpu.gpuContext.createCommandBuffer())).last,
           target,
+          keeps: keeps,
         ),
         f,
         clip,
@@ -257,6 +258,7 @@ class GpuMap extends MapRenderer {
     );
     final globe = p.globe == null ? null : view.globe;
     final raised = (terrain != null || globe != null) && p.ground != null;
+    layers.composites = !raised && !_frames.sampled && p.composite != null;
     if (raised) {
       // The raised ground holds every vector layer, laid after the
       // backgrounds and rasters under the labels.

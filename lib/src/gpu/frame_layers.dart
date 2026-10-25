@@ -28,7 +28,14 @@ class FrameLayers {
     pass = _passOn(texture);
   }
 
-  final MapPass Function(gpu.Texture target) _passOn;
+  final MapPass Function(gpu.Texture target, {bool keeps}) _passOn;
+
+  /// Whether an image drawn whole is laid over the one below on the GPU,
+  /// at its opacity, rather than handed over as an image of its own: one
+  /// image a frame where the canvas or a page lays fewer over each other.
+  /// Not over raised ground or with multisampling, whose depth and samples
+  /// a pass that goes on drawing would lose.
+  bool composites = false;
   final FrameImage Function() _next;
   final Heat? Function(StyleRun run) _heatOf;
   void Function(MapPass pass)? _setUp;
@@ -55,8 +62,8 @@ class FrameLayers {
     setUp(pass);
   }
 
-  MapPass _open(gpu.Texture target) {
-    final pass = _passOn(target);
+  MapPass _open(gpu.Texture target, {bool keeps = false}) {
+    final pass = _passOn(target, keeps: keeps);
     _setUp?.call(pass);
     return pass;
   }
@@ -100,6 +107,10 @@ class FrameLayers {
     }
     final (alone, aloneImage) = _next();
     draw(_open(alone));
+    if (composites) {
+      pass = _open(textures.last, keeps: true)..composite(alone, opacity);
+      return;
+    }
     final (above, aboveImage) = _next();
     pass = _open(above);
     shown

@@ -127,6 +127,35 @@ class MapPass {
       gpu.StencilConfig(compareFunction: gpu.CompareFunction.equal),
     );
 
+  /// Lays [image], drawn whole, over the whole screen at [opacity].
+  void composite(gpu.Texture image, double opacity) {
+    final p = _device.pipelines;
+    _heatValues[0] = opacity;
+    final nearest = gpu.SamplerOptions(
+      minFilter: gpu.MinMagFilter.nearest,
+      magFilter: gpu.MinMagFilter.nearest,
+      widthAddressMode: gpu.SamplerAddressMode.clampToEdge,
+      heightAddressMode: gpu.SamplerAddressMode.clampToEdge,
+    );
+    renderPass
+      ..clearBindings()
+      ..bindPipeline(p.composite!)
+      ..setCullMode(gpu.CullMode.none)
+      ..setDepthWriteEnable(false)
+      ..setDepthCompareOperation(gpu.CompareFunction.always)
+      ..setStencilConfig(gpu.StencilConfig())
+      ..setColorBlendEnable(true)
+      ..setColorBlendEquation(overBlend)
+      ..bindVertexBuffer(
+        gpu.BufferView(p.screen!, offsetInBytes: 0, lengthInBytes: 48),
+      )
+      ..bindUniform(p.compositeInfo!, _device.host.emplace(_heatBytes))
+      ..bindTexture(p.compositeLayer!, image, sampler: nearest)
+      ..draw(6)
+      ..clearBindings();
+    _marked = -1;
+  }
+
   /// Colours a heatmap's [density] through row [row] of the ramps, as
   /// opaque as [opacity], over the whole screen.
   void colorHeat(gpu.Texture density, double row, double opacity) {
@@ -281,7 +310,7 @@ class MapPass {
       final slotEnd = s + 5 < segments.length
           ? segments[s + 5]
           : stream.slots.length;
-      _device.paints.fill(
+      final written = _device.paints.fill(
         _sheet,
         d,
         data,
@@ -294,7 +323,7 @@ class MapPass {
       );
       renderPass.bindUniform(
         _device.pipelines.flatSlots,
-        host.emplace(_device.paints.slotBytes),
+        host.emplace(written, room: _device.paints.slotBytes.lengthInBytes),
       );
     }
 

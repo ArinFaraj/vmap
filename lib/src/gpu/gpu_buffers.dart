@@ -34,16 +34,20 @@ class UniformArena {
     _offset = 0;
   }
 
-  gpu.BufferView emplace(ByteData bytes) {
+  /// Writes [bytes] at the next aligned place, keeping at least [room]
+  /// bytes there: a uniform block is bound at its whole declared size, so
+  /// one written in part still needs that room.
+  gpu.BufferView emplace(ByteData bytes, {int room = 0}) {
     final length = bytes.lengthInBytes;
+    final kept = math.max(length, room);
     var at = (_offset + _align - 1) ~/ _align * _align;
     final blocks = _blocks[_frame];
-    if (blocks.isEmpty || at + length > _blockBytes) {
+    if (blocks.isEmpty || at + kept > _blockBytes) {
       if (blocks.isNotEmpty) _block++;
       at = 0;
     }
     while (blocks.length <= _block) {
-      blocks.add(gpu.createUniformBuffer(math.max(_blockBytes, length)));
+      blocks.add(gpu.createUniformBuffer(math.max(_blockBytes, kept)));
     }
     final buffer = blocks[_block];
     gpu.writeGeometryData(
@@ -53,7 +57,7 @@ class UniformArena {
           : bytes,
       destinationOffsetInBytes: at,
     );
-    _offset = at + length;
+    _offset = at + kept;
     return gpu.BufferView(buffer, offsetInBytes: at, lengthInBytes: length);
   }
 }

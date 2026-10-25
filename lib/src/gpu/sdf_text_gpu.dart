@@ -7,6 +7,7 @@ import 'package:vector_math/vector_math.dart' show Vector4;
 import '../labels/sdf_text.dart';
 import '../render/frame_planes.dart';
 import '../text/glyphs/glyph_pbf.dart';
+import 'gpu_buffers.dart' show framesInFlight;
 import 'gpu_device.dart';
 import 'gpu_shim/gpu.dart' as gpu;
 
@@ -41,9 +42,10 @@ class SdfTextGpu implements SdfText {
   ui.Size _size = ui.Size.zero;
   double _dpr = 1;
 
-  /// Six vertices a quad, 24 floats a vertex.
-  static const _floats = 24;
-  static const _quadFloats = 6 * _floats;
+  /// One instance a quad, 28 floats, drawn over the six corners of
+  /// [_corners].
+  static const _quadFloats = 28;
+  gpu.DeviceBuffer? _corners;
   Float32List _vertices = Float32List(_quadFloats * 256);
   Float32List _ordered = Float32List(_quadFloats * 256);
   int _count = 0;
@@ -79,45 +81,60 @@ class SdfTextGpu implements SdfText {
         vertexLayout: const gpu.VertexLayout(
           buffers: [
             gpu.VertexBuffer(
-              strideInBytes: _floats * 4,
+              strideInBytes: 8,
               attributes: [
                 gpu.VertexAttribute(
-                  name: 'position',
+                  name: 'corner',
                   format: gpu.VertexFormat.float32x2,
                 ),
+              ],
+            ),
+            gpu.VertexBuffer(
+              strideInBytes: _quadFloats * 4,
+              stepMode: gpu.VertexStepMode.instance,
+              attributes: [
                 gpu.VertexAttribute(
-                  name: 'texel',
-                  format: gpu.VertexFormat.float32x2,
-                  offsetInBytes: 8,
+                  name: 'placement',
+                  format: gpu.VertexFormat.float32x4,
                 ),
                 gpu.VertexAttribute(
-                  name: 'ink',
+                  name: 'axes',
                   format: gpu.VertexFormat.float32x4,
                   offsetInBytes: 16,
                 ),
                 gpu.VertexAttribute(
-                  name: 'halo',
+                  name: 'extent',
                   format: gpu.VertexFormat.float32x4,
                   offsetInBytes: 32,
                 ),
                 gpu.VertexAttribute(
-                  name: 'params',
+                  name: 'ink',
                   format: gpu.VertexFormat.float32x4,
                   offsetInBytes: 48,
                 ),
                 gpu.VertexAttribute(
-                  name: 'clip',
+                  name: 'halo',
                   format: gpu.VertexFormat.float32x4,
                   offsetInBytes: 64,
                 ),
                 gpu.VertexAttribute(
-                  name: 'kind',
+                  name: 'params',
                   format: gpu.VertexFormat.float32x4,
                   offsetInBytes: 80,
+                ),
+                gpu.VertexAttribute(
+                  name: 'clip',
+                  format: gpu.VertexFormat.float32x4,
+                  offsetInBytes: 96,
                 ),
               ],
             ),
           ],
+        ),
+      );
+      _corners = gpu.gpuContext.createDeviceBufferWithCopy(
+        ByteData.sublistView(
+          Float32List.fromList([0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1]),
         ),
       );
       _frameSlot = vertex.getUniformSlot('SdfFrame');
@@ -290,49 +307,66 @@ class SdfTextGpu implements SdfText {
     _layers[_count] = layer;
     _icons[_count] = kind > 0 ? 1 : 0;
     _overlaps[_count] = look.overlap ? 1 : 0;
-    var o = _count * _quadFloats;
+    final o = _count * _quadFloats;
     final ink = look.ink, halo = look.halo;
-    void put(double u, double v) {
-      final out = _vertices;
-      out
-        ..[o] = ox + u * tw * ax + v * th * bx
-        ..[o + 1] = oy + u * tw * ay + v * th * by
-        ..[o + 2] = tx + u * tw
-        ..[o + 3] = ty + v * th
-        ..[o + 4] = ink[0]
-        ..[o + 5] = ink[1]
-        ..[o + 6] = ink[2]
-        ..[o + 7] = ink[3]
-        ..[o + 8] = halo?[0] ?? 0
-        ..[o + 9] = halo?[1] ?? 0
-        ..[o + 10] = halo?[2] ?? 0
-        ..[o + 11] = halo?[3] ?? 0
-        ..[o + 12] = look.haloWidth
-        ..[o + 13] = look.haloBlur
-        ..[o + 14] = look.fontScale
-        ..[o + 15] = look.gammaScale
-        ..[o + 16] = clip.left
-        ..[o + 17] = clip.top
-        ..[o + 18] = clip.right
-        ..[o + 19] = clip.bottom
-        ..[o + 20] = kind.toDouble()
-        ..[o + 21] = linear ? 1 : 0
-        ..[o + 22] = 0
-        ..[o + 23] = 0;
-      o += _floats;
-    }
-
-    put(0, 0);
-    put(1, 0);
-    put(1, 1);
-    put(0, 0);
-    put(1, 1);
-    put(0, 1);
+    _vertices
+      ..[o] = ox
+      ..[o + 1] = oy
+      ..[o + 2] = tx
+      ..[o + 3] = ty
+      ..[o + 4] = tw * ax
+      ..[o + 5] = tw * ay
+      ..[o + 6] = th * bx
+      ..[o + 7] = th * by
+      ..[o + 8] = tw
+      ..[o + 9] = th
+      ..[o + 10] = kind.toDouble()
+      ..[o + 11] = linear ? 1 : 0
+      ..[o + 12] = ink[0]
+      ..[o + 13] = ink[1]
+      ..[o + 14] = ink[2]
+      ..[o + 15] = ink[3]
+      ..[o + 16] = halo?[0] ?? 0
+      ..[o + 17] = halo?[1] ?? 0
+      ..[o + 18] = halo?[2] ?? 0
+      ..[o + 19] = halo?[3] ?? 0
+      ..[o + 20] = look.haloWidth
+      ..[o + 21] = look.haloBlur
+      ..[o + 22] = look.fontScale
+      ..[o + 23] = look.gammaScale
+      ..[o + 24] = clip.left
+      ..[o + 25] = clip.top
+      ..[o + 26] = clip.right
+      ..[o + 27] = clip.bottom;
     _count++;
   }
 
   @override
   bool get loading => false;
+
+  /// The quads' buffers, one for each frame the GPU may still be drawing,
+  /// grown as text needs, so a frame's quads are written into one rather
+  /// than a buffer made for them.
+  final List<(gpu.DeviceBuffer, int)?> _quadBuffers = List.filled(
+    framesInFlight,
+    null,
+  );
+  int _nextQuadBuffer = 0;
+
+  gpu.DeviceBuffer _quadBuffer(Float32List quads) {
+    final i = _nextQuadBuffer;
+    _nextQuadBuffer = (i + 1) % framesInFlight;
+    var held = _quadBuffers[i];
+    if (held == null || held.$2 < quads.lengthInBytes) {
+      final size = math.max(quads.lengthInBytes, (held?.$2 ?? 1 << 15) * 2);
+      held = _quadBuffers[i] = (
+        gpu.createGeometryBuffers(size, 0).vertex,
+        size,
+      );
+    }
+    gpu.writeGeometryData(held.$1, quads, destinationOffsetInBytes: 0);
+    return held.$1;
+  }
 
   /// Where the text goes on the web, as a page element of its own; null
   /// to draw it on the canvas.
@@ -401,8 +435,8 @@ class SdfTextGpu implements SdfText {
       from = to;
     }
     final host = _device.host;
-    final buffer = gpu.gpuContext.createDeviceBufferWithCopy(
-      ByteData.sublistView(_ordered, 0, _count * _quadFloats),
+    final buffer = _quadBuffer(
+      Float32List.sublistView(_ordered, 0, _count * _quadFloats),
     );
     final commands = gpu.gpuContext.createCommandBuffer();
     final pass = commands.createRenderPass(
@@ -452,13 +486,17 @@ class SdfTextGpu implements SdfText {
         ..bindUniform(_frameSlot!, frame)
         ..bindUniform(_fragmentFrameSlot!, frame)
         ..bindVertexBuffer(
+          gpu.BufferView(_corners!, offsetInBytes: 0, lengthInBytes: 48),
+        )
+        ..bindVertexBuffer(
           gpu.BufferView(
             buffer,
             offsetInBytes: from * _quadFloats * 4,
             lengthInBytes: (to - from) * _quadFloats * 4,
           ),
+          slot: 1,
         )
-        ..draw((to - from) * 6);
+        ..draw(6, instanceCount: to - from);
     }
 
     // As MapLibre draws a symbol layer: halo and fill at once, or every

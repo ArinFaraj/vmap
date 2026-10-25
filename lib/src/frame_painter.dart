@@ -579,7 +579,10 @@ class FramePainter {
           (_ground.tiles?.waiting ?? 0)
       ..resourcesLoading = _resources.loading + _labels.glyphsLoading;
     for (final s in _sources) {
-      s.evict(_maxCachedTiles, frame);
+      // As MapLibre sizes its tile cache: about five screens of tiles, so
+      // panning back or zooming out and in again finds them built.
+      final screen = s.ideal.length + s.fallback.length;
+      s.evict(math.max(_maxCachedTiles, 5 * screen), frame);
     }
   }
 
