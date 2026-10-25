@@ -405,7 +405,9 @@ class _BenchAppState extends State<BenchApp>
               key: boundary,
               child: VmapGestures(
                 controller: controller,
-                enabled: vmapGestures,
+                options: vmapGestures
+                    ? const VmapGestureOptions()
+                    : VmapGestureOptions.none,
                 child: FlutterMap(
                   mapController: controller,
                   options: MapOptions(

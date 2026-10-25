@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:dart_earcut/dart_earcut.dart';
 
-import 'tile_builder.dart' show tileExtent;
+import 'built_tile.dart';
 
 /// Indices are 16 bit, so a mesh is cut into chunks below this many vertices.
 const int _maxVertices = 65000;

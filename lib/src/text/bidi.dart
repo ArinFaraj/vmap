@@ -56,6 +56,43 @@ class Bidi {
   int get paragraphLevel => paragraphLevels.first;
 }
 
+/// Whether [text] is written right to left: the direction of its first
+/// strong character outside an isolate, as rules P2 and P3 find a
+/// paragraph's.
+bool textIsRightToLeft(String text) {
+  var isolates = 0;
+  for (final c in text.runes) {
+    switch (bidiClassOf(c)) {
+      case BidiClass.lri || BidiClass.rli || BidiClass.fsi:
+        isolates++;
+      case BidiClass.pdi when isolates > 0:
+        isolates--;
+      case BidiClass.b when isolates == 0:
+        return false;
+      case BidiClass.l when isolates == 0:
+        return false;
+      case BidiClass.r || BidiClass.al when isolates == 0:
+        return true;
+      default:
+    }
+  }
+  return false;
+}
+
+/// Whether any of [codes] is a right-to-left letter or opens right-to-left
+/// text, so that ordering them needs the bidi algorithm.
+bool hasRightToLeft(List<int> codes) => codes.any(
+  (c) => switch (bidiClassOf(c)) {
+    BidiClass.r ||
+    BidiClass.al ||
+    BidiClass.rle ||
+    BidiClass.rlo ||
+    BidiClass.rli ||
+    BidiClass.fsi => true,
+    _ => false,
+  },
+);
+
 const _maxDepth = 125;
 
 bool _removed(BidiClass c) =>

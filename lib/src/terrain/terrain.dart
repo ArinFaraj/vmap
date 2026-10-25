@@ -1,6 +1,15 @@
 import 'dart:math' as math;
 
+import '../camera/mercator.dart';
+import '../camera/view.dart';
 import 'dem_tile.dart';
+
+const earthCircumference = 40075016.686;
+
+/// World pixels in a metre of height at the latitude of [view]'s middle.
+double perMetreAt(MapView view) =>
+    view.worldSize /
+    (earthCircumference * math.cos(latitudeAt(view.centerY) * math.pi / 180));
 
 /// The ground's heights for a renderer: where they come from, how much
 /// taller than they are they are drawn, and the height they are drawn

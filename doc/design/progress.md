@@ -75,7 +75,7 @@ Phone (Vivo V2514, Impeller Vulkan), the run where the phone was idle:
 
 ### Glyph text in the engine
 
-`lib/src/labels/glyphs/`: `GlyphFonts` and `layoutText` (bidi, script runs, first
+`lib/src/text/glyphs/`: `GlyphFonts` and `layoutText` (bidi, script runs, first
 font with every glyph, wrapping into even lines, alignment, weight through
 the variable font), and `GlyphPages` (outlines rasterized by Flutter per
 size, halo stroked beside each glyph, one `drawRawAtlas` per page image per

@@ -1,7 +1,7 @@
 name: vmap
 description: >-
   A map engine for Flutter drawn on the GPU: any MapLibre style, 3D buildings,
-  terrain and the globe, labels in every script, on every platform.
+  terrain and the globe, on every platform.
 version: 0.27.0
 repository: https://github.com/ArinFaraj/vmap
 issue_tracker: https://github.com/ArinFaraj/vmap/issues

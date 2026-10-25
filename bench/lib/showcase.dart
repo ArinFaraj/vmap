@@ -597,7 +597,7 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
               initialCenter: _centre,
               initialZoom: _zoomTenths / 10,
               initialRotation: const int.fromEnvironment('ROT').toDouble(),
-              rotate: _rotate,
+              gestures: VmapGestureOptions(rotate: _rotate),
               labels: VmapLabelOptions(curved: _curved),
               backgroundColor: scheme.surface,
               onTap: (_) => _select(null),

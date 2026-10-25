@@ -5,7 +5,7 @@ import 'package:vmap/src/tiles/geojson.dart';
 import 'package:vmap/src/tiles/mvt.dart';
 import 'package:vmap/src/style/style_model.dart';
 import 'package:vmap/src/tiles/tessellate.dart';
-import 'package:vmap/src/tiles/tile_builder.dart' show tileExtent;
+import 'package:vmap/src/tiles/built_tile.dart';
 
 void main() {
   test('each piece of a cut line knows its share of the whole line', () {

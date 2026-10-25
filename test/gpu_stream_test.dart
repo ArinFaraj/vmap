@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/tiles/gpu_stream.dart';
 import 'package:vmap/src/style/style_model.dart';
 import 'package:vmap/src/tiles/tessellate.dart';
-import 'package:vmap/src/tiles/tile_builder.dart' show BuiltMesh;
+import 'package:vmap/src/tiles/built_tile.dart';
 
 void main() {
   final sheet = StyleSheet.compile({

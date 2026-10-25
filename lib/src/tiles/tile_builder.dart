@@ -3,250 +3,25 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import '../style/expr.dart';
-import '../labels/glyphs/cursive.dart';
-import '../labels/glyphs/glyph_ranges.dart';
-import '../labels/glyphs/glyph_pbf.dart';
-import '../labels/glyphs/arabic_forms.dart';
-import '../labels/glyphs/glyph_layout.dart';
+import '../text/bidi.dart' show textIsRightToLeft;
+import '../text/glyphs/cursive.dart';
+import '../text/glyphs/glyph_ranges.dart';
+import '../text/glyphs/glyph_pbf.dart';
+import '../text/glyphs/glyph_layout.dart';
 import 'gpu_stream.dart';
 import 'extrusion.dart';
 import '../style/format.dart';
 import 'mvt.dart';
 import 'pole.dart';
-import '../platform.dart';
 import 'round_corners.dart';
 import '../style/style_model.dart';
 import '../camera/subdivide.dart';
 import 'tessellate.dart';
+import 'built_tile.dart';
+import 'label_measure.dart';
+import 'line_anchors.dart';
+
 import '../camera/mercator.dart';
-
-const double tileExtent = 4096;
-
-class BuiltMesh {
-  BuiltMesh(this.bucket, this.chunk, [this.props]);
-
-  /// Index into the style's buckets.
-  final int bucket;
-  final MeshChunk chunk;
-
-  /// The property values every feature in the mesh shares, for a bucket
-  /// whose paint reads them.
-  final Map<String, Object?>? props;
-}
-
-class BuiltLabel {
-  BuiltLabel(
-    this.layer,
-    this.priority,
-    this.text,
-    this.x,
-    this.y,
-    this.line, {
-    this.icon = '',
-    this.angle = 0,
-    this.spaced = false,
-    this.turns = false,
-  });
-
-  /// Index into the style's symbol layers. Negative for a label the app
-  /// supplies.
-  final int layer;
-
-  /// Lower wins a collision.
-  final int priority;
-  final String text;
-  final double x;
-  final double y;
-
-  /// The line the text runs along, as x,y pairs in tile units. Null for point
-  /// labels.
-  final Float32List? line;
-
-  /// The name of the sprite image drawn at the anchor. Empty for none.
-  final String icon;
-
-  /// How far the icon is turned, in radians.
-  final double angle;
-
-  /// The icon's angle is measured on the map, so it turns with the map.
-  final bool turns;
-
-  /// One of several placed along a line, which keeps its distance from
-  /// others with the same text.
-  final bool spaced;
-
-  /// What makes this label the same label in another tile: its layer, text
-  /// and place for a point, its tile and number otherwise.
-  String key = '';
-
-  /// The feature's values of what its layer's paint reads. Null when the
-  /// paint reads nothing from the feature.
-  Map<String, Object?>? props;
-
-  /// The text shaped by the worker, or null when it was not.
-  ShapedText? shaped;
-}
-
-class BuiltTile {
-  BuiltTile(this.meshes, this.labels, [this.extrusions = const [], this.gpu]);
-
-  /// The tile's fill and line layers for the GPU renderer, when asked for.
-  final GpuStream? gpu;
-
-  final List<BuiltMesh> meshes;
-  final List<BuiltLabel> labels;
-  final List<BuiltExtrusion> extrusions;
-
-  /// Names every label for the tile at [z], [x], [y]. A point's place is
-  /// taken to [grid] steps across the world: coarse for vector tiles, where
-  /// a place sits a little differently from zoom to zoom, fine for an app's
-  /// own points, where two a few pixels apart can carry the same text.
-  void keyLabels(int z, int x, int y, {int grid = 1024}) {
-    final span = 1 / (1 << z);
-    final tx = x * span;
-    final ty = y * span;
-    for (var i = 0; i < labels.length; i++) {
-      final l = labels[i];
-      l.key = l.line != null || l.spaced || l.text.isEmpty
-          ? 'r|$z/$x/$y|${l.layer}|$i'
-          : 'p|${l.layer}|${l.text}|${((tx + l.x / tileExtent * span) * grid).floor()}|${((ty + l.y / tileExtent * span) * grid).floor()}';
-    }
-  }
-
-  /// A sendable form whose buffers move between isolates without a copy on
-  /// the receiving side.
-  List<Object?> toMessage() => [
-    [
-      for (final m in meshes)
-        [
-          m.bucket,
-          pack(m.chunk.positions),
-          if (m.chunk.extrusions case final e?) pack(e) else null,
-          pack(m.chunk.indices),
-          if (m.chunk.distances case final d?) pack(d) else null,
-          m.props,
-          if (m.chunk.offsets case final o?) pack(o) else null,
-        ],
-    ],
-    [
-      for (final l in labels)
-        [
-          l.layer,
-          l.priority,
-          l.text,
-          l.x,
-          l.y,
-          l.line,
-          l.icon,
-          l.angle,
-          l.spaced,
-          l.key,
-          l.turns,
-          l.props,
-          if (l.shaped case final s?)
-            [s.width, s.height, s.lines, s.glyphs.length]
-          else
-            null,
-        ],
-    ],
-    [for (final e in extrusions) e.toMessage()],
-    _glyphMessage(),
-    gpu?.toMessage(),
-  ];
-
-  /// Every label's shaped glyphs in one buffer, so a tile of hundreds of
-  /// labels crosses to the page as one transfer, not one per label.
-  Object? _glyphMessage() {
-    var n = 0;
-    for (final l in labels) {
-      n += l.shaped?.glyphs.length ?? 0;
-    }
-    if (n == 0) return null;
-    final all = Float32List(n);
-    var at = 0;
-    for (final l in labels) {
-      final g = l.shaped?.glyphs;
-      if (g == null) continue;
-      all.setAll(at, g);
-      at += g.length;
-    }
-    return pack(all);
-  }
-
-  static BuiltTile fromMessage(List<Object?> message) {
-    final glyphs = message.length > 3 && message[3] != null
-        ? unpackFloats(message[3]!)
-        : null;
-    var glyphAt = 0;
-    final meshes = <BuiltMesh>[];
-    for (final m in message[0]! as List) {
-      final parts = m as List;
-      meshes.add(
-        BuiltMesh(
-          parts[0] as int,
-          MeshChunk(
-            unpackFloats(parts[1]! as Object),
-            _floats(parts[2]),
-            unpackShorts(parts[3]! as Object),
-            _floats(parts[4]),
-            _floats(parts[6]),
-          ),
-          (parts[5] as Map?)?.cast<String, Object?>(),
-        ),
-      );
-    }
-    final labels = <BuiltLabel>[];
-    for (final l in message[1]! as List) {
-      final parts = l as List;
-      labels.add(
-        BuiltLabel(
-            parts[0] as int,
-            parts[1] as int,
-            parts[2] as String,
-            (parts[3]! as num).toDouble(),
-            (parts[4]! as num).toDouble(),
-            parts[5] as Float32List?,
-            icon: parts[6] as String,
-            angle: (parts[7]! as num).toDouble(),
-            spaced: parts[8] as bool,
-            turns: parts[10] as bool,
-          )
-          ..key = parts[9] as String
-          ..props = (parts[11] as Map?)?.cast<String, Object?>()
-          ..shaped = parts.length > 12 && parts[12] != null && glyphs != null
-              ? () {
-                  final s = parts[12]! as List;
-                  final length = s[3]! as int;
-                  final view = Float32List.sublistView(
-                    glyphs,
-                    glyphAt,
-                    glyphAt + length,
-                  );
-                  glyphAt += length;
-                  return ShapedText(
-                    view,
-                    (s[0]! as num).toDouble(),
-                    (s[1]! as num).toDouble(),
-                    s[2]! as int,
-                  );
-                }()
-              : null,
-      );
-    }
-    return BuiltTile(
-      meshes,
-      labels,
-      [
-        if (message.length > 2)
-          for (final e in message[2]! as List)
-            BuiltExtrusion.fromMessage(e as List<Object?>),
-      ],
-      message.length > 4 && message[4] != null
-          ? GpuStream.fromMessage(message[4]! as List<Object?>)
-          : null,
-    );
-  }
-}
 
 /// The geometry one bucket collects, or one combination of property values
 /// within it.
@@ -288,9 +63,13 @@ class TileBuilder {
   /// The fill buckets a layer outlines, whose rings are kept as edges.
   final Set<int> _outlined = {};
 
+  late final LabelMeasure _measure = LabelMeasure(fonts: fonts, ranges: ranges);
+
   /// The size of each sprite image in logical pixels, by name, once the
   /// style's sprite indexes are read: icons along a line are spaced by it.
-  Map<String, (double, double)> iconSizes = const {};
+  Map<String, (double, double)> get iconSizes => _measure.iconSizes;
+  set iconSizes(Map<String, (double, double)> value) =>
+      _measure.iconSizes = value;
 
   /// The state the app gave each feature, by id, which buildings whose
   /// paint reads `feature-state` are built from.
@@ -308,7 +87,7 @@ class TileBuilder {
 
   /// The last build measured a name with a range still on its way: built
   /// again once it arrives, its names are where MapLibre puts them.
-  bool missedGlyphs = false;
+  bool get missedGlyphs => _measure.missedGlyphs;
 
   /// Builds each tile's GPU stream as well.
   final bool gpu;
@@ -409,7 +188,7 @@ class TileBuilder {
     final laidOut = over != null && over > z ? over : z;
     final overscale = _overscale = (1 << (laidOut - z)).toDouble();
     final styleZoom = laidOut + sheet.zoomOffset;
-    missedGlyphs = false;
+    _measure.missedGlyphs = false;
     bool drawnAt(double minZoom, double maxZoom) =>
         maxZoom > styleZoom && (deepest || minZoom < styleZoom + 1);
     final context = _context..zoom = styleZoom;
@@ -781,7 +560,7 @@ class TileBuilder {
                 priority: base + (symbol.build.sortKey == null ? 50 : order),
                 text: text,
                 spacing: spacing,
-                labelLength: _textEms(symbol, text, format, size) * em,
+                labelLength: _measure.textEms(symbol, text, format, size) * em,
                 em: em,
                 maxBend: symbol.maxBend ?? math.pi / 4,
                 props: carried,
@@ -832,7 +611,9 @@ class TileBuilder {
                       em /
                       GlyphPbf.em;
             final labelLength = math.max(
-              text.isEmpty ? 0.0 : _textEms(symbol, text, format, size) * em,
+              text.isEmpty
+                  ? 0.0
+                  : _measure.textEms(symbol, text, format, size) * em,
               iconWidth,
             );
             if (placement == 'line' && text.isNotEmpty) {
@@ -845,28 +626,22 @@ class TileBuilder {
                   em: em,
                   maxBend: symbol.maxBend ?? math.pi / 4,
                   props: carried,
-                  rings: [
-                    for (var r = 0; r < _sink.ringCount; r++)
-                      Float32List.fromList(
-                        _sink.coords.sublist(
-                          _sink.ringStart(r) * 2,
-                          _sink.ringEnd(r) * 2,
-                        ),
-                      ),
-                  ],
+                  rings: _sinkRings(),
                   icon: icon,
                   spin: spin,
                 ),
               );
               continue;
             }
-            _anchorsAlong(
-              spacing,
-              labelLength,
-              em,
-              symbol.maxBend ?? math.pi / 4,
-              placement == 'line-center',
-              (x, y, angle) => labels.add(
+            anchorsAlong(
+              _sinkRings(),
+              spacing: spacing,
+              labelLength: labelLength,
+              em: em,
+              maxBend: symbol.maxBend ?? math.pi / 4,
+              overscale: _overscale,
+              center: placement == 'line-center',
+              place: (x, y, angle, _) => labels.add(
                 BuiltLabel(
                   s,
                   base + (symbol.build.sortKey == null ? 50 : order),
@@ -890,14 +665,15 @@ class TileBuilder {
     for (final MapEntry(key: layer, value: lines) in levelLines.entries) {
       final seen = <String, List<(double, double)>>{};
       for (final line in mergeNamedLines(lines)) {
-        _anchorsAlong(
-          line.spacing,
-          line.labelLength,
-          line.em,
-          line.maxBend,
-          false,
-          (x, y, angle) {
-            if (_repeats(seen, line, x, y)) return;
+        anchorsAlong(
+          line.rings,
+          spacing: line.spacing,
+          labelLength: line.labelLength,
+          em: line.em,
+          maxBend: line.maxBend,
+          overscale: _overscale,
+          place: (x, y, angle, _) {
+            if (repeatsName(seen, line, x, y)) return;
             labels.add(
               BuiltLabel(
                 layer,
@@ -912,7 +688,6 @@ class TileBuilder {
               )..props = line.props,
             );
           },
-          rings: line.rings,
         );
       }
     }
@@ -959,54 +734,6 @@ class TileBuilder {
       return GpuStream.build(sheet, meshes, zoom: zoom);
     }
     return GpuStream.build(sheet, meshes, zoom: zoom, fillCells: fillCells(z));
-  }
-
-  /// Calls [place] at the anchors MapLibre's `getAnchors` gives a symbol
-  /// [labelLength] tile units long, an [em] tall, on each line of the sink
-  /// cut to the tile, [spacing] apart; with [center], at each line's middle.
-  /// The lines are [rings], or the sink's.
-  /// A symbol without [text] is not held to the line's bends, as
-  /// MapLibre's angle window is none without text.
-  void _anchorsAlong(
-    double spacing,
-    double labelLength,
-    double em,
-    double maxBend,
-    bool center,
-    void Function(double x, double y, double angle) place, {
-    bool text = true,
-    List<Float32List>? rings,
-  }) {
-    final window = text ? 3 / 5 * em : 0.0;
-    for (final ring
-        in rings ??
-            [
-              for (var r = 0; r < _sink.ringCount; r++)
-                Float32List.fromList(
-                  _sink.coords.sublist(
-                    _sink.ringStart(r) * 2,
-                    _sink.ringEnd(r) * 2,
-                  ),
-                ),
-            ]) {
-      for (final line in center ? [ring] : clipLineToTile(ring)) {
-        final anchors = center
-            ? centerAnchor(line, labelLength, window, maxBend)
-            : lineAnchors(
-                line,
-                spacing,
-                labelLength,
-                2 * em,
-                window,
-                maxBend,
-                overscale: _overscale,
-              );
-        for (final (x, y, angle) in anchors) {
-          if (center && !_inTile(x, y)) continue;
-          place(x, y, angle);
-        }
-      }
-    }
   }
 
   /// [layer]'s features by [sortKey], lowest first, ties in the tile's
@@ -1106,14 +833,12 @@ class TileBuilder {
     flush();
   }
 
-  /// Where a label stands among its layer's own, lowest first: by
-  /// `symbol-sort-key`, and without one in the order of the features.
-  static int _order(SymbolLayer symbol, EvalContext context) {
-    final key = symbol.build.sortKey;
-    if (key == null) return 50;
-    final value = key(context);
-    return value is num ? value.round().clamp(0, 4095) : 50;
-  }
+  List<Float32List> _sinkRings() => [
+    for (var r = 0; r < _sink.ringCount; r++)
+      Float32List.fromList(
+        _sink.coords.sublist(_sink.ringStart(r) * 2, _sink.ringEnd(r) * 2),
+      ),
+  ];
 
   /// A label at each of the feature's points that lies in the tile, as
   /// MapLibre places one at every point of a MultiPoint.
@@ -1141,512 +866,49 @@ class TileBuilder {
     }
   }
 
-  /// How long [text] is in ems at [symbol]'s letter spacing, as MapLibre
-  /// measures a label: from the style's glyph ranges, its letters joined,
-  /// when the labels are drawn from them; else as the fonts set it, or
-  /// about half an em a letter.
-  double _textEms(
-    SymbolLayer symbol,
-    String text, [
-    List<Object?>? format,
-    double textSize = 16,
-  ]) {
-    final ranges = this.ranges;
-    if (format != null && ranges != null) {
-      final width = _formattedEms(symbol, text, format, ranges, textSize);
-      if (width != null) return width;
-    }
-    final plain = plainText(text);
-    final label = symbol.uppercase ? plain.toUpperCase() : plain;
-    final spacing = letterSpacingFor(label, symbol.letterSpacing);
-    if (ranges != null) {
-      final face = ranges.face(symbol.fontStack);
-      final forms = [
-        for (final c in joinedForms(label.runes.toList()))
-          if (c >= 0) c,
-      ];
-      if (ranges.ready(face, String.fromCharCodes(forms))) {
-        var width = 0.0;
-        var glyphs = 0;
-        for (final c in forms) {
-          final g = ranges.glyph(face, c);
-          if (g != null) {
-            width += g.advance / GlyphPbf.em + spacing;
-            glyphs++;
-          }
-        }
-        // As MapLibre's shaping, no spacing follows the last letter.
-        return glyphs == 0 ? 0 : width - spacing;
-      }
-      missedGlyphs = true;
-    }
-    return _fontEms[text] ??= () {
-      final fonts = this.fonts;
-      if (fonts == null) return text.runes.length * 0.55;
-      return layoutText(
-            fonts,
-            label,
-            weight: symbol.weight,
-            letterSpacing: spacing,
-            singleLine: true,
-            stack: symbol.fontStack,
-          )?.width ??
-          text.runes.length * 0.55;
-    }();
-  }
-
-  final Map<String, double> _fontEms = {};
-
-  /// The width in ems of a formatted [text], each section in its own font
-  /// and scale, as MapLibre shapes it; null until its glyphs are here.
-  /// The width in ems of formatted [text]: its glyphs, and its images as
-  /// MapLibre's shaping weighs one, its width against the [textSize] it is
-  /// laid out at.
-  double? _formattedEms(
-    SymbolLayer symbol,
-    String text,
-    List<Object?> format,
-    GlyphRanges ranges,
-    double textSize,
-  ) {
-    var width = 0.0;
-    var section = 0;
-    final runes = [
-      for (final c in joinedForms(text.runes.toList()))
-        if (c >= 0) c,
-    ];
-    final spacing = letterSpacingFor(plainText(text), symbol.letterSpacing);
-    for (var i = 0; i < runes.length; i++) {
-      final r = runes[i];
-      if (r == formatMark && i + 1 < runes.length) {
-        section = runes[++i] - formatIndexBase;
-        continue;
-      }
-      final spec = section < format.length ? format[section] : null;
-      final scale = spec is List ? (spec[0] as num?)?.toDouble() ?? 1 : 1.0;
-      if (r == formatImage) {
-        final name = spec is List && spec.length > 4 ? spec[4] : null;
-        final w = name is String ? iconSizes[name]?.$1 : null;
-        if (w != null) width += w * scale / textSize + spacing;
-        continue;
-      }
-      final fonts = spec is List && spec[1] is List
-          ? (spec[1] as List).cast<String>()
-          : symbol.fontStack;
-      final face = ranges.face(fonts);
-      final c = symbol.uppercase
-          ? String.fromCharCode(r).toUpperCase().runes.first
-          : r;
-      if (!ranges.ready(face, String.fromCharCode(c))) {
-        missedGlyphs = true;
-        return null;
-      }
-      final g = ranges.glyph(face, c);
-      if (g != null) {
-        width += (g.advance / GlyphPbf.em + spacing) * scale;
-      }
-    }
-    return width;
-  }
-
-  /// Whether an anchor of [named] at [x], [y] lies nearer one of the same
-  /// text in [seen] than half the spacing, as MapLibre's
-  /// `anchorIsTooClose`; when not, it joins [seen].
-  bool _repeats(
-    Map<String, List<(double, double)>> seen,
-    NamedLine named,
-    double x,
-    double y,
-  ) {
-    final repeat = named.spacing / 2;
-    final others = seen[named.text] ??= [];
-    for (final (ox, oy) in others) {
-      final dx = ox - x, dy = oy - y;
-      if (dx * dx + dy * dy < repeat * repeat) return true;
-    }
-    others.add((x, y));
-    return false;
-  }
-
   /// A name along each line of [named], as MapLibre's `getAnchors` places
-  /// them: the line cut to the tile, anchors its spacing apart from an
-  /// offset of half the label's length and two ems, where the whole name
-  /// fits on the line and the line turns no more than its bend allows
-  /// under it; at the middle when none does. With [center], once at the
-  /// middle.
-  /// With [seen], the anchors of the layer's names so far by their text,
-  /// an anchor nearer one of the same name than half the spacing is passed
-  /// over, as MapLibre's `anchorIsTooClose`.
+  /// them; with [center], once at the middle. With [seen], the anchors of
+  /// the layer's names so far by their text, an anchor nearer one of the
+  /// same name than half the spacing is passed over.
   List<BuiltLabel> _lineLabels(
     int layer,
     NamedLine named, {
     bool center = false,
     Map<String, List<(double, double)>>? seen,
   }) {
-    bool tooClose(double x, double y) =>
-        seen != null && _repeats(seen, named, x, y);
-
     final out = <BuiltLabel>[];
-    final window = 3 / 5 * named.em;
-    final extra = 2 * named.em;
-    for (final ring in named.rings) {
-      // As MapLibre: line-center takes the middle of the whole line as the
-      // tile holds it, kept by the tile it falls in.
-      for (final line in center ? [ring] : clipLineToTile(ring)) {
-        for (final (x, y, _)
-            in center
-                ? centerAnchor(line, named.labelLength, window, named.maxBend)
-                : lineAnchors(
-                    line,
-                    named.spacing,
-                    named.labelLength,
-                    extra,
-                    window,
-                    named.maxBend,
-                    overscale: _overscale,
-                  )) {
-          if (center && !_inTile(x, y)) continue;
-          if (tooClose(x, y)) continue;
-          out.add(
-            BuiltLabel(
-              layer,
-              named.priority,
-              named.text,
-              x,
-              y,
-              line,
-              icon: named.icon,
-            )..props = named.props,
-          );
-        }
-      }
-    }
+    anchorsAlong(
+      named.rings,
+      spacing: named.spacing,
+      labelLength: named.labelLength,
+      em: named.em,
+      maxBend: named.maxBend,
+      overscale: _overscale,
+      center: center,
+      place: (x, y, _, line) {
+        if (seen != null && repeatsName(seen, named, x, y)) return;
+        out.add(
+          BuiltLabel(
+            layer,
+            named.priority,
+            named.text,
+            x,
+            y,
+            line,
+            icon: named.icon,
+          )..props = named.props,
+        );
+      },
+    );
     return out;
   }
 }
 
-/// A name to lay along the [rings] of one feature, x and y in turn in tile
-/// units.
-class NamedLine {
-  NamedLine({
-    required this.priority,
-    required this.text,
-    required this.spacing,
-    required this.labelLength,
-    required this.em,
-    required this.maxBend,
-    required this.props,
-    required this.rings,
-    this.icon = '',
-    this.spin = 0,
-  });
-
-  /// The text's own turn, `text-rotate`, for a name kept level on the
-  /// screen.
-  final double spin;
-
-  final int priority;
-  final String text;
-  final double spacing, labelLength, em, maxBend;
-  final Map<String, Object?>? props;
-  List<Float32List> rings;
-
-  /// The sprite image drawn at each anchor, empty for none.
-  final String icon;
+/// Where a label stands among its layer's own, lowest first: by
+/// `symbol-sort-key`, and without one in the order of the features.
+int _order(SymbolLayer symbol, EvalContext context) {
+  final key = symbol.build.sortKey;
+  if (key == null) return 50;
+  final value = key(context);
+  return value is num ? value.round().clamp(0, 4095) : 50;
 }
-
-/// [lines] with the first line of each joined to the first lines of the
-/// same name that meet it end to start, as MapLibre's `mergeLines` joins a
-/// road cut into many ways before naming it, so a name has the whole road
-/// to fit on. A joined line keeps the first feature's properties.
-List<NamedLine> mergeNamedLines(List<NamedLine> lines) {
-  final merged = <(NamedLine, List<Float32List>)?>[];
-  final leftIndex = <String, int>{};
-  final rightIndex = <String, int>{};
-  String key(String text, Float32List line, {required bool end}) => end
-      ? '$text:${line[line.length - 2]}:${line[line.length - 1]}'
-      : '$text:${line[0]}:${line[1]}';
-
-  for (final named in lines) {
-    final chunks = [named.rings.first];
-    final leftKey = key(named.text, chunks.first, end: false);
-    final rightKey = key(named.text, chunks.last, end: true);
-    final before = rightIndex[leftKey];
-    final after = leftIndex[rightKey];
-    if (before != null && after != null && before != after) {
-      // Lines of the same name meet both ends: all three become one.
-      final target = merged[before]!;
-      final tail = merged[after]!;
-      target.$2
-        ..addAll(chunks)
-        ..addAll(tail.$2);
-      merged[after] = null;
-      rightIndex.remove(leftKey);
-      leftIndex.remove(rightKey);
-      rightIndex[key(named.text, target.$2.last, end: true)] = before;
-    } else if (before != null) {
-      merged[before]!.$2.addAll(chunks);
-      rightIndex.remove(leftKey);
-      rightIndex[rightKey] = before;
-    } else if (after != null) {
-      merged[after]!.$2.insertAll(0, chunks);
-      leftIndex.remove(rightKey);
-      leftIndex[leftKey] = after;
-    } else {
-      merged.add((named, chunks));
-      leftIndex[leftKey] = merged.length - 1;
-      rightIndex[rightKey] = merged.length - 1;
-    }
-  }
-  return [
-    for (final entry in merged)
-      if (entry case (final named, final chunks))
-        named..rings = [_joinChunks(chunks), ...named.rings.skip(1)],
-  ];
-}
-
-Float32List _joinChunks(List<Float32List> chunks) {
-  if (chunks.length == 1) return chunks.first;
-  final out = <double>[...chunks.first];
-  for (final chunk in chunks.skip(1)) {
-    out.addAll(chunk.skip(2));
-  }
-  return Float32List.fromList(out);
-}
-
-/// [line], x and y in turn, cut where it leaves the tile into the pieces
-/// inside it, as MapLibre's `clipLine` cuts a line before placing names.
-List<Float32List> clipLineToTile(Float32List line) {
-  const x1 = 0.0, y1 = 0.0, x2 = tileExtent, y2 = tileExtent;
-  // MapLibre's Point._round, on its tile's grid of twice as many units.
-  double round(double v) => (v * 2 + 0.5).floorToDouble() / 2;
-  final out = <Float32List>[];
-  List<double>? piece;
-  void flush() {
-    final done = piece;
-    if (done != null && done.length >= 4) out.add(Float32List.fromList(done));
-  }
-
-  for (var i = 2; i < line.length; i += 2) {
-    var ax = line[i - 2].toDouble(), ay = line[i - 1].toDouble();
-    var bx = line[i].toDouble(), by = line[i + 1].toDouble();
-    if (ax < x1 && bx < x1) continue;
-    if (ax < x1) {
-      (ax, ay) = (x1, round(ay + (by - ay) * ((x1 - ax) / (bx - ax))));
-    } else if (bx < x1) {
-      (bx, by) = (x1, round(ay + (by - ay) * ((x1 - ax) / (bx - ax))));
-    }
-    if (ay < y1 && by < y1) continue;
-    if (ay < y1) {
-      (ax, ay) = (round(ax + (bx - ax) * ((y1 - ay) / (by - ay))), y1);
-    } else if (by < y1) {
-      (bx, by) = (round(ax + (bx - ax) * ((y1 - ay) / (by - ay))), y1);
-    }
-    if (ax >= x2 && bx >= x2) continue;
-    if (ax >= x2) {
-      (ax, ay) = (x2, round(ay + (by - ay) * ((x2 - ax) / (bx - ax))));
-    } else if (bx >= x2) {
-      (bx, by) = (x2, round(ay + (by - ay) * ((x2 - ax) / (bx - ax))));
-    }
-    if (ay >= y2 && by >= y2) continue;
-    if (ay >= y2) {
-      (ax, ay) = (round(ax + (bx - ax) * ((y2 - ay) / (by - ay))), y2);
-    } else if (by >= y2) {
-      (bx, by) = (round(ax + (bx - ax) * ((y2 - ay) / (by - ay))), y2);
-    }
-    final last = piece;
-    if (last == null ||
-        last[last.length - 2] != ax ||
-        last[last.length - 1] != ay) {
-      flush();
-      piece = [ax, ay];
-    }
-    piece!.addAll([bx, by]);
-  }
-  flush();
-  return out;
-}
-
-double _lineLength(Float32List line) {
-  var length = 0.0;
-  for (var i = 2; i < line.length; i += 2) {
-    final dx = line[i] - line[i - 2], dy = line[i + 1] - line[i - 1];
-    length += math.sqrt(dx * dx + dy * dy);
-  }
-  return length;
-}
-
-bool _inTile(double x, double y) =>
-    x >= 0 && x < tileExtent && y >= 0 && y < tileExtent;
-
-/// The anchors MapLibre's `getAnchors` gives a name [labelLength] long on
-/// [line], cut to the tile, in a tile laid out [overscale] times deeper
-/// than its data.
-List<(double, double, double)> lineAnchors(
-  Float32List line,
-  double spacing,
-  double labelLength,
-  double extra,
-  double window,
-  double maxBend, {
-  double overscale = 1,
-}) {
-  final continued =
-      line[0] == 0 ||
-      line[0] == tileExtent ||
-      line[1] == 0 ||
-      line[1] == tileExtent;
-  if (spacing - labelLength < spacing / 4) {
-    spacing = labelLength + spacing / 4;
-  }
-  final offset = continued
-      ? (spacing / 2 * overscale) % spacing
-      : ((labelLength / 2 + extra) * overscale) % spacing;
-  final anchors = _resample(
-    line,
-    offset,
-    spacing,
-    labelLength,
-    window,
-    maxBend,
-  );
-  if (anchors.isEmpty && !continued) {
-    return _resample(
-      line,
-      _lineLength(line) / 2,
-      spacing,
-      labelLength,
-      window,
-      maxBend,
-    );
-  }
-  return anchors;
-}
-
-/// The middle of [line], when a name [labelLength] long fits there.
-List<(double, double, double)> centerAnchor(
-  Float32List line,
-  double labelLength,
-  double window,
-  double maxBend,
-) {
-  return _resample(
-    line,
-    _lineLength(line) / 2,
-    double.infinity,
-    labelLength,
-    window,
-    maxBend,
-  );
-}
-
-List<(double, double, double)> _resample(
-  Float32List line,
-  double offset,
-  double spacing,
-  double labelLength,
-  double window,
-  double maxBend,
-) {
-  final half = labelLength / 2;
-  final length = _lineLength(line);
-  final out = <(double, double, double)>[];
-  var distance = 0.0;
-  var marked = spacing.isFinite ? offset - spacing : offset;
-  final step = spacing.isFinite ? spacing : 0.0;
-  var done = false;
-  for (var i = 2; i < line.length && !done; i += 2) {
-    final ax = line[i - 2].toDouble(), ay = line[i - 1].toDouble();
-    final bx = line[i].toDouble(), by = line[i + 1].toDouble();
-    final segment = math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay));
-    while (marked + step < distance + segment) {
-      marked += step;
-      final t = (marked - distance) / segment;
-      final x = (ax + (bx - ax) * t).roundToDouble();
-      final y = (ay + (by - ay) * t).roundToDouble();
-      if (x >= 0 &&
-          x < tileExtent &&
-          y >= 0 &&
-          y < tileExtent &&
-          marked - half >= 0 &&
-          marked + half <= length &&
-          (window == 0 ||
-              _bendsLittle(
-                line,
-                i ~/ 2 - 1,
-                x,
-                y,
-                labelLength,
-                window,
-                maxBend,
-              ))) {
-        out.add((x, y, math.atan2(by - ay, bx - ax)));
-      }
-      if (!spacing.isFinite) {
-        done = true;
-        break;
-      }
-    }
-    distance += segment;
-  }
-  return out;
-}
-
-/// MapLibre's `checkMaxAngle`: whether [line] turns no more than
-/// [maxBend] within any [window] under a name [labelLength] long whose
-/// anchor [x], [y] lies on segment [segment].
-bool _bendsLittle(
-  Float32List line,
-  int segment,
-  double x,
-  double y,
-  double labelLength,
-  double window,
-  double maxBend,
-) {
-  if (labelLength == 0) return true;
-  double px(int i) => line[i * 2].toDouble();
-  double py(int i) => line[i * 2 + 1].toDouble();
-  double dist(double ax, double ay, double bx, double by) =>
-      math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay));
-  var index = segment + 1;
-  var anchorDistance = 0.0;
-  var cx = x, cy = y;
-  while (anchorDistance > -labelLength / 2) {
-    index--;
-    if (index < 0) return false;
-    anchorDistance -= dist(px(index), py(index), cx, cy);
-    cx = px(index);
-    cy = py(index);
-  }
-  anchorDistance += dist(px(index), py(index), px(index + 1), py(index + 1));
-  index++;
-  final corners = <(double, double)>[];
-  var recent = 0.0;
-  final count = line.length ~/ 2;
-  while (anchorDistance < labelLength / 2) {
-    if (index + 1 >= count) return false;
-    final before = math.atan2(
-      py(index) - py(index - 1),
-      px(index) - px(index - 1),
-    );
-    final after = math.atan2(
-      py(index + 1) - py(index),
-      px(index + 1) - px(index),
-    );
-    var delta = before - after;
-    delta = (((delta + 3 * math.pi) % (math.pi * 2)) - math.pi).abs();
-    corners.add((anchorDistance, delta));
-    recent += delta;
-    while (anchorDistance - corners.first.$1 > window) {
-      recent -= corners.removeAt(0).$2;
-    }
-    if (recent > maxBend) return false;
-    anchorDistance += dist(px(index), py(index), px(index + 1), py(index + 1));
-    index++;
-  }
-  return true;
-}
-
-Float32List? _floats(Object? packed) =>
-    packed == null ? null : unpackFloats(packed);

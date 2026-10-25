@@ -14,17 +14,18 @@ import 'protocol.dart';
 import '../options.dart';
 import 'tile_id.dart';
 import 'tile_slice.dart';
-import '../labels/glyphs/glyph_ranges.dart';
-import '../labels/glyphs/glyph_layout.dart';
+import '../text/glyphs/glyph_ranges.dart';
+import '../text/glyphs/glyph_layout.dart';
 import '../style/sprite_sizes.dart';
 import '../style/style_model.dart';
 import 'tile_builder.dart';
+import 'built_tile.dart';
 import 'tile_store.dart';
-import 'net.dart';
+import '../net/net.dart';
 import '../platform.dart';
 
 typedef TileLoaded = void Function(TileId id, BuiltTile tile);
-typedef TileFailed = void Function(TileId id, Object error);
+typedef TileFailed = void Function(TileId id, TileFailure failure);
 
 /// Downloads, decodes and tessellates tiles on background isolates, so none of
 /// it runs on the UI thread.
@@ -395,8 +396,8 @@ class TilePool {
         if (w != id) w,
     ];
     switch (outcome) {
-      case TileNotBuilt(:final error):
-        onFailed(id, error);
+      case TileNotBuilt(:final failure):
+        onFailed(id, failure);
       case TileBuilt(:final tile):
         final started = _clock.elapsedMicroseconds;
         onLoaded(id, tile);
@@ -685,7 +686,10 @@ Future<void> tileWorkerMain(
           );
           return TileBuilt(job, built);
         } catch (e) {
-          return TileNotBuilt(job, '$e');
+          return TileNotBuilt(
+            job,
+            TileFailure('$e', corrupt: e is FormatException),
+          );
         }
       case final FindInTile find:
         try {

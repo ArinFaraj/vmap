@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/tiles/geojson.dart';
-import 'package:vmap/src/labels/glyphs/glyph_pbf.dart';
+import 'package:vmap/src/text/glyphs/glyph_pbf.dart';
 import 'package:vmap/src/tiles/mvt.dart';
 import 'package:vmap/src/style/style_model.dart';
 

@@ -1,7 +1,8 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import '../../text/bidi.dart';
+import '../bidi.dart';
+import '../unicode.dart' show mirrorOf;
 import 'glyph_layout.dart';
 import '../../style/format.dart';
 import 'glyph_pbf.dart';
@@ -141,7 +142,7 @@ ShapedText? layoutRanges(
     var x = 0.0;
     for (final (k, mirror) in _visualIndices(codes.sublist(start, end))) {
       final i = start + k;
-      final c = mirror ? _mirrored[codes[i]] ?? codes[i] : codes[i];
+      final c = mirror ? mirrorOf(codes[i]) : codes[i];
       final r = runOf[i];
       final section = sectionOf(r);
       final align = section?.align ?? 1;
@@ -362,15 +363,13 @@ List<int> mapLibreLineBreaks(
 /// [breaks] with a line also ended at each paragraph separator when
 /// [codes] has right-to-left letters, as MapLibre's bidi step ends one.
 List<int> _atParagraphs(List<int> codes, List<int> breaks) {
-  if (!codes.any(_rightToLeft)) return breaks;
+  if (!hasRightToLeft(codes)) return breaks;
   final ends = {...breaks};
   for (var i = 0; i + 1 < codes.length; i++) {
     if (_paragraphSeparator(codes[i])) ends.add(i + 1);
   }
   return ends.length == breaks.length ? breaks : (ends.toList()..sort());
 }
-
-bool _rightToLeft(int c) => c >= 0x0590 && c <= 0x08FF || c >= 0xFB1D;
 
 /// The characters of bidi class B other than the newlines, which end a
 /// paragraph in the Unicode bidi algorithm.
@@ -382,7 +381,7 @@ bool _paragraphSeparator(int c) =>
 /// orders a line after breaking the text into lines. The characters that
 /// only steer the ordering are dropped, as no font draws them.
 List<(int, bool)> _visualIndices(List<int> codes) {
-  if (!codes.any(_rightToLeft)) {
+  if (!hasRightToLeft(codes)) {
     return [
       for (var i = 0; i < codes.length; i++)
         if (!_bidiControl(codes[i])) (i, false),
@@ -398,33 +397,6 @@ List<(int, bool)> _visualIndices(List<int> codes) {
   }
   return out;
 }
-
-/// The characters Unicode draws mirrored in right-to-left text, each with
-/// the one drawn in its place, as the bidi step of MapLibre's RTL plugin
-/// mirrors them.
-const _mirrorPairs = [
-  (0x28, 0x29),
-  (0x3C, 0x3E),
-  (0x5B, 0x5D),
-  (0x7B, 0x7D),
-  (0xAB, 0xBB),
-  (0x2039, 0x203A),
-  (0x2045, 0x2046),
-  (0x207D, 0x207E),
-  (0x208D, 0x208E),
-  (0x2264, 0x2265),
-  (0x3008, 0x3009),
-  (0x300A, 0x300B),
-  (0x300C, 0x300D),
-  (0x300E, 0x300F),
-  (0x3010, 0x3011),
-  (0xFF08, 0xFF09),
-  (0xFF3B, 0xFF3D),
-  (0xFF5B, 0xFF5D),
-];
-final _mirrored = {
-  for (final (a, b) in _mirrorPairs) ...{a: b, b: a},
-};
 
 bool _bidiControl(int c) =>
     c == 0x061C ||

@@ -4,7 +4,7 @@ library;
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/tiles/net.dart';
+import 'package:vmap/src/net/net.dart';
 import 'package:vmap/src/style/style_model.dart';
 import 'package:vmap/src/options.dart';
 import 'package:vmap/src/tiles/worker.dart';

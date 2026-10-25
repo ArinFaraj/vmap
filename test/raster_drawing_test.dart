@@ -9,7 +9,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/camera/view.dart';
 import 'package:vmap/src/style/expr.dart';
 import 'package:vmap/src/options.dart';
-import 'package:vmap/src/canvas/raster.dart';
+import 'package:vmap/src/raster/raster.dart';
+import 'package:vmap/src/raster/raster_dem.dart';
 import 'package:vmap/src/style/raster_style.dart';
 
 /// A PNG of [size] pixels filled with [color].

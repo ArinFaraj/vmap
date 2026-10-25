@@ -3,7 +3,7 @@ import 'dart:math' as math;
 
 import 'color.dart';
 import 'format.dart';
-import 'place.dart';
+import 'expr_ops.dart';
 
 export 'color.dart';
 
@@ -54,7 +54,7 @@ double? asNumber(Object? v) => v is num
 
 /// [v] as JavaScript's `String(v)` writes it, which `in` and `index-of`
 /// search a string for.
-String _jsText(Object? v) => v is bool
+String jsText(Object? v) => v is bool
     ? '$v'
     : v == null
     ? 'null'
@@ -67,7 +67,7 @@ String asText(Object? v) {
 }
 
 /// The name MapLibre's `typeof` gives [v]'s type.
-String _typeName(Object? v) {
+String typeName(Object? v) {
   switch (v) {
     case null:
       return 'null';
@@ -84,7 +84,7 @@ String _typeName(Object? v) {
     case List():
       String? item;
       for (final e in v) {
-        final t = _typeName(e);
+        final t = typeName(e);
         if (item == null) {
           item = t;
         } else if (item != t) {
@@ -98,7 +98,7 @@ String _typeName(Object? v) {
   }
 }
 
-bool _truthy(Object? v) =>
+bool truthy(Object? v) =>
     v != null && v != false && v != 0 && v != '' && !(v is double && v.isNaN);
 
 const _operators = {
@@ -119,7 +119,7 @@ const _operators = {
 };
 
 /// The variables `let` has bound around the expression being compiled.
-final List<Map<String, Expr>> _scopes = [];
+final List<Map<String, Expr>> letScopes = [];
 
 /// The property a `within` or `distance` [json] is kept under for its
 /// feature: worked out where the tile is built, beside the geometry, since
@@ -133,10 +133,10 @@ final Map<String, Expr> _geometryExprs = {};
 Expr? geometryExpr(String key) => _geometryExprs[key];
 
 /// [read], or without the geometry the value kept under its [key].
-Expr _byGeometry(String key, Expr read) =>
+Expr byGeometry(String key, Expr read) =>
     _geometryExprs[key] = (c) => c.lonLats == null ? c.props[key] : read(c);
 
-Expr _constant(Object? value) =>
+Expr constantExpr(Object? value) =>
     (_) => value;
 
 /// Compiles a style property value: a constant, a legacy `stops` function or
@@ -145,12 +145,12 @@ Expr compileExpr(Object? json) {
   if (json is Map) {
     return json.containsKey('stops') || json.containsKey('property')
         ? _legacyFunction(json)
-        : _constant(json);
+        : constantExpr(json);
   }
   if (json is List && json.isNotEmpty && _operators.contains(json.first)) {
-    return _op(json.first as String, json.sublist(1));
+    return compileOp(json.first as String, json.sublist(1));
   }
-  return _constant(json);
+  return constantExpr(json);
 }
 
 /// Compiles a text field: an expression, or a string with `{property}`
@@ -235,7 +235,7 @@ bool Function(EvalContext) compileFilter(Object? json) {
 }
 
 Expr _filter(Object? json) {
-  if (json is! List || json.isEmpty) return _constant(json != false);
+  if (json is! List || json.isEmpty) return constantExpr(json != false);
   final op = json.first;
   final args = json.sublist(1);
   Object? key(EvalContext c, Object? name) =>
@@ -286,752 +286,13 @@ Expr _filter(Object? json) {
       return switch (op) {
         '==' => (c) => key(c, name) == value,
         '!=' => (c) => key(c, name) != value,
-        _ => (c) => _compare(op as String, key(c, name), value),
+        _ => (c) => compareValues(op as String, key(c, name), value),
       };
   }
   return compileExpr(json);
 }
 
-/// What a `collator` expression gives: how text compares, as MapLibre's
-/// `Intl.Collator` for searching, with the root locale's ordering.
-class _Collator {
-  const _Collator(this.caseSensitive, this.diacriticSensitive, this.locale);
-
-  final bool caseSensitive;
-  final bool diacriticSensitive;
-  final String? locale;
-
-  int compare(String a, String b) {
-    final lowerA = a.toLowerCase(), lowerB = b.toLowerCase();
-    var order = _withoutMarks(lowerA).compareTo(_withoutMarks(lowerB));
-    if (order == 0 && diacriticSensitive) order = lowerA.compareTo(lowerB);
-    if (order == 0 && caseSensitive) {
-      // Lower case sorts before upper case at the same letter.
-      final ra = a.runes.toList(), rb = b.runes.toList();
-      for (var i = 0; order == 0 && i < ra.length && i < rb.length; i++) {
-        order = _upper(ra[i]).compareTo(_upper(rb[i]));
-      }
-    }
-    return order.sign;
-  }
-
-  static int _upper(int rune) {
-    final s = String.fromCharCode(rune);
-    return s == s.toLowerCase() ? 0 : 1;
-  }
-}
-
-/// The Latin letters with marks, under the letter they are drawn from.
-const _marked = {
-  'a': '\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u0101\u0103\u0105',
-  'c': '\u00e7\u0107\u0109\u010b\u010d',
-  'd': '\u010f\u0111',
-  'e': '\u00e8\u00e9\u00ea\u00eb\u0113\u0115\u0117\u0119\u011b',
-  'g': '\u011d\u011f\u0121\u0123',
-  'h': '\u0125\u0127',
-  'i': '\u00ec\u00ed\u00ee\u00ef\u0129\u012b\u012d\u012f\u0131',
-  'j': '\u0135',
-  'k': '\u0137',
-  'l': '\u013a\u013c\u013e\u0140\u0142',
-  'n': '\u00f1\u0144\u0146\u0148\u0149',
-  'o': '\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u014d\u014f\u0151',
-  'r': '\u0155\u0157\u0159',
-  's': '\u015b\u015d\u015f\u0161',
-  't': '\u0163\u0165\u0167',
-  'u': '\u00f9\u00fa\u00fb\u00fc\u0169\u016b\u016d\u016f\u0171\u0173',
-  'w': '\u0175',
-  'y': '\u00fd\u00ff\u0177',
-  'z': '\u017a\u017c\u017e',
-};
-
-final Map<int, int> _baseLetters = {
-  for (final MapEntry(:key, :value) in _marked.entries)
-    for (final r in value.runes) r: key.codeUnitAt(0),
-};
-
-String _withoutMarks(String s) =>
-    String.fromCharCodes(s.runes.map((r) => _baseLetters[r] ?? r));
-
-bool _compare(String op, Object? a, Object? b) {
-  final int order;
-  if (a is num && b is num) {
-    order = a.compareTo(b);
-  } else if (a is String && b is String) {
-    order = a.compareTo(b);
-  } else {
-    return false;
-  }
-  return switch (op) {
-    '<' => order < 0,
-    '<=' => order <= 0,
-    '>' => order > 0,
-    _ => order >= 0,
-  };
-}
-
-Expr _op(String op, List<Object?> args) {
-  Expr arg(int i) => i < args.length ? compileExpr(args[i]) : _constant(null);
-  List<Expr> all() => [for (final a in args) compileExpr(a)];
-  Expr math1(double Function(double) f) {
-    final a = arg(0);
-    return (c) {
-      final v = asNumber(a(c));
-      return v == null ? null : f(v);
-    };
-  }
-
-  switch (op) {
-    case 'literal':
-      return _constant(args.isEmpty ? null : args.first);
-    case 'get':
-      final name = args.isEmpty ? null : args.first;
-      if (args.length > 1) {
-        final key = arg(0), from = arg(1);
-        return (c) => switch (from(c)) {
-          final Map<Object?, Object?> m => m[key(c)],
-          _ => null,
-        };
-      }
-      if (name is String) return (c) => c.props[name];
-      final inner = arg(0);
-      return (c) => c.props[inner(c)];
-    case 'has':
-      final name = args.isEmpty ? null : args.first;
-      if (args.length > 1) {
-        final key = arg(0), from = arg(1);
-        return (c) => switch (from(c)) {
-          final Map<Object?, Object?> m => m.containsKey(key(c)),
-          _ => false,
-        };
-      }
-      return (c) => c.props.containsKey(name);
-    case '!has':
-      final name = args.isEmpty ? null : args.first;
-      return (c) => !c.props.containsKey(name);
-    case 'properties':
-      return (c) => c.props;
-    case 'id':
-      return (c) => c.props[r'$id'];
-    case 'accumulated':
-      return (c) => c.accumulated;
-    case 'feature-state':
-      final name = args.isEmpty ? null : args.first;
-      if (name is String) return (c) => c.state[name];
-      final inner = arg(0);
-      return (c) => c.state[inner(c)];
-    case r'$transition':
-      // From one value to another over a span of the engine's clock, eased
-      // as MapLibre eases a paint property's transition.
-      final from = arg(0), to = arg(1);
-      final start = asNumber(args.elementAtOrNull(2)) ?? 0;
-      final duration = asNumber(args.elementAtOrNull(3)) ?? 0;
-      final delay = asNumber(args.elementAtOrNull(4)) ?? 0;
-      return (c) {
-        final t = duration <= 0
-            ? 1.0
-            : ((c.nowMs - start - delay) / duration).clamp(0.0, 1.0);
-        if (t >= 1) return to(c);
-        return _blend(from(c), to(c), _easeCubicInOut(t));
-      };
-    case r'$images':
-      final parts = all();
-      return (c) =>
-          [for (final p in parts) asText(p(c))]
-              .where((n) => n.isNotEmpty)
-              .join(imageChoice);
-    case 'semiliteral':
-      final value = args.isEmpty ? null : args.first;
-      if (value is! List) return _constant(value);
-      final items = [for (final v in value) compileExpr(v)];
-      return (c) => [for (final i in items) i(c)];
-    case 'let':
-      final scope = <String, Expr>{};
-      for (var i = 0; i + 2 < args.length; i += 2) {
-        scope['${args[i]}'] = compileExpr(args[i + 1]);
-      }
-      _scopes.add(scope);
-      try {
-        return args.isEmpty ? _constant(null) : compileExpr(args.last);
-      } finally {
-        _scopes.removeLast();
-      }
-    case 'var':
-      for (final scope in _scopes.reversed) {
-        final bound = scope[args.isEmpty ? '' : '${args.first}'];
-        if (bound != null) return bound;
-      }
-      return _constant(null);
-    case 'heatmap-density' || 'line-progress':
-      return (c) => c.progress;
-    case 'image':
-      return arg(0);
-    case 'is-supported-script':
-      return _constant(true);
-    case 'resolved-locale':
-      final collator = arg(0);
-      return (c) => switch (collator(c)) {
-        _Collator(:final String locale) => locale,
-        _ => 'en',
-      };
-    case 'within':
-      final place = Place.of(args.isEmpty ? null : args.first);
-      if (place == null) return _constant(false);
-      return _byGeometry(geometryKey([op, ...args]), (c) {
-        final points = c.lonLats?.call();
-        return points != null &&
-            c.geometryType != 'Polygon' &&
-            place.holds(points, line: c.geometryType == 'LineString');
-      });
-    case 'distance':
-      final place = Place.of(args.isEmpty ? null : args.first);
-      if (place == null) return _constant(null);
-      return _byGeometry(geometryKey([op, ...args]), (c) {
-        final points = c.lonLats?.call();
-        return points == null
-            ? null
-            : place.distanceTo(points, shape: c.geometryType);
-      });
-    case 'typeof':
-      final a = arg(0);
-      return (c) => _typeName(a(c));
-    case 'to-rgba':
-      final a = arg(0);
-      return (c) {
-        final v = _color(a(c));
-        return v == null ? null : [v.r * 255, v.g * 255, v.b * 255, v.a];
-      };
-    case 'slice':
-      final input = arg(0), from = arg(1);
-      final to = args.length > 2 ? arg(2) : null;
-      return (c) {
-        final raw = input(c);
-        final v = raw is String ? raw.runes.toList() : raw;
-        if (v is! List) return null;
-        final length = v.length;
-        int at(Object? raw, int fallback) {
-          var i = asNumber(raw)?.toInt() ?? fallback;
-          if (i < 0) i += length;
-          return i.clamp(0, length);
-        }
-
-        final a = at(from(c), 0);
-        final b = math.max(a, at(to?.call(c), length));
-        final part = v.sublist(a, b);
-        return raw is String ? String.fromCharCodes(part.cast<int>()) : part;
-      };
-    case 'index-of':
-      final needle = arg(0), haystack = arg(1);
-      final fromIndex = args.length > 2 ? arg(2) : null;
-      return (c) {
-        final h = haystack(c);
-        final n = needle(c);
-        final start = math.max(0, asNumber(fromIndex?.call(c))?.toInt() ?? 0);
-        if (h is String) {
-          final runes = h.runes.toList();
-          final units = String.fromCharCodes(runes.take(start)).length;
-          final i = h.indexOf(_jsText(n), units);
-          return i < 0 ? -1 : h.substring(0, i).runes.length;
-        }
-        if (h is List) {
-          var from = asNumber(fromIndex?.call(c))?.toInt() ?? 0;
-          if (from < 0) from = math.max(0, from + h.length);
-          return from >= h.length ? -1 : h.indexOf(n, from);
-        }
-        return -1;
-      };
-    case 'sin':
-      return math1(math.sin);
-    case 'cos':
-      return math1(math.cos);
-    case 'tan':
-      return math1(math.tan);
-    case 'asin':
-      return math1(math.asin);
-    case 'acos':
-      return math1(math.acos);
-    case 'atan':
-      return math1(math.atan);
-    case 'zoom':
-      return (c) => c.zoom;
-    case 'geometry-type':
-      return (c) => c.geometryType;
-    case '!':
-      final a = arg(0);
-      return (c) => !_truthy(a(c));
-    case '==' || '!=' || '<' || '<=' || '>' || '>=' when args.length > 2:
-      final a = arg(0), b = arg(1), collator = arg(2);
-      return (c) {
-        final x = a(c), y = b(c);
-        final k = collator(c);
-        if (x is String && y is String && k is _Collator) {
-          final order = k.compare(x, y);
-          return switch (op) {
-            '==' => order == 0,
-            '!=' => order != 0,
-            '<' => order < 0,
-            '<=' => order <= 0,
-            '>' => order > 0,
-            _ => order >= 0,
-          };
-        }
-        return switch (op) {
-          '==' => x == y,
-          '!=' => x != y,
-          _ => _compare(op, x, y),
-        };
-      };
-    case 'collator':
-      final options = args.isNotEmpty && args.first is Map
-          ? args.first! as Map
-          : const <Object?, Object?>{};
-      final caseSensitive = compileExpr(options['case-sensitive']);
-      final diacriticSensitive = compileExpr(options['diacritic-sensitive']);
-      final locale = compileExpr(options['locale']);
-      return (c) => _Collator(
-        caseSensitive(c) == true,
-        diacriticSensitive(c) == true,
-        switch (locale(c)) {
-          final String l => l,
-          _ => null,
-        },
-      );
-    case '==':
-      final a = arg(0), b = arg(1);
-      return (c) => a(c) == b(c);
-    case '!=':
-      final a = arg(0), b = arg(1);
-      return (c) => a(c) != b(c);
-    case '<' || '<=' || '>' || '>=':
-      final a = arg(0), b = arg(1);
-      return (c) => _compare(op, a(c), b(c));
-    case 'all':
-      final parts = all();
-      return (c) {
-        for (final p in parts) {
-          if (!_truthy(p(c))) return false;
-        }
-        return true;
-      };
-    case 'any':
-      final parts = all();
-      return (c) {
-        for (final p in parts) {
-          if (_truthy(p(c))) return true;
-        }
-        return false;
-      };
-    case 'none':
-      final parts = all();
-      return (c) {
-        for (final p in parts) {
-          if (_truthy(p(c))) return false;
-        }
-        return true;
-      };
-    case 'case':
-      final parts = all();
-      return (c) {
-        var i = 0;
-        for (; i + 1 < parts.length; i += 2) {
-          if (_truthy(parts[i](c))) return parts[i + 1](c);
-        }
-        return i < parts.length ? parts[i](c) : null;
-      };
-    case 'match':
-      final input = arg(0);
-      final table = <Object?, Expr>{};
-      var i = 1;
-      for (; i + 1 < args.length; i += 2) {
-        final out = compileExpr(args[i + 1]);
-        final label = args[i];
-        for (final l in label is List ? label : [label]) {
-          table[l] = out;
-        }
-      }
-      final fallback = i < args.length ? compileExpr(args[i]) : _constant(null);
-      return (c) => (table[input(c)] ?? fallback)(c);
-    case 'coalesce':
-      final parts = all();
-      return (c) {
-        for (final p in parts) {
-          final v = p(c);
-          if (v != null) return v;
-        }
-        return null;
-      };
-    case 'step':
-      final input = arg(0);
-      final first = arg(1);
-      final stops = <double>[];
-      final outs = <Expr>[];
-      for (var i = 2; i + 1 < args.length; i += 2) {
-        stops.add(asNumber(args[i]) ?? 0);
-        outs.add(compileExpr(args[i + 1]));
-      }
-      return (c) {
-        final v = asNumber(input(c));
-        if (v == null) return first(c);
-        // As MapLibre's findStopLessThanOrEqualTo: not a number is an
-        // error, which leaves the property its default.
-        if (v.isNaN) return null;
-        var out = first;
-        for (var i = 0; i < stops.length && stops[i] <= v; i++) {
-          out = outs[i];
-        }
-        return out(c);
-      };
-    case 'interpolate' || 'interpolate-hcl' || 'interpolate-lab':
-      final kind = args.isNotEmpty && args.first is List
-          ? args.first! as List
-          : const ['linear'];
-      final stops = <double>[];
-      final outs = <Expr>[];
-      for (var i = 2; i + 1 < args.length; i += 2) {
-        stops.add(asNumber(args[i]) ?? 0);
-        outs.add(compileExpr(args[i + 1]));
-      }
-      return _interpolate(
-        arg(1),
-        stops,
-        outs,
-        space: switch (op) {
-          'interpolate-hcl' => 'hcl',
-          'interpolate-lab' => 'lab',
-          _ => null,
-        },
-        base: kind.first == 'exponential' && kind.length > 1
-            ? asNumber(kind[1]) ?? 1
-            : 1,
-        geometric: kind.first == 'geometric',
-        bezier: kind.first == 'cubic-bezier' && kind.length > 4
-            ? [for (var i = 1; i < 5; i++) (asNumber(kind[i]) ?? 0).toDouble()]
-            : null,
-      );
-    case 'to-string':
-      final a = arg(0);
-      return (c) => switch (a(c)) {
-        final Rgba v =>
-          'rgba(${(v.r * 255).round()},${(v.g * 255).round()},'
-              '${(v.b * 255).round()},${asText(v.a)})',
-        final List<Object?> v => jsonEncode(v),
-        final Map<Object?, Object?> v => jsonEncode(v),
-        final v => _jsText(v) == 'null' ? '' : _jsText(v),
-      };
-    case 'number-format':
-      final a = arg(0);
-      final options = args.length > 1 && args[1] is Map
-          ? args[1] as Map
-          : const <Object?, Object?>{};
-      final least = compileExpr(options['min-fraction-digits']);
-      final most = compileExpr(options['max-fraction-digits']);
-      return (c) {
-        final value = asNumber(a(c));
-        if (value == null) return '';
-        final min = asNumber(least(c))?.toInt() ?? 0;
-        return _grouped(
-          value,
-          min,
-          math.max(min, asNumber(most(c))?.toInt() ?? 3),
-        );
-      };
-    case 'split':
-      final a = arg(0), by = arg(1);
-      return (c) => asText(a(c)).split(asText(by(c)));
-    case 'join':
-      final a = arg(0), by = arg(1);
-      return (c) => switch (a(c)) {
-        final List<Object?> l => l.map(asText).join(asText(by(c))),
-        _ => '',
-      };
-    case 'hsl' || 'hsla':
-      final parts = all();
-      return (c) {
-        final v = [for (final p in parts) asNumber(p(c)) ?? 0];
-        if (v.length < 3) return null;
-        return Rgba.hsl(
-          (v[0] % 360) / 360,
-          (v[1] / 100).clamp(0, 1),
-          (v[2] / 100).clamp(0, 1),
-          v.length > 3 ? v[3].toDouble() : 1,
-        );
-      };
-    case 'to-number':
-      final parts = all();
-      return (c) {
-        for (final p in parts) {
-          final raw = p(c);
-          if (raw == null || (raw is String && raw.trim().isEmpty)) return 0.0;
-          final v = asNumber(raw);
-          if (v != null && !v.isNaN) return v;
-        }
-        return null;
-      };
-    case 'number' || 'string' || 'boolean' || 'object':
-      final parts = all();
-      return (c) {
-        for (final p in parts) {
-          final v = p(c);
-          if (switch (op) {
-            'number' => v is num,
-            'string' => v is String,
-            'boolean' => v is bool,
-            _ => v is Map,
-          }) {
-            return v;
-          }
-        }
-        return null;
-      };
-    case 'to-boolean':
-      final a = arg(0);
-      return (c) => _truthy(a(c));
-    case 'to-color':
-      final parts = all();
-      return (c) {
-        for (final p in parts) {
-          final v = _color(p(c));
-          if (v != null) return v;
-        }
-        return null;
-      };
-    case 'array':
-      final item = args.length > 1 && args.first is String
-          ? args.first! as String
-          : null;
-      final length = args.length > 2 ? asNumber(args[1])?.toInt() : null;
-      final value = args.isEmpty ? _constant(null) : compileExpr(args.last);
-      return (c) {
-        final v = value(c);
-        if (v is! List) return null;
-        if (length != null && v.length != length) return null;
-        if (item != null &&
-            item != 'value' &&
-            !v.every((e) => _typeName(e) == item)) {
-          return null;
-        }
-        return v;
-      };
-    case 'format':
-      final runs = <(Expr, Map<String, Expr>, bool)>[];
-      for (final a in args) {
-        if (a is Map) {
-          if (runs.isEmpty) continue;
-          final (text, _, image) = runs.removeLast();
-          runs.add((
-            text,
-            {
-              for (final MapEntry(:key, :value) in a.entries)
-                '$key': compileExpr(value),
-            },
-            image,
-          ));
-        } else {
-          runs.add((
-            compileExpr(a),
-            const <String, Expr>{},
-            a is List && a.isNotEmpty && a.first == 'image',
-          ));
-        }
-      }
-      return (c) => FormattedText([
-        for (final (text, options, image) in runs)
-          FormatSection(
-            image ? '' : asText(text(c)),
-            image: image ? asText(text(c)) : null,
-            scale: (asNumber(options['font-scale']?.call(c)) ?? 1).toDouble(),
-            fonts: switch (options['text-font']?.call(c)) {
-              final List<Object?> names => [for (final n in names) '$n'],
-              _ => null,
-            },
-            color: Rgba.of(options['text-color']?.call(c)),
-            align: options['vertical-align']?.call(c) as String?,
-          ),
-      ]);
-    case 'concat':
-      final parts = [
-        for (final a in args)
-          if (a is! Map) compileExpr(a),
-      ];
-      return (c) {
-        final out = StringBuffer();
-        for (final p in parts) {
-          out.write(asText(p(c)));
-        }
-        return out.toString();
-      };
-    case 'upcase':
-      final a = arg(0);
-      return (c) => asText(a(c)).toUpperCase();
-    case 'downcase':
-      final a = arg(0);
-      return (c) => asText(a(c)).toLowerCase();
-    case '+' || '*' || 'min' || 'max':
-      final parts = all();
-      return (c) {
-        double? acc = switch (op) {
-          _ when parts.isNotEmpty => null,
-          '+' => 0,
-          '*' => 1,
-          'min' => double.infinity,
-          _ => double.negativeInfinity,
-        };
-        for (final p in parts) {
-          final v = asNumber(p(c));
-          if (v == null) return null;
-          acc = acc == null
-              ? v
-              : switch (op) {
-                  '+' => acc + v,
-                  '*' => acc * v,
-                  'min' => math.min(acc, v),
-                  _ => math.max(acc, v),
-                };
-        }
-        return acc;
-      };
-    case '-' || '/' || '%' || '^':
-      final a = arg(0);
-      if (args.length == 1) return math1((v) => -v);
-      final b = arg(1);
-      return (c) {
-        final x = asNumber(a(c)), y = asNumber(b(c));
-        if (x == null || y == null) return null;
-        return switch (op) {
-          '-' => x - y,
-          '/' => x / y,
-          '%' => x % y,
-          _ => math.pow(x, y).toDouble(),
-        };
-      };
-    case 'round':
-      return math1((v) => v.roundToDouble());
-    case 'floor':
-      return math1((v) => v.floorToDouble());
-    case 'ceil':
-      return math1((v) => v.ceilToDouble());
-    case 'abs':
-      return math1((v) => v.abs());
-    case 'sqrt':
-      return math1(math.sqrt);
-    case 'ln':
-      return math1(math.log);
-    case 'log10':
-      return math1((v) => math.log(v) / math.ln10);
-    case 'log2':
-      return math1((v) => math.log(v) / math.ln2);
-    case 'e':
-      return _constant(math.e);
-    case 'pi':
-      return _constant(math.pi);
-    case 'ln2':
-      return _constant(math.ln2);
-    case 'length':
-      final a = arg(0);
-      return (c) {
-        final v = a(c);
-        return v is String
-            ? v.runes.length
-            : v is List
-            ? v.length
-            : null;
-      };
-    case 'in':
-      final needle = arg(0), haystack = arg(1);
-      return (c) {
-        final h = haystack(c);
-        final n = needle(c);
-        if (h is List) return h.contains(n);
-        if (h is String) {
-          return n != null && h.contains(_jsText(n)) && h.isNotEmpty;
-        }
-        return false;
-      };
-    case 'at':
-      final index = arg(0), list = arg(1);
-      return (c) {
-        final l = list(c);
-        final i = asNumber(index(c))?.toInt();
-        return l is List && i != null && i >= 0 && i < l.length ? l[i] : null;
-      };
-    case 'rgb' || 'rgba':
-      final parts = all();
-      return (c) {
-        final v = [for (final p in parts) asNumber(p(c)) ?? 0];
-        if (v.length < 3) return null;
-        return Rgba(
-          v[0] / 255,
-          v[1] / 255,
-          v[2] / 255,
-          v.length > 3 ? v[3] : 1,
-        );
-      };
-  }
-  return _constant(null);
-}
-
-/// [value] in English digits grouped by thousands, with [least] to [most]
-/// decimals, as `Intl.NumberFormat` writes it for `number-format`.
-String _grouped(double value, int least, int most) {
-  if (!value.isFinite) return value.isNaN ? 'NaN' : (value < 0 ? '-∞' : '∞');
-  final shortest = value.abs().toString();
-  final dot = shortest.indexOf('.');
-  var text = !shortest.contains('e') && shortest.length - dot - 1 <= most
-      ? shortest
-      : value.abs().toStringAsFixed(math.min(most, 20));
-  var (whole, fraction) = text.contains('.')
-      ? (
-          text.substring(0, text.indexOf('.')),
-          text.substring(text.indexOf('.') + 1),
-        )
-      : (text, '');
-  while (fraction.length > least && fraction.endsWith('0')) {
-    fraction = fraction.substring(0, fraction.length - 1);
-  }
-  fraction = fraction.padRight(least, '0');
-  final groups = StringBuffer();
-  for (var i = 0; i < whole.length; i++) {
-    if (i > 0 && (whole.length - i) % 3 == 0) groups.write(',');
-    groups.write(whole[i]);
-  }
-  text = fraction.isEmpty ? '$groups' : '$groups.$fraction';
-  return value < 0 && text.contains(RegExp('[1-9]')) ? '-$text' : text;
-}
-
-double _easeCubicInOut(double t) {
-  if (t <= 0) return 0;
-  if (t >= 1) return 1;
-  final t2 = t * t, t3 = t2 * t;
-  return 4 * (t < 0.5 ? t3 : 3 * (t - t2) + t3 - 0.75);
-}
-
-/// [a] to [b] by [t]: numbers, colours and lists of numbers in between,
-/// anything else [a] until the end.
-Object? _blend(Object? a, Object? b, double t) {
-  if (a is num && b is num) return a + (b - a) * t;
-  if (a is List && b is List && a.length == b.length) {
-    return [for (var i = 0; i < a.length; i++) _blend(a[i], b[i], t)];
-  }
-  final ca = Rgba.of(a), cb = Rgba.of(b);
-  if (ca != null && cb != null) return Rgba.lerp(ca, cb, t);
-  return t < 1 ? a : b;
-}
-
-/// [v] as a colour, as `to-color` reads one: a CSS colour or three or four
-/// channels, red, green and blue out of 255 and alpha out of 1.
-Rgba? _color(Object? v) {
-  if (v is List &&
-      (v.length == 3 || v.length == 4) &&
-      v.every((e) => e is num)) {
-    final n = [for (final e in v) (e as num).toDouble()];
-    if (n.take(3).any((e) => e < 0 || e > 255)) return null;
-    final a = n.length > 3 ? n[3] : 1.0;
-    if (a < 0 || a > 1) return null;
-    return Rgba(n[0] / 255, n[1] / 255, n[2] / 255, a);
-  }
-  return Rgba.of(v);
-}
-
-Expr _interpolate(
+Expr interpolateExpr(
   Expr input,
   List<double> stops,
   List<Expr> outs, {
@@ -1040,7 +301,7 @@ Expr _interpolate(
   List<double>? bezier,
   String? space,
 }) {
-  if (stops.isEmpty) return _constant(null);
+  if (stops.isEmpty) return constantExpr(null);
   return (c) {
     final v = asNumber(input(c));
     if (v != null && v.isNaN) return null;
@@ -1121,7 +382,7 @@ Expr _legacyFunction(Map<Object?, Object?> json) {
   final values = <Object?>[];
   for (final s in rawStops) {
     if (s is! List || s.length < 2 || s.first is Map) {
-      return _constant(fallback);
+      return constantExpr(fallback);
     }
     keys.add(s[0]);
     values.add(s[1]);
@@ -1137,7 +398,7 @@ Expr _legacyFunction(Map<Object?, Object?> json) {
         Rgba.of(v) != null,
   );
   final stops = [for (final k in keys) asNumber(k) ?? 0];
-  final outs = [for (final v in values) _constant(v)];
+  final outs = [for (final v in values) constantExpr(v)];
   if (type == 'interval' || (!numeric && type != 'exponential')) {
     return (c) {
       final v = input(c);
@@ -1149,7 +410,7 @@ Expr _legacyFunction(Map<Object?, Object?> json) {
       return out;
     };
   }
-  final curve = _interpolate(
+  final curve = interpolateExpr(
     input,
     stops,
     outs,
@@ -1183,7 +444,7 @@ Expr _compositeFunction(Map<Object?, Object?> json, List<Object?> rawStops) {
       return byStep[i](c);
     };
   }
-  return _interpolate(
+  return interpolateExpr(
     (c) => c.zoom,
     zooms,
     [

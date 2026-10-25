@@ -10,4 +10,4 @@ flutter run
 
 Flutter GPU is switched on for every platform here: in the Android
 manifest, the iOS and macOS `Info.plist`, and the Windows and Linux
-runners. Where it does not run, the map is drawn with the canvas instead.
+runners.

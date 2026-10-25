@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'collision_boxes.dart';
 import '../style/expr.dart';
-import 'label_rules.dart';
+import 'label_style.dart';
 import 'label_state.dart';
 import 'label_view.dart';
 import '../style/pins.dart';
@@ -10,18 +10,27 @@ import 'road_labels.dart';
 import '../style/sprites.dart';
 import '../style/style_model.dart';
 
+/// An area labels keep clear of, as a marker: its anchor [x], [y] as
+/// fractions of the world, its size in screen pixels, and how far its
+/// centre sits from the anchor.
+typedef LabelObstacle = ({
+  double x,
+  double y,
+  double width,
+  double height,
+  double shiftX,
+  double shiftY,
+});
+
 /// Places the labels of points: an icon or a pin, and text beside it on a
 /// side that is free, keeping clear of the app's markers.
 class PointLabels {
-  PointLabels(this._view, this._boxes, this._roads);
+  PointLabels(this._view, this._boxes, this._roads, this._style);
 
   final LabelView _view;
   final CollisionBoxes _boxes;
   final RoadLabels _roads;
-  LabelRules rules = LabelRules.vmap;
-
-  /// The style's icons. Null until they have loaded.
-  SpriteSheet? sheet;
+  final LabelStyle _style;
 
   /// Pins drawn in place of the style's icons. Null draws the style's own.
   VmapPins? pins;
@@ -38,33 +47,34 @@ class PointLabels {
 
   /// Clear space around the text an icon is stretched behind.
 
-  /// Areas labels keep clear of: anchor as fractions of the world, size in
-  /// screen pixels, then how far the area's centre sits from the anchor.
-  List<(double, double, double, double, double, double)> _obstacles = const [];
+  List<LabelObstacle> _obstacles = const [];
   double _obstacleReach = 0;
 
   /// The collision box each obstacle took this pass, in order.
   List<int> _markerBoxes = const [];
 
-  List<(double, double, double, double, double, double)> get obstacles =>
-      _obstacles;
-  set obstacles(List<(double, double, double, double, double, double)> value) {
+  List<LabelObstacle> get obstacles => _obstacles;
+  set obstacles(List<LabelObstacle> value) {
     _obstacles = value;
     _obstacleReach = 0;
-    for (final (_, _, w, h, _, _) in value) {
-      _obstacleReach = math.max(_obstacleReach, math.max(w, h) / 2 + 6);
+    for (final (:width, :height, x: _, y: _, shiftX: _, shiftY: _) in value) {
+      _obstacleReach = math.max(
+        _obstacleReach,
+        math.max(width, height) / 2 + 6,
+      );
     }
   }
 
   /// Takes the room the markers fill, before any label is placed.
   void startPass() {
     _markerBoxes = [
-      for (final (wx, wy, w, h, shiftX, shiftY) in _obstacles)
+      for (final o in _obstacles)
         () {
-          _view.project(wx, wy);
-          final ox = _view.x + shiftX;
-          final oy = _view.y + shiftY;
-          return _boxes.add(ox - w / 2, oy - h / 2, ox + w / 2, oy + h / 2);
+          _view.project(o.x, o.y);
+          final ox = _view.x + o.shiftX;
+          final oy = _view.y + o.shiftY;
+          final w = o.width / 2, h = o.height / 2;
+          return _boxes.add(ox - w, oy - h, ox + w, oy + h);
         }(),
     ];
   }
@@ -75,13 +85,10 @@ class PointLabels {
   bool place(
     LabelState st,
     SymbolLayer? symbol,
-    double fontSize,
-    double textW,
-    double textH,
-    double textPad,
-    double iconPad,
+    LabelSize size,
     EvalContext context,
   ) {
+    final (:fontSize, width: textW, height: textH, :textPad, :iconPad) = size;
     final c = st.candidate;
     st
       ..worldX = c.worldX
@@ -90,7 +97,10 @@ class PointLabels {
       ..curve = null
       ..screenAngle = 0;
     final spaced = c is TileLabel && c.tile.spaced;
-    if (spaced && c.hasText && rules.spreadNames && _roads.nearSame(st)) {
+    if (spaced &&
+        c.hasText &&
+        _style.rules.spreadNames &&
+        _roads.nearSame(st)) {
       return false;
     }
     final along = symbol?.textAlongMap ?? false;
@@ -399,7 +409,7 @@ class PointLabels {
     final name = _iconName(st.candidate);
     var icon = st.icon;
     if (icon == null && name.isNotEmpty) {
-      icon = st.icon = sheet?.icon(name);
+      icon = st.icon = _style.sheet?.icon(name);
     }
     st
       ..iconDx = 0
@@ -696,11 +706,11 @@ class PointLabels {
     var (shiftX, shiftY) = text;
     int? ownBox;
     if (c case MarkerName(index: final own)) {
-      final (_, _, w, h, ox, oy) = _obstacles[own];
-      down = spot.textH / 2 + h / 2 + 2;
-      across = spot.textW / 2 + w / 2 + 4;
+      final o = _obstacles[own];
+      down = spot.textH / 2 + o.height / 2 + 2;
+      across = spot.textW / 2 + o.width / 2 + 4;
       ownBox = _markerBoxes[own];
-      (shiftX, shiftY) = (ox, oy);
+      (shiftX, shiftY) = (o.shiftX, o.shiftY);
     }
     final first = beside && c.startsRight ? -across : across;
     for (var k = 0; k < 6; k++) {

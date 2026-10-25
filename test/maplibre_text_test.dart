@@ -3,8 +3,8 @@ import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/style/color.dart';
-import 'package:vmap/src/labels/glyphs/glyph_pbf.dart';
-import 'package:vmap/src/labels/glyphs/maplibre_shaping.dart';
+import 'package:vmap/src/text/glyphs/glyph_pbf.dart';
+import 'package:vmap/src/text/glyphs/maplibre_shaping.dart';
 import 'package:vmap/src/labels/icon_stretch.dart';
 import 'package:vmap/src/style/sprites.dart';
 

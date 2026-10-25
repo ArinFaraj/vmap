@@ -5,6 +5,7 @@ import 'package:vmap/src/style/expr.dart';
 import 'package:vmap/src/tiles/geojson.dart';
 import 'package:vmap/src/style/style_model.dart';
 import 'package:vmap/src/tiles/tile_builder.dart';
+import 'package:vmap/src/tiles/built_tile.dart';
 
 const _shops = {
   'type': 'FeatureCollection',

@@ -6,7 +6,7 @@ import 'gpu_shim/gpu.dart' as gpu;
 
 import '../tiles/extrusion.dart';
 import '../tiles/gpu_stream.dart';
-import 'map_renderer.dart';
+import '../render/map_renderer.dart';
 import '../tiles/tiles.dart';
 
 /// Frames the GPU may still be reading while the next one is written.
@@ -81,6 +81,9 @@ class GpuHeap {
   final List<(GpuRange, int)> _given = [];
   int used = 0;
   int _oversize = 0;
+
+  /// The tiles holding room here, each until it is disposed.
+  final Set<TileGpu> tiles = Set.identity();
 
   /// The renderer's paint count, which a tile's last draw is stamped with.
   int frame = 0;
@@ -284,7 +287,9 @@ class TileGpu implements RendererTileData {
     this._indices,
     this.buildings,
     this._parts,
-  ) : drawnFrame = _heap.frame;
+  ) : drawnFrame = _heap.frame {
+    _heap.tiles.add(this);
+  }
 
   final LoadedTile tile;
   final GpuHeap _heap;
@@ -352,6 +357,7 @@ class TileGpu implements RendererTileData {
     if (range != null) _heap.give(range);
     if (indices != null) _heap.give(indices);
     _range = _indices = null;
+    _heap.tiles.remove(this);
   }
 }
 

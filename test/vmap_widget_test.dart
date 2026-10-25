@@ -26,6 +26,7 @@ Future<VmapController> _pump(
   void Function(LatLng)? onLongPress,
   void Function(VmapCamera)? onCameraIdle,
   WidgetBuilder? loadingBuilder,
+  VmapGestureOptions gestures = const VmapGestureOptions(),
 }) async {
   final controller = VmapController(camera);
   addTearDown(controller.dispose);
@@ -42,6 +43,7 @@ Future<VmapController> _pump(
         onLongPress: onLongPress,
         onCameraIdle: onCameraIdle,
         loadingBuilder: loadingBuilder,
+        gestures: gestures,
       ),
     ),
   );
@@ -77,6 +79,22 @@ void main() {
     final now = c.toScreen(spot)!;
     expect(now.dx, closeTo(200, 0.5));
     expect(now.dy, closeTo(200, 0.5));
+  });
+
+  testWidgets('a drag after a double tap pans rather than zooms', (
+    tester,
+  ) async {
+    final c = await _pump(tester);
+    await tester.tapAt(const Offset(200, 200));
+    await tester.pump(const Duration(milliseconds: 60));
+    await tester.tapAt(const Offset(200, 200));
+    await _settle(tester);
+    final zoom = c.camera.zoom;
+    final before = c.toLatLng(const Offset(400, 300))!;
+    await tester.dragFrom(const Offset(400, 300), const Offset(0, 120));
+    await _settle(tester);
+    expect(c.camera.zoom, closeTo(zoom, 1e-6));
+    expect(c.toScreen(before)!.dy, greaterThan(400));
   });
 
   testWidgets('a two finger tap zooms out one level', (tester) async {
@@ -377,5 +395,128 @@ void main() {
     await _settle(tester);
     expect(c.camera.zoom, closeTo(13, 0.05));
     expect(c.camera.bearing, closeTo(0.2 * 180 / 3.141592653589793, 0.5));
+  });
+
+  group('gesture options', () {
+    testWidgets('none leaves the camera to code and still reports taps', (
+      tester,
+    ) async {
+      LatLng? tapped;
+      final c = await _pump(
+        tester,
+        gestures: VmapGestureOptions.none,
+        onTap: (p) => tapped = p,
+      );
+      final before = c.camera;
+      await tester.dragFrom(const Offset(400, 300), const Offset(-120, 0));
+      final mouse = TestPointer(1, PointerDeviceKind.mouse);
+      await tester.sendEventToBinding(mouse.hover(const Offset(400, 300)));
+      await tester.sendEventToBinding(mouse.scroll(const Offset(0, -300)));
+      await _settle(tester);
+      expect(c.camera, before);
+      await tester.tapAt(const Offset(200, 200));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(tapped, isNotNull);
+    });
+
+    testWidgets('without drag pan a pinch zooms but does not slide', (
+      tester,
+    ) async {
+      final c = await _pump(
+        tester,
+        gestures: const VmapGestureOptions(dragPan: false),
+      );
+      final before = c.camera.center;
+      await tester.dragFrom(const Offset(400, 300), const Offset(-120, 0));
+      await _settle(tester);
+      expect(c.camera.center, before);
+      final a = await tester.startGesture(const Offset(350, 300), pointer: 1);
+      final b = await tester.startGesture(const Offset(450, 300), pointer: 2);
+      for (var i = 1; i <= 10; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        await a.moveTo(Offset(350 - i * 5.0, 300));
+        await b.moveTo(Offset(450 + i * 5.0, 300));
+      }
+      await tester.pump(const Duration(milliseconds: 200));
+      await a.up();
+      await b.up();
+      await _settle(tester);
+      expect(c.camera.zoom, closeTo(13, 0.05));
+    });
+
+    testWidgets('without rotate a right drag only tilts', (tester) async {
+      final c = await _pump(
+        tester,
+        gestures: const VmapGestureOptions(rotate: false),
+      );
+      final right = await tester.startGesture(
+        const Offset(400, 300),
+        kind: PointerDeviceKind.mouse,
+        buttons: kSecondaryMouseButton,
+      );
+      for (var i = 1; i <= 10; i++) {
+        await right.moveTo(Offset(400 + i * 5.0, 300 - i * 3.0));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await right.up();
+      await _settle(tester);
+      expect(c.camera.bearing, 0);
+      expect(c.camera.pitch, greaterThan(5));
+    });
+
+    testWidgets('the wheel rate sets how far a notch zooms', (tester) async {
+      final c = await _pump(
+        tester,
+        gestures: const VmapGestureOptions(wheelZoomRate: 1 / 150),
+      );
+      final mouse = TestPointer(1, PointerDeviceKind.mouse);
+      await tester.sendEventToBinding(mouse.hover(const Offset(400, 300)));
+      await tester.sendEventToBinding(mouse.scroll(const Offset(0, -150)));
+      await _settle(tester);
+      expect(c.camera.zoom, closeTo(13, 1e-6));
+    });
+
+    testWidgets('without double click zoom a double tap is two taps', (
+      tester,
+    ) async {
+      var taps = 0;
+      final c = await _pump(
+        tester,
+        gestures: const VmapGestureOptions(doubleClickZoom: false),
+        onTap: (_) => taps++,
+      );
+      await tester.tapAt(const Offset(200, 200));
+      await tester.pump(const Duration(milliseconds: 60));
+      await tester.tapAt(const Offset(200, 200));
+      await _settle(tester);
+      expect(c.camera.zoom, 12);
+      expect(taps, 2);
+    });
+
+    testWidgets('without inertia a fast drag stops where the finger does', (
+      tester,
+    ) async {
+      final c = await _pump(
+        tester,
+        gestures: const VmapGestureOptions(inertia: false),
+      );
+      final spot = c.toLatLng(const Offset(400, 300))!;
+      await tester.flingFrom(
+        const Offset(400, 300),
+        const Offset(-150, 0),
+        2000,
+      );
+      await _settle(tester);
+      expect(c.toScreen(spot)!.dx, closeTo(250, 2));
+    });
+
+    testWidgets('options change on a rebuild', (tester) async {
+      await _pump(tester, gestures: VmapGestureOptions.none);
+      final c = await _pump(tester);
+      final before = c.camera.center;
+      await tester.dragFrom(const Offset(400, 300), const Offset(-120, 0));
+      await _settle(tester);
+      expect(c.camera.center, isNot(before));
+    });
   });
 }

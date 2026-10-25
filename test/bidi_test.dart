@@ -65,4 +65,25 @@ void main() {
   test('reads Unicode $unicodeVersion', () {
     expect(bidiClassOf(0x06B5), BidiClass.al);
   });
+
+  test('a text\'s direction is its first paragraph\'s level', () {
+    for (final c in cases) {
+      if (c[1] != '2') continue;
+      final text = [for (final h in c[0].split(' ')) int.parse(h, radix: 16)];
+      if (text.any((t) => t > 0xFFFF)) continue;
+      expect(
+        textIsRightToLeft(String.fromCharCodes(text)),
+        Bidi.resolve(text).paragraphLevel == 1,
+        reason: c[0],
+      );
+    }
+  });
+
+  test('direction comes from the first strong letter, any script', () {
+    expect(textIsRightToLeft('Москва القاهرة'), isFalse);
+    expect(textIsRightToLeft('12 القاهرة'), isTrue);
+    expect(textIsRightToLeft('ירושלים'), isTrue);
+    expect(textIsRightToLeft('\u2067Erbil\u2069 هەولێر'), isTrue);
+    expect(textIsRightToLeft('123'), isFalse);
+  });
 }

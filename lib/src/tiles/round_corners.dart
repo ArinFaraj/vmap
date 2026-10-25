@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'tile_builder.dart' show tileExtent;
+import 'built_tile.dart';
 
 /// Tile units, of a tile at [z] whose row is [y], to [metres] at its middle.
 double tileUnitsForMeters(double metres, int z, int y) {

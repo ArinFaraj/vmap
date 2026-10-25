@@ -7,7 +7,7 @@ import '../camera/mercator.dart';
 import '../style/style_model.dart';
 import 'protocol.dart';
 import 'query.dart';
-import 'tile_builder.dart';
+import 'built_tile.dart';
 import 'tile_id.dart';
 import 'tiles.dart';
 import 'worker.dart';

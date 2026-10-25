@@ -1,13 +1,10 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import '../camera/view.dart';
-import '../gpu/map_renderer.dart';
-import '../style/expr.dart';
-import '../style/sprites.dart';
-import '../style/style_model.dart';
+import '../render/map_renderer.dart';
 import '../tiles/extrusion.dart';
-import '../tiles/tiles.dart';
+import '../tiles/tiles.dart' show LoadedTile;
+import 'canvas_tile.dart';
 import 'mesh_painter.dart';
 
 /// Draws the map's vector layers and buildings with Flutter's canvas, where
@@ -21,84 +18,74 @@ class CanvasMap extends MapRenderer {
   final ExtrusionPainter _buildings = ExtrusionPainter();
   final ui.Paint _layerPaint = ui.Paint();
 
-  late MapView _view;
-  late StyleSheet _sheet;
-  late ui.Offset _origin;
-  late List<List<TileDraw>> _fallback, _ideal;
-  late EvalContext _context;
+  late RenderFrame _frame;
   late Float64List _matrix;
-  double _styleZoom = 0, _devicePixelRatio = 1;
 
   /// The first run not drawn yet this frame.
   int _next = 0;
   bool _buildingsDrawn = false;
 
-  /// Paths and vertex lists drawn this frame.
-  int drawCalls = 0;
+  /// The canvas draws a tile from the worker's meshes, which a tile made
+  /// ready for another renderer no longer has.
+  @override
+  bool canBuild(LoadedTile tile) => tile.builtMeshes != null;
 
   @override
-  bool supports(StyleSheet sheet) => true;
+  bool makeReady(LoadedTile tile, double scale, Stopwatch clock, int deadline) {
+    var data = tile.rendererData as CanvasTile?;
+    if (data == null) {
+      data = CanvasTile(tile.builtMeshes!, tile.sheet);
+      tile.keepForRenderer(data);
+    }
+    return data.build(_meshes.widths, scale, clock, deadline);
+  }
 
   @override
-  bool paint(
-    ui.Canvas canvas,
-    MapView view,
-    ui.Offset origin,
-    StyleSheet sheet,
-    List<List<TileDraw>> fallback,
-    List<List<TileDraw>> ideal,
-    EvalContext context,
-    double styleZoom,
-    double devicePixelRatio,
-    SpriteSheet? sprites,
-  ) {
-    _view = view;
-    _origin = origin;
-    _sheet = sheet;
-    _fallback = fallback;
-    _ideal = ideal;
-    _context = context;
-    _styleZoom = styleZoom;
-    _devicePixelRatio = devicePixelRatio;
-    _matrix = view.matrix(originX: origin.dx, originY: origin.dy);
+  bool supports(_) => true;
+
+  @override
+  bool paint(ui.Canvas canvas, RenderFrame frame) {
+    _frame = frame;
+    _matrix = frame.view.matrix(
+      originX: frame.origin.dx,
+      originY: frame.origin.dy,
+    );
     _next = 0;
     _buildingsDrawn = false;
-    drawCalls = 0;
     return false;
   }
 
   @override
-  bool upload(LoadedTile tile, Stopwatch clock, int deadline) => true;
-
-  @override
   bool presentUntil(ui.Canvas canvas, int run) {
-    final sheet = _sheet;
+    final f = _frame;
+    final sheet = f.sheet;
     if (run > _next) _drawRuns(canvas, run);
     if (_buildingsDrawn || run < sheet.labelsRun) return false;
     _buildingsDrawn = true;
     if (sheet.extrusions.isEmpty) return false;
     return _buildings.paint(
       canvas,
-      _view,
-      _origin,
+      f.view,
+      f.origin,
       sheet,
-      [for (final tiles in _ideal) ...tiles],
-      _context,
-      _styleZoom,
-      _devicePixelRatio,
+      [for (final tiles in f.ideal) ...tiles],
+      f.context,
+      f.styleZoom,
+      f.devicePixelRatio,
     );
   }
 
   void _drawRuns(ui.Canvas canvas, int run) {
-    final sheet = _sheet;
-    final size = ui.Size(_view.width, _view.height);
+    final f = _frame;
+    final sheet = f.sheet;
+    final size = ui.Size(f.view.width, f.view.height);
     canvas
       ..save()
       ..transform(_matrix);
     for (var index = _next; index < run; index++) {
       final r = sheet.runs[index];
       if (r.background >= 0 || r.raster >= 0) continue;
-      final whole = sheet.runOpacity(r, _context);
+      final whole = sheet.runOpacity(r, f.context);
       if (whole == 0) continue;
       final faded = whole != null && whole < 1;
       if (faded) {
@@ -107,12 +94,13 @@ class CanvasMap extends MapRenderer {
           _layerPaint..color = ui.Color.fromRGBO(0, 0, 0, whole),
         );
       }
-      drawCalls += _meshes.drawRun(
+      f.stats.drawCalls += _meshes.drawRun(
         canvas,
         sheet,
         r,
-        _fallback[r.source].followedBy(_ideal[r.source]),
-        states.length > r.source ? states[r.source] : null,
+        f.fallback[r.source].followedBy(f.ideal[r.source]),
+        f.states.length > r.source ? f.states[r.source] : null,
+        f.sprites,
         size,
       );
       if (faded) canvas.restore();

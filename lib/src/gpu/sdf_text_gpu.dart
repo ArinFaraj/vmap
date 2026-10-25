@@ -1,13 +1,23 @@
-part of 'gpu_map.dart';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
+
+import 'package:flutter/foundation.dart';
+import 'package:vector_math/vector_math.dart' show Vector4;
+
+import '../labels/sdf_text.dart';
+import '../text/glyphs/glyph_pbf.dart';
+import 'gpu_device.dart';
+import 'gpu_shim/gpu.dart' as gpu;
 
 /// Text from a style's glyph ranges drawn as MapLibre draws it: the
 /// glyphs' distance fields packed into one atlas, each glyph a quad, its
 /// edge and halo cut by MapLibre's `symbol_sdf` shader, into an image the
 /// canvas lays where the labels go.
-class _SdfTextGpu implements SdfText {
-  _SdfTextGpu(this._map);
+class SdfTextGpu implements SdfText {
+  SdfTextGpu(this._device, this._library);
 
-  final GpuMap _map;
+  final GpuDevice _device;
+  final gpu.ShaderLibrary _library;
   gpu.RenderPipeline? _pipeline;
   gpu.UniformSlot? _frameSlot, _fragmentFrameSlot, _glyphSlot, _spriteSlot;
   bool _failed = false;
@@ -55,8 +65,7 @@ class _SdfTextGpu implements SdfText {
   bool get ready {
     if (_pipeline != null) return true;
     if (_failed) return false;
-    final library = _map._library;
-    if (library == null || !_map._ready()) return false;
+    final library = _library;
     final vertex = library['SdfVertex'], fragment = library['SdfFragment'];
     if (vertex == null || fragment == null) {
       _failed = true;
@@ -122,7 +131,7 @@ class _SdfTextGpu implements SdfText {
       );
       return true;
     } catch (e) {
-      _map.onFailure?.call(e);
+      _device.fail(e);
       _pipeline = null;
       _failed = true;
       return false;
@@ -227,7 +236,8 @@ class _SdfTextGpu implements SdfText {
     required SdfLook look,
     required int layer,
   }) {
-    if (_map._sheetTexture == null || _map._sheetImage == null) return false;
+    final sprites = _device.sprites;
+    if (sprites.texture == null || sprites.image == null) return false;
     _quad(
       ox,
       oy,
@@ -339,7 +349,7 @@ class _SdfTextGpu implements SdfText {
         gpu.StorageMode.devicePrivate,
         width,
         height,
-        format: _map._color,
+        format: _device.color,
       );
       _targets.add((texture, texture.asImage()));
     }
@@ -382,7 +392,7 @@ class _SdfTextGpu implements SdfText {
       }
       from = to;
     }
-    final host = _map._host!;
+    final host = _device.host;
     final buffer = gpu.gpuContext.createDeviceBufferWithCopy(
       ByteData.sublistView(_ordered, 0, _count * _quadFloats),
     );
@@ -392,13 +402,13 @@ class _SdfTextGpu implements SdfText {
         gpu.ColorAttachment(texture: target, clearValue: Vector4.zero()),
       ),
     );
-    final sheet = _map._sheetTexture ?? _map._blank;
-    final sheetImage = _map._sheetImage;
+    final sheet = _device.sprites.texture ?? _device.sprites.blank;
+    final sheetImage = _device.sprites.image;
     pass
       ..bindPipeline(_pipeline!)
       ..setCullMode(gpu.CullMode.none)
       ..setColorBlendEnable(true)
-      ..setColorBlendEquation(GpuMap._over)
+      ..setColorBlendEquation(overBlend)
       ..bindTexture(
         _glyphSlot!,
         _atlas!,

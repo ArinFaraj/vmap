@@ -14,7 +14,8 @@ export 'package:latlong2/latlong.dart' show LatLng;
 
 export 'src/engine.dart' show VmapEngine;
 export 'src/errors.dart' show VmapError, VmapErrorKind;
-export 'src/labels/glyphs/vmap_font.dart' show VmapFont;
+export 'src/gestures/gesture_options.dart' show VmapGestureOptions;
+export 'src/text/glyphs/vmap_font.dart' show VmapFont;
 export 'src/camera/bounds.dart' show VmapBounds;
 export 'src/camera/map_camera.dart' show VmapCamera;
 export 'src/widget/marker.dart' show VmapMarker;

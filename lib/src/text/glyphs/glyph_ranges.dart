@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import '../../style/style_model.dart';
-import '../../tiles/net.dart';
+import '../../net/net.dart';
 import 'glyph_pbf.dart';
 
 /// The glyph ranges of a style's `glyphs` URL, fetched as labels need

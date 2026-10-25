@@ -1,22 +1,11 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import '../../text/bidi.dart';
-import '../../text/font/font.dart';
-import '../../text/scripts.dart';
-import '../../text/shaper.dart';
+import '../bidi.dart';
+import '../font/font.dart';
+import '../scripts.dart';
+import '../shaper.dart';
 import 'maplibre_shaping.dart';
-
-/// Whether [text] is written right to left, by its first strong letter.
-bool textIsRightToLeft(String text) {
-  for (final unit in text.codeUnits) {
-    if (unit >= 0x0590 && unit <= 0x08FF || unit >= 0xFB1D && unit <= 0xFEFC) {
-      return true;
-    }
-    if (unit >= 0x41 && unit <= 0x24F) return false;
-  }
-  return false;
-}
 
 /// The fonts labels are shaped with, first to last: a run of text takes the
 /// first font that has every one of its glyphs.

@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'label_sprites.dart';
 import '../style/pins.dart';
 import '../style/sprites.dart';
-import '../tiles/tile_builder.dart';
+import '../tiles/built_tile.dart';
 
 /// A label a tile or a marker offers, which the label engine may place.
 sealed class LabelCandidate {
@@ -29,6 +29,12 @@ sealed class LabelCandidate {
   /// Names the picture of the text, shared by labels that look the same.
   late String spriteKey = '$_kind|$text';
   String get _kind;
+
+  /// This label when it is a name along a road.
+  TileLabel? get road => null;
+
+  /// This label when it is a map label at a point, not along a road.
+  TileLabel? get point => null;
 
   /// The colours the text was last asked for in, when they come from the
   /// feature. One picture is kept for each.
@@ -71,6 +77,12 @@ final class TileLabel extends LabelCandidate {
 
   @override
   String get _kind => '${tile.layer}';
+
+  @override
+  TileLabel? get road => tile.line != null ? this : null;
+
+  @override
+  TileLabel? get point => tile.line == null ? this : null;
 
   /// The length of the road the name runs along, in tile units. Zero for a
   /// point.
@@ -129,6 +141,17 @@ final class MarkerName extends LabelCandidate {
   @override
   String get _kind => 'marker';
 }
+
+/// A label's text as one placement pass weighs it, in screen pixels with
+/// its perspective: its font size, the box of its text, and the padding
+/// kept around its text and its icon.
+typedef LabelSize = ({
+  double fontSize,
+  double width,
+  double height,
+  double textPad,
+  double iconPad,
+});
 
 /// What one label is across frames: whether it is placed, how far it has
 /// faded, and where it sits.
@@ -242,4 +265,38 @@ class LabelState {
 
   /// In the list of labels that are showing or fading.
   bool live = false;
+
+  /// The size of the text before it is laid out, for placing it until it
+  /// is: each line's characters at about half an em, a line wrapped at
+  /// [maxWidth] ems.
+  (double, double) guessSize(double fontSize, {required double maxWidth}) {
+    final ems = vertical ? 1.0 : 0.55;
+    var widest = 0.0;
+    var lines = 0;
+    for (final line in candidate.text.split('\n')) {
+      final width = line.runes.length * ems;
+      if (vertical || width <= maxWidth) {
+        lines++;
+        widest = math.max(widest, width);
+        continue;
+      }
+      // Words fill a line until the next would pass the width.
+      var run = 0.0;
+      lines++;
+      for (final word in line.split(' ')) {
+        final w = word.runes.length * ems;
+        if (run > 0 && run + ems + w > maxWidth) {
+          widest = math.max(widest, run);
+          lines++;
+          run = w;
+        } else {
+          run += (run > 0 ? ems : 0) + w;
+        }
+      }
+      widest = math.max(widest, run);
+    }
+    final long = widest * fontSize;
+    final across = (1.35 + (lines - 1) * 1.2) * fontSize;
+    return vertical ? (across, long) : (long, across);
+  }
 }

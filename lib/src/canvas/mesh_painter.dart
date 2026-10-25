@@ -2,16 +2,16 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import '../camera/camera.dart';
 import '../style/expr.dart';
+import 'canvas_tile.dart';
 import 'heat.dart';
 import 'shaders.dart';
 import '../style/sprites.dart';
 import '../stats.dart';
 import '../style/style_model.dart';
-import '../tiles/tile_builder.dart' show tileExtent;
+import '../tiles/built_tile.dart';
 import '../tiles/tiles.dart';
-import 'zoom_history.dart';
+import '../render/zoom_history.dart';
 
 /// What one frame may still spend on the UI thread preparing tiles and
 /// widening lines before the rest waits for the next frame.
@@ -51,8 +51,6 @@ class MeshPainter {
   final LayerShaders _shaders = LayerShaders();
   final HeatPainter _heat = HeatPainter();
 
-  /// The style's icons and patterns. Null until they have loaded.
-  SpriteSheet? sprites;
   double _rotation = 0;
 
   /// Each paint layer's colour and width this frame, or a colour of black
@@ -66,86 +64,6 @@ class MeshPainter {
     _colors = Int32List(layers);
     _widths = Float64List(layers);
   }
-
-  /// Fills the screen with the style's background, and returns its colour.
-  /// Fills the map with [layer]: the screen, or under the transform of a
-  /// tilted [camera] the ground it shows.
-  void drawBackground(
-    ui.Canvas canvas,
-    BackgroundLayer layer,
-    MapFrame camera,
-  ) {
-    if (_context.zoom < layer.minZoom || _context.zoom >= layer.maxZoom) return;
-    final pattern = layer.pattern?.call(_context);
-    final ui.Paint paint;
-    if (pattern is String) {
-      final shader = _shaders.backdrop(
-        pattern,
-        sprites,
-        camera.origin,
-        _context.zoom,
-      );
-      if (shader == null) return;
-      final opacity = asNumber(layer.opacity(_context)) ?? 1;
-      paint = _paint
-        ..color = ui.Color.fromRGBO(255, 255, 255, opacity.clamp(0, 1))
-        ..shader = shader;
-    } else {
-      final color = layer.colorAt(_context);
-      if (color == null || color.a <= 0) return;
-      paint = _paint..color = ui.Color(color.toArgb());
-    }
-    final path = ui.Path()
-      ..addPolygon([
-        for (final p in camera.view.ground())
-          ui.Offset(p.x - camera.origin.dx, p.y - camera.origin.dy),
-      ], true);
-    canvas.drawPath(path, paint);
-    _paint.shader = null;
-  }
-
-  /// Fills [area], the screen above the horizon at [horizonY], by default
-  /// its bottom, with [sky], as MapLibre's sky shader does: its sky colour,
-  /// turning towards its horizon colour over the blend's share of half the
-  /// screen's height above the horizon.
-  void drawSky(
-    ui.Canvas canvas,
-    SkyPaint sky,
-    ui.Size size,
-    ui.Rect area, {
-    double? horizonY,
-  }) {
-    horizonY ??= area.bottom;
-    final top = Rgba.of(sky.skyColor(_context)) ?? Rgba.transparent;
-    final low = Rgba.of(sky.horizonColor(_context)) ?? top;
-    final band =
-        (asNumber(sky.skyHorizonBlend(_context)) ?? 0).clamp(0.0, 1.0) *
-        size.height /
-        2;
-    if (band <= 0) {
-      canvas.drawRect(area, _paint..color = ui.Color(top.toArgb()));
-      return;
-    }
-    const steps = 8;
-    _paint.shader = ui.Gradient.linear(
-      ui.Offset(0, horizonY - band),
-      ui.Offset(0, horizonY),
-      [
-        for (var i = 0; i <= steps; i++)
-          ui.Color(_mix(top, low, math.pow(i / steps, 2).toDouble()).toArgb()),
-      ],
-      [for (var i = 0; i <= steps; i++) i / steps],
-    );
-    canvas.drawRect(area, _paint);
-    _paint.shader = null;
-  }
-
-  static Rgba _mix(Rgba a, Rgba b, double t) => Rgba(
-    a.r + (b.r - a.r) * t,
-    a.g + (b.g - a.g) * t,
-    a.b + (b.b - a.b) * t,
-    a.a + (b.a - a.a) * t,
-  );
 
   /// Works out each layer's colour and width at [styleZoom].
   void startFrame(
@@ -185,6 +103,7 @@ class MeshPainter {
     StyleRun run,
     Iterable<TileDraw> tiles,
     Map<Object, Map<String, Object?>>? states,
+    SpriteSheet? sprites,
     ui.Size size,
   ) {
     final heat = switch (sheet.layers[run.first]) {
@@ -196,7 +115,7 @@ class MeshPainter {
     final onto = heat == null ? canvas : _heat.begin();
     var draws = 0;
     for (final d in tiles) {
-      draws += _drawTile(onto, sheet, d, run.first, run.end, states);
+      draws += _drawTile(onto, sheet, d, run.first, run.end, states, sprites);
     }
     if (heat != null) _heat.end(canvas, size, _context, heat, shown / 255);
     return draws;
@@ -209,7 +128,11 @@ class MeshPainter {
     int first,
     int end,
     Map<Object, Map<String, Object?>>? states,
+    SpriteSheet? sprites,
   ) {
+    final data = d.tile.rendererData as CanvasTile?;
+    if (data == null) return 0;
+    final groups = data.groups;
     final scale = d.size / tileExtent;
     final corner = ui.Offset(d.tile.id.x * d.size, d.tile.id.y * d.size);
     void enter({bool clip = true}) {
@@ -243,7 +166,6 @@ class MeshPainter {
           !layers[first].spills ||
           (d.clips != null && layers[first] is! HeatmapLayer),
     );
-    final groups = d.tile.groups;
     var draws = 0;
     for (var p = first; p < end; p++) {
       if (_colors[p] >>> 24 == 0) continue;

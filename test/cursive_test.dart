@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/labels/glyphs/cursive.dart';
+import 'package:vmap/src/text/glyphs/cursive.dart';
 
 void main() {
   test('latin text keeps its letter spacing', () {

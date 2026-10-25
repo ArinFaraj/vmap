@@ -1,6 +1,6 @@
 import '../camera/mercator.dart';
 import 'query.dart';
-import '../canvas/raster.dart';
+import '../raster/raster.dart';
 import 'tile_id.dart';
 import 'worker.dart';
 

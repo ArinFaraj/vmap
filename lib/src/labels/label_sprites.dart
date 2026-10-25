@@ -3,15 +3,15 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import '../style/format.dart';
-import 'glyphs/arabic_forms.dart';
-import 'glyphs/glyph_layout.dart';
-import 'glyphs/glyph_pages.dart';
-import 'glyphs/glyph_pbf.dart';
-import 'glyphs/glyph_ranges.dart';
-import 'glyphs/maplibre_shaping.dart';
+import '../text/glyphs/arabic_forms.dart';
+import '../text/glyphs/glyph_layout.dart';
+import '../text/glyphs/glyph_pages.dart';
+import '../text/glyphs/glyph_pbf.dart';
+import '../text/glyphs/glyph_ranges.dart';
+import '../text/glyphs/maplibre_shaping.dart';
 import '../platform.dart';
-import '../style/sprites.dart';
 import '../stats.dart';
+import 'label_style.dart';
 
 /// A label's text drawn once, to be placed every frame.
 sealed class LabelSprite {
@@ -215,9 +215,10 @@ class TextLook {
 /// The drawn labels, one for each text and look, shared by every label
 /// that shows it.
 class LabelSprites {
-  LabelSprites(this.work);
+  LabelSprites(this.work, this._style);
 
   final VmapLabelWork work;
+  final LabelStyle _style;
   final Map<String, LabelSprite> _byKey = {};
 
   /// Set once vmap's own fonts are loaded: text they cover is shaped by
@@ -228,8 +229,6 @@ class LabelSprites {
   /// instead of [glyphFonts] when set.
   GlyphRanges? ranges;
 
-  /// The style's sprite images, which a formatted label shows inline.
-  SpriteSheet? images;
   final Stopwatch _clock = Stopwatch()..start();
 
   /// Kept when more are drawn than this, only those used in the last pass.
@@ -376,7 +375,7 @@ class LabelSprites {
         imageSize: (run) {
           final spec = format?[run];
           if (spec is! List || spec[4] is! String) return null;
-          final image = images?.entries[spec[4]];
+          final image = _style.sheet?.entries[spec[4]];
           return image == null ? null : (image.width, image.height);
         },
         textSize: look.fontSize,
@@ -593,6 +592,3 @@ class LabelSprites {
     return _byKey[key] = sprite;
   }
 }
-
-/// Whether [text] is written right to left.
-bool isRightToLeft(String text) => textIsRightToLeft(text);

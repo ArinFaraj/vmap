@@ -2,12 +2,9 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/style/expr.dart';
-import 'package:vmap/src/gpu/map_renderer.dart';
-import 'package:vmap/src/style/sprites.dart';
+import 'package:vmap/src/render/map_renderer.dart';
 import 'package:vmap/src/style/style_model.dart';
-import 'package:vmap/src/tiles/tiles.dart';
-import 'package:vmap/src/camera/view.dart';
+import 'package:vmap/src/tiles/tiles.dart' show LoadedTile;
 import 'package:vmap/vmap.dart';
 
 class _Renderer extends MapRenderer {
@@ -20,21 +17,18 @@ class _Renderer extends MapRenderer {
   bool supports(StyleSheet sheet) => false;
 
   @override
-  bool paint(
-    ui.Canvas canvas,
-    MapView view,
-    ui.Offset origin,
-    StyleSheet sheet,
-    List<List<TileDraw>> fallback,
-    List<List<TileDraw>> ideal,
-    EvalContext context,
-    double styleZoom,
-    double devicePixelRatio,
-    SpriteSheet? sprites,
-  ) => false;
+  bool paint(ui.Canvas canvas, RenderFrame frame) => false;
 
   @override
-  bool upload(LoadedTile tile, Stopwatch clock, int deadline) => true;
+  bool makeReady(
+    LoadedTile tile,
+    double scale,
+    Stopwatch clock,
+    int deadline,
+  ) => true;
+
+  @override
+  bool canBuild(LoadedTile tile) => true;
 
   @override
   void dispose() {}

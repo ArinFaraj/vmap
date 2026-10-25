@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'builtin_style.dart';
 import 'json_equals.dart';
 import 'palette.dart';
@@ -324,7 +322,7 @@ class VmapStyleEdit {
       if (x.layer != y.layer ||
           x._part != y._part ||
           x.name != y.name ||
-          jsonEncode(x.value) != jsonEncode(y.value)) {
+          !jsonEquals(x.value, y.value)) {
         return false;
       }
     }

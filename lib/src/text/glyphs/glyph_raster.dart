@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import '../../platform.dart';
-import '../../text/font/font.dart';
+import '../font/font.dart';
 import '../../tiles/typed_buffer.dart';
 import 'glyph_layout.dart';
 import 'glyph_pbf.dart';

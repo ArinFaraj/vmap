@@ -7,7 +7,8 @@ import 'package:vmap/src/labels/label_state.dart';
 import 'package:vmap/src/labels/labels.dart';
 import 'package:vmap/src/labels/text_style.dart';
 import 'package:vmap/src/style/style_model.dart';
-import 'package:vmap/src/tiles/tile_builder.dart';
+import 'package:vmap/src/tiles/built_tile.dart';
+import 'package:vmap/src/camera/camera.dart';
 import 'package:vmap/src/camera/view.dart';
 import 'package:vmap/src/camera/map_camera.dart';
 import 'package:latlong2/latlong.dart';
@@ -77,6 +78,15 @@ MapView _flat([double zoom = _zoom]) {
   ).view(_size.width, _size.height);
 }
 
+MapFrame _camera(double zoom, MapView view) => MapFrame(
+  zoom: zoom,
+  origin: ui.Offset.zero,
+  size: _size,
+  rotation: 0,
+  devicePixelRatio: 1,
+  view: view,
+);
+
 Future<Set<String>> _settle(
   LabelEngine labels,
   List<List<LabelCandidate>> sources, {
@@ -86,17 +96,13 @@ Future<Set<String>> _settle(
     final recorder = ui.PictureRecorder();
     labels.paint(
       ui.Canvas(recorder),
+      _camera(_zoom, view ?? _flat()),
       sources: sources,
       sourcesKey: 1,
       background: 0xFFFFFFFF,
-      zoom: _zoom,
-      origin: ui.Offset.zero,
-      size: _size,
-      devicePixelRatio: 1,
       dt: 1,
       rasterBudgetMicros: 1000000,
       zooming: false,
-      view: view ?? _flat(),
     );
     recorder.endRecording().dispose();
     await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -122,7 +128,16 @@ void main() {
     "a marker's name shows, and a map label under the marker steps aside",
     () async {
       final labels = _engine()
-        ..obstacles = [(200 / _world, 200 / _world, 40, 40, 0, 0)];
+        ..obstacles = [
+          (
+            x: 200 / _world,
+            y: 200 / _world,
+            width: 40,
+            height: 40,
+            shiftX: 0,
+            shiftY: 0,
+          ),
+        ];
       final shown = await _settle(labels, [
         [MarkerName(0, 'Home', 200 / _world, 200 / _world)],
         [_place('under', 'Covered', 200, 200, 1)],
@@ -241,17 +256,13 @@ void main() {
       final recorder = ui.PictureRecorder();
       labels.paint(
         ui.Canvas(recorder),
+        _camera(zoom, _flat(zoom)),
         sources: sources,
         sourcesKey: 1,
         background: 0xFFFFFFFF,
-        zoom: zoom,
-        origin: ui.Offset.zero,
-        size: _size,
-        devicePixelRatio: 1,
         dt: 0.016,
         rasterBudgetMicros: 1000000,
         zooming: true,
-        view: _flat(zoom),
       );
       recorder.endRecording().dispose();
     }

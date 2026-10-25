@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/canvas/raster.dart';
+import 'package:vmap/src/raster/raster_dem.dart';
 import 'package:vmap/src/style/raster_style.dart';
 import 'package:vmap/src/style/style_model.dart';
 

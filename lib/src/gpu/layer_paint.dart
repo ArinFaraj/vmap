@@ -5,7 +5,7 @@ import '../style/expr.dart';
 import '../tiles/gpu_stream.dart';
 import '../style/sprites.dart';
 import '../style/style_model.dart';
-import '../canvas/zoom_history.dart';
+import '../render/zoom_history.dart';
 
 /// A fill or line layer's paint for one frame, in screen pixels.
 class LayerPaint {

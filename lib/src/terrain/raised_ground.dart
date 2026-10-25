@@ -1,20 +1,12 @@
 import 'dart:math' as math;
 
-import '../camera/mercator.dart';
 import '../camera/view.dart';
-import '../canvas/raster.dart';
-import '../gpu/map_renderer.dart';
+import '../raster/raster.dart';
+import '../raster/raster_dem.dart';
 import '../options.dart';
 import '../style/raster_style.dart';
 import '../tiles/tile_id.dart';
 import 'terrain.dart';
-
-const _circumference = 40075016.686;
-
-/// World pixels in a metre of height at the latitude of [view]'s middle.
-double _perMetre(MapView view) =>
-    view.worldSize /
-    (_circumference * math.cos(latitudeAt(view.centerY) * math.pi / 180));
 
 /// The ground the style's root `terrain` raises: its tiles of heights, and
 /// the height the map's middle stands at, eased as heights arrive.
@@ -52,14 +44,16 @@ class RaisedGround {
           ) as TerrainTiles;
   }
 
-  /// Asks for the heights under [view] and hands them to [renderer].
-  /// Returns the view over that ground, and whether the ground is still
-  /// easing to its height.
-  ({MapView view, bool easing}) raise(MapView view, MapRenderer? renderer) {
+  /// The heights the last [raise] stood the map on, or null on flat ground.
+  Terrain? terrain;
+
+  /// Asks for the heights under [view] and keeps them in [terrain]. Returns
+  /// the view over that ground, and whether the ground is still easing to
+  /// its height.
+  ({MapView view, bool easing}) raise(MapView view) {
     final terrain = tiles;
-    if (renderer == null) return (view: view, easing: false);
     if (terrain == null) {
-      renderer.terrain = null;
+      this.terrain = null;
       return (view: view, easing: false);
     }
     final exaggeration = terrain.layer.exaggeration;
@@ -68,7 +62,7 @@ class RaisedGround {
       0,
       math.min(view.zoom.floor() - shallower, terrain.maxZoom),
     );
-    final perMetre = _perMetre(view);
+    final perMetre = perMetreAt(view);
     final eye = view.eye;
     final belowEye =
         terrain.heights.heightAt(
@@ -111,7 +105,7 @@ class RaisedGround {
             ),
       }.toList(),
     );
-    renderer.terrain = Terrain(
+    this.terrain = Terrain(
       terrain.heights,
       exaggeration,
       terrain.maxZoom,
@@ -122,26 +116,4 @@ class RaisedGround {
   }
 
   void close() => tiles?.close();
-
-  /// World pixels in a metre of height for labels raised by
-  /// `symbol-height-offset`: at the middle's latitude on the flat map, as
-  /// MapLibre's pixels per meter, and at the equator's on the globe, whose
-  /// sphere is the world's width around.
-  static double labelPerMetre(MapView? view) {
-    if (view == null) return 0;
-    if (view.globe != null) return view.worldSize / _circumference;
-    return _perMetre(view);
-  }
-
-  /// The ground's height in world pixels under a point of the world, for
-  /// labels to stand on, over [terrain].
-  static double Function(double wx, double wy)? groundOf(
-    MapView? view,
-    Terrain? terrain,
-  ) {
-    if (view == null || terrain == null) return null;
-    final perMetre = _perMetre(view);
-    final zoom = view.zoom.floor();
-    return (wx, wy) => terrain.at(wx, wy, zoom) * perMetre;
-  }
 }

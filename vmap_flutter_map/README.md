@@ -7,9 +7,9 @@ use flutter_map.
 - `VmapLayer` draws any MapLibre style. Put it where a `TileLayer` would go.
 - `VmapFlutterMap` is a whole map in one widget: a `FlutterMap` with a
   `VmapLayer`, the markers above it, and `VmapGestures` in place of
-  flutter_map's own: touch with a glide, the mouse wheel, a right drag to
-  turn, a trackpad's slide, pinch and twist, and the arrow, plus and minus
-  keys.
+  flutter_map's own: the same gestures as a `Vmap`, switched off one by one
+  with `gestures: VmapGestureOptions(...)`. flutter_map does not tilt, so
+  the tilting gestures do nothing there.
 - `NamedMarker` is a flutter_map `Marker` with a name the map writes beside
   it, placed so it never covers another label.
 

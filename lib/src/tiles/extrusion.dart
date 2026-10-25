@@ -6,12 +6,12 @@ import 'package:dart_earcut/dart_earcut.dart';
 
 import 'building_index.dart';
 import '../style/expr.dart';
-import '../camera/mercator.dart';
+import '../terrain/terrain.dart' show perMetreAt;
 import '../platform.dart';
 import 'round_corners.dart';
 import '../style/style_model.dart';
 import '../camera/subdivide.dart';
-import 'tile_builder.dart' show tileExtent;
+import 'built_tile.dart';
 import 'tiles.dart' show TileDraw;
 import '../camera/view.dart';
 import 'typed_buffer.dart';
@@ -549,9 +549,7 @@ class ExtrusionPainter {
     if (k == 0) return;
     final order = List<int>.generate(k, (i) => i)
       ..sort((a, b) => _keys[a].compareTo(_keys[b]));
-    final perMetre =
-        view.worldSize /
-        (40075016.686 * math.cos(latitudeAt(view.centerY) * math.pi / 180));
+    final perMetre = perMetreAt(view);
     _vertices = 0;
     for (final o in order) {
       final packed = _order[o];

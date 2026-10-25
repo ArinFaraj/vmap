@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'net.dart';
+import '../net/net.dart';
 import '../platform.dart';
 import 'pmtiles.dart';
 import '../options.dart';

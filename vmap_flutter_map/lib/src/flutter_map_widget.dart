@@ -18,7 +18,7 @@ class VmapFlutterMap extends StatefulWidget {
     this.initialRotation = 0,
     this.minZoom = 3,
     this.maxZoom = 19,
-    this.rotate = true,
+    this.gestures = const VmapGestureOptions(),
     this.style = VmapStyle.light,
     this.controller,
     this.markers = const [],
@@ -49,8 +49,8 @@ class VmapFlutterMap extends StatefulWidget {
   final double minZoom;
   final double maxZoom;
 
-  /// Two fingers turning turn the map.
-  final bool rotate;
+  /// Which gestures move the map.
+  final VmapGestureOptions gestures;
   final VmapStyle style;
 
   /// Moves and reads the map from outside. The widget makes its own when
@@ -141,7 +141,7 @@ class VmapFlutterMapState extends State<VmapFlutterMap> {
       controller: _controller,
       minZoom: widget.minZoom,
       maxZoom: widget.maxZoom,
-      rotate: widget.rotate,
+      options: widget.gestures,
       child: FlutterMap(
         mapController: _controller,
         options: MapOptions(

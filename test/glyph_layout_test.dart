@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/labels/glyphs/glyph_layout.dart';
+import 'package:vmap/src/text/glyphs/glyph_layout.dart';
 import 'package:vmap/src/labels/label_path.dart';
 
 void main() {

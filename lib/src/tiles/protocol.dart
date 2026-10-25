@@ -6,7 +6,7 @@ library;
 import 'dart:typed_data';
 
 import '../options.dart';
-import 'tile_builder.dart' show BuiltTile;
+import 'built_tile.dart';
 import 'tile_id.dart';
 
 /// What a worker is started with.
@@ -40,9 +40,9 @@ class WorkerSetup {
     nameKeys: (wire[5] as List?)?.cast<String>(),
     zoomOffset: (wire[6]! as num).toDouble(),
     source: wire[7]! as int,
-    fonts: wire.length > 8 ? (wire[8] as List?)?.cast<Uint8List>() : null,
-    families: wire.length > 9 ? (wire[9] as List?)?.cast<String>() : null,
-    gpu: wire.length > 10 && wire[10] == true,
+    fonts: (wire[8] as List?)?.cast<Uint8List>(),
+    families: (wire[9] as List?)?.cast<String>(),
+    gpu: wire[10]! as bool,
   );
 
   /// The fonts labels are shaped with, or null to leave shaping to the page.
@@ -265,7 +265,13 @@ sealed class WorkerReply {
     final body = wire[2];
     return switch (wire[1]) {
       'built' => TileBuilt(job, BuiltTile.fromMessage(body! as List<Object?>)),
-      'failed' => TileNotBuilt(job, body! as String),
+      'failed' => switch (body! as List) {
+        [final String message, final bool corrupt] => TileNotBuilt(
+          job,
+          TileFailure(message, corrupt: corrupt),
+        ),
+        _ => throw FormatException('A failure the worker cannot send: $body'),
+      },
       'found' => FeaturesFound(job, [
         for (final hit in body! as List) TileHit.fromWire(hit! as List),
       ]),
@@ -342,13 +348,30 @@ final class TileBuilt extends TileOutcome {
   List<Object?> toWire() => [job, 'built', tile.toMessage()];
 }
 
-final class TileNotBuilt extends TileOutcome {
-  const TileNotBuilt(super.job, this.error);
+/// Why a tile could not be built, as text, since it crosses from a worker.
+/// A [corrupt] tile's data could not be read, so asking for it again soon
+/// will not help.
+final class TileFailure {
+  const TileFailure(this.message, {required this.corrupt});
 
-  final String error;
+  final String message;
+  final bool corrupt;
 
   @override
-  List<Object?> toWire() => [job, 'failed', error];
+  String toString() => message;
+}
+
+final class TileNotBuilt extends TileOutcome {
+  const TileNotBuilt(super.job, this.failure);
+
+  final TileFailure failure;
+
+  @override
+  List<Object?> toWire() => [
+    job,
+    'failed',
+    [failure.message, failure.corrupt],
+  ];
 }
 
 final class FeaturesFound extends WorkerReply {

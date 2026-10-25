@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import '../tiles/net.dart';
+import '../net/net.dart';
 
 /// The size each image of the style's sprite [sheets] is drawn at, in
 /// logical pixels, by its name: the prefix of its sheet and its own name.

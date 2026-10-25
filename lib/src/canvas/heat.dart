@@ -4,7 +4,7 @@ import 'dart:ui' as ui;
 
 import '../style/expr.dart';
 import '../style/style_model.dart';
-import '../tiles/tiles.dart';
+import 'canvas_tile.dart';
 
 /// Draws heatmap layers: every point adds a soft glow to a picture of how
 /// crowded each place is, and that picture is then coloured through the

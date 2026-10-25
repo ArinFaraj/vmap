@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:vmap/src/style/style_model.dart';
 import 'package:vmap/src/tiles/tile_builder.dart';
+import 'package:vmap/src/tiles/built_tile.dart';
 
 /// Geometry types of a vector tile feature.
 const point = 1;

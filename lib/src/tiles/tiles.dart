@@ -1,144 +1,23 @@
 import 'dart:developer' show Timeline;
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import '../camera/camera.dart';
 import 'extrusion.dart';
 import 'gpu_stream.dart';
 import '../labels/label_state.dart';
-import '../gpu/map_renderer.dart';
+import '../render/map_renderer.dart';
 import '../style/style_model.dart';
-import 'tessellate.dart';
-import 'tile_builder.dart';
+import 'built_tile.dart';
 import 'worker.dart';
 import 'tile_id.dart';
 import '../camera/view.dart';
-
-class MeshStroke {
-  MeshStroke(this.pass, this.halfWidth, this.offset, this.vertices);
-
-  final int pass;
-  final double halfWidth;
-  final double offset;
-  final ui.Vertices vertices;
-}
-
-class TileMesh {
-  TileMesh.fill(MeshChunk chunk, this.props)
-    : fill = ui.Vertices.raw(
-        ui.VertexMode.triangles,
-        chunk.positions,
-        indices: chunk.indices,
-      ),
-      points = null,
-      _base = null,
-      _ext = null,
-      _off = null,
-      _along = null,
-      _indices = null;
-
-  TileMesh.points(MeshChunk chunk, this.props)
-    : fill = null,
-      points = chunk.positions,
-      _base = null,
-      _ext = null,
-      _off = null,
-      _along = null,
-      _indices = null;
-
-  TileMesh.line(MeshChunk chunk, this.props)
-    : fill = null,
-      points = null,
-      _along = chunk.distances,
-      _base = chunk.positions.buffer.asFloat32x4List(
-        chunk.positions.offsetInBytes,
-        chunk.positions.length >> 2,
-      ),
-      _ext = chunk.extrusions!.buffer.asFloat32x4List(
-        chunk.extrusions!.offsetInBytes,
-        chunk.positions.length >> 2,
-      ),
-      _off = chunk.offsets?.buffer.asFloat32x4List(
-        chunk.offsets!.offsetInBytes,
-        chunk.positions.length >> 2,
-      ),
-      _indices = chunk.indices;
-
-  final ui.Vertices? fill;
-
-  /// The centres of a circle layer's circles.
-  final Float32List? points;
-
-  /// What the features in the mesh have in common, for paint that reads it.
-  final Map<String, Object?>? props;
-  final Float32List? _along;
-  final Float32x4List? _base;
-  final Float32x4List? _ext;
-  final Float32x4List? _off;
-  final Uint16List? _indices;
-  final List<MeshStroke> _strokes = [];
-
-  static Float32x4List _scratch = Float32x4List(0);
-
-  MeshStroke? existing(int pass) {
-    for (final s in _strokes) {
-      if (s.pass == pass) return s;
-    }
-    return null;
-  }
-
-  /// Widens the line mesh to [halfWidth] tile units for [pass], [offset] tile
-  /// units to the right of its centre line, replacing whatever that pass had.
-  ui.Vertices build(int pass, double halfWidth, [double offset = 0]) {
-    for (var i = 0; i < _strokes.length; i++) {
-      if (_strokes[i].pass == pass) {
-        _strokes.removeAt(i).vertices.dispose();
-        break;
-      }
-    }
-    final base = _base!;
-    final ext = _ext!;
-    final n = base.length;
-    if (_scratch.length < n) _scratch = Float32x4List(n);
-    final out = _scratch;
-    final w = Float32x4.splat(halfWidth);
-    final off = _off;
-    if (off == null || offset == 0) {
-      for (var i = 0; i < n; i++) {
-        out[i] = base[i] + ext[i] * w;
-      }
-    } else {
-      final o = Float32x4.splat(offset);
-      for (var i = 0; i < n; i++) {
-        out[i] = base[i] + ext[i] * w + off[i] * o;
-      }
-    }
-    final vertices = ui.Vertices.raw(
-      ui.VertexMode.triangles,
-      out.buffer.asFloat32List(0, n * 4),
-      indices: _indices,
-      textureCoordinates: _along,
-    );
-    _strokes.add(MeshStroke(pass, halfWidth, offset, vertices));
-    return vertices;
-  }
-
-  void dispose() {
-    fill?.dispose();
-    for (final s in _strokes) {
-      s.vertices.dispose();
-    }
-    _strokes.clear();
-  }
-}
 
 class LoadedTile {
   LoadedTile(this.id, BuiltTile built, this.sheet)
     : _built = built,
       extrusions = built.extrusions,
-      gpu = built.gpu,
-      groups = List.filled(sheet.buckets.length, null);
+      gpu = built.gpu;
 
   /// The buildings to stand up on a tilted map.
   final List<BuiltExtrusion> extrusions;
@@ -149,7 +28,10 @@ class LoadedTile {
   final TileId id;
   final StyleSheet sheet;
   BuiltTile? _built;
-  final List<List<TileMesh>?> groups;
+
+  /// The worker's meshes, which a renderer makes the tile drawable from;
+  /// null once it is.
+  List<BuiltMesh>? get builtMeshes => _built?.meshes;
   final List<LabelCandidate> labels = [];
   final Map<int, List<LabelCandidate>> _copies = {};
 
@@ -174,95 +56,53 @@ class LoadedTile {
   int usedFrame = 0;
 
   /// What a renderer keeps for this tile, let go with it.
-  RendererTileData? rendererData;
+  RendererTileData? get rendererData => _rendererData;
+  RendererTileData? _rendererData;
 
-  bool get prepared => _step < 0;
+  /// Keeps [data] for the renderer that made it, until [releaseRenderer].
+  void keepForRenderer(RendererTileData data) {
+    assert(_rendererData == null);
+    _rendererData = data;
+  }
 
-  /// 0 makes the canvas meshes, 1..layers widen one line layer each, then
-  /// labels, then a renderer's upload.
-  int _step = 0;
-  int _uploaded = 0;
+  /// Lets go of what the renderer kept, so the next [prepare] makes the
+  /// tile ready for its renderer again.
+  void releaseRenderer() {
+    _rendererData?.dispose();
+    _rendererData = null;
+    _ready = false;
+  }
+
+  bool get prepared => _ready;
+  bool _ready = false;
+
+  /// Made ready once, then let go by its renderer, which makes it ready
+  /// again from what it kept.
+  bool get waitsForRenderer => !_ready && _built == null;
+
   int _labelAt = 0;
 
   /// Gets the tile ready to draw, so the first frame that draws it has
-  /// nothing left to compute: the canvas meshes with every line widened to
-  /// [widths], or with a [renderer] instead its upload, and the labels.
+  /// nothing left to compute: its labels, and what [renderer] draws it
+  /// from, at [scale] tile units to a pixel.
   /// Works in steps and returns once [clock] passes [deadline]; call again
   /// to continue.
   void prepare(
-    Float64List widths,
     double scale,
     Stopwatch clock,
     int deadline, {
-    MapRenderer? renderer,
+    required MapRenderer renderer,
   }) {
+    if (_ready) return;
     final built = _built;
-    if (built != null) {
-      if (renderer != null && _step <= sheet.layers.length) {
-        _step = sheet.layers.length + 1;
-      }
-      if (!_meshes(built, widths, scale, clock, deadline)) return;
-      if (!_labels(built, clock, deadline)) return;
-    }
-    if (renderer != null && !renderer.upload(this, clock, deadline)) return;
+    if (built != null && !_labels(built, clock, deadline)) return;
+    if (!renderer.makeReady(this, scale, clock, deadline)) return;
     _built = null;
-    _step = -1;
+    _ready = true;
     Timeline.instantSync(
       'vmap.tile.ready',
       arguments: {'id': '${id.z}/${id.x}/${id.y}'},
     );
-  }
-
-  /// Opens a ready tile to a renderer's upload: one made ready for the
-  /// canvas, or one whose upload the renderer let go.
-  void uploadAgain() {
-    if (_step < 0 && rendererData == null) _step = 0;
-  }
-
-  /// Ready but for a renderer's upload, after [uploadAgain].
-  bool get waitsForUpload => _built == null && _step >= 0;
-
-  bool _meshes(
-    BuiltTile built,
-    Float64List widths,
-    double scale,
-    Stopwatch clock,
-    int deadline,
-  ) {
-    if (_step == 0) {
-      while (_uploaded < built.meshes.length) {
-        if (_uploaded > 0 && clock.elapsedMicroseconds > deadline) {
-          return false;
-        }
-        final m = built.meshes[_uploaded++];
-        (groups[m.bucket] ??= []).add(switch (sheet.buckets[m.bucket].kind) {
-          BucketKind.line => TileMesh.line(m.chunk, m.props),
-          BucketKind.circle => TileMesh.points(m.chunk, m.props),
-          BucketKind.fill ||
-          BucketKind.extrusion => TileMesh.fill(m.chunk, m.props),
-        });
-      }
-      _step = 1;
-      if (clock.elapsedMicroseconds > deadline) return false;
-    }
-    while (_step <= sheet.layers.length) {
-      final p = _step - 1;
-      final layer = sheet.layers[p];
-      final meshes = groups[layer.bucket];
-      _step++;
-      if (layer is! LineLayer ||
-          layer.perFeature ||
-          meshes == null ||
-          widths[p] <= 0) {
-        continue;
-      }
-      final halfWidth = widths[p] / 2 / scale;
-      for (final m in meshes) {
-        m.build(p, halfWidth);
-      }
-      if (clock.elapsedMicroseconds > deadline) return false;
-    }
-    return true;
   }
 
   /// Puts [built] in place of the tile's labels, which come late when the
@@ -292,16 +132,7 @@ class LoadedTile {
     return true;
   }
 
-  void dispose() {
-    for (final g in groups) {
-      if (g == null) continue;
-      for (final m in g) {
-        m.dispose();
-      }
-    }
-    rendererData?.dispose();
-    rendererData = null;
-  }
+  void dispose() => releaseRenderer();
 }
 
 class TileDraw {
@@ -314,37 +145,99 @@ class TileDraw {
   List<ui.Rect>? clips;
 }
 
-/// The tiles of one of the style's sources.
-class TileSource {
-  TileSource(this.def);
+/// The sources of [defs] in order: each one of [sources] with the same
+/// signature kept when [keep], the rest made by [make] from its index, each
+/// new one showing the tiles of the source of its name it replaces until
+/// its own are ready. The sources not kept are disposed.
+List<TileSource> reconcileSources(
+  List<TileSource> sources,
+  List<VectorSource> defs, {
+  required bool keep,
+  required TileSource Function(int index) make,
+}) {
+  final byName = <String, TileSource>{
+    if (keep)
+      for (final s in sources) s.def.name: s,
+  };
+  final kept = <String, TileSource>{
+    if (keep)
+      for (final s in sources) s.def.signature: s,
+  };
+  final next = <TileSource>[];
+  for (var i = 0; i < defs.length; i++) {
+    final def = defs[i];
+    final reused = kept.remove(def.signature);
+    if (reused != null) {
+      next.add(reused);
+      continue;
+    }
+    final made = make(i);
+    if (byName[def.name] case final before?) made._takeOver(before);
+    next.add(made);
+  }
+  for (final s in sources) {
+    if (!next.contains(s)) s.dispose();
+  }
+  return next;
+}
 
-  final VectorSource def;
-  late TilePool pool;
-  final Map<TileId, LoadedTile> tiles = {};
-
-  /// Tiles of the data this source had before it changed, shown until the
-  /// tiles of the new data are ready.
-  final Map<TileId, LoadedTile> previous = {};
-  final Map<TileId, ({int atMs, int times})> failed = {};
+/// When each tile that failed may be asked for again.
+class TileRetries {
+  final Map<TileId, ({int atMs, int times})> _failed = {};
 
   /// Notes that tile [id] could not be had at [nowMs]. Data it could not
   /// read will not read better soon, so it waits the longest at once.
   void fail(TileId id, int nowMs, {required bool corrupt}) {
-    final times = corrupt ? _retryDoublings + 1 : (failed[id]?.times ?? 0) + 1;
-    failed[id] = (atMs: nowMs, times: times);
+    final times = corrupt ? _doublings + 1 : (_failed[id]?.times ?? 0) + 1;
+    _failed[id] = (atMs: nowMs, times: times);
   }
 
-  static const _retryDoublings = 7;
+  /// Forgets that tile [id] failed, now that it loaded.
+  void loaded(TileId id) => _failed.remove(id);
+
+  static const _doublings = 7;
 
   /// Whether tile [id] failed too lately to ask for it again: three seconds
   /// after the first failure, twice as long after each one more, up to
   /// about six minutes, so a missing tile is not asked for over and over.
   bool resting(TileId id, int nowMs) {
-    final f = failed[id];
+    final f = _failed[id];
     if (f == null) return false;
-    final wait = 3000 << (math.min(f.times, _retryDoublings + 1) - 1);
+    final wait = 3000 << (math.min(f.times, _doublings + 1) - 1);
     return nowMs - f.atMs < wait;
   }
+}
+
+/// The tiles of one of the style's sources.
+class TileSource {
+  TileSource(this.def, this.pool);
+
+  /// Shows [before]'s tiles until this source's own are ready.
+  void _takeOver(TileSource before) {
+    previous
+      ..addAll(before.previous)
+      ..addAll(before.tiles);
+    before.previous.clear();
+    before.tiles.clear();
+  }
+
+  /// Keeps every tile shown, as one that changed, until it is built again.
+  void rebuildAll() {
+    for (final MapEntry(:key, :value) in tiles.entries) {
+      previous.remove(key)?.dispose();
+      previous[key] = value;
+    }
+    tiles.clear();
+  }
+
+  final VectorSource def;
+  final TilePool pool;
+  final Map<TileId, LoadedTile> tiles = {};
+
+  /// Tiles of the data this source had before it changed, shown until the
+  /// tiles of the new data are ready.
+  final Map<TileId, LoadedTile> previous = {};
+  final TileRetries retries = TileRetries();
 
   final List<TileDraw> ideal = [];
   final List<TileDraw> fallback = [];
@@ -377,7 +270,9 @@ class TileSource {
   }
 
   /// Works out which of the source's tiles cover the view, asks for the
-  /// missing ones, and returns whether a tile is still being prepared.
+  /// missing ones, and returns whether a tile is still being prepared. A
+  /// tilted view takes tiles nearer the camera at the view's zoom, farther
+  /// ones a level or more coarser.
   bool cover(
     MapFrame camera,
     double dataZoom, {
@@ -390,30 +285,7 @@ class TileSource {
   }) {
     retrying = false;
     maxDataZoom = pool.coverMaxZoom;
-    return _coverView(
-      camera.view,
-      camera,
-      frame: frame,
-      nowMs: nowMs,
-      prepare: prepare,
-      hold: hold,
-      variableZoom: variableZoom,
-      standing: standing,
-    );
-  }
-
-  /// [cover] for a tilted view: tiles nearer the camera at the view's zoom,
-  /// farther ones a level or more coarser.
-  bool _coverView(
-    MapView view,
-    MapFrame camera, {
-    required int frame,
-    required int nowMs,
-    required void Function(LoadedTile tile, double scale) prepare,
-    double hold = 0,
-    bool variableZoom = false,
-    bool standing = false,
-  }) {
+    final view = camera.view;
     ideal.clear();
     fallback.clear();
     fallbackByKey.clear();
@@ -465,7 +337,7 @@ class TileSource {
     wanted.clear();
     missing.sort((a, b) => a.$2.compareTo(b.$2));
     for (final (id, _) in missing) {
-      if (resting(id, nowMs)) {
+      if (retries.resting(id, nowMs)) {
         retrying = true;
         continue;
       }
@@ -512,7 +384,7 @@ class TileSource {
         if (!have.prepared) prepare(have, ahead.worldSize / n / tileExtent);
         continue;
       }
-      if (resting(id, nowMs)) continue;
+      if (retries.resting(id, nowMs)) continue;
       if (!wanted.contains(id)) wanted.add(id);
     }
   }

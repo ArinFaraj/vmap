@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'glyphs/glyph_pbf.dart';
+import '../text/glyphs/glyph_pbf.dart';
 
 /// Text from a style's glyph ranges drawn as MapLibre draws it: each glyph
 /// a quad sampling its signed distance field, its edge and halo cut by

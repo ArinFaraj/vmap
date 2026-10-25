@@ -7,7 +7,7 @@ import '../platform.dart';
 import '../style/style_model.dart';
 import '../camera/subdivide.dart';
 import 'tessellate.dart' show LineMesher, MeshChunk;
-import 'tile_builder.dart' show BuiltMesh, tileExtent;
+import 'built_tile.dart';
 import 'typed_buffer.dart';
 
 /// One tile's fill and line layers as a single stream the GPU draws in one

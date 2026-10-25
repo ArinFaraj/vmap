@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'cluster.dart';
 import '../style/expr.dart';
 import 'mvt.dart';
-import 'tile_builder.dart' show tileExtent;
+import 'built_tile.dart';
 import '../camera/mercator.dart';
 
 /// GeoJSON cut into tiles on demand, in the shape vector tiles arrive in.

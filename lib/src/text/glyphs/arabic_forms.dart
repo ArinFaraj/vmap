@@ -3,7 +3,7 @@
 /// glyph per code point and no shaping tables.
 library;
 
-import '../../text/unicode.dart';
+import '../unicode.dart';
 
 /// [c]'s joining type within the Arabic blocks, the only letters MapLibre
 /// joins, the Syriac joining groups counting as right-joining letters.

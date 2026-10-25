@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'tile_builder.dart' show tileExtent;
+import 'built_tile.dart';
 
 /// One tile's buildings in a 16 by 16 grid of cells by their bounds, made
 /// with them on the tile worker, for asking what a line on the ground runs

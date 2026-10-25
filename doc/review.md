@@ -272,9 +272,9 @@ suites drew as before where drawing was touched.
 | 18 | Fixed: GPU failures reach `onError` and say which switch is missing. |
 | 19 | Fixed: the canvas is a `MapRenderer` like the GPU, and the engine's drawing has no branch on which one draws. |
 | 20 | Fixed for the camera (one model; the flat path is gone from tiles, labels, rasters and occlusion) and the text (one setting). The canvas and the GPU remain two renderers by design. |
-| 21 | Fixed for the engine: its transitions, raised ground, queries, paint steps and the canvas renderer are their own pieces. Kept: `LabelState` stays one flat record, read for every label every frame, where nesting would add indirection on the hottest path; `LabelEngine` keeps its fields with it. |
+| 21 | Fixed: the engine's transitions, raised ground, queries, frame painter and canvas renderer, the label engine's style reading, road placement, ordering and text painting, the tile builder's label measuring, the style compiler's vector layers and the GPU renderer's uniforms are each a class of their own, and no part file extends its host. Kept: `LabelState` stays one flat record, read for every label every frame, where nesting would add indirection on the hottest path. |
 | 22 | Fixed: `lib/src` is in folders by area. |
-| 23 | Kept: the adapter's gestures drive flutter_map's controller and the widget's drive vmap's; sharing them needs a gesture core both can use. |
+| 23 | Fixed: one `MapGestureRecognizer` (`lib/src/gestures/`) drives both, each host supplying a `MapGestureTarget` for its own camera, switched by `VmapGestureOptions`. |
 | 24 | Fixed: one public camera type, `VmapCamera`. |
 | 25 | Fixed: vmap no longer asks for a refresh rate at all, and has no Android plugin; the example app shows how an app can ask. |
 | 26 | Kept: the standard pins use Material's icon font. |

@@ -6,7 +6,7 @@
 
 <p align="center">
   Maps for Flutter, drawn on the GPU.<br>
-  Any MapLibre style, 3D buildings and terrain, labels in every script.<br>
+  Any MapLibre style, 3D buildings, terrain and the globe.<br>
   Android, iOS, macOS, Windows, Linux and the web.
 </p>
 
@@ -17,8 +17,9 @@
   MapLibre GL JS.
 - **3D.** Buildings with depth, terrain draped with the map, sky and fog,
   the globe, and tilt up to 85 degrees.
-- **Labels in every script.** Arabic and Kurdish are shaped correctly, and
-  labels are placed as MapLibre places them, steady while the map moves.
+- **Labels that read right.** Arabic, Kurdish and Syriac are shaped
+  correctly, and labels are placed as MapLibre places them, steady while the
+  map moves.
 - **Flutter all the way down.** One widget, markers that are widgets, and
   gestures for touch, mouse, trackpad and keyboard. No platform views.
 - **Your data.** GeoJSON with clustering, feature state for highlighting,
@@ -82,10 +83,9 @@ and 3D in about a hundred lines.
 | Windows | `windows/runner/main.cpp`, after `DartProject project(...)` | `project.set_enable_flutter_gpu(true);` |
 | Linux | `linux/runner/my_application.cc`, after `fl_dart_project_new()` | `fl_dart_project_set_enable_flutter_gpu(project, TRUE);` |
 
-`flutter run --enable-flutter-gpu` switches Flutter GPU on for one run.
-Where it is off or missing, vmap draws with Flutter's canvas instead: flat
-buildings, no terrain or globe. Debug builds say so in the console, and
-`onError` hears it as a `VmapErrorKind.gpu` error.
+`flutter run --enable-flutter-gpu` switches Flutter GPU on for one run. When
+it is off, debug builds say which switch is missing, and `onError` hears it
+as a `VmapErrorKind.gpu` error.
 
 </details>
 
@@ -151,7 +151,37 @@ of the map free, under a bottom sheet for example. `toScreen` and
 | Trackpad | Two fingers slide the map, a pinch zooms about the fingers, and a twist turns it. |
 | Keyboard | Once the map has focus: the arrows pan, shift with them turns and tilts, and `+` and `-` zoom a level, two with shift. |
 
-`rotate`, `tilt`, `keyboard` and `interactive` switch them off.
+`gestures` switches them off one by one, by MapLibre GL JS's handler
+names, with flutter_map's two flags for turning and tilting on top:
+
+```dart
+Vmap(
+  gestures: const VmapGestureOptions(
+    rotate: false, // nothing turns the map
+    boxZoom: false,
+    scrollZoom: false,
+    wheelZoomRate: 1 / 450,
+  ),
+)
+```
+
+| Option | MapLibre GL JS | What it switches |
+| --- | --- | --- |
+| `dragPan` | `dragPan` | one finger, a mouse drag, a trackpad slide |
+| `scrollZoom` | `scrollZoom` | the mouse wheel and a trackpad pinch |
+| `boxZoom` | `boxZoom` | a shift drag zooming to a box |
+| `dragRotate`, `pitchWithRotate` | `dragRotate`, `pitchWithRotate` | a right or control drag turning, and tilting |
+| `keyboard` | `keyboard` | the arrows, `+` and `-` |
+| `doubleClickZoom` | `doubleClickZoom` | double tap and click, and a two finger tap |
+| `touchZoomRotate` | `touchZoomRotate` | two finger pinch and twist |
+| `touchPitch` | `touchPitch` | two fingers dragged up or down |
+| `rotate`, `pitch` | (flutter_map's `rotate` flag) | any turn, any tilt |
+| `inertia` | the drag handlers' inertia | the glide after a release |
+
+`VmapGestureOptions.none` leaves only code moving the map; taps and long
+presses are still reported. Hosts that draw vmap's camera some other way
+use the same recognizer from `package:vmap/gestures.dart`, as the
+flutter_map adapter does.
 
 ## Taps and features
 
@@ -280,8 +310,8 @@ Arabic script and Syriac work with no setup. Text drawn from fonts goes
 through vmap's own OpenType shaper, written in Dart and tested against
 HarfBuzz glyph for glyph: joining forms, ligatures, kerning, mark placement,
 variable weights, and right-to-left text in the Unicode bidirectional
-order. Fonts need TrueType outlines (`.ttf`); the reordering that Indic and
-Southeast Asian scripts need is not done yet.
+order. Fonts need TrueType outlines (`.ttf`). Indic and Southeast Asian
+scripts, which need their letters reordered, are planned.
 
 ## Offline
 
@@ -374,17 +404,15 @@ is no disk cache in a browser, and a PMTiles archive has to be at an
 
 ## Platforms
 
-| Platform | Draws with | Tried on |
-| --- | --- | --- |
-| Android 10 and newer | the GPU, on Vulkan or OpenGL ES | a phone and the emulator |
-| Android 9 and older | the canvas | not yet |
-| iOS | the GPU | not yet |
-| macOS | the GPU | most development |
-| Windows, Linux | the GPU | not yet |
-| Web | the GPU, through WebGL2 | Chrome |
+| Platform | Draws with |
+| --- | --- |
+| Android 10 and newer | Impeller on Vulkan, or OpenGL ES where Vulkan is missing |
+| iOS, macOS | Impeller on Metal |
+| Windows, Linux | Impeller |
+| Web | WebGL2 |
 
-Flutter GPU is still a preview in Flutter itself. The details, with
-sources, are in [doc/platform-support.md](doc/platform-support.md).
+vmap draws with [Flutter GPU](https://github.com/flutter/flutter/blob/main/docs/engine/impeller/Flutter-GPU.md),
+which Flutter still marks as a preview.
 
 ## flutter_map
 
@@ -392,20 +420,6 @@ Apps already on [flutter_map](https://pub.dev/packages/flutter_map) can
 draw vmap's maps in it with the
 [vmap_flutter_map](https://github.com/ArinFaraj/vmap/tree/main/vmap_flutter_map)
 package: a layer that goes where a `TileLayer` would, without tilt or 3D.
-
-## Coming from vmap 0.26
-
-- `VmapLayer`, `VmapMap` (now `VmapFlutterMap`), `VmapGestures` and
-  `NamedMarker` moved to `vmap_flutter_map`.
-- `VMap` and `VMapController` are `Vmap` and `VmapController`, and
-  `MapCameraPosition` is `VmapCamera`, with a `LatLng` center.
-- The GPU renderer is the default; pick the canvas with
-  `VmapRenderOptions(renderer: VmapRenderer.canvas)`.
-- Engine settings are grouped in `VmapNetworkOptions` (was
-  `TileSourceConfig`), `VmapRenderOptions` and `VmapLabelOptions`.
-- Every zoom is MapLibre's, one below flutter_map's.
-- `onError` receives a `VmapError`, and statistics are in
-  `package:vmap/debug.dart`.
 
 ## License
 

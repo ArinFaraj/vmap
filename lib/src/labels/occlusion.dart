@@ -1,9 +1,9 @@
 import 'dart:math' as math;
 
 import '../tiles/extrusion.dart';
-import '../camera/mercator.dart';
+import '../terrain/terrain.dart' show perMetreAt;
 import '../style/style_model.dart';
-import '../tiles/tile_builder.dart' show tileExtent;
+import '../tiles/built_tile.dart';
 import '../tiles/tiles.dart';
 import '../camera/view.dart';
 
@@ -51,9 +51,7 @@ class BuildingOcclusion {
         if (shown.contains(e.bucket)) _buildings.add((d, e));
       }
     }
-    _perMetre =
-        view.worldSize /
-        (40075016.686 * math.cos(latitudeAt(view.centerY) * math.pi / 180));
+    _perMetre = perMetreAt(view);
     this.view = Object.hash(eye.x, eye.y, eye.height, _buildings.length);
   }
 

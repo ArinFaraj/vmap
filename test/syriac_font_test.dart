@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/labels/glyphs/glyph_layout.dart';
+import 'package:vmap/src/text/glyphs/glyph_layout.dart';
 
 void main() {
   test('an Assyrian name shapes with the bundled Syriac font', () {

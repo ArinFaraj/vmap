@@ -2,10 +2,13 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import '../style/expr.dart';
-import 'label_path.dart';
+import '../camera/camera.dart';
 import '../camera/mercator.dart';
 import '../camera/view.dart';
+import '../style/expr.dart';
+import '../terrain/terrain.dart';
+import 'label_path.dart';
+import 'sdf_text.dart';
 
 /// Where points of the world land on the screen for one frame, through the
 /// camera's view, so labels can be laid out upright on the screen.
@@ -53,18 +56,49 @@ class LabelView {
   /// How much farther than the middle of the screen the last point lies.
   double depth = 1;
 
-  void frame({
-    required ui.Size size,
-    required double world,
-    required ui.Offset origin,
-    required MapView tilted,
-  }) {
-    this.tilted = tilted;
-    cx = size.width / 2;
-    cy = size.height / 2;
-    this.world = world;
-    this.origin = origin;
+  /// Device pixels in a logical pixel.
+  double devicePixelRatio = 1;
+
+  /// The camera stands where it stood the frame before. Only then do
+  /// labels sit on whole device pixels to stay crisp: on a moving map a
+  /// label held to the pixels steps while the map under it glides.
+  bool still = true;
+
+  /// The map is zooming, when MapLibre samples icons smoothly.
+  bool moving = false;
+
+  /// Draws text from a style's glyph ranges as distance fields for the
+  /// frame being drawn, when the renderer can.
+  SdfText? sdf;
+
+  /// Frames [camera], with the ground [terrain] raises, if any.
+  void frame(MapFrame camera, [Terrain? terrain]) {
+    final view = tilted = camera.view;
+    cx = camera.size.width / 2;
+    cy = camera.size.height / 2;
+    world = 256.0 * math.pow(2, camera.zoom);
+    origin = camera.origin;
+    devicePixelRatio = camera.devicePixelRatio;
+    // As MapLibre's pixels per meter: at the middle's latitude on the flat
+    // map, and at the equator's on the globe, whose sphere is the world's
+    // width around.
+    perMetre = view.globe != null
+        ? view.worldSize / earthCircumference
+        : perMetreAt(view);
+    if (terrain == null) {
+      ground = null;
+      seaLevel = 0;
+    } else {
+      final toWorld = perMetreAt(view), zoom = view.zoom.floor();
+      ground = (wx, wy) => terrain.at(wx, wy, zoom) * toWorld;
+      seaLevel = -terrain.centre * perMetre;
+    }
+    standAt(0);
   }
+
+  /// [at] moved to the nearest device pixel while the map is [still].
+  double onPixel(double at) =>
+      still ? (at * devicePixelRatio).roundToDouble() / devicePixelRatio : at;
 
   /// Whether raised ground stands between the camera and the point [wx],
   /// [wy] of the world, in fractions of it, at the height it is projected

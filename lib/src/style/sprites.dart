@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'expr.dart' show imageChoice;
-import '../tiles/net.dart' show cacheKey;
+import '../net/net.dart' show cacheKey;
 import '../platform.dart';
 
 /// A picture of the app's own for the style to draw by name, as an icon or

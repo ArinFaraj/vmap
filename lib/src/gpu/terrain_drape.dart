@@ -1,18 +1,34 @@
-part of 'gpu_map.dart';
+import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:vector_math/vector_math.dart' show Vector4;
+
+import '../camera/globe.dart';
+import '../camera/view.dart';
+import '../render/map_renderer.dart';
+import '../style/expr.dart';
+import '../style/style_model.dart';
+import '../terrain/terrain.dart';
+import '../tiles/built_tile.dart';
+import '../tiles/tiles.dart';
+import 'gpu_device.dart';
+import 'gpu_map_pass.dart';
+import 'gpu_shim/gpu.dart' as gpu;
+import 'terrain_grid.dart';
 
 /// The map laid over raised ground, as MapLibre draws terrain: each tile's
 /// flat layers are drawn from above into a slot of one atlas texture in one
 /// pass, then a grid per tile, raised by the heights, is drawn with depth
 /// and coloured from its slot. Only the Flutter GPU tier draws terrain.
-class _Drape {
-  _Drape(this._map);
+class Drape {
+  Drape(this._device);
 
-  final GpuMap _map;
+  final GpuDevice _device;
 
-  /// The atlas's width and tallest height, the sizes a slot may take in
-  /// device pixels, largest first, and grid cells on a side of the ground
-  /// every tile shares.
-  static const _width = 4096, _maxHeight = 4096, _grid = 128;
+  /// The atlas's width and tallest height, and the sizes a slot may take in
+  /// device pixels, largest first.
+  static const _width = 4096, _maxHeight = 4096;
   static const _sizes = [1024, 512, 256];
 
   gpu.Texture? _atlas, _atlasDepth;
@@ -29,18 +45,6 @@ class _Drape {
   /// The grid every tile of ground is drawn with, raised in the vertex
   /// shader from its tile of heights.
   gpu.DeviceBuffer? _corners, _indices;
-
-  /// Each tile of heights on the GPU, sent again when a neighbour has
-  /// filled its border since.
-  final Expando<(gpu.Texture, int)> _uploaded = Expando();
-  late final gpu.Texture _flat = gpu.gpuContext.createTexture(
-    gpu.StorageMode.hostVisible,
-    1,
-    1,
-    format: gpu.PixelFormat.r32Float,
-  )..overwrite(ByteData(4));
-  final Float32List _demInfo = Float32List(12);
-  late final ByteData _demBytes = ByteData.sublistView(_demInfo);
 
   /// Each raster tile's picture on the GPU, with the colour filter it was
   /// drawn through.
@@ -118,15 +122,15 @@ class _Drape {
       gpu.StorageMode.devicePrivate,
       _width,
       height,
-      format: _map._color,
+      format: _device.color,
     );
     _layerAtlas = gpu.gpuContext.createTexture(
       gpu.StorageMode.devicePrivate,
       _width,
       height,
-      format: _map._color,
+      format: _device.color,
     );
-    _atlasDepth = _map._scratch(
+    _atlasDepth = _device.scratch(
       _width,
       height,
       gpu.gpuContext.defaultDepthStencilFormat,
@@ -136,16 +140,9 @@ class _Drape {
 
   /// Draws the flat layers of every tile of ground under [view] into its
   /// slot, in a command buffer added to [buffers] ahead of the frame's.
-  void drawAtlas(
-    List<gpu.CommandBuffer> buffers,
-    MapView view,
-    ui.Offset origin,
-    StyleSheet sheet,
-    EvalContext context,
-    double styleZoom,
-    List<List<TileDraw>> fallback,
-    List<List<TileDraw>> ideal,
-  ) {
+  void drawAtlas(List<gpu.CommandBuffer> buffers, RenderFrame frame) {
+    final RenderFrame(:view, :origin, :sheet, :context, :fallback, :ideal) =
+        frame;
     // As deep as the view, past the data's own zoom: a tile drawn from
     // zoom 14 data into a deeper slot is as sharp as the flat map.
     // Ground past the screen's top as well: hills there rise into view.
@@ -154,7 +151,7 @@ class _Drape {
       variableZoom: true,
       beyond: view.height,
     );
-    _slots = _layout(all, view, _map._frameInfo[26]);
+    _slots = _layout(all, view, _device.blocks.frame[26]);
     _tiles = all.sublist(0, _slots.length);
     sending = false;
     if (_tiles.isEmpty) return;
@@ -179,7 +176,7 @@ class _Drape {
       );
     }
 
-    final dpr = _map._frameInfo[26];
+    final dpr = _device.blocks.frame[26];
     // Each tile's slot in turn: its viewport, and the matrix that draws the
     // tile's square from above into it, north up.
     void inSlots(
@@ -222,10 +219,10 @@ class _Drape {
     ) {
       // On the globe without terrain the vector layers are laid on the
       // sphere directly, as MapLibre draws them.
-      if (runs.isEmpty || (view.globe != null && _map.terrain == null)) {
+      if (runs.isEmpty || (view.globe != null && frame.terrain == null)) {
         return;
       }
-      _map._frameInfo[26] = _slots[i].$3 / span;
+      _device.blocks.frame[26] = _slots[i].$3 / span;
       bool inSlot(TileDraw d) =>
           d.left < left + span &&
           d.left + d.size > left &&
@@ -233,20 +230,19 @@ class _Drape {
           d.top + d.size > top;
       // Stand-ins too, clipped as the flat map clips them, so a tile still
       // loading leaves no hole in the ground.
-      _MapPass(
-          _map,
+      MapPass(
+          _device,
           pass,
-          view,
+          frame,
           clip,
-          sheet,
-          context,
-          styleZoom,
-          [for (final tiles in fallback) tiles.where(inSlot).toList()],
-          [for (final tiles in ideal) tiles.where(inSlot).toList()],
+          fallback: [
+            for (final tiles in fallback) tiles.where(inSlot).toList(),
+          ],
+          ideal: [for (final tiles in ideal) tiles.where(inSlot).toList()],
         )
         ..standing = false
         ..drawRuns(runs);
-      _map._frameInfo[26] = dpr;
+      _device.blocks.frame[26] = dpr;
     }
 
     // As on the flat map, a layer drawn whole at an opacity is drawn apart,
@@ -295,8 +291,15 @@ class _Drape {
                 worldTop: top + origin.dy,
                 zoom: view.zoom,
               );
-            } else if (run.raster >= 0 && run.raster < _map.rasters.length) {
-              _drawPictures(p, _map.rasters[run.raster], clip, left, top, span);
+            } else if (run.raster >= 0 && run.raster < frame.rasters.length) {
+              _drawPictures(
+                p,
+                frame.rasters[run.raster],
+                clip,
+                left,
+                top,
+                span,
+              );
             }
           }
         }
@@ -316,12 +319,11 @@ class _Drape {
     double span,
     double opacity,
   ) {
-    final map = _map;
     final (x, y, size) = _slots[i];
     final height = _height.toDouble();
     _bindFlatGround(pass);
-    map._times(clip, span / tileExtent, 0, left, top, 0);
-    map._frameInfo
+    _device.blocks.times(clip, span / tileExtent, 0, left, top, 0);
+    _device.blocks.frame
       ..[16] = x / _width
       ..[17] = y / height
       ..[18] = size / _width
@@ -329,17 +331,23 @@ class _Drape {
       ..[27] = opacity;
     pass
       ..bindTexture(
-        map._groundDrape!,
+        _device.pipelines.groundDrape!,
         _layerAtlas!,
         sampler: gpu.SamplerOptions(
           minFilter: gpu.MinMagFilter.nearest,
           magFilter: gpu.MinMagFilter.nearest,
         ),
       )
-      ..bindUniform(map._groundFrame!, map._host!.emplace(map._frameBytes))
-      ..bindUniform(map._groundDem!, map._host!.emplace(_demBytes))
-      ..drawIndexed(_indexCount);
-    map._frameInfo[27] = 1;
+      ..bindUniform(
+        _device.pipelines.groundFrame!,
+        _device.host.emplace(_device.blocks.frameBytes),
+      )
+      ..bindUniform(
+        _device.pipelines.groundDem!,
+        _device.host.emplace(_device.heights.bytes),
+      )
+      ..drawIndexed(gridIndexCount);
+    _device.blocks.frame[27] = 1;
   }
 
   /// Draws the raster tiles over the slot whose clip matrix is [clip] and
@@ -353,7 +361,6 @@ class _Drape {
     double top,
     double span,
   ) {
-    final map = _map;
     var bound = false;
     for (final piece in pieces) {
       final target = piece.target;
@@ -371,7 +378,7 @@ class _Drape {
       }
       final source = piece.source;
       final width = piece.image.width, height = piece.image.height;
-      map._times(
+      _device.blocks.times(
         clip,
         target.width / tileExtent,
         0,
@@ -380,9 +387,9 @@ class _Drape {
         0,
       );
       for (var r = 0; r < 4; r++) {
-        map._frameInfo[4 + r] = clip[4 + r] * target.height / tileExtent;
+        _device.blocks.frame[4 + r] = clip[4 + r] * target.height / tileExtent;
       }
-      map._frameInfo
+      _device.blocks.frame
         ..[16] = source.left / width
         ..[17] = source.top / height
         ..[18] = source.width / width
@@ -393,29 +400,34 @@ class _Drape {
           : gpu.MinMagFilter.nearest;
       pass
         ..bindTexture(
-          map._groundDrape!,
+          _device.pipelines.groundDrape!,
           texture,
           sampler: gpu.SamplerOptions(minFilter: filter, magFilter: filter),
         )
-        ..bindUniform(map._groundFrame!, map._host!.emplace(map._frameBytes))
-        ..bindUniform(map._groundDem!, map._host!.emplace(_demBytes))
-        ..drawIndexed(_indexCount);
+        ..bindUniform(
+          _device.pipelines.groundFrame!,
+          _device.host.emplace(_device.blocks.frameBytes),
+        )
+        ..bindUniform(
+          _device.pipelines.groundDem!,
+          _device.host.emplace(_device.heights.bytes),
+        )
+        ..drawIndexed(gridIndexCount);
     }
-    map._frameInfo[27] = 1;
+    _device.blocks.frame[27] = 1;
   }
 
   /// Binds the ground pipeline drawing flat into a slot, for pictures and
   /// background colours.
   void _bindFlatGround(gpu.RenderPass pass) {
-    final map = _map;
-    final corners = _corners ??= _gridCorners();
-    final indices = _indices ??= _gridIndices();
+    final corners = _corners ??= gridCorners();
+    final indices = _indices ??= gridIndices();
     pass
       ..clearBindings()
-      ..bindPipeline(map._ground!)
+      ..bindPipeline(_device.pipelines.ground!)
       ..setCullMode(gpu.CullMode.none)
       ..setColorBlendEnable(true)
-      ..setColorBlendEquation(GpuMap._over)
+      ..setColorBlendEquation(overBlend)
       ..setStencilConfig(gpu.StencilConfig())
       ..setDepthWriteEnable(false)
       ..setDepthCompareOperation(gpu.CompareFunction.always)
@@ -435,18 +447,14 @@ class _Drape {
         gpu.IndexType.int16,
       )
       ..bindTexture(
-        map._groundHeights!,
-        _flatHeights(0, 0),
+        _device.pipelines.groundHeights!,
+        _device.heights.flat(0, 0),
         sampler: gpu.SamplerOptions(
           minFilter: gpu.MinMagFilter.nearest,
           magFilter: gpu.MinMagFilter.nearest,
         ),
       );
-    _demInfo
-      ..[8] = 0
-      ..[9] = 0
-      ..[10] = 1
-      ..[11] = 1;
+    _device.heights.setDrapeBounds(0, 0, 1, 1);
   }
 
   /// One pixel textures of the background colours drawn, by colour.
@@ -459,15 +467,15 @@ class _Drape {
 
   /// Background pattern [name] as a texture of its own, which repeats.
   gpu.Texture? _patternTexture(String name) {
-    final pixels = _map._sheetPixels;
-    final entry = _map._sheet?.entries[name];
+    final pixels = _device.sprites.pixels;
+    final entry = _device.sprites.sheet?.entries[name];
     if (pixels == null || entry == null) return null;
     if (!identical(pixels, _patternPixels)) {
       _patternPixels = pixels;
       _patterns.clear();
     }
     return _patterns.putIfAbsent(name, () {
-      final sheetWidth = _map._sheetImage!.width;
+      final sheetWidth = _device.sprites.image!.width;
       final source = entry.source;
       final x0 = source.left.round(), y0 = source.top.round();
       final w = source.width.round(), h = source.height.round();
@@ -505,10 +513,9 @@ class _Drape {
     required double worldTop,
     required double zoom,
   }) {
-    final map = _map;
     if (layer.pattern?.call(context) case final Object name) {
       if (context.zoom < layer.minZoom || context.zoom >= layer.maxZoom) return;
-      final entry = map._sheet?.entries['$name'];
+      final entry = _device.sprites.sheet?.entries['$name'];
       final texture = _patternTexture('$name');
       if (entry == null || texture == null) return;
       final growth = math.pow(2, zoom - zoom.floorToDouble()).toDouble();
@@ -516,13 +523,9 @@ class _Drape {
       final h = entry.source.height / entry.pixelRatio * growth;
       double frac(double v) => v - v.floorToDouble();
       _bindFlatGround(pass);
-      _demInfo
-        ..[8] = -1e4
-        ..[9] = -1e4
-        ..[10] = 1e4
-        ..[11] = 1e4;
-      map._times(clip, span / tileExtent, 0, left, top, 0);
-      map._frameInfo
+      _device.heights.setDrapeBounds(-1e4, -1e4, 1e4, 1e4);
+      _device.blocks.times(clip, span / tileExtent, 0, left, top, 0);
+      _device.blocks.frame
         ..[16] = frac(worldLeft / w)
         ..[17] = frac(worldTop / h)
         ..[18] = span / w
@@ -530,7 +533,7 @@ class _Drape {
         ..[27] = (asNumber(layer.opacity(context)) ?? 1).clamp(0.0, 1.0);
       pass
         ..bindTexture(
-          map._groundDrape!,
+          _device.pipelines.groundDrape!,
           texture,
           sampler: gpu.SamplerOptions(
             minFilter: gpu.MinMagFilter.linear,
@@ -539,9 +542,15 @@ class _Drape {
             heightAddressMode: gpu.SamplerAddressMode.repeat,
           ),
         )
-        ..bindUniform(map._groundFrame!, map._host!.emplace(map._frameBytes))
-        ..bindUniform(map._groundDem!, map._host!.emplace(_demBytes))
-        ..drawIndexed(_indexCount);
+        ..bindUniform(
+          _device.pipelines.groundFrame!,
+          _device.host.emplace(_device.blocks.frameBytes),
+        )
+        ..bindUniform(
+          _device.pipelines.groundDem!,
+          _device.host.emplace(_device.heights.bytes),
+        )
+        ..drawIndexed(gridIndexCount);
       return;
     }
     final color = layer.colorAt(context);
@@ -563,8 +572,8 @@ class _Drape {
       )..overwrite(pixel);
     }();
     _bindFlatGround(pass);
-    map._times(clip, span / tileExtent, 0, left, top, 0);
-    map._frameInfo
+    _device.blocks.times(clip, span / tileExtent, 0, left, top, 0);
+    _device.blocks.frame
       ..[16] = 0.5
       ..[17] = 0.5
       ..[18] = 0
@@ -572,16 +581,22 @@ class _Drape {
       ..[27] = 1;
     pass
       ..bindTexture(
-        map._groundDrape!,
+        _device.pipelines.groundDrape!,
         texture,
         sampler: gpu.SamplerOptions(
           minFilter: gpu.MinMagFilter.nearest,
           magFilter: gpu.MinMagFilter.nearest,
         ),
       )
-      ..bindUniform(map._groundFrame!, map._host!.emplace(map._frameBytes))
-      ..bindUniform(map._groundDem!, map._host!.emplace(_demBytes))
-      ..drawIndexed(_indexCount);
+      ..bindUniform(
+        _device.pipelines.groundFrame!,
+        _device.host.emplace(_device.blocks.frameBytes),
+      )
+      ..bindUniform(
+        _device.pipelines.groundDem!,
+        _device.host.emplace(_device.heights.bytes),
+      )
+      ..drawIndexed(gridIndexCount);
   }
 
   /// [piece]'s picture on the GPU, sent there when it is not yet; until it
@@ -621,7 +636,7 @@ class _Drape {
         )..overwrite(pixels),
       );
     } catch (e) {
-      _map.onFailure?.call(e);
+      _device.fail(e);
     } finally {
       filtered?.dispose();
       _inFlight[image] = false;
@@ -637,15 +652,12 @@ class _Drape {
     ui.Offset origin,
     Float64List clip,
   ) {
-    final map = _map;
-    final pipeline = map._ground;
+    final pipeline = _device.pipelines.ground;
     final atlas = _atlas;
     if (pipeline == null || atlas == null || _tiles.isEmpty) return;
-    final corners = _corners ??= _gridCorners();
-    final indices = _indices ??= _gridIndices();
-    final perMetre =
-        view.worldSize /
-        (40075016.686 * math.cos(latitudeAt(view.centerY) * math.pi / 180));
+    final corners = _corners ??= gridCorners();
+    final indices = _indices ??= gridIndices();
+    final perMetre = perMetreAt(view);
     final nearest = gpu.SamplerOptions(
       minFilter: gpu.MinMagFilter.nearest,
       magFilter: gpu.MinMagFilter.nearest,
@@ -674,7 +686,7 @@ class _Drape {
         gpu.IndexType.int16,
       )
       ..bindTexture(
-        map._groundDrape!,
+        _device.pipelines.groundDrape!,
         atlas,
         sampler: gpu.SamplerOptions(
           minFilter: gpu.MinMagFilter.linear,
@@ -685,7 +697,7 @@ class _Drape {
     for (final (i, t) in _tiles.indexed) {
       final (x, y, size) = _slots[i];
       final span = view.worldSize / (1 << t.z);
-      map._times(
+      _device.blocks.times(
         clip,
         span / tileExtent,
         perMetre,
@@ -693,22 +705,33 @@ class _Drape {
         t.y * span - origin.dy,
         1,
       );
-      map._frameInfo
+      _device.blocks.frame
         ..[16] = x / _width
         ..[17] = y / height
         ..[18] = size / _width
         ..[19] = size / height;
-      final heights = _heightsFor(t.z, t.x, t.y, terrain, 0);
-      _demInfo
-        ..[8] = (x + 0.5) / _width
-        ..[9] = (y + 0.5) / height
-        ..[10] = (x + size - 0.5) / _width
-        ..[11] = (y + size - 0.5) / height;
+      final heights = _device.heights.heightsFor(t.z, t.x, t.y, terrain, 0);
+      _device.heights.setDrapeBounds(
+        (x + 0.5) / _width,
+        (y + 0.5) / height,
+        (x + size - 0.5) / _width,
+        (y + size - 0.5) / height,
+      );
       pass
-        ..bindTexture(map._groundHeights!, heights, sampler: nearest)
-        ..bindUniform(map._groundFrame!, map._host!.emplace(map._frameBytes))
-        ..bindUniform(map._groundDem!, map._host!.emplace(_demBytes))
-        ..drawIndexed(_indexCount);
+        ..bindTexture(
+          _device.pipelines.groundHeights!,
+          heights,
+          sampler: nearest,
+        )
+        ..bindUniform(
+          _device.pipelines.groundFrame!,
+          _device.host.emplace(_device.blocks.frameBytes),
+        )
+        ..bindUniform(
+          _device.pipelines.groundDem!,
+          _device.host.emplace(_device.heights.bytes),
+        )
+        ..drawIndexed(gridIndexCount);
     }
   }
 
@@ -716,7 +739,6 @@ class _Drape {
   /// corner at the north pole under each corner of the top edge and one at
   /// the south pole under each of the bottom edge.
   gpu.DeviceBuffer? _globeCorners, _globeIndices;
-  static const _globeMain = _grid * _grid * 6, _globeCap = _grid * 6;
   final Float32List _globeInfo = Float32List(48);
   late final ByteData _globeBytes = ByteData.sublistView(_globeInfo);
 
@@ -731,18 +753,17 @@ class _Drape {
     ui.Offset origin,
     Float64List clip,
   ) {
-    final map = _map;
-    final pipeline = map._globe;
+    final pipeline = _device.pipelines.globe;
     final atlas = _atlas;
     if (pipeline == null || atlas == null || _tiles.isEmpty) return;
-    final corners = _globeCorners ??= _globeGridCorners();
-    final indices = _globeIndices ??= _globeGridIndices();
+    final corners = _globeCorners ??= globeGridCorners();
+    final indices = _globeIndices ??= globeGridIndices();
     pass
       ..clearBindings()
       ..bindPipeline(pipeline)
       ..setCullMode(gpu.CullMode.none)
       ..setColorBlendEnable(true)
-      ..setColorBlendEquation(GpuMap._over)
+      ..setColorBlendEquation(overBlend)
       ..setStencilConfig(gpu.StencilConfig())
       ..setDepthWriteEnable(false)
       ..setDepthCompareOperation(gpu.CompareFunction.always)
@@ -754,7 +775,7 @@ class _Drape {
         ),
       )
       ..bindTexture(
-        map._globeDrape!,
+        _device.pipelines.globeDrape!,
         atlas,
         sampler: gpu.SamplerOptions(
           minFilter: gpu.MinMagFilter.linear,
@@ -778,7 +799,7 @@ class _Drape {
       final (x, y, size) = _slots[i];
       final n = 1 << t.z;
       final span = view.worldSize / n;
-      map._times(
+      _device.blocks.times(
         clip,
         span / tileExtent,
         0,
@@ -787,7 +808,7 @@ class _Drape {
         1,
       );
       for (var k = 0; k < 16; k++) {
-        out[16 + k] = map._frameInfo[k];
+        out[16 + k] = _device.blocks.frame[k];
       }
       out
         ..[32] = x / _width
@@ -798,7 +819,10 @@ class _Drape {
         ..[37] = t.y / n
         ..[38] = 1 / n
         ..[39] = globe.transition;
-      pass.bindUniform(map._globeFrame!, map._host!.emplace(_globeBytes));
+      pass.bindUniform(
+        _device.pipelines.globeFrame!,
+        _device.host.emplace(_globeBytes),
+      );
       void draw(int first, int count) => pass
         ..bindIndexBuffer(
           gpu.BufferView(
@@ -809,204 +833,9 @@ class _Drape {
           gpu.IndexType.int16,
         )
         ..drawIndexed(count);
-      draw(0, _globeMain);
-      if (t.y == 0) draw(_globeMain, _globeCap);
-      if (t.y == n - 1) draw(_globeMain + _globeCap, _globeCap);
+      draw(0, globeMainCount);
+      if (t.y == 0) draw(globeMainCount, globeCapCount);
+      if (t.y == n - 1) draw(globeMainCount + globeCapCount, globeCapCount);
     }
-  }
-
-  static gpu.DeviceBuffer _globeGridCorners() {
-    const side = _grid + 1;
-    final out = Float32List((side * side + 2 * side) * 2);
-    var o = 0;
-    for (var j = 0; j <= _grid; j++) {
-      for (var i = 0; i <= _grid; i++) {
-        out
-          ..[o++] = i / _grid
-          ..[o++] = j / _grid;
-      }
-    }
-    for (final pole in const [-1.0, 2.0]) {
-      for (var i = 0; i <= _grid; i++) {
-        out
-          ..[o++] = i / _grid
-          ..[o++] = pole;
-      }
-    }
-    return gpu.gpuContext.createDeviceBufferWithCopy(ByteData.sublistView(out));
-  }
-
-  static gpu.DeviceBuffer _globeGridIndices() {
-    const side = _grid + 1;
-    final out = Uint16List(_globeMain + 2 * _globeCap);
-    var o = 0;
-    void quad(int a, int b, int c, int d) => out
-      ..[o++] = a
-      ..[o++] = c
-      ..[o++] = d
-      ..[o++] = a
-      ..[o++] = d
-      ..[o++] = b;
-    for (var j = 0; j < _grid; j++) {
-      for (var i = 0; i < _grid; i++) {
-        final a = j * side + i;
-        quad(a, a + 1, a + side, a + side + 1);
-      }
-    }
-    const north = side * side, south = north + side;
-    for (var i = 0; i < _grid; i++) {
-      quad(north + i, north + i + 1, i, i + 1);
-    }
-    for (var i = 0; i < _grid; i++) {
-      final edge = _grid * side + i;
-      quad(edge, edge + 1, south + i, south + i + 1);
-    }
-    return gpu.gpuContext.createDeviceBufferWithCopy(ByteData.sublistView(out));
-  }
-
-  /// Binds the ground under building tile [id] to the building pipeline,
-  /// or with [flat] the map's: flat at sea level without [terrain].
-  void bindGround(
-    gpu.RenderPass pass,
-    Terrain? terrain,
-    TileId? id, {
-    bool flat = false,
-  }) {
-    final map = _map;
-    final heights = terrain == null || id == null
-        ? _flatHeights(0, 0)
-        : _heightsFor(id.z, id.x, id.y, terrain, 10);
-    pass
-      ..bindTexture(
-        flat ? map._flatHeightsSlot! : map._buildingHeights!,
-        heights,
-        sampler: gpu.SamplerOptions(
-          minFilter: gpu.MinMagFilter.nearest,
-          magFilter: gpu.MinMagFilter.nearest,
-        ),
-      )
-      ..bindUniform(
-        flat ? map._flatDem! : map._buildingDem!,
-        map._host!.emplace(_demBytes),
-      );
-  }
-
-  gpu.Texture _flatHeights(double centre, double sink) {
-    _demInfo
-      ..[0] = 0.5
-      ..[1] = 0.5
-      ..[2] = 0
-      ..[3] = 2
-      ..[4] = 0
-      ..[5] = 1
-      ..[6] = centre
-      ..[7] = sink;
-    return _flat;
-  }
-
-  /// The tile of heights tile [z], [x], [y] is raised from, on the GPU,
-  /// with where the tile lies in it written to the shaders' DemInfo, and
-  /// [sink] the metres a building's foot goes below the ground; a flat one
-  /// where none is loaded.
-  gpu.Texture _heightsFor(
-    int tz,
-    int tx,
-    int ty,
-    Terrain terrain,
-    double sink,
-  ) {
-    final n = 1 << tz;
-    tx %= n;
-    final found = terrain.heights.locate(
-      (tx + 0.5) / n,
-      (ty + 0.5) / n,
-      terrain.zoomFor(tz),
-    );
-    if (found == null) return _flatHeights(terrain.centre, sink);
-    final (dem, z, x, y) = found;
-    // The tile is this share of the heights tile, deeper zooms being
-    // smaller shares.
-    final share = 1 / (1 << (tz - z));
-    final x0 = tx * share - x, y0 = ty * share - y;
-    final metres =
-        40075016.686 *
-        math.cos(latitudeAt((y + 0.5) / (1 << z)) * math.pi / 180) /
-        (1 << z) /
-        dem.dim;
-    _demInfo
-      ..[0] = 1 + (x0 - x0.floorToDouble()) * dem.dim
-      ..[1] = 1 + (y0 - y0.floorToDouble()) * dem.dim
-      ..[2] = share * dem.dim
-      ..[3] = dem.dim + 2
-      ..[4] = terrain.exaggeration
-      ..[5] = metres
-      ..[6] = terrain.centre
-      ..[7] = sink;
-    final kept = _uploaded[dem];
-    if (kept != null && kept.$2 == dem.version) return kept.$1;
-    final texture = gpu.gpuContext.createTexture(
-      gpu.StorageMode.hostVisible,
-      dem.dim + 2,
-      dem.dim + 2,
-      format: gpu.PixelFormat.r32Float,
-    )..overwrite(ByteData.sublistView(dem.heights));
-    _uploaded[dem] = (texture, dem.version);
-    return texture;
-  }
-
-  static const _indexCount = _grid * _grid * 6 + 4 * _grid * 6;
-
-  /// The grid's corners in rows, then a skirt corner under each corner of
-  /// the edge, walking it round: top, right, bottom, left.
-  static List<(int, int)> get _edge => [
-    for (var i = 0; i < _grid; i++) (i, 0),
-    for (var j = 0; j < _grid; j++) (_grid, j),
-    for (var i = _grid; i > 0; i--) (i, _grid),
-    for (var j = _grid; j > 0; j--) (0, j),
-  ];
-
-  static gpu.DeviceBuffer _gridCorners() {
-    final edge = _edge;
-    final out = Float32List(((_grid + 1) * (_grid + 1) + edge.length) * 2);
-    var o = 0;
-    for (var j = 0; j <= _grid; j++) {
-      for (var i = 0; i <= _grid; i++) {
-        out
-          ..[o++] = i / _grid
-          ..[o++] = j / _grid;
-      }
-    }
-    for (final (i, j) in edge) {
-      out
-        ..[o++] = 2 + i / _grid
-        ..[o++] = j / _grid;
-    }
-    return gpu.gpuContext.createDeviceBufferWithCopy(ByteData.sublistView(out));
-  }
-
-  static gpu.DeviceBuffer _gridIndices() {
-    final out = Uint16List(_indexCount);
-    var o = 0;
-    void quad(int a, int b, int c, int d) => out
-      ..[o++] = a
-      ..[o++] = c
-      ..[o++] = d
-      ..[o++] = a
-      ..[o++] = d
-      ..[o++] = b;
-    for (var j = 0; j < _grid; j++) {
-      for (var i = 0; i < _grid; i++) {
-        final a = j * (_grid + 1) + i;
-        quad(a, a + 1, a + _grid + 1, a + _grid + 2);
-      }
-    }
-    final edge = _edge;
-    final skirts = (_grid + 1) * (_grid + 1);
-    for (var k = 0; k < edge.length; k++) {
-      final next = (k + 1) % edge.length;
-      int top(int k) => edge[k].$2 * (_grid + 1) + edge[k].$1;
-      quad(top(k), top(next), skirts + k, skirts + next);
-    }
-    return gpu.gpuContext.createDeviceBufferWithCopy(ByteData.sublistView(out));
   }
 }

@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/tiles/protocol.dart';
-import 'package:vmap/src/tiles/tile_builder.dart';
+import 'package:vmap/src/tiles/built_tile.dart';
 import 'package:vmap/src/tiles/tile_id.dart';
 
 void main() {

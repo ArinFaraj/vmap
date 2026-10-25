@@ -324,4 +324,59 @@ class CollisionBoxes {
       add(x - r, y - r, x + r, y + r, never: never);
     }
   }
+
+  /// [path], x and y in turn, cut to the collision grid: the pieces of it
+  /// inside, as MapLibre's `clipLine`.
+  List<Float64List> clipToGrid(List<double> path) {
+    final g = grid;
+    if (g == null) return [Float64List.fromList(path)];
+    final (x1, y1, x2, y2) = g;
+    final pieces = <Float64List>[];
+    var piece = <double>[];
+    void flush() {
+      if (piece.length >= 4) pieces.add(Float64List.fromList(piece));
+      piece = <double>[];
+    }
+
+    for (var q = 2; q < path.length; q += 2) {
+      var ax = path[q - 2], ay = path[q - 1], bx = path[q], by = path[q + 1];
+      // Liang-Barsky against the grid's four edges.
+      var t0 = 0.0, t1 = 1.0;
+      final dx = bx - ax, dy = by - ay;
+      var inside = true;
+      for (final (pv, qv) in [
+        (-dx, ax - x1),
+        (dx, x2 - ax),
+        (-dy, ay - y1),
+        (dy, y2 - ay),
+      ]) {
+        if (pv == 0) {
+          if (qv < 0) inside = false;
+          continue;
+        }
+        final r = qv / pv;
+        if (pv < 0) {
+          if (r > t1) inside = false;
+          if (r > t0) t0 = r;
+        } else {
+          if (r < t0) inside = false;
+          if (r < t1) t1 = r;
+        }
+      }
+      if (!inside || t0 > t1) {
+        flush();
+        continue;
+      }
+      final sx = ax + dx * t0, sy = ay + dy * t0;
+      final ex = ax + dx * t1, ey = ay + dy * t1;
+      if (piece.isEmpty || t0 > 0) {
+        flush();
+        piece.addAll([sx, sy]);
+      }
+      piece.addAll([ex, ey]);
+      if (t1 < 1) flush();
+    }
+    flush();
+    return pieces;
+  }
 }

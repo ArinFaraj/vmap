@@ -9,6 +9,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../engine.dart';
 import '../camera/bounds.dart';
+import '../gestures/gesture_target.dart';
 import '../camera/map_camera.dart';
 import '../camera/mercator.dart';
 import '../options.dart';
@@ -52,13 +53,6 @@ class VmapController extends ChangeNotifier {
   final _clock = Stopwatch()..start();
   final _samples = <(int, VmapCamera)>[];
   VmapEngine? _engine;
-
-  /// How long a released gesture or an interrupted animation keeps its
-  /// speed: the speed falls to a third in this time.
-  static const _glideSeconds = 0.32;
-
-  /// Zoom, turn and tilt settle a little sooner than a slide does.
-  static const _zoomSeconds = 0.24, _turnSeconds = 0.28, _tiltSeconds = 0.22;
 
   /// Where the map looks.
   VmapCamera get camera => _camera;
@@ -303,64 +297,36 @@ class VmapController extends ChangeNotifier {
     );
   }
 
-  /// Lets a released gesture coast and slow like a body on a surface: the
-  /// map slides at [pan] screen pixels a second, and zooms, turns and tilts
-  /// at their rates per second, all about screen point [focal].
-  void _coast({
-    required Offset focal,
-    Offset pan = Offset.zero,
-    double zoom = 0,
-    double turn = 0,
-    double tilt = 0,
-  }) {
-    double cap(double v, double most) => v.clamp(-most, most);
-    final speed = pan.distance > 6000 ? pan * (6000 / pan.distance) : pan;
-    zoom = cap(zoom, 4);
-    turn = cap(turn, 300);
-    tilt = cap(tilt, 120);
-    if (speed.distance < 80 &&
-        zoom.abs() < 0.25 &&
-        turn.abs() < 10 &&
-        tilt.abs() < 10) {
-      return;
+  /// [from] moved by [step].
+  VmapCamera _stepped(VmapCamera from, MapGestureStep step) {
+    var at = from;
+    if (step.from case final a?) {
+      final b = step.to!;
+      at = at.panned(
+        at.view(_size.width, _size.height),
+        a.dx,
+        a.dy,
+        b.dx,
+        b.dy,
+      );
     }
-    const seconds = _glideSeconds * 4.5;
-    final start = _camera;
-    final startView = start.view(_size.width, _size.height);
-    double eased(double tau, double t) =>
-        tau * (1 - math.exp(-t * seconds / tau));
-    unawaited(
-      _run(
-        _Motion(Duration(microseconds: (seconds * 1e6).round()), (t) {
-          final k = eased(_glideSeconds, t);
-          final kZoom = eased(_zoomSeconds, t);
-          final kTurn = eased(_turnSeconds, t);
-          final kTilt = eased(_tiltSeconds, t);
-          var at = start;
-          if (zoom != 0 || turn != 0) {
-            at = at.around(
-              startView,
-              focal.dx,
-              focal.dy,
-              newZoom: start.zoom + zoom * kZoom,
-              turn: turn * kTurn,
-            );
-          }
-          if (tilt != 0) at = at.copyWith(pitch: start.pitch + tilt * kTilt);
-          if (speed != Offset.zero) {
-            at = at.panned(
+    if (step.zoomBy != 0 || step.turn != 0) {
+      final anchor = step.anchor;
+      at = anchor == null
+          ? at.copyWith(
+              zoom: at.zoom + step.zoomBy,
+              bearing: normalBearing(at.bearing + step.turn),
+            )
+          : at.around(
               at.view(_size.width, _size.height),
-              focal.dx,
-              focal.dy,
-              focal.dx + speed.dx * k,
-              focal.dy + speed.dy * k,
+              anchor.dx,
+              anchor.dy,
+              newZoom: at.zoom + step.zoomBy,
+              turn: step.turn,
             );
-          }
-          return at;
-        }),
-        carry: false,
-      ),
-    );
+    }
+    if (step.tilt != 0) at = at.copyWith(pitch: at.pitch + step.tilt);
+    return at;
   }
 
   /// Stops any animation where it is.
@@ -434,15 +400,71 @@ extension VmapControllerHost on VmapController {
   }
 
   MapView get view => _view;
-  void move(VmapCamera to) => _set(to);
   void tick(Duration elapsed) => _tick(elapsed);
-  void coast({
-    required Offset focal,
-    Offset pan = Offset.zero,
-    double zoom = 0,
-    double turn = 0,
-    double tilt = 0,
-  }) => _coast(focal: focal, pan: pan, zoom: zoom, turn: turn, tilt: tilt);
+
+  /// What gestures on the map move.
+  MapGestureTarget get gestureTarget => _GestureTarget(this);
+}
+
+class _GestureTarget implements MapGestureTarget {
+  _GestureTarget(this._c);
+
+  final VmapController _c;
+
+  @override
+  Size get size => _c._size;
+
+  @override
+  Offset get centre {
+    final (:x, :y) = _c._view.screenCenter;
+    return Offset(x, y);
+  }
+
+  @override
+  double get zoom => _c._camera.zoom;
+
+  @override
+  double get minZoom => _c._minZoom;
+
+  @override
+  double get maxZoom => _c._maxZoom;
+
+  @override
+  bool get isMoving => _c.isMoving;
+
+  @override
+  void stop() => _c.stop();
+
+  @override
+  void jump(MapGestureStep step) => _c._set(_c._stepped(_c._camera, step));
+
+  @override
+  void ease(
+    MapGestureStep step,
+    Duration duration, {
+    Curve curve = Curves.ease,
+  }) {
+    final start = _c._camera;
+    unawaited(
+      _c._run(
+        _Motion(
+          duration,
+          (t) => _c._stepped(start, step.scaled(curve.transform(t))),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void glide(MapGlide glide) {
+    final start = _c._camera;
+    unawaited(
+      _c._run(
+        _Motion(glide.duration, (t) => _c._stepped(start, glide.at(t))),
+        carry: false,
+      ),
+    );
+  }
 }
 
 class _Motion {
@@ -460,7 +482,7 @@ class _Motion {
     return _Motion(duration, (t) {
       final base = at(t);
       final s = t * seconds;
-      final k = s * math.exp(-s / VmapController._glideSeconds) * (1 - t);
+      final k = s * math.exp(-s / MapGlide.glideSeconds) * (1 - t);
       return cameraAt(
         x: base.worldX + v.x * k,
         y: base.worldY + v.y * k,

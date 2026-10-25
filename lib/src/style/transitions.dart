@@ -1,5 +1,4 @@
-import 'dart:convert';
-
+import 'json_equals.dart';
 import 'expr.dart';
 import 'paint_defaults.dart';
 
@@ -49,7 +48,7 @@ class PaintTransitions {
           if ('$key'.endsWith('-transition')) continue;
           final a = prior[key] ?? paintDefaults[key];
           final b = paint[key] ?? paintDefaults[key];
-          if (a == null || b == null || _sameJson(a, b)) continue;
+          if (a == null || b == null || jsonEquals(a, b)) continue;
           final own = paint['$key-transition'];
           double timing(String name, double fallback) =>
               asNumber(own is Map ? own[name] : null) ??
@@ -89,14 +88,6 @@ class PaintTransitions {
             l,
       ],
     };
-  }
-
-  static bool _sameJson(Object? a, Object? b) {
-    try {
-      return jsonEncode(a) == jsonEncode(b);
-    } on JsonUnsupportedObjectError {
-      return identical(a, b);
-    }
   }
 }
 

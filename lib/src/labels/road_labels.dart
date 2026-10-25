@@ -5,7 +5,7 @@ import 'collision_boxes.dart';
 import 'label_path.dart';
 import 'label_state.dart';
 import 'label_view.dart';
-import '../tiles/tile_builder.dart' show tileExtent;
+import '../tiles/built_tile.dart';
 
 /// Lays names along roads: straight where the road is straight enough, bent
 /// along it where it is not, and not twice close together.

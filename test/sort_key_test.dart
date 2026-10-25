@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/tiles/geojson.dart';
 import 'package:vmap/src/style/style_model.dart';
 import 'package:vmap/src/tiles/tile_builder.dart';
+import 'package:vmap/src/tiles/built_tile.dart';
 
 Map<String, Object?> _square(double west, int key) => {
   'type': 'Feature',

@@ -2,12 +2,12 @@ import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show rootBundle;
 
-import '../labels/glyphs/glyph_layout.dart';
-import '../labels/glyphs/vmap_font.dart';
+import '../text/glyphs/glyph_layout.dart';
+import '../text/glyphs/vmap_font.dart';
 import '../errors.dart';
 import '../labels/labels.dart';
 import '../options.dart';
-import '../tiles/net.dart';
+import '../net/net.dart';
 import 'sprites.dart';
 
 /// What a style draws with besides its tiles: its sprite sheet, the fonts

@@ -1,8 +1,19 @@
 ## 0.27.0
 
 vmap is now a map engine of its own, drawn on the GPU, with flutter_map
-moved to an adapter package. This release changes most of the public API;
-"Coming from vmap 0.26" in the README lists what to rename.
+moved to an adapter package. This release changes most of the public API:
+
+- `VmapLayer`, `VmapMap` (now `VmapFlutterMap`), `VmapGestures` and
+  `NamedMarker` moved to `vmap_flutter_map`.
+- `VMap` and `VMapController` are `Vmap` and `VmapController`, and
+  `MapCameraPosition` is `VmapCamera`, with a `LatLng` center.
+- Engine settings are grouped in `VmapNetworkOptions` (was
+  `TileSourceConfig`), `VmapRenderOptions` and `VmapLabelOptions`.
+- Every zoom is MapLibre's, one below flutter_map's.
+- `onError` receives a `VmapError`, and statistics are in
+  `package:vmap/debug.dart`.
+- `interactive`, `rotate`, `tilt` and `keyboard` are one `gestures:
+  VmapGestureOptions(...)`.
 
 ### The engine
 
@@ -13,6 +24,13 @@ moved to an adapter package. This release changes most of the public API;
   right drag, trackpad and keyboard, long press, a loading builder, the
   style's attribution in a corner, and callbacks for camera moves, the
   camera coming to rest, the style loaded, the map idle and errors.
+- `VmapGestureOptions` switches each gesture off by MapLibre GL JS's
+  handler names (`dragPan`, `scrollZoom`, `boxZoom`, `dragRotate`,
+  `keyboard`, `doubleClickZoom`, `touchZoomRotate`, `touchPitch`), with
+  `rotate`, `pitch`, `inertia`, `wheelZoomRate` and `rotateThreshold`. It
+  takes the place of `interactive`, `rotate`, `tilt` and `keyboard`.
+- `package:vmap/gestures.dart` exports the gesture recognizer behind `Vmap`,
+  so another host can drive its own camera with the same gestures.
 - Gestures follow MapLibre GL JS: a shift double click zooms out, a shift
   drag zooms to the box it draws, a control drag turns and tilts as a right
   drag does, `+` and `-` go to the next whole zoom and two with shift, a
