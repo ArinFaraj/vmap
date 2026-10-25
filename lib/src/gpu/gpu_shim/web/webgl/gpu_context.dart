@@ -12,14 +12,15 @@ final class WebGlContext extends GpuContext {
     _canvas = web.OffscreenCanvas(1, 1);
     // antialias:false makes the default framebuffer single-sampled, so we
     // can blitFramebuffer single-sample render targets onto it for present.
-    // preserveDrawingBuffer:true keeps the rendered contents available for
-    // createImageFromTextureSource after the GL calls return.
+    // Without preserveDrawingBuffer, transferToImageBitmap hands the canvas's
+    // buffer over instead of copying it: every snapshot blits fresh content
+    // first, and the copy cost Chrome about 0.7 ms of GPU time an image.
     final attrs = web.WebGLContextAttributes(
       antialias: false,
       alpha: true,
       depth: false,
       stencil: false,
-      preserveDrawingBuffer: true,
+      preserveDrawingBuffer: false,
     );
     final gl =
         _canvas.getContext('webgl2', attrs) as web.WebGL2RenderingContext?;

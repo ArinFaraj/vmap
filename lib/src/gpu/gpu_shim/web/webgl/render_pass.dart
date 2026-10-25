@@ -1048,6 +1048,41 @@ final class WebGlRenderPass extends RenderPass {
         _resolveColor(gl, att.texture, resolve);
       }
     }
+    _invalidateDiscarded(gl);
+  }
+
+  /// Tells the GL the attachments whose contents the pass's store actions
+  /// discard, so a tiling GPU does not write them back to memory: on Apple
+  /// GPUs a full-screen depth and stencil store costs as much as the color.
+  void _invalidateDiscarded(web.WebGL2RenderingContext gl) {
+    final fbo = _fbo;
+    if (fbo == null) return;
+    final color = _target.colorAttachments.first;
+    final resolved =
+        color.texture.sampleCount > 1 &&
+        color.resolveTexture != null &&
+        color.storeAction == StoreAction.multisampleResolve;
+    final depth = _target.depthStencilAttachment;
+    final discardDepth =
+        depth != null && depth.depthStoreAction == StoreAction.dontCare;
+    final discardStencil =
+        depth != null && depth.stencilStoreAction == StoreAction.dontCare;
+    final attachments = <int>[
+      if (color.storeAction == StoreAction.dontCare || resolved)
+        web.WebGL2RenderingContext.COLOR_ATTACHMENT0,
+      if (discardDepth && discardStencil)
+        web.WebGL2RenderingContext.DEPTH_STENCIL_ATTACHMENT
+      else if (discardDepth)
+        web.WebGL2RenderingContext.DEPTH_ATTACHMENT
+      else if (discardStencil)
+        web.WebGL2RenderingContext.STENCIL_ATTACHMENT,
+    ];
+    if (attachments.isEmpty) return;
+    gl.bindFramebuffer(web.WebGL2RenderingContext.FRAMEBUFFER, fbo);
+    gl.invalidateFramebuffer(
+      web.WebGL2RenderingContext.FRAMEBUFFER,
+      [for (final a in attachments) a.toJS].toJS,
+    );
   }
 
   void _resolveColor(
