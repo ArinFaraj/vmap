@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vmap/gestures.dart';
 import 'package:vmap/vmap.dart';
 
 const _empty = VmapStyle.json({
@@ -400,6 +401,29 @@ void main() {
     await _settle(tester);
     expect(c.camera.zoom, closeTo(13, 1e-6));
   });
+
+  testWidgets(
+    "a pinch Safari reports with its own events zooms and turns the map",
+    (tester) async {
+      final c = await _pump(tester);
+      final spot = c.toLatLng(const Offset(500, 200))!;
+      final gestures = tester
+          .widget<MapGestureDetector>(find.byType(MapGestureDetector))
+          .recognizer;
+      gestures.pinchStart(const Offset(500, 200));
+      for (var i = 1; i <= 10; i++) {
+        gestures.pinchUpdate(const Offset(500, 200), 1 + i * 0.1, i * 1.0);
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      final now = c.toScreen(spot)!;
+      expect(c.camera.zoom, closeTo(13, 1e-6));
+      expect(c.camera.bearing, closeTo(-10, 1e-6));
+      expect(now.dx, closeTo(500, 1));
+      expect(now.dy, closeTo(200, 1));
+      gestures.pinchEnd();
+      await _settle(tester);
+    },
+  );
 
   testWidgets('a native trackpad pans, pinches and turns the map', (
     tester,

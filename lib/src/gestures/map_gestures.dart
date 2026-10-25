@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import 'browser_pinch.dart';
 import 'gesture_options.dart';
 import 'gesture_target.dart';
 
@@ -586,7 +587,7 @@ class MapGestureRecognizer {
           if (scrollDelta.dy == 0) return;
           _wheel(-scrollDelta.dy * options.wheelZoomRate, localPosition);
         case PointerScaleEvent(:final scale, :final localPosition):
-          if (scale <= 0) return;
+          if (scale <= 0 || _browserPinch) return;
           _pinchStep(math.log(scale) / math.ln2, localPosition);
         case PointerScrollInertiaCancelEvent():
           target.stop();
@@ -685,6 +686,49 @@ class MapGestureRecognizer {
     onSettle?.call();
   }
 
+  /// Whether a pinch the browser reports apart from pointers is under way.
+  bool _browserPinch = false;
+
+  /// A trackpad pinch beginning about [at], as Safari reports it: with
+  /// gesture events of its own rather than as pointers or scrolls.
+  void pinchStart(Offset at) {
+    _browserPinch = _trackpadMoves;
+    if (!_browserPinch) return;
+    target.stop();
+    _wheelZoom = null;
+    _trackpadScale = 1;
+    _trackpadTurn = 0;
+    _lastFocal = at;
+    _resetChannels(_now);
+  }
+
+  /// The pinch at [scale] and turned [degrees] clockwise since it began.
+  void pinchUpdate(Offset at, double scale, double degrees) {
+    if (!_browserPinch) return;
+    final zoomBy = options.scrollZoom && scale > 0 && _trackpadScale > 0
+        ? math.log(scale / _trackpadScale) / math.ln2
+        : 0.0;
+    _trackpadScale = scale;
+    final turn = _pinchTurns ? -(degrees - _trackpadTurn) : 0.0;
+    _trackpadTurn = degrees;
+    _zoomTotal += zoomBy;
+    _turnTotal += turn;
+    target.jump(MapGestureStep(around: at, zoomBy: zoomBy, turn: turn));
+    _lastFocal = at;
+    _record(_now);
+  }
+
+  void pinchEnd() {
+    if (!_browserPinch) return;
+    _browserPinch = false;
+    _gesture = _Gesture.undecided;
+    _coast(_lastFocal, _now);
+    onSettle?.call();
+  }
+
+  static final Stopwatch _clock = Stopwatch()..start();
+  static Duration get _now => _clock.elapsed;
+
   KeyEventResult key(FocusNode node, KeyEvent e) {
     if (!options.keyboard || e is KeyUpEvent) return KeyEventResult.ignored;
     final key = e.logicalKey;
@@ -756,9 +800,9 @@ class MapGestureRecognizer {
   }
 }
 
-/// Feeds a [MapGestureRecognizer] the pointers, scrolls and keys that land
-/// on [child], and draws the box of a shift drag over it.
-class MapGestureDetector extends StatelessWidget {
+/// Feeds a [MapGestureRecognizer] the pointers, scrolls, keys and browser
+/// pinches that land on [child], and draws the box of a shift drag over it.
+class MapGestureDetector extends StatefulWidget {
   const MapGestureDetector({
     required this.recognizer,
     required this.child,
@@ -771,10 +815,54 @@ class MapGestureDetector extends StatelessWidget {
   final HitTestBehavior behavior;
 
   @override
+  State<MapGestureDetector> createState() => _MapGestureDetectorState();
+}
+
+class _MapGestureDetectorState extends State<MapGestureDetector> {
+  final _listener = GlobalKey();
+  VoidCallback? _stopPinch;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!kIsWeb) return;
+    _stopPinch?.call();
+    final viewId = View.of(context).viewId;
+    _stopPinch = listenBrowserPinch(
+      viewId: viewId,
+      owns: (point) => _hits(point, viewId),
+      start: (point) => widget.recognizer.pinchStart(_local(point)),
+      update: (point, scale, degrees) =>
+          widget.recognizer.pinchUpdate(_local(point), scale, degrees),
+      end: () => widget.recognizer.pinchEnd(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _stopPinch?.call();
+    super.dispose();
+  }
+
+  bool _hits(Offset point, int viewId) {
+    final box = _listener.currentContext?.findRenderObject();
+    if (box == null || !box.attached) return false;
+    final result = HitTestResult();
+    GestureBinding.instance.hitTestInView(result, point, viewId);
+    return result.path.any((entry) => identical(entry.target, box));
+  }
+
+  Offset _local(Offset point) {
+    final box = _listener.currentContext?.findRenderObject() as RenderBox?;
+    return box == null || !box.attached ? point : box.globalToLocal(point);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final r = recognizer;
+    final r = widget.recognizer;
     final map = Listener(
-      behavior: behavior,
+      key: _listener,
+      behavior: widget.behavior,
       onPointerDown: r.down,
       onPointerMove: r.move,
       onPointerUp: r.up,
@@ -786,7 +874,7 @@ class MapGestureDetector extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          child,
+          widget.child,
           ValueListenableBuilder(
             valueListenable: r.box,
             builder: (context, box, _) => box == null

@@ -29,6 +29,8 @@ moved to an adapter package. This release changes most of the public API:
   `keyboard`, `doubleClickZoom`, `touchZoomRotate`, `touchPitch`), with
   `rotate`, `pitch`, `inertia`, `wheelZoomRate` and `rotateThreshold`. It
   takes the place of `interactive`, `rotate`, `tilt` and `keyboard`.
+- A trackpad pinch in Safari zooms and turns the map. Safari reports it
+  with gesture events of its own, which vmap takes from the page's zoom.
 - `package:vmap/gestures.dart` exports the gesture recognizer behind `Vmap`,
   so another host can drive its own camera with the same gestures.
 - Gestures follow MapLibre GL JS: a shift double click zooms out, a shift

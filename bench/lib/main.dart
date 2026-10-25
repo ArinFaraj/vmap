@@ -14,6 +14,7 @@ import 'package:vector_map_tiles/vector_map_tiles.dart' as vmt;
 import 'package:vmap/vmap.dart';
 import 'package:vmap_flutter_map/vmap_flutter_map.dart';
 
+import 'report.dart';
 import 'showcase.dart';
 
 const mode = String.fromEnvironment('MODE', defaultValue: 'ours');
@@ -175,7 +176,10 @@ class _BenchAppState extends State<BenchApp>
     ),
     labels: VmapLabelOptions(visible: flags['labels'] != 'off'),
     rendering: VmapRenderOptions(
-      renderer: gpuRenderer ? VmapRenderer.gpu : VmapRenderer.canvas,
+      glyphs: flags['glyphs'] == 'fonts' ? VmapGlyphs.fonts : VmapGlyphs.style,
+      renderer: gpuRenderer && flags['renderer'] != 'canvas'
+          ? VmapRenderer.gpu
+          : VmapRenderer.canvas,
     ),
   );
   late final Ticker ticker;
@@ -356,6 +360,7 @@ class _BenchAppState extends State<BenchApp>
         'stroke_total_ms', 'tile_setup_total_ms', 'prep_max_us',
         'draw_max_us', 'unpack_max_us',
       ];
+      if (flags['report'] case final url?) report(url, jsonEncode(out));
       // ignore: avoid_print
       print(
         'VMAP_WEB ${jsonEncode({
