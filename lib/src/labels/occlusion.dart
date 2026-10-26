@@ -19,13 +19,15 @@ class BuildingOcclusion {
   final List<(TileDraw, BuiltExtrusion)> _buildings = [];
   double _perMetre = 0;
   final Stopwatch _clock = Stopwatch()..start();
-  int _until = 0;
+  int _spent = 0;
 
-  /// Time one placement may spend asking; past it, labels count as seen.
+  /// Time one placement may spend asking; past it, the rest are asked in
+  /// the next placement. Only the asking counts, not the placing around
+  /// it, or a placement slow on its own would never ask anything.
   static const budgetMicros = 1500;
 
   /// Starts a placement's budget.
-  void startPass() => _until = _clock.elapsedMicroseconds + budgetMicros;
+  void startPass() => _spent = 0;
 
   /// Takes this frame's [view] and the [tiles] on screen. Buildings count
   /// once the zoom is in their layer's range.
@@ -64,7 +66,14 @@ class BuildingOcclusion {
   bool? hides(double wx, double wy) {
     final view = _view;
     if (view == null || _buildings.isEmpty) return false;
-    if (_clock.elapsedMicroseconds > _until) return null;
+    if (_spent > budgetMicros) return null;
+    final started = _clock.elapsedMicroseconds;
+    final hidden = _hides(view, wx, wy);
+    _spent += _clock.elapsedMicroseconds - started;
+    return hidden;
+  }
+
+  bool _hides(MapView view, double wx, double wy) {
     final px = wx * view.worldSize, py = wy * view.worldSize;
     final eye = view.eye;
     final dx = eye.x - px, dy = eye.y - py;
