@@ -361,6 +361,7 @@ class FramePainter {
         rasters: f.drape ? [for (final r in _rasters) r.drawn] : const [],
         states: [for (final s in _sources) _states.of(s.def.name)],
         dashFade: _zoomHistory.fade,
+        transitioning: _host.transitionsRunning,
         stats: _stats,
         planes: f.planes,
       ),

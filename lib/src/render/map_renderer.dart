@@ -47,6 +47,7 @@ class RenderFrame {
     this.rasters = const [],
     this.states = const [],
     this.dashFade = ZoomHistory.settled,
+    this.transitioning = false,
   });
 
   final MapView view;
@@ -57,6 +58,10 @@ class RenderFrame {
   /// standing in where one of them is missing, indexed by the style's
   /// sources.
   final List<List<TileDraw>> ideal, fallback;
+
+  /// Whether paint is moving between values this frame, as a style's
+  /// transitions move it, with no change of zoom or style to tell.
+  final bool transitioning;
   final EvalContext context;
   final double styleZoom, devicePixelRatio;
   final SpriteSheet? sprites;

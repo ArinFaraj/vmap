@@ -43,6 +43,19 @@ class Drape {
   List<CoverTile> _tiles = const [];
   List<(int, int, int)> _slots = const [];
 
+  /// Each tile of ground's slot, kept from frame to frame: a slot is drawn
+  /// again only when what it was drawn from changed, so a map at rest or
+  /// turning over the same ground costs next to nothing. Free corners by
+  /// size, a larger one split in four when a size has none.
+  final Map<(int, int, int), _Slot> _kept = {};
+  final List<Set<(int, int)>> _free = [{}, {}, {}];
+  int _frame = 0;
+
+  /// Slots drawn again in a frame for a change of what they show, nearest
+  /// first, past the ones drawn for the first time: the rest show what
+  /// they had a frame or two longer.
+  static const _staleBudget = 4;
+
   /// The grid every tile of ground is drawn with, raised in the vertex
   /// shader from its tile of heights.
   gpu.DeviceBuffer? _corners, _indices;
@@ -55,16 +68,11 @@ class Drape {
   /// Whether a picture the last atlas wanted is still on its way.
   bool sending = false;
 
-  /// Each of [tiles]' slots: as many device pixels on a side as the tile
-  /// covers on the screen, rounded up to a size in [_sizes], so the map
-  /// laid over the ground is as sharp as the flat map. Slots are packed in
-  /// rows of one size, largest first; when they do not fit, the farthest
-  /// tiles take smaller slots, and the farthest of all are left out.
-  List<(int, int, int)> _layout(
-    List<CoverTile> tiles,
-    MapView view,
-    double dpr,
-  ) {
+  /// The size in [_sizes] each of [tiles] gets: as many device pixels on
+  /// a side as it covers on the screen, rounded up, so the map laid over
+  /// the ground is as sharp as the flat map; when they do not all fit, the
+  /// farthest tiles take smaller slots, and the farthest of all none.
+  List<int> _sizesFor(List<CoverTile> tiles, MapView view, double dpr) {
     final want = [
       for (final t in tiles)
         () {
@@ -75,16 +83,15 @@ class Drape {
           return size < 0 ? 0 : size;
         }(),
     ];
-    int height() {
+    int area() {
       var total = 0;
-      for (var k = 0; k < _sizes.length; k++) {
-        final count = want.where((w) => w == k).length;
-        total += (count / (_width ~/ _sizes[k])).ceil() * _sizes[k];
+      for (final k in want) {
+        total += _sizes[k] * _sizes[k];
       }
       return total;
     }
 
-    while (want.isNotEmpty && height() > _maxHeight) {
+    while (want.isNotEmpty && area() > _width * _maxHeight) {
       final larger = want.lastIndexWhere((w) => w < _sizes.length - 1);
       if (larger < 0) {
         want.removeLast();
@@ -92,32 +99,79 @@ class Drape {
         want[larger]++;
       }
     }
-    final out = <(int, int, int)>[];
-    final rowTop = <int>[];
-    var top = 0;
-    for (var k = 0; k < _sizes.length; k++) {
-      rowTop.add(top);
-      final count = want.where((w) => w == k).length;
-      top += (count / (_width ~/ _sizes[k])).ceil() * _sizes[k];
-    }
-    final used = List.filled(_sizes.length, 0);
-    for (final k in want) {
-      final size = _sizes[k];
-      final across = _width ~/ size;
-      final n = used[k]++;
-      out.add(((n % across) * size, rowTop[k] + (n ~/ across) * size, size));
-    }
-    return out;
+    return want;
   }
 
-  /// Grows the atlas to hold [_slots].
-  void _fit() {
-    var bottom = 0;
-    for (final (_, y, size) in _slots) {
-      bottom = math.max(bottom, y + size);
+  /// A free corner for a slot of size [_sizes] index [k], or null when
+  /// the atlas is full.
+  (int, int)? _take(int k) {
+    final free = _free[k];
+    if (free.isNotEmpty) {
+      final corner = free.first;
+      free.remove(corner);
+      return corner;
     }
-    final height = (bottom / 512).ceil() * 512;
-    if (_atlas != null && height <= _height) return;
+    if (k == 0) {
+      if (_height + _sizes[0] > _maxHeight) return null;
+      final y = _height;
+      _grow(_height + _sizes[0]);
+      for (var x = _width - _sizes[0]; x > 0; x -= _sizes[0]) {
+        free.add((x, y));
+      }
+      return (0, y);
+    }
+    final whole = _take(k - 1);
+    if (whole == null) return null;
+    final size = _sizes[k];
+    final (x, y) = whole;
+    free.addAll([(x + size, y), (x, y + size), (x + size, y + size)]);
+    return (x, y);
+  }
+
+  /// Lets go of the slot used longest ago that this frame does not show.
+  bool _evictOne() {
+    MapEntry<(int, int, int), _Slot>? oldest;
+    for (final e in _kept.entries) {
+      if (e.value.used == _frame) continue;
+      if (oldest == null || e.value.used < oldest.value.used) oldest = e;
+    }
+    if (oldest == null) return false;
+    _release(oldest.key);
+    return true;
+  }
+
+  void _release((int, int, int) key) {
+    final slot = _kept.remove(key)!;
+    _giveBack(_sizes.indexOf(slot.size), slot.x, slot.y);
+  }
+
+  /// Frees the corner [x], [y] of size [_sizes] index [k], joined with its
+  /// three siblings into the corner above when they are free too, so the
+  /// atlas does not crumble into slots too small for a near tile.
+  void _giveBack(int k, int x, int y) {
+    if (k == 0) {
+      _free[0].add((x, y));
+      return;
+    }
+    final size = _sizes[k], whole = size * 2;
+    final px = x - x % whole, py = y - y % whole;
+    final siblings = [
+      (px, py),
+      (px + size, py),
+      (px, py + size),
+      (px + size, py + size),
+    ]..remove((x, y));
+    if (siblings.every(_free[k].contains)) {
+      _free[k].removeAll(siblings);
+      _giveBack(k - 1, px, py);
+    } else {
+      _free[k].add((x, y));
+    }
+  }
+
+  /// Grows the atlas to [height]; what was drawn in it is gone, so every
+  /// slot is drawn again.
+  void _grow(int height) {
     _height = height;
     _atlas = gpu.gpuContext.createTexture(
       gpu.StorageMode.devicePrivate,
@@ -137,6 +191,9 @@ class Drape {
       gpu.gpuContext.defaultDepthStencilFormat,
       1,
     );
+    for (final slot in _kept.values) {
+      slot.key = null;
+    }
   }
 
   /// Draws the flat layers of every tile of ground under [view] into its
@@ -152,11 +209,165 @@ class Drape {
       variableZoom: true,
       beyond: view.height,
     );
-    _slots = _layout(all, view, _device.blocks.frame[26]);
-    _tiles = all.sublist(0, _slots.length);
+    _frame++;
+    final dpr = _device.blocks.frame[26];
+    final chosen = <(CoverTile, _Slot)>[];
+    final sizes = _sizesFor(all, view, dpr);
+    // Slots of the size their tile no longer wants are let go first, so
+    // their room goes to the tiles that need it.
+    for (final (i, k) in sizes.indexed) {
+      final t = all[i];
+      final key = (t.z, t.x, t.y);
+      final slot = _kept[key];
+      if (slot == null) continue;
+      if (slot.size != _sizes[k]) {
+        _release(key);
+      } else {
+        slot.used = _frame;
+      }
+    }
+    for (final (i, t) in all.take(sizes.length).indexed) {
+      final key = (t.z, t.x, t.y);
+      var k = sizes[i];
+      var slot = _kept[key];
+      if (slot == null) {
+        (int, int)? corner;
+        while (true) {
+          corner = _take(k);
+          if (corner != null || _evictOne()) {
+            if (corner != null) break;
+            continue;
+          }
+          if (k == _sizes.length - 1) break;
+          k++;
+        }
+        // The farthest tiles are left out when the atlas is full.
+        if (corner == null) continue;
+        slot = _kept[key] = _Slot(corner.$1, corner.$2, _sizes[k]);
+      }
+      slot.used = _frame;
+      chosen.add((t, slot));
+    }
+    if (_frame % 120 == 0) {
+      final idle = [
+        for (final e in _kept.entries)
+          if (_frame - e.value.used > 300) e.key,
+      ];
+      idle.forEach(_release);
+    }
+    _tiles = [for (final (t, _) in chosen) t];
+    _slots = [for (final (_, s) in chosen) (s.x, s.y, s.size)];
     sending = false;
     if (_tiles.isEmpty) return;
-    _fit();
+
+    bool overlaps(
+      double l,
+      double t,
+      double w,
+      double h,
+      double left,
+      double top,
+      double span,
+    ) => l < left + span && l + w > left && t < top + span && t + h > top;
+    final vectorsInAtlas = !(view.globe != null && frame.terrain == null);
+    // What slot [i] is drawn from: the tiles and pictures in it, as they
+    // stand, and the style at this zoom, to a sixteenth of a level.
+    int keyOf(CoverTile t) {
+      final span = view.worldSize / (1 << t.z);
+      final left = t.x * span - origin.dx, top = t.y * span - origin.dy;
+      var h = Object.hash(
+        identityHashCode(sheet),
+        (frame.styleZoom * 16).floor(),
+        (frame.dashFade.mix * 32).round(),
+        identityHashCode(_device.sprites.sheet),
+        Object.hashAll([for (final s in frame.states) identityHashCode(s)]),
+        frame.transitioning ? _frame : 0,
+      );
+      if (vectorsInAtlas) {
+        for (final (s, tiles) in ideal.indexed) {
+          for (final d in tiles) {
+            if (!overlaps(d.left, d.top, d.size, d.size, left, top, span)) {
+              continue;
+            }
+            h = Object.hash(
+              h,
+              s,
+              identityHashCode(d.tile),
+              identityHashCode(d.tile.rendererData),
+              ((d.left - left) / span * 64).round(),
+              ((d.top - top) / span * 64).round(),
+              (d.size / span * 64).round(),
+            );
+          }
+        }
+        for (final (s, tiles) in fallback.indexed) {
+          for (final d in tiles) {
+            if (!overlaps(d.left, d.top, d.size, d.size, left, top, span)) {
+              continue;
+            }
+            h = Object.hash(
+              h,
+              -s - 1,
+              identityHashCode(d.tile),
+              identityHashCode(d.tile.rendererData),
+              ((d.left - left) / span * 64).round(),
+              ((d.top - top) / span * 64).round(),
+              (d.size / span * 64).round(),
+            );
+          }
+        }
+      }
+      for (final (r, pieces) in frame.rasters.indexed) {
+        for (final p in pieces) {
+          final g = p.target;
+          if (!overlaps(g.left, g.top, g.width, g.height, left, top, span)) {
+            continue;
+          }
+          final meanwhile = p.meanwhile?.$1;
+          h = Object.hash(
+            h,
+            r,
+            identityHashCode(p.image),
+            _pictures[p.image] != null,
+            meanwhile == null ? 0 : identityHashCode(meanwhile),
+            meanwhile != null && _pictures[meanwhile] != null,
+            (p.opacity * 64).round(),
+            ((g.left - left) / span * 256).round(),
+            ((g.top - top) / span * 256).round(),
+            (g.width / span * 256).round(),
+          );
+        }
+      }
+      return h;
+    }
+
+    // New slots are always drawn, so no ground is ever bare; slots whose
+    // contents changed, a few a frame, nearest first.
+    final redraw = <int>[];
+    var stale = 0;
+    for (final (i, (t, slot)) in chosen.indexed) {
+      final key = keyOf(t);
+      if (slot.key == null) {
+        redraw.add(i);
+        slot.key = key;
+      } else if (slot.key != key && stale < _staleBudget) {
+        stale++;
+        redraw.add(i);
+        slot.key = key;
+      }
+    }
+    // A picture still on its way keeps the frames coming until it is here.
+    for (final pieces in frame.rasters) {
+      for (final p in pieces) {
+        if (_pictures[p.image] == null) {
+          sending = true;
+          if (_inFlight[p.image] != true) _send(p);
+        }
+      }
+    }
+    if (stale >= _staleBudget) sending = true;
+    if (redraw.isEmpty) return;
+
     gpu.RenderPass begin(gpu.Texture target, {bool keep = false}) {
       final commands = gpu.gpuContext.createCommandBuffer();
       buffers.add(commands);
@@ -177,9 +388,8 @@ class Drape {
       );
     }
 
-    final dpr = _device.blocks.frame[26];
-    // Each tile's slot in turn: its viewport, and the matrix that draws the
-    // tile's square from above into it, north up.
+    // Each slot drawn this frame in turn: its viewport, and the matrix that
+    // draws the tile's square from above into it, north up.
     void inSlots(
       gpu.RenderPass pass,
       void Function(
@@ -191,7 +401,8 @@ class Drape {
       )
       draw,
     ) {
-      for (final (i, t) in _tiles.indexed) {
+      for (final i in redraw) {
+        final t = _tiles[i];
         final span = view.worldSize / (1 << t.z);
         final left = t.x * span - origin.dx, top = t.y * span - origin.dy;
         final (x, y, size) = _slots[i];
@@ -277,7 +488,7 @@ class Drape {
         groups.add((run, []));
       }
     }
-    var pass = begin(_atlas!);
+    var pass = begin(_atlas!, keep: true);
     for (final (index, (apart, runs)) in groups.indexed) {
       if (apart != null) {
         final opacity = sheet.runOpacity(apart, context)!;
@@ -298,6 +509,7 @@ class Drape {
       final p = pass;
       inSlots(p, (i, clip, left, top, span) {
         if (index == 0) {
+          _clearSlot(p, clip, span, left, top);
           for (final run in sheet.runs) {
             if (run.background >= 0) {
               _drawBackground(
@@ -327,6 +539,44 @@ class Drape {
         vector(p, runs, i, clip, left, top, span);
       });
     }
+  }
+
+  /// Clears the slot the pass is scissored to, colour and stencil: the
+  /// atlas keeps the other slots, so it is not cleared whole.
+  void _clearSlot(
+    gpu.RenderPass pass,
+    Float64List clip,
+    double span,
+    double left,
+    double top,
+  ) {
+    final p = _device.pipelines;
+    if (p.stencil == null) return;
+    _device.blocks.times(clip, span / tileExtent, 1, left, top, 1);
+    pass
+      ..clearBindings()
+      ..bindPipeline(p.stencil!)
+      ..setCullMode(gpu.CullMode.none)
+      ..setDepthWriteEnable(false)
+      ..setDepthCompareOperation(gpu.CompareFunction.always)
+      ..setColorBlendEnable(false)
+      ..setStencilReference(0)
+      ..setStencilConfig(
+        gpu.StencilConfig(
+          depthStencilPassOperation: gpu.StencilOperation.setToReferenceValue,
+        ),
+      )
+      ..bindVertexBuffer(
+        gpu.BufferView(p.quad!, offsetInBytes: 0, lengthInBytes: 48),
+      )
+      ..bindUniform(
+        p.stencilFrame!,
+        _device.host.emplace(_device.blocks.frameBytes),
+      )
+      ..draw(6)
+      ..setColorBlendEnable(true)
+      ..setStencilConfig(gpu.StencilConfig())
+      ..clearBindings();
   }
 
   /// Lays slot [i] of the second atlas over the same slot of the atlas at
@@ -868,4 +1118,14 @@ class Drape {
       if (t.y == n - 1) draw(globeMainCount + globeCapCount, globeCapCount);
     }
   }
+}
+
+/// A tile of ground's place in the atlas, and what it was last drawn from,
+/// null until it is drawn.
+class _Slot {
+  _Slot(this.x, this.y, this.size);
+
+  final int x, y, size;
+  int? key;
+  int used = 0;
 }
