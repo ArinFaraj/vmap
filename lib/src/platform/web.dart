@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'dart:ui_web' as ui_web;
@@ -107,6 +108,34 @@ Future<ui.Image> imageFromRgba(Uint8List pixels, int width, int height) async {
     );
     return done.future;
   }
+  final data = web.ImageData(_straight(pixels).toJS, width, height.toJS);
+  final bitmap = await web.window.createImageBitmap(data).toDart;
+  return await ui_web.createImageFromImageBitmap(bitmap);
+}
+
+/// A raster of premultiplied [rgba] pixels made ready for the page: in a
+/// browser worker, an `ImageBitmap` made there and handed over, so the page
+/// neither copies the pixels nor turns them into an image; elsewhere the
+/// pixels themselves.
+Future<Object> rasterForPage(Uint8List rgba, int width, int height) async {
+  if (!_inWorker) return pack(rgba);
+  final data = web.ImageData(_straight(rgba).toJS, width, height.toJS);
+  final scope = globalContext as web.WorkerGlobalScope;
+  return Moved(await scope.createImageBitmap(data).toDart);
+}
+
+/// The image of a raster from [rasterForPage].
+Future<ui.Image> imageFromRaster(Object raster, int width, int height) async =>
+    raster is Moved
+    ? await ui_web.createImageFromImageBitmap(raster.object)
+    : await imageFromRgba(unpackBytes(raster), width, height);
+
+/// Whether this runs in a worker, which has no document.
+final bool _inWorker = !globalContext.has('document');
+
+/// [pixels] with their colours no longer multiplied by their alpha, as an
+/// `ImageData` takes them.
+Uint8ClampedList _straight(Uint8List pixels) {
   final straight = Uint8ClampedList(pixels.length);
   for (var i = 0; i < pixels.length; i += 4) {
     final a = pixels[i + 3];
@@ -117,9 +146,7 @@ Future<ui.Image> imageFromRgba(Uint8List pixels, int width, int height) async {
       ..[i + 2] = pixels[i + 2] * 255 ~/ a
       ..[i + 3] = a;
   }
-  final data = web.ImageData(straight.toJS, width, height.toJS);
-  final bitmap = await web.window.createImageBitmap(data).toDart;
-  return await ui_web.createImageFromImageBitmap(bitmap);
+  return straight;
 }
 
 /// A browser page has one thread for Dart, so the work runs where it is.
@@ -137,6 +164,10 @@ Uint8List unpackBytes(Object packed) => packed as Uint8List;
 final String defaultWorkerScript = ui_web.assetManager.getAssetUrl(
   'packages/vmap/assets/vmap_worker.js',
 );
+
+/// The script tiles are built and glyphs drawn in, off the page's thread;
+/// null to do both on the page's own.
+String? workerScript = defaultWorkerScript;
 
 class Worker {
   void Function(Object? message)? _send;

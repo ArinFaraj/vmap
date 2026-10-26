@@ -133,6 +133,17 @@ class Worker {
 /// Only a browser needs a script to build tiles off its one thread.
 const String? defaultWorkerScript = null;
 
+/// The script a browser builds tiles and draws glyphs in; unused here.
+String? workerScript;
+
+/// A raster of premultiplied [rgba] pixels made ready to go to the page.
+Future<Object> rasterForPage(Uint8List rgba, int width, int height) async =>
+    pack(rgba);
+
+/// The image of a raster from [rasterForPage].
+Future<ui.Image> imageFromRaster(Object raster, int width, int height) =>
+    imageFromRgba(unpackBytes(raster), width, height);
+
 /// Starts [body] on an isolate of its own. It must be a top level function.
 /// [script] is for a browser only.
 Future<Worker> startWorker(

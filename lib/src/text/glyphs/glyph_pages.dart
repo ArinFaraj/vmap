@@ -122,9 +122,9 @@ class GlyphPage {
     }
   }
 
-  static Future<ui.Image?> _image(GlyphRaster r) async {
+  static Future<ui.Image?> _image(DrawnGlyphs r) async {
     if (r.cells.isEmpty) return null;
-    return imageFromRgba(r.pixels, r.width, r.height);
+    return imageFromRaster(r.raster, r.width, r.height);
   }
 
   void dispose() {

@@ -46,15 +46,13 @@ import 'tiles/tile_id.dart';
 
 /// Owns the tiles and labels and draws one frame of the map for a camera.
 class VmapEngine extends ChangeNotifier {
-  /// In a browser, tiles are built by a web worker vmap ships, off the
-  /// page's thread. Call this before the first map to use another worker
-  /// script, or with null to build tiles on the page's own thread. A worker
-  /// the browser refuses, or that does not load, falls back to the page's
-  /// thread by itself. Other platforms build tiles on isolates and ignore
-  /// it.
-  static void useWebWorker(String? script) => _webWorker = script;
-
-  static String? _webWorker = defaultWorkerScript;
+  /// In a browser, tiles are built and label glyphs drawn by a web worker
+  /// vmap ships, off the page's thread. Call this before the first map to
+  /// use another worker script, or with null to do both on the page's own
+  /// thread. A worker the browser refuses, or that does not load, falls
+  /// back to the page's thread by itself. Other platforms use isolates and
+  /// ignore it.
+  static void useWebWorker(String? script) => workerScript = script;
 
   /// An engine for an app to own and give to [Vmap.engine], with the
   /// settings [Vmap] takes.
@@ -438,7 +436,7 @@ class VmapEngine extends ChangeNotifier {
             );
             _report(VmapErrorKind.tiles, failure);
           },
-          script: _webWorker,
+          script: workerScript,
           shared: _resources.shared.fetch,
           fonts: _resources.fontBytes,
           families: _resources.families,

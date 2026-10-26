@@ -504,18 +504,29 @@ class GlyphRasterizer {
   }
 }
 
+/// A page of glyphs drawn by a [GlyphRasterWorker]: [raster] is ready for
+/// [imageFromRaster], and [cells] says where each glyph is in it.
+typedef DrawnGlyphs = ({
+  int width,
+  int height,
+  Object raster,
+  Float64List cells,
+});
+
 /// A [GlyphRasterizer] in a worker of its own, so glyphs never cost a
-/// frame: an isolate, or in a browser, which has none, the page's own
-/// thread, a batch at a time.
+/// frame: an isolate, or in a browser, the worker vmap ships, or failing
+/// that the page's own thread, a batch at a time.
 class GlyphRasterWorker {
   GlyphRasterWorker(GlyphFonts fonts) {
     startWorker(
-      _main,
+      glyphWorkerMain,
       [
+        glyphWorkerTag,
         [for (final b in fonts.faceBytes) pack(b)],
         fonts.familyNames,
       ],
       _reply,
+      script: workerScript,
       debugName: 'vmap glyphs',
     ).then((worker) {
       if (_disposed) return worker.close();
@@ -526,6 +537,9 @@ class GlyphRasterWorker {
       _queued.clear();
     }, onError: (Object _) => _fail());
   }
+
+  /// What the first message to a worker that draws glyphs starts with.
+  static const glyphWorkerTag = 'vmap glyphs';
 
   /// The worker could not start: every batch waiting and asked for later
   /// fails, so no page waits forever.
@@ -538,35 +552,71 @@ class GlyphRasterWorker {
   }
 
   bool _dead = false;
-  final Map<int, Completer<GlyphRaster>> _waiting = {};
-  final List<_Request> _queued = [];
+  final Map<int, Completer<DrawnGlyphs>> _waiting = {};
+  final List<List<Object?>> _queued = [];
   Worker? _worker;
   int _next = 0;
   bool _disposed = false;
 
-  Future<GlyphRaster> draw(PageKey key, List<int> ids) {
+  Future<DrawnGlyphs> draw(PageKey key, List<int> ids) {
     if (_dead) {
       return Future.error(StateError('vmap glyphs: the worker did not start'));
     }
     final id = _next++;
-    final done = _waiting[id] = Completer<GlyphRaster>();
-    _send(_Draw(id, key, Int32List.fromList(ids)));
+    final done = _waiting[id] = Completer<DrawnGlyphs>();
+    _send(['d', id, ..._keyWire(key), Int32List.fromList(ids)]);
     return done.future;
   }
 
-  void forget(PageKey key) => _send(_Forget(key));
+  void forget(PageKey key) => _send(['f', ..._keyWire(key)]);
 
   /// Hands the rasterizer the glyphs of a style glyph range for [face].
-  void addPbf(int face, List<PbfGlyph> glyphs) => _send(_AddPbf(face, glyphs));
+  void addPbf(int face, List<PbfGlyph> glyphs) => _send([
+    'p',
+    face,
+    [
+      for (final g in glyphs)
+        [g.id, g.bitmap, g.width, g.height, g.left, g.top, g.advance],
+    ],
+  ]);
+
+  static List<Object?> _keyWire(PageKey key) => [
+    key.size,
+    key.weight,
+    key.italic ? 1 : 0,
+    key.halo,
+    key.blur,
+    key.sixteenths,
+    key.phase,
+  ];
+
+  static PageKey _keyOf(List<Object?> m, int at) => (
+    size: m[at]! as int,
+    weight: m[at + 1]! as int,
+    italic: m[at + 2] == 1,
+    halo: m[at + 3]! as int,
+    blur: m[at + 4]! as int,
+    sixteenths: m[at + 5]! as int,
+    phase: m[at + 6]! as int,
+  );
 
   static void _addPbf(
     GlyphRasterizer rasterizer,
     int face,
-    List<PbfGlyph> glyphs,
+    List<Object?> glyphs,
   ) {
     final known = rasterizer.ranges[face] ??= {};
-    for (final g in glyphs) {
-      known[g.id] = g;
+    for (final g in glyphs.cast<List<Object?>>()) {
+      final id = g[0]! as int;
+      known[id] = PbfGlyph(
+        id,
+        g[1]! as Uint8List,
+        g[2]! as int,
+        g[3]! as int,
+        g[4]! as int,
+        g[5]! as int,
+        g[6]! as int,
+      );
     }
   }
 
@@ -583,7 +633,7 @@ class GlyphRasterWorker {
     }
   }
 
-  void _send(_Request request) {
+  void _send(List<Object?> request) {
     if (_disposed) return;
     final worker = _worker;
     if (worker == null) {
@@ -594,17 +644,13 @@ class GlyphRasterWorker {
   }
 
   void _reply(Object? message) {
-    final drawn = message! as _Drawn;
-    _waiting
-        .remove(drawn.id)
-        ?.complete(
-          GlyphRaster(
-            drawn.width,
-            drawn.height,
-            unpackBytes(drawn.pixels),
-            drawn.cells,
-          ),
-        );
+    final m = message! as List<Object?>;
+    _waiting.remove(m[0]! as int)?.complete((
+      width: m[1]! as int,
+      height: m[2]! as int,
+      raster: m[3]!,
+      cells: m[4]! as Float64List,
+    ));
   }
 
   void dispose() {
@@ -612,60 +658,39 @@ class GlyphRasterWorker {
     _worker?.close();
     _waiting.clear();
   }
+}
 
-  static Future<void> _main(
-    List<Object?> init,
-    void Function(Object? message) send,
-    Stream<Object?> inbox,
-  ) async {
-    final rasterizer = GlyphRasterizer(
-      GlyphFonts([
-        for (final f in init[0]! as List) unpackBytes(f!),
-      ], families: (init[1] as List?)?.cast<String>()),
-    );
-    await for (final request in inbox) {
-      switch (request! as _Request) {
-        case _Forget(:final key):
-          rasterizer.forget(key);
-        case _AddPbf(:final face, :final glyphs):
-          _addPbf(rasterizer, face, glyphs);
-        case _Draw(:final id, :final key, :final ids):
-          final r = _drawSafely(rasterizer, key, ids);
-          send(_Drawn(id, r.width, r.height, pack(r.pixels), r.cells));
-      }
+/// What a worker drawing glyphs runs: [GlyphRasterWorker]'s other half.
+Future<void> glyphWorkerMain(
+  List<Object?> init,
+  void Function(Object? message) send,
+  Stream<Object?> inbox,
+) async {
+  final rasterizer = GlyphRasterizer(
+    GlyphFonts([
+      for (final f in init[1]! as List) unpackBytes(f!),
+    ], families: (init[2] as List?)?.cast<String>()),
+  );
+  await for (final request in inbox) {
+    final m = request! as List<Object?>;
+    switch (m[0]) {
+      case 'f':
+        rasterizer.forget(GlyphRasterWorker._keyOf(m, 1));
+      case 'p':
+        GlyphRasterWorker._addPbf(rasterizer, m[1]! as int, m[2]! as List);
+      case 'd':
+        final r = GlyphRasterWorker._drawSafely(
+          rasterizer,
+          GlyphRasterWorker._keyOf(m, 2),
+          m[9]! as List<int>,
+        );
+        send([
+          m[1],
+          r.width,
+          r.height,
+          await rasterForPage(r.pixels, r.width, r.height),
+          r.cells,
+        ]);
     }
   }
-}
-
-sealed class _Request {}
-
-final class _AddPbf extends _Request {
-  _AddPbf(this.face, this.glyphs);
-
-  final int face;
-  final List<PbfGlyph> glyphs;
-}
-
-final class _Draw extends _Request {
-  _Draw(this.id, this.key, this.ids);
-
-  final int id;
-  final PageKey key;
-  final Int32List ids;
-}
-
-final class _Forget extends _Request {
-  _Forget(this.key);
-
-  final PageKey key;
-}
-
-final class _Drawn {
-  _Drawn(this.id, this.width, this.height, this.pixels, this.cells);
-
-  final int id, width, height;
-
-  /// The raster's pixels, packed to move between workers without a copy.
-  final Object pixels;
-  final Float64List cells;
 }

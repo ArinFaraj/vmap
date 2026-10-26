@@ -8,6 +8,14 @@ import 'dart:typed_data';
 ///
 /// Typed data that owns its whole buffer is added to [moved], to be handed
 /// over instead of copied.
+/// A browser object, such as an `ImageBitmap`, handed to the other side of
+/// a worker rather than copied.
+class Moved {
+  const Moved(this.object);
+
+  final JSObject object;
+}
+
 JSAny? encodeMessage(Object? message, [List<JSObject>? moved]) =>
     message == null ? null : _list(message as List<Object?>, moved);
 
@@ -49,6 +57,10 @@ JSArray<JSAny?> _list(Iterable<Object?> items, List<JSObject>? moved) {
       case final Int32List v:
         kinds.write('I');
         out.add(_moving(v, v.toJS, moved));
+      case final Moved v:
+        kinds.write('o');
+        out.add(v.object);
+        moved?.add(v.object);
       case final Map<Object?, Object?> v:
         kinds.write('m');
         out.add(
@@ -96,6 +108,7 @@ List<Object?> _items(JSArray<JSAny?> list) {
       'D' => (item! as JSFloat64Array).toDart,
       'U' => (item! as JSUint8Array).toDart,
       'I' => (item! as JSInt32Array).toDart,
+      'o' => Moved(item! as JSObject),
       'm' => _map(_items(item! as JSArray<JSAny?>)),
       _ => _items(item! as JSArray<JSAny?>),
     };
