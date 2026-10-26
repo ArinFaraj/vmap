@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
@@ -130,6 +131,16 @@ Future<ui.Image> imageFromRgba(
 final Expando<Uint8List> _encodedOf = Expando();
 final Expando<Uint8List> _pixelsOf = Expando();
 final Expando<web.ImageBitmap> _bitmapOf = Expando();
+final Expando<(int, int, List<(ui.Image, int, int)>)> _partsOf = Expando();
+
+/// Notes that [image], [width] by [height], is [parts] drawn at their
+/// places, each image at its left and top, for [imagePixels].
+void composedOf(
+  ui.Image image,
+  int width,
+  int height,
+  List<(ui.Image, int, int)> parts,
+) => _partsOf[image] = (width, height, parts);
 
 /// Notes the encoded [bytes] [image] was decoded from, for [imagePixels].
 void decodedFrom(ui.Image image, Uint8List bytes) => _encodedOf[image] = bytes;
@@ -140,6 +151,25 @@ void decodedFrom(ui.Image image, Uint8List bytes) => _encodedOf[image] = bytes;
 Future<ByteData?> imagePixels(ui.Image image) async {
   if (_pixelsOf[image] case final pixels?) return ByteData.sublistView(pixels);
   if (_bitmapOf[image] case final bitmap?) return _read(bitmap);
+  if (_partsOf[image] case (final width, final height, final parts)) {
+    final out = Uint8List(width * height * 4);
+    for (final (part, left, top) in parts) {
+      final pixels = await _knownPixels(part);
+      if (pixels == null) return image.toByteData();
+      final (from, w, h) = pixels;
+      for (var y = 0; y < h && top + y < height; y++) {
+        final row = math.min(w, width - left);
+        if (row <= 0) break;
+        out.setRange(
+          ((top + y) * width + left) * 4,
+          ((top + y) * width + left + row) * 4,
+          from,
+          y * w * 4,
+        );
+      }
+    }
+    return ByteData.sublistView(out);
+  }
   final encoded = _encodedOf[image];
   if (encoded == null) return image.toByteData();
   final bitmap = await web.window
@@ -153,6 +183,38 @@ Future<ByteData?> imagePixels(ui.Image image) async {
   } finally {
     bitmap.close();
   }
+}
+
+/// [image]'s pixels, width and height when they can be had without reading
+/// the image back: a part of a composed image may have been let go of.
+Future<(Uint8List, int, int)?> _knownPixels(ui.Image image) async {
+  if (_pixelsOf[image] == null &&
+      _bitmapOf[image] == null &&
+      _partsOf[image] == null &&
+      _encodedOf[image] == null) {
+    return null;
+  }
+  final size = switch (_partsOf[image]) {
+    (final w, final h, _) => (w, h),
+    _ => await _sizeOf(image),
+  };
+  if (size == null) return null;
+  final data = await imagePixels(image);
+  if (data == null) return null;
+  return (Uint8List.sublistView(data), size.$1, size.$2);
+}
+
+/// [image]'s size from what it was made of, as it may have been let go of.
+Future<(int, int)?> _sizeOf(ui.Image image) async {
+  if (_bitmapOf[image] case final bitmap?) return (bitmap.width, bitmap.height);
+  final encoded = _encodedOf[image];
+  if (encoded == null) return null;
+  final bitmap = await web.window
+      .createImageBitmap(web.Blob([encoded.toJS].toJS))
+      .toDart;
+  final size = (bitmap.width, bitmap.height);
+  bitmap.close();
+  return size;
 }
 
 /// [bitmap]'s premultiplied RGBA pixels.

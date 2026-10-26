@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import '../camera/globe.dart';
 import '../camera/mercator.dart';
 import '../camera/view.dart';
+import '../platform.dart' show imagePixels;
 import '../render/pattern_growth.dart';
 import '../render/zoom_history.dart';
 import '../style/expr.dart';
@@ -63,7 +64,7 @@ class SpriteTextures {
   Future<void> _load(ui.Image from) async {
     loading = true;
     try {
-      final read = await from.toByteData();
+      final read = await imagePixels(from);
       if (read == null || !identical(from, image)) return;
       pixels = read;
       texture = gpu.gpuContext.createTexture(

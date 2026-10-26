@@ -110,6 +110,15 @@ Future<ui.Image> imageFromRgba(
 /// them, see [imagePixels].
 void decodedFrom(ui.Image image, Uint8List bytes) {}
 
+/// Notes that [image], [width] by [height], is [parts] drawn at their
+/// places; only a browser needs them, see [imagePixels].
+void composedOf(
+  ui.Image image,
+  int width,
+  int height,
+  List<(ui.Image, int, int)> parts,
+) {}
+
 /// [image]'s premultiplied RGBA pixels.
 Future<ByteData?> imagePixels(ui.Image image) => image.toByteData();
 

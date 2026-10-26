@@ -137,8 +137,10 @@ class SpriteSheet {
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder);
     var y = 0;
+    final parts = <(ui.Image, int, int)>[];
     for (final (prefix, sheet) in sheets) {
       canvas.drawImage(sheet.image, ui.Offset(0, y.toDouble()), ui.Paint());
+      parts.add((sheet.image, 0, y));
       for (final MapEntry(key: name, value: e) in sheet.entries.entries) {
         entries['$prefix$name'] = e.movedDown(y.toDouble());
       }
@@ -148,6 +150,7 @@ class SpriteSheet {
     final picture = recorder.endRecording();
     final image = picture.toImageSync(math.max(width, 1), math.max(y, 1));
     picture.dispose();
+    composedOf(image, math.max(width, 1), math.max(y, 1), parts);
     return SpriteSheet(image, entries);
   }
 
@@ -163,6 +166,7 @@ class SpriteSheet {
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder);
     if (base != null) canvas.drawImage(base.image, ui.Offset.zero, ui.Paint());
+    final parts = <(ui.Image, int, int)>[if (base != null) (base.image, 0, 0)];
     var x = 0, y = base?.image.height ?? 0, shelf = 0;
     for (final MapEntry(key: name, value: a) in added.entries) {
       final w = a.image.width, h = a.image.height;
@@ -176,6 +180,7 @@ class SpriteSheet {
         ui.Offset(x.toDouble(), y.toDouble()),
         ui.Paint(),
       );
+      parts.add((a.image, x, y));
       entries[name] = SpriteImage(
         ui.Rect.fromLTWH(
           x.toDouble(),
@@ -197,6 +202,7 @@ class SpriteSheet {
       math.max(y + shelf, 1),
     );
     picture.dispose();
+    composedOf(image, math.max(width, 1), math.max(y + shelf, 1), parts);
     return SpriteSheet(image, entries);
   }
 
@@ -287,6 +293,7 @@ class SpriteSheet {
     final codec = await ui.instantiateImageCodec(picture);
     final frame = await codec.getNextFrame();
     codec.dispose();
+    decodedFrom(frame.image, picture);
     final entries = <String, SpriteImage>{};
     for (final e in (jsonDecode(index) as Map<String, dynamic>).entries) {
       final v = e.value;
