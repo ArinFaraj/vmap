@@ -365,6 +365,26 @@ final class WebGlTexture extends Texture {
     );
   }
 
+  /// Writes rows [top] to [top] + [rows] of [texels], the whole base level
+  /// at one byte a texel.
+  void _overwriteRows(ByteData texels, int top, int rows) {
+    if (rows <= 0) return;
+    _gpuContext._bindTextureForSetup(glTarget, _texture);
+    _gpuContext._gl.texSubImage2D(
+      glTarget,
+      0,
+      0,
+      top,
+      width.toJS,
+      rows.toJS,
+      _glFormat.format.toJS,
+      _glFormat.type,
+      texels.buffer
+          .asUint8List(texels.offsetInBytes + top * width, rows * width)
+          .toJS,
+    );
+  }
+
   /// Synchronously snapshot this texture into a `ui.Image` for display via
   /// `Canvas.drawImageRect`. Matches flutter_gpu's synchronous `asImage`,
   /// which is what flutter_scene's `Scene.render(camera, canvas)` paint

@@ -77,6 +77,14 @@ final class _WebGlBackend extends WebBackend {
   void releaseGeometryBuffer(DeviceBuffer buffer) => buffer.webGl._release();
 
   @override
+  void overwriteTextureRows(
+    Texture texture,
+    ByteData texels, {
+    required int top,
+    required int rows,
+  }) => texture.webGl._overwriteRows(texels, top, rows);
+
+  @override
   bool writeGeometryData(
     DeviceBuffer buffer,
     TypedData source, {

@@ -30,6 +30,9 @@ class SdfTextGpu implements SdfText {
   final Uint8List _texels = Uint8List(_side * _side);
   gpu.Texture? _atlas;
   bool _dirty = false;
+
+  /// The rows of [_texels] written since the atlas was last sent.
+  int _dirtyTop = _side, _dirtyBottom = 0;
   int _shelfX = 0, _shelfY = 0, _shelfH = 0;
 
   /// Each glyph's corner in the atlas by face and code point, or -1 for
@@ -196,6 +199,8 @@ class SdfTextGpu implements SdfText {
     _shelfX += w + 2;
     _shelfH = math.max(_shelfH, h + 2);
     _dirty = true;
+    _dirtyTop = math.min(_dirtyTop, y);
+    _dirtyBottom = math.max(_dirtyBottom, y + h + 2);
     return _placed[key] = x + y * _side;
   }
 
@@ -425,8 +430,15 @@ class SdfTextGpu implements SdfText {
     if (into == null) _next = (_next + 1) % _targets.length;
     final target = into ?? own;
     if (_dirty) {
-      _atlas!.overwrite(ByteData.sublistView(_texels));
+      gpu.overwriteTextureRows(
+        _atlas!,
+        ByteData.sublistView(_texels),
+        top: _dirtyTop,
+        rows: math.min(_dirtyBottom, _side) - _dirtyTop,
+      );
       _dirty = false;
+      _dirtyTop = _side;
+      _dirtyBottom = 0;
     }
     // Each run of one layer's quads: its icons, then its text, as
     // MapLibre draws a symbol layer, each part split where halos are

@@ -42,3 +42,12 @@ const bool geometryInOwnBuffers = false;
 /// Lets go of a buffer from [createGeometryBuffers] the GPU has finished
 /// with: here its memory goes when it is no longer referenced.
 void releaseGeometryBuffer(DeviceBuffer buffer) {}
+
+/// Writes rows [top] to [top] + [rows] of [texels], a whole single-plane
+/// texture's bytes, into [texture]; here the whole texture goes over.
+void overwriteTextureRows(
+  Texture texture,
+  ByteData texels, {
+  required int top,
+  required int rows,
+}) => texture.overwrite(texels);

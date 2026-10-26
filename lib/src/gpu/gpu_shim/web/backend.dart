@@ -42,6 +42,12 @@ abstract base class WebBackend {
   createGeometryBuffers(int vertexBytes, int indexBytes);
   DeviceBuffer createUniformBuffer(int sizeInBytes);
   void releaseGeometryBuffer(DeviceBuffer buffer);
+  void overwriteTextureRows(
+    Texture texture,
+    ByteData texels, {
+    required int top,
+    required int rows,
+  });
   bool writeGeometryData(
     DeviceBuffer buffer,
     TypedData source, {
@@ -313,6 +319,16 @@ DeviceBuffer createUniformBuffer(int sizeInBytes) =>
 /// shared ones: yes, as WebGL waits for the GPU to finish every draw that
 /// reads a buffer before writing any part of it.
 const bool geometryInOwnBuffers = true;
+
+/// Writes rows [top] to [top] + [rows] of [texels], a whole texture's
+/// bytes at one byte a texel, into [texture], and only those: crossing
+/// to WebGL copies every byte sent.
+void overwriteTextureRows(
+  Texture texture,
+  ByteData texels, {
+  required int top,
+  required int rows,
+}) => _backend.overwriteTextureRows(texture, texels, top: top, rows: rows);
 
 /// Frees a buffer from [createGeometryBuffers] the GPU has finished with.
 void releaseGeometryBuffer(DeviceBuffer buffer) =>
