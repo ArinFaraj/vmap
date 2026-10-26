@@ -344,6 +344,7 @@ class FramePainter {
     _cutAtHorizon(f);
     final started = _clock.elapsedMicroseconds;
     _stats.drawCalls = 0;
+    if (f.drape) _collectRasters(f);
     if (renderer.paint(
       f.canvas,
       RenderFrame(
@@ -424,7 +425,7 @@ class FramePainter {
           f.camera,
           _resources.sprites,
         );
-      } else {
+      } else if (!f.drape || _rasters[run.raster] is PictureDrawing) {
         _rasters[run.raster].paint(
           canvas,
           _context,
@@ -437,6 +438,27 @@ class FramePainter {
       }
       canvas.restore();
     }
+  }
+
+  /// Lays out this frame's raster tiles for the GPU to drape before it
+  /// draws: laid out after, the ground would wear the last frame's, a frame
+  /// behind the camera. Only a picture source draws on the canvas here, and
+  /// it is drawn again in its place among the layers.
+  void _collectRasters(_Frame f) {
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    for (final raster in _rasters) {
+      raster.paint(
+        canvas,
+        _context,
+        f.camera.zoom,
+        f.camera.origin,
+        f.camera.size,
+        view: f.view,
+        drape: true,
+      );
+    }
+    recorder.endRecording().dispose();
   }
 
   void _drawLabels(_Frame f) {
