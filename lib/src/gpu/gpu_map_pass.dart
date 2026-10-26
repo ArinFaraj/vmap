@@ -420,9 +420,26 @@ class MapPass {
   void _drawBuildings(ExtrusionLayer layer, _Walls walls, double opacity) {
     bool built(List<TileDraw> tiles) =>
         tiles.any((d) => d.tile.extrusions.isNotEmpty);
+    bool meet(TileDraw a, TileDraw b) =>
+        a.left < b.left + b.size - 0.5 &&
+        b.left < a.left + a.size - 0.5 &&
+        a.top < b.top + b.size - 0.5 &&
+        b.top < a.top + a.size - 0.5;
     for (var source = 0; source < _ideal.length; source++) {
-      final standIn = built(_fallback[source]) && _clips(source);
-      if (!built(_ideal[source]) && !standIn) continue;
+      final ideal = _ideal[source], fallback = _fallback[source];
+      // A stand-in no other tile overlaps, as the four under a missing
+      // tile, has no building another tile draws too, so its buildings are
+      // drawn whole: cut to its square they would lose what stands over
+      // the tiles beside it.
+      final alone = <TileDraw>[], shared = <TileDraw>[];
+      for (final f in fallback) {
+        final overlaps =
+            ideal.any((d) => meet(d, f)) ||
+            fallback.any((o) => !identical(o, f) && meet(o, f));
+        (overlaps ? shared : alone).add(f);
+      }
+      final standIn = built(shared) && _clips(source);
+      if (!built(ideal) && !built(alone) && !standIn) continue;
       if (standIn) _mark(source);
       renderPass
         ..clearBindings()
@@ -458,7 +475,8 @@ class MapPass {
         _device.pipelines,
         _device.host,
       );
-      _drawBuildingsOf(layer, _ideal[source], opacity);
+      _drawBuildingsOf(layer, ideal, opacity);
+      _drawBuildingsOf(layer, alone, opacity);
       if (standIn) {
         if (walls == _Walls.colour) {
           // Where no tile is, and so where nothing is drawn yet; drawn,
@@ -474,7 +492,7 @@ class MapPass {
         } else {
           _stencilEquals(0);
         }
-        _drawBuildingsOf(layer, _fallback[source], opacity);
+        _drawBuildingsOf(layer, shared, opacity);
       }
     }
   }

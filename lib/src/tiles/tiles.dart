@@ -301,18 +301,66 @@ class TileSource {
       beyond: variableZoom ? view.height : 0,
       standing: standing ? view.standingFor() : 0,
     );
+    TileId idOf(CoverTile t) => TileId(
+      t.z,
+      t.x % (1 << t.z),
+      t.y,
+      over: t.z >= maxDataZoom ? t.over : 0,
+    );
+    // A ready tile whose children in view are not all ready yet stays in
+    // their place until they are, and they then take it over together:
+    // one at a time, the tile would stand in for the rest cut to their
+    // squares, and with it its buildings standing over the ready ones.
+    final holding = <(int, int, int), LoadedTile>{};
+    for (final t in picked) {
+      if (t.z == 0 || t.y < 0 || t.y >= 1 << t.z) continue;
+      final id = idOf(t);
+      if (_ready(id) != null || retries.resting(id, nowMs)) continue;
+      final parent = _readyAt(t.z - 1, (t.x >> 1) % (1 << (t.z - 1)), t.y >> 1);
+      if (parent != null) holding[(t.z - 1, t.x >> 1, t.y >> 1)] = parent;
+    }
+    final held = <(int, int, int)>{};
     for (final (rank, t) in picked.indexed) {
       final n = 1 << t.z;
       if (t.y < 0 || t.y >= n) continue;
-      final id = TileId(
-        t.z,
-        t.x % n,
-        t.y,
-        over: t.z >= maxDataZoom ? t.over : 0,
-      );
+      final id = idOf(t);
       final span = view.worldSize / n;
       final left = t.x * span - origin.dx;
       final top = t.y * span - origin.dy;
+      if (holding.isNotEmpty) {
+        final up1 = (t.z - 1, t.x >> 1, t.y >> 1);
+        final up2 = (t.z - 2, t.x >> 2, t.y >> 2);
+        final key = holding.containsKey(up1)
+            ? up1
+            : holding.containsKey(up2)
+            ? up2
+            : null;
+        if (key != null) {
+          final parent = holding[key]!;
+          parent.usedFrame = frame;
+          if (held.add(key)) {
+            final big = view.worldSize / (1 << key.$1);
+            ideal.add(
+              TileDraw(
+                parent,
+                key.$2 * big - origin.dx,
+                key.$3 * big - origin.dy,
+                big,
+              ),
+            );
+          }
+          final waits = tiles[id];
+          if (waits == null) {
+            covered = false;
+            missing.add((id, rank.toDouble()));
+          } else {
+            waits.usedFrame = frame;
+            if (!waits.prepared) prepare(waits, span / tileExtent);
+            waiting = true;
+          }
+          continue;
+        }
+      }
       final tile = tiles[id];
       if (tile != null) {
         tile.usedFrame = frame;
@@ -329,6 +377,14 @@ class TileSource {
       final before = previous[id];
       if (before != null && before.prepared) {
         ideal.add(TileDraw(before, left, top, span));
+        continue;
+      }
+      // The same tile laid out for a nearby zoom has the same ground and
+      // buildings, so it is drawn as the tile itself, not as a stand-in cut
+      // to its square, which would cut its buildings off where they stand
+      // over the tiles beside it.
+      if (_otherLayout(frame, id) case final other?) {
+        ideal.add(TileDraw(other, left, top, span));
         continue;
       }
       _addFallback(frame, id, t.x, t.y, left, top, span, origin, prepare);
@@ -413,18 +469,6 @@ class TileSource {
     ui.Offset origin,
     void Function(LoadedTile tile, double scale) prepare,
   ) {
-    // The same tile laid out for a nearby zoom stands in while it is laid
-    // out again.
-    for (var d = 1; d <= 4; d++) {
-      for (final o in [id.over - d, id.over + d]) {
-        if (o < id.z) continue;
-        final other = tiles[id.at(o)];
-        if (other == null || !other.prepared) continue;
-        other.usedFrame = frame;
-        fallback.add(TileDraw(other, left, top, tileSize));
-        return;
-      }
-    }
     // As MapLibre keeps loaded children before parents: zooming out, or as
     // a tilted map's tile zoom moves between two levels with the camera,
     // the four tiles under this one are what the screen showed a frame ago.
@@ -456,6 +500,41 @@ class TileSource {
       return;
     }
     if (!_addChildren(frame, id, left, top, tileSize, 3)) uncovered++;
+  }
+
+  /// Tile [id] or another layout of it, ready to draw, or null.
+  LoadedTile? _ready(TileId id) {
+    final tile = tiles[id] ?? previous[id];
+    if (tile != null && tile.prepared) return tile;
+    return _otherLayout(-1, id);
+  }
+
+  /// The ready tile [z]/[x]/[y] in any layout, or null.
+  LoadedTile? _readyAt(int z, int x, int y) {
+    if (z < maxDataZoom) {
+      final tile = tiles[TileId(z, x, y)];
+      return tile != null && tile.prepared ? tile : null;
+    }
+    for (var over = z; over <= z + 4; over++) {
+      final tile = tiles[TileId(z, x, y, over: over)];
+      if (tile != null && tile.prepared) return tile;
+    }
+    return null;
+  }
+
+  /// Tile [id] laid out for a zoom up to four levels away, ready to draw,
+  /// kept as used in [frame] unless it is negative.
+  LoadedTile? _otherLayout(int frame, TileId id) {
+    for (var d = 1; d <= 4; d++) {
+      for (final o in [id.over - d, id.over + d]) {
+        if (o < id.z) continue;
+        final other = tiles[id.at(o)];
+        if (other == null || !other.prepared) continue;
+        if (frame >= 0) other.usedFrame = frame;
+        return other;
+      }
+    }
+    return null;
   }
 
   /// Covers [id] with the four tiles one level under it when all of them
