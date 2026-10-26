@@ -372,6 +372,20 @@ class LayerSlots {
   /// One layer's paint this frame, in screen pixels, before a tile's scale.
   final Map<int, LayerPaint> _layerPaint = {};
 
+  /// The slots of a tile's segment at a scale as written this frame: over
+  /// raised ground a tile is drawn into every slot of the atlas it reaches,
+  /// with the same paint each time.
+  final Map<(TileGpu, int, double), gpu.BufferView> _written = {};
+
+  /// The slots [write] puts in place for segment [segment] of [data] at
+  /// [scale], written once a frame.
+  gpu.BufferView written(
+    TileGpu data,
+    int segment,
+    double scale,
+    gpu.BufferView Function() write,
+  ) => _written[(data, segment, scale)] ??= write();
+
   /// Forgets the last frame's paint, for a frame with the features'
   /// [states] by source and its [dashFade].
   void begin(
@@ -379,6 +393,7 @@ class LayerSlots {
     DashFade dashFade,
   ) {
     _layerPaint.clear();
+    _written.clear();
     _states = states;
     _dashFade = dashFade;
   }

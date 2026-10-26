@@ -7,7 +7,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show protected;
 
 import '../style/expr.dart';
-import '../render/map_renderer.dart' show RasterPiece;
+import '../render/map_renderer.dart' show RasterPiece, onGpu;
 import '../tiles/pmtiles.dart';
 import '../style/raster_style.dart';
 import '../style/style_model.dart';
@@ -25,6 +25,20 @@ class RasterTile {
   int failedAtMs = -1;
   int failures = 0;
   bool loading = false;
+
+  /// The image [image] took the place of, drawn on the GPU until [image]
+  /// is there too.
+  ui.Image? replaced;
+
+  /// Swaps in [next] for [image], keeping the one the GPU has.
+  void replaceImage(ui.Image next) {
+    final before = image;
+    if (before != null) {
+      if (onGpu[before] ?? false) replaced = before;
+      before.dispose();
+    }
+    image = next;
+  }
 
   /// When the tile was first drawn with its own picture, on its layer's
   /// clock, which it fades in from.
@@ -281,6 +295,7 @@ final class PictureDrawing extends RasterDrawing<ImageLayer> {
           opacity: layerPaint.color.a,
           filter: layerPaint.colorFilter,
           smooth: !layer.nearestAt(context),
+          meanwhile: null,
         ));
       }
       return;
@@ -588,6 +603,7 @@ abstract class TileDrawing<L extends TiledRasterLayer>
       );
       var image = tile.image;
       ui.Rect source;
+      var from = tile;
       final own = image != null;
       if (image != null) {
         source = ui.Rect.fromLTRB(
@@ -606,8 +622,17 @@ abstract class TileDrawing<L extends TiledRasterLayer>
           if (covered && !failed) waiting++;
         }
         final stand = _standIn(z, x % n, y, ask: tile.missing || failed);
-        if (stand == null) continue;
-        (image, source) = stand;
+        if (stand == null) {
+          _underlay(canvas, z, x % n, y, target, drape: drape);
+          continue;
+        }
+        (image, source, from) = stand;
+      }
+      (ui.Image, ui.Rect)? meanwhile;
+      if (own && drape && !(onGpu[image] ?? false) && tile.replaced == null) {
+        if (_standIn(z, x % n, y, ask: false) case (final i, final s, _)) {
+          meanwhile = (i, s);
+        }
       }
       final opacity = layerPaint.color.a;
       var shown = 1.0;
@@ -619,7 +644,16 @@ abstract class TileDrawing<L extends TiledRasterLayer>
           _underlay(canvas, z, x % n, y, target, drape: drape);
         }
       }
-      _put(canvas, image, source, target, opacity * math.min(shown, 1), drape);
+      _put(
+        canvas,
+        image,
+        source,
+        target,
+        opacity * math.min(shown, 1),
+        drape,
+        from: from,
+        meanwhile: meanwhile,
+      );
     }
     final fadedNow = fading;
     fading = fadedNow || _fadedBefore;
@@ -627,7 +661,10 @@ abstract class TileDrawing<L extends TiledRasterLayer>
     if (heldTiles.length > maxTiles) {
       final stale = [
         for (final e in heldTiles.entries)
-          if (e.value.usedFrame != frameNumber && !e.value.loading) e.key,
+          if (e.value.usedFrame != frameNumber &&
+              !e.value.loading &&
+              tileIdOf(e.key).z > keptZoom)
+            e.key,
       ];
       for (final key in stale) {
         heldTiles.remove(key)?.image?.dispose();
@@ -636,16 +673,26 @@ abstract class TileDrawing<L extends TiledRasterLayer>
   }
 
   /// Draws [image]'s [source] over [target] at [opacity], or keeps it for
-  /// the GPU with [drape].
+  /// the GPU with [drape]. Until the GPU has [image], it draws what [image]
+  /// replaced in tile [from], of the same size, or else [meanwhile].
   void _put(
     ui.Canvas canvas,
     ui.Image image,
     ui.Rect source,
     ui.Rect target,
     double opacity,
-    bool drape,
-  ) {
+    bool drape, {
+    RasterTile? from,
+    (ui.Image, ui.Rect)? meanwhile,
+  }) {
     if (opacity <= 0) return;
+    if (drape && from != null) {
+      if (onGpu[image] ?? false) {
+        from.replaced = null;
+      } else if (from.replaced case final before?) {
+        meanwhile = (before, source);
+      }
+    }
     drawn.add((
       image: image,
       source: source,
@@ -653,6 +700,7 @@ abstract class TileDrawing<L extends TiledRasterLayer>
       opacity: opacity,
       filter: layerPaint.colorFilter,
       smooth: layerPaint.filterQuality != ui.FilterQuality.none,
+      meanwhile: meanwhile,
     ));
     if (drape) return;
     final color = layerPaint.color;
@@ -684,8 +732,12 @@ abstract class TileDrawing<L extends TiledRasterLayer>
     required bool drape,
   }) {
     final opacity = layerPaint.color.a;
-    if (_standIn(z, x, y, ask: false) case (final image, final source)) {
-      _put(canvas, image, source, target, opacity, drape);
+    if (_standIn(z, x, y, ask: false) case (
+      final image,
+      final source,
+      final from,
+    )) {
+      _put(canvas, image, source, target, opacity, drape, from: from);
     }
     final ring = ringCells;
     final w = target.width / 2, h = target.height / 2;
@@ -702,6 +754,7 @@ abstract class TileDrawing<L extends TiledRasterLayer>
           ui.Rect.fromLTWH(target.left + i * w, target.top + j * h, w, h),
           opacity,
           drape,
+          from: child,
         );
       }
     }
@@ -712,7 +765,12 @@ abstract class TileDrawing<L extends TiledRasterLayer>
   /// nearest tile above that may come is asked for, as the tile itself will
   /// not come. As MapLibre's `maxUnderzooming`, no more than ten zoom
   /// levels up.
-  (ui.Image, ui.Rect)? _standIn(int z, int x, int y, {required bool ask}) {
+  (ui.Image, ui.Rect, RasterTile)? _standIn(
+    int z,
+    int x,
+    int y, {
+    required bool ask,
+  }) {
     for (var dz = 1; dz <= math.min(z, 10); dz++) {
       final pz = z - dz, px = x >> dz, py = y >> dz;
       final key = tileKey(pz, px, py);
@@ -737,7 +795,7 @@ abstract class TileDrawing<L extends TiledRasterLayer>
       final h = (image.height - 2 * ring) / part;
       final left = ring + (x - (px << dz)) * w;
       final top = ring + (y - (py << dz)) * h;
-      return (image, ui.Rect.fromLTWH(left, top, w, h));
+      return (image, ui.Rect.fromLTWH(left, top, w, h), above);
     }
     return null;
   }

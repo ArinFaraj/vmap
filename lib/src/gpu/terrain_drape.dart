@@ -49,7 +49,7 @@ class Drape {
 
   /// Each raster tile's picture on the GPU, with the colour filter it was
   /// drawn through.
-  final Expando<(ui.ColorFilter?, gpu.Texture)> _pictures = Expando();
+  final Expando<(ui.ColorFilter?, gpu.Texture, int, int)> _pictures = Expando();
   final Expando<bool> _inFlight = Expando();
 
   /// Whether a picture the last atlas wanted is still on its way.
@@ -229,6 +229,23 @@ class Drape {
           d.left + d.size > left &&
           d.top < top + span &&
           d.top + d.size > top;
+      final slotIdeal = [
+        for (final tiles in ideal) tiles.where(inSlot).toList(),
+      ];
+      // Whether a source's ready tiles fill the slot, which leaves its
+      // stand-ins nothing to show there: they would be drawn whole for
+      // nothing, a coarse one into every slot it reaches.
+      bool filled(List<TileDraw> tiles) {
+        var area = 0.0;
+        for (final d in tiles) {
+          final w =
+              math.min(d.left + d.size, left + span) - math.max(d.left, left);
+          final h = math.min(d.top + d.size, top + span) - math.max(d.top, top);
+          if (w > 0 && h > 0) area += w * h;
+        }
+        return area >= span * span * 0.9999;
+      }
+
       // Stand-ins too, clipped as the flat map clips them, so a tile still
       // loading leaves no hole in the ground.
       MapPass(
@@ -237,9 +254,12 @@ class Drape {
           frame,
           clip,
           fallback: [
-            for (final tiles in fallback) tiles.where(inSlot).toList(),
+            for (final (s, tiles) in fallback.indexed)
+              filled(slotIdeal[s])
+                  ? const <TileDraw>[]
+                  : tiles.where(inSlot).toList(),
           ],
-          ideal: [for (final tiles in ideal) tiles.where(inSlot).toList()],
+          ideal: slotIdeal,
         )
         ..standing = false
         ..drawRuns(runs);
@@ -371,14 +391,20 @@ class Drape {
           target.bottom <= top) {
         continue;
       }
-      final texture = _pictureOf(piece);
-      if (texture == null) continue;
+      var picture = _pictureOf(piece);
+      var source = piece.source;
+      if (picture == null) {
+        final meanwhile = piece.meanwhile;
+        if (meanwhile == null) continue;
+        picture = _pictures[meanwhile.$1];
+        if (picture == null) continue;
+        source = meanwhile.$2;
+      }
+      final (_, texture, width, height) = picture;
       if (!bound) {
         _bindFlatGround(pass);
         bound = true;
       }
-      final source = piece.source;
-      final width = piece.image.width, height = piece.image.height;
       _device.blocks.times(
         clip,
         target.width / tileExtent,
@@ -602,12 +628,12 @@ class Drape {
 
   /// [piece]'s picture on the GPU, sent there when it is not yet; until it
   /// arrives, the one it had under another colour filter, or null.
-  gpu.Texture? _pictureOf(RasterPiece piece) {
+  (ui.ColorFilter?, gpu.Texture, int, int)? _pictureOf(RasterPiece piece) {
     final kept = _pictures[piece.image];
-    if (kept != null && kept.$1 == piece.filter) return kept.$2;
+    if (kept != null && kept.$1 == piece.filter) return kept;
     sending = true;
     if (_inFlight[piece.image] != true) _send(piece);
-    return kept?.$2;
+    return kept;
   }
 
   /// Copies [piece]'s picture, through its colour filter, into a texture.
@@ -635,7 +661,10 @@ class Drape {
           image.height,
           format: gpu.PixelFormat.r8g8b8a8UNormInt,
         )..overwrite(pixels),
+        image.width,
+        image.height,
       );
+      onGpu[image] = true;
     } catch (e) {
       _device.fail(e);
     } finally {

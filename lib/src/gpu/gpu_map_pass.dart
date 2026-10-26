@@ -230,14 +230,22 @@ class MapPass {
           layer is CircleLayer || layer is HeatmapLayer;
       final want = standing;
       // Unclipped, as on the globe, stand-ins are drawn whole under the
-      // tiles that are ready, which draw over them.
-      final standIns = clipped || !adding;
+      // tiles that are ready, which draw over them. Heat adds up instead,
+      // so a ready tile a stand-in already covers is left out.
+      final fallback = _fallback[source];
+      bool underStandIn(TileDraw d) => fallback.any(
+        (f) =>
+            f.left <= d.left + 0.5 &&
+            f.top <= d.top + 0.5 &&
+            f.left + f.size >= d.left + d.size - 0.5 &&
+            f.top + f.size >= d.top + d.size - 0.5,
+      );
       if (clipped) _stencilEquals(0);
-      if (standIns && want == null) {
-        for (final d in _fallback[source]) {
+      if (want == null) {
+        for (final d in fallback) {
           _drawFlat(d, run);
         }
-      } else if (standIns) {
+      } else {
         for (var at = run.first; at < run.end; at++) {
           if (drawnWhole(_sheet.layers[at]) != want) continue;
           for (final d in _fallback[source]) {
@@ -259,6 +267,7 @@ class MapPass {
         if (whole) renderPass.setStencilConfig(gpu.StencilConfig());
         for (final (i, d) in _ideal[source].indexed) {
           if (skip) break;
+          if (adding && fallback.isNotEmpty && underStandIn(d)) continue;
           if (clipped && !whole) _stencilEquals(i + 1);
           _drawFlat(d, part);
         }
@@ -309,23 +318,26 @@ class MapPass {
       );
     final segments = stream.segments;
     void bindSlots(int s) {
-      final slotEnd = s + 5 < segments.length
-          ? segments[s + 5]
-          : stream.slots.length;
-      final written = _device.paints.fill(
-        _sheet,
-        d,
-        data,
-        segments[s + 2],
-        slotEnd,
-        scale,
-        _context,
-        _styleZoom,
-        _view.bearing,
-      );
+      final paints = _device.paints;
       renderPass.bindUniform(
         _device.pipelines.flatSlots,
-        host.emplace(written, room: _device.paints.slotBytes.lengthInBytes),
+        paints.written(data, s, scale, () {
+          final slotEnd = s + 5 < segments.length
+              ? segments[s + 5]
+              : stream.slots.length;
+          final written = paints.fill(
+            _sheet,
+            d,
+            data,
+            segments[s + 2],
+            slotEnd,
+            scale,
+            _context,
+            _styleZoom,
+            _view.bearing,
+          );
+          return host.emplace(written, room: paints.slotBytes.lengthInBytes);
+        }),
       );
     }
 

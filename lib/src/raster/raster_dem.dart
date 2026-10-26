@@ -140,8 +140,7 @@ final class ShadedTiles extends TileDrawing<HillshadeLayer> {
           image.dispose();
           return;
         }
-        tile.image?.dispose();
-        tile.image = image;
+        tile.replaceImage(image);
         if (complete && !tile.shadeAgain) tile.pixels = null;
         onLoaded();
       } while (tile.shadeAgain);
@@ -372,8 +371,7 @@ final class ReliefTiles extends TileDrawing<ColorReliefLayer> {
       readable: true,
     );
     if (closed) return picture.dispose();
-    tile.image?.dispose();
-    tile.image = picture;
+    tile.replaceImage(picture);
     onLoaded();
   }
 }

@@ -1,3 +1,20 @@
+## Unreleased
+
+- `VmapController.headFor` tells the map where code that moves the camera
+  itself is taking it, so the tiles there load on the way, as they do for
+  `flyTo`.
+- On the web, raster tiles laid on the globe or terrain no longer flash
+  the page white for a frame.
+- Something stays drawn while tiles load: on the globe the tiles above or
+  below stand in, as on the flat map; a stand-in is looked for at every
+  zoom above; the four tiles under a missing one are used first, as
+  MapLibre does; the tiles of zoom 0 to 2 are kept, so a flight over
+  ground not loaded never shows it bare; and a raster tile shaded again or
+  replaced keeps its last picture until the new one is on the GPU.
+- Heatmaps stay drawn while their tiles load, without counting heat twice.
+- Changing the overlay's paint keeps the map's labels.
+- The globe and raised ground cost less to draw each frame.
+
 ## 0.27.0
 
 vmap is now a map engine of its own, drawn on the GPU, with flutter_map

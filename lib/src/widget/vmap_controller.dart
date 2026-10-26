@@ -76,8 +76,16 @@ class VmapController extends ChangeNotifier {
   /// Whether an animation is moving the camera.
   bool get isMoving => _motion != null;
 
-  /// Where the running camera animation ends, while one runs.
-  VmapCamera? get destination => _motion?.at(1);
+  /// Where the running camera animation ends, while one runs, or where
+  /// [headFor] said the camera is going.
+  VmapCamera? get destination => _motion?.at(1) ?? _heading;
+
+  VmapCamera? _heading;
+
+  /// Tells the map where code that moves [camera] itself, frame by frame,
+  /// is taking it, so the tiles there load on the way as they do for
+  /// [flyTo]. Null once it has arrived.
+  void headFor(VmapCamera? camera) => _heading = camera;
 
   /// How fast the camera has moved over the last few frames, or still when
   /// it last moved more than a moment ago.

@@ -13,7 +13,9 @@ import 'zoom_history.dart';
 
 /// One tile of a raster layer as drawn this frame: [source] of [image]
 /// laid on [target], in pixels from the canvas origin, at [opacity] through
-/// [filter], smoothed unless the layer asks for its nearest pixels.
+/// [filter], smoothed unless the layer asks for its nearest pixels. A GPU
+/// that has no texture of [image] yet draws [meanwhile] in its place: the
+/// image it replaced, or the tile standing in for it.
 typedef RasterPiece = ({
   ui.Image image,
   ui.Rect source,
@@ -21,7 +23,11 @@ typedef RasterPiece = ({
   double opacity,
   ui.ColorFilter? filter,
   bool smooth,
+  (ui.Image, ui.Rect)? meanwhile,
 });
+
+/// Raster images the GPU has a texture of.
+final Expando<bool> onGpu = Expando();
 
 /// Everything a [MapRenderer] draws one frame from.
 class RenderFrame {

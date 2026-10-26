@@ -331,7 +331,7 @@ class TileSource {
         ideal.add(TileDraw(before, left, top, span));
         continue;
       }
-      _addFallback(frame, id, t.x, t.y, left, top, span, origin);
+      _addFallback(frame, id, t.x, t.y, left, top, span, origin, prepare);
     }
     if (covered && !waiting) dropPrevious();
     wanted.clear();
@@ -386,6 +386,17 @@ class TileSource {
       }
       if (retries.resting(id, nowMs)) continue;
       if (!wanted.contains(id)) wanted.add(id);
+      // Coarser tiles over the same ground too, so the way down to it has
+      // something to stand in while the tiles of each zoom arrive.
+      for (var up = 3; up <= 9 && id.z - up >= 0; up += 3) {
+        final above = TileId(id.z - up, id.x >> up, id.y >> up);
+        final kept = tiles[above];
+        if (kept != null) {
+          kept.usedFrame = frame;
+        } else if (!retries.resting(above, nowMs) && !wanted.contains(above)) {
+          wanted.add(above);
+        }
+      }
     }
   }
 
@@ -400,6 +411,7 @@ class TileSource {
     double top,
     double tileSize,
     ui.Offset origin,
+    void Function(LoadedTile tile, double scale) prepare,
   ) {
     // The same tile laid out for a nearby zoom stands in while it is laid
     // out again.
@@ -413,17 +425,23 @@ class TileSource {
         return;
       }
     }
+    // As MapLibre keeps loaded children before parents: zooming out, or as
+    // a tilted map's tile zoom moves between two levels with the camera,
+    // the four tiles under this one are what the screen showed a frame ago.
+    if (_addCompleteChildren(frame, id, left, top, tileSize)) return;
     var ancestor = id;
-    for (var dz = 1; dz <= 6 && ancestor.z > 0; dz++) {
+    for (var dz = 1; ancestor.z > 0; dz++) {
       ancestor = ancestor.parent;
       final tile = tiles[ancestor];
       if (tile == null) continue;
       tile.usedFrame = frame;
+      final big = tileSize * (1 << dz);
+      // One whose renderer let its data go, idle for long, is sent again.
+      if (!tile.prepared) prepare(tile, big / tileExtent);
       if (!tile.prepared) continue;
       final ax = x >> dz;
       final ay = y >> dz;
       final key = tileKey(ancestor.z, ax, ay);
-      final big = tileSize * (1 << dz);
       final draw = fallbackByKey[key] ??= () {
         final d = TileDraw(
           tile,
@@ -438,6 +456,32 @@ class TileSource {
       return;
     }
     if (!_addChildren(frame, id, left, top, tileSize, 3)) uncovered++;
+  }
+
+  /// Covers [id] with the four tiles one level under it when all of them
+  /// are ready. Returns whether they were.
+  bool _addCompleteChildren(
+    int frame,
+    TileId id,
+    double left,
+    double top,
+    double tileSize,
+  ) {
+    if (id.z >= maxDataZoom) return false;
+    final children = [
+      for (var cy = 0; cy < 2; cy++)
+        for (var cx = 0; cx < 2; cx++)
+          tiles[TileId(id.z + 1, id.x * 2 + cx, id.y * 2 + cy)],
+    ];
+    if (children.any((c) => c == null || !c.prepared)) return false;
+    final half = tileSize / 2;
+    for (final (i, child) in children.indexed) {
+      child!.usedFrame = frame;
+      fallback.add(
+        TileDraw(child, left + (i % 2) * half, top + (i ~/ 2) * half, half),
+      );
+    }
+    return true;
   }
 
   /// Covers [id] with its loaded descendants down to [depth] levels, as
@@ -472,10 +516,16 @@ class TileSource {
   }
 
   /// Drops the tiles longest out of use until at most [keep] are held.
+  /// The tiles of the [keptZoom] coarsest levels stay, at most 21 of them:
+  /// they stand in anywhere on the world, so a flight over ground not yet
+  /// loaded never shows it bare.
   void evict(int keep, int frame) {
     if (tiles.length <= keep) return;
-    final stale = tiles.values.where((t) => t.usedFrame != frame).toList()
-      ..sort((a, b) => a.usedFrame - b.usedFrame);
+    final stale =
+        tiles.values
+            .where((t) => t.usedFrame != frame && t.id.z > keptZoom)
+            .toList()
+          ..sort((a, b) => a.usedFrame - b.usedFrame);
     for (final t in stale) {
       if (tiles.length <= keep) break;
       tiles.remove(t.id);

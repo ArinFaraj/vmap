@@ -324,12 +324,16 @@ class VmapEngine extends ChangeNotifier {
   VmapOverlay? get overlay => _overlay;
   set overlay(VmapOverlay? value) {
     if (value == _overlay) return;
-    final sameLayers =
-        value != null && jsonEquals(value.layers, _overlay?.layers);
+    final before = _overlay;
     _overlay = value;
     _resources.useImages(value?.images ?? const {});
     final base = _base;
-    if (base != null) _apply(base, _style, keepLabels: sameLayers);
+    if (base == null) return;
+    final sameSymbols = jsonEquals(
+      _placedSymbols(_edits, value?.applyTo(base) ?? base),
+      _placedSymbols(_edits, before?.applyTo(base) ?? base),
+    );
+    _apply(base, _style, keepLabels: sameSymbols);
   }
 
   List<VmapStyleEdit> _edits;

@@ -32,6 +32,9 @@ class TileId {
   String toString() => over > z ? '$z/$x/$y@$over' : '$z/$x/$y';
 }
 
+/// The deepest zoom whose tiles a cache keeps whatever the view.
+const int keptZoom = 2;
+
 /// One number for a tile down to zoom 22. It stays under the 53 bits a
 /// number has in JavaScript.
 int tileKey(int z, int x, int y) => (z * 0x400000 + x) * 0x400000 + y;
