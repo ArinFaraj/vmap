@@ -41,6 +41,7 @@ abstract base class WebBackend {
   ({DeviceBuffer vertex, DeviceBuffer index, int indexBaseOffset})
   createGeometryBuffers(int vertexBytes, int indexBytes);
   DeviceBuffer createUniformBuffer(int sizeInBytes);
+  void releaseGeometryBuffer(DeviceBuffer buffer);
   bool writeGeometryData(
     DeviceBuffer buffer,
     TypedData source, {
@@ -307,6 +308,15 @@ createGeometryBuffers(int vertexBytes, int indexBytes) =>
 /// A host-visible buffer for uniform data rewritten every frame.
 DeviceBuffer createUniformBuffer(int sizeInBytes) =>
     _backend.createUniformBuffer(sizeInBytes);
+
+/// Whether each mesh is better in buffers of its own than in ranges of
+/// shared ones: yes, as WebGL waits for the GPU to finish every draw that
+/// reads a buffer before writing any part of it.
+const bool geometryInOwnBuffers = true;
+
+/// Frees a buffer from [createGeometryBuffers] the GPU has finished with.
+void releaseGeometryBuffer(DeviceBuffer buffer) =>
+    _backend.releaseGeometryBuffer(buffer);
 
 bool writeGeometryData(
   DeviceBuffer buffer,

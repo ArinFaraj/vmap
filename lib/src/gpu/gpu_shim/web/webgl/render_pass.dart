@@ -369,7 +369,7 @@ final class WebGlRenderPass extends RenderPass {
       if (instanceRate) continue;
       key
         ..write('|')
-        ..write(identityHashCode(view.buffer))
+        ..write(view.buffer.webGl._serial)
         ..write(':')
         ..write(view.offsetInBytes)
         ..write(':')
@@ -379,7 +379,7 @@ final class WebGlRenderPass extends RenderPass {
     if (indexView != null) {
       key
         ..write('#')
-        ..write(identityHashCode(indexView.buffer))
+        ..write(indexView.buffer.webGl._serial)
         ..write(':')
         ..write(indexView.offsetInBytes);
     }

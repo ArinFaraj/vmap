@@ -83,6 +83,11 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
   final WebGlContext _gpuContext;
   late final Uint8List _staging;
 
+  /// Never the same for two buffers, so a vertex array cached for one
+  /// that is freed is never taken for another.
+  final int _serial = _serials++;
+  static int _serials = 0;
+
   /// Non-null for a buffer created by [WebGlDeviceBuffer._initializeTyped].
   final int? _typedTarget;
 
@@ -91,6 +96,16 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
   /// writes between two draws, a draw's uniform blocks, go over together.
   final Float32List? _held;
   int _heldFrom = 0, _heldTo = 0;
+
+  /// Frees the GL buffers; the buffer is not used again.
+  void _release() {
+    if (!_valid) return;
+    _valid = false;
+    for (final buffer in [_glElementBuffer, _glOtherBuffer]) {
+      if (buffer != null) _gpuContext._state.deleteBuffer(buffer);
+    }
+    _glElementBuffer = _glOtherBuffer = null;
+  }
 
   /// Sends what was written since the last draw.
   void _sendHeld() {

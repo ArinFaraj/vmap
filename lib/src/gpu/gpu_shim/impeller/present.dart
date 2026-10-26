@@ -49,3 +49,12 @@ bool writeGeometryData(
   source is ByteData ? source : ByteData.sublistView(source),
   destinationOffsetInBytes: destinationOffsetInBytes,
 );
+
+/// Whether each mesh is better in buffers of its own than in ranges of
+/// shared ones: no, as the native backends write a range without waiting
+/// on the GPU.
+const bool geometryInOwnBuffers = false;
+
+/// Lets go of a buffer from [createGeometryBuffers] the GPU has finished
+/// with: here its memory goes when it is no longer referenced.
+void releaseGeometryBuffer(DeviceBuffer buffer) {}

@@ -75,7 +75,9 @@ class UniformArena {
 /// again. Indices come from slabs of their own: WebGL never lets a buffer
 /// that has held indices hold vertices.
 class GpuHeap {
-  static const _slabBytes = 4 << 20;
+  /// Where WebGL would wait on the GPU to write a range of a buffer frames
+  /// still draw from, each tile has buffers of its own instead.
+  static const _slabBytes = gpu.geometryInOwnBuffers ? 0 : 4 << 20;
   static const align = 256;
 
   /// The most it holds; past three quarters, tiles not drawn lately let
@@ -107,6 +109,7 @@ class GpuHeap {
   /// room without allocating.
   void topUp() {
     _release();
+    if (_slabBytes == 0) return;
     if (_total - used < _headroom && _total + _slabBytes <= capBytes) {
       _slabs.add(_Slab(_create(_slabBytes, indices: false), _slabBytes));
     }
@@ -142,6 +145,7 @@ class GpuHeap {
       final slab = range._slab;
       if (slab == null) {
         _oversize -= range.size;
+        gpu.releaseGeometryBuffer(range.buffer);
       } else {
         slab.give(range.offset, range.size);
       }
