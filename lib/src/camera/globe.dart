@@ -225,7 +225,12 @@ class Globe {
     required int maxZoom,
     int minZoom = 0,
     double hold = 0,
-  }) {
+  }) => _covers[(maxZoom, minZoom, hold)] ??= _cover(maxZoom, minZoom, hold);
+
+  /// Each source of a frame covers the same view, most with the same zooms.
+  final Map<(int, int, double), List<CoverTile>> _covers = {};
+
+  List<CoverTile> _cover(int maxZoom, int minZoom, double hold) {
     final out = <CoverTile>[];
     final zoom = view.zoom + hold;
     final cx = camera[0], cy = camera[1], cz = camera[2];
@@ -239,6 +244,11 @@ class Globe {
         for (var i = 0; i <= samples; i++)
           ?unproject(view.width * i / samples, view.height * j / samples),
     ];
+    // A tile's samples share their columns' longitudes and their rows'
+    // latitudes, so each is worked out once, as [surface] does.
+    final sinLng = Float64List(samples + 1), cosLng = Float64List(samples + 1);
+    final sinLat = Float64List(samples + 1), cosLat = Float64List(samples + 1);
+    final m = matrix, p = plane;
     void visit(int z, int x, int y) {
       final n = 1 << z;
       var visible = false;
@@ -247,23 +257,39 @@ class Globe {
       var minY = double.infinity, maxY = -double.infinity;
       void sample(double px, double py, double pz) {
         final dx = px - cx, dy = py - cy, dz = pz - cz;
-        nearest = math.min(nearest, math.sqrt(dx * dx + dy * dy + dz * dz));
-        if (!faces(px, py, pz)) return;
-        projectSphere(px, py, pz);
+        final d = math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (d < nearest) nearest = d;
+        if (p[0] * px + p[1] * py + p[2] * pz + p[3] < 0) return;
+        final w = m[3] * px + m[7] * py + m[11] * pz + m[15];
+        final sx =
+            ((m[0] * px + m[4] * py + m[8] * pz + m[12]) / w + 1) /
+            2 *
+            view.width;
+        final sy =
+            (1 - (m[1] * px + m[5] * py + m[9] * pz + m[13]) / w) /
+            2 *
+            view.height;
         visible = true;
-        minX = math.min(minX, outX);
-        maxX = math.max(maxX, outX);
-        minY = math.min(minY, outY);
-        maxY = math.max(maxY, outY);
+        if (sx < minX) minX = sx;
+        if (sx > maxX) maxX = sx;
+        if (sy < minY) minY = sy;
+        if (sy > maxY) maxY = sy;
       }
 
+      for (var i = 0; i <= samples; i++) {
+        final lng = (x + i / samples) / n * 2 * math.pi + math.pi;
+        sinLng[i] = math.sin(lng);
+        cosLng[i] = math.cos(lng);
+      }
+      for (var j = 0; j <= samples; j++) {
+        final t = math.exp(math.pi - (y + j / samples) / n * 2 * math.pi);
+        final t2 = t * t;
+        sinLat[j] = (t2 - 1) / (t2 + 1);
+        cosLat[j] = 2 * t / (t2 + 1);
+      }
       for (var j = 0; j <= samples; j++) {
         for (var i = 0; i <= samples; i++) {
-          final (px, py, pz) = surface(
-            (x + i / samples) / n,
-            (y + j / samples) / n,
-          );
-          sample(px, py, pz);
+          sample(sinLng[i] * cosLat[j], sinLat[j], cosLng[i] * cosLat[j]);
         }
       }
       // As MapLibre's: a tile at the world's edge reaches on to its pole.
@@ -328,10 +354,18 @@ class Globe {
   bool _meets(int z, int x, int y) {
     final n = 1 << z;
     const k = 32;
+    final sinLng = Float64List(k + 1), cosLng = Float64List(k + 1);
+    for (var i = 0; i <= k; i++) {
+      final lng = (x + i / k) / n * 2 * math.pi + math.pi;
+      sinLng[i] = math.sin(lng);
+      cosLng[i] = math.cos(lng);
+    }
     for (var j = 0; j <= k; j++) {
+      final t = math.exp(math.pi - (y + j / k) / n * 2 * math.pi);
+      final t2 = t * t;
+      final sinLat = (t2 - 1) / (t2 + 1), cosLat = 2 * t / (t2 + 1);
       for (var i = 0; i <= k; i++) {
-        final (px, py, pz) = surface((x + i / k) / n, (y + j / k) / n);
-        if (faces(px, py, pz)) return true;
+        if (faces(sinLng[i] * cosLat, sinLat, cosLng[i] * cosLat)) return true;
       }
     }
     return false;
