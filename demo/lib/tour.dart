@@ -164,7 +164,10 @@ class Tour {
     _ticker.start();
   }
 
-  void pause() => _ticker.stop();
+  void pause() {
+    _ticker.stop();
+    controller.headFor(null);
+  }
 
   void _startFlight() {
     _flight = Flight(
@@ -176,6 +179,7 @@ class Tour {
     _arrived = false;
     _announced = false;
     _phaseStart = Duration.zero;
+    controller.headFor(stops[index].camera);
     onStop(index);
   }
 
@@ -196,6 +200,7 @@ class Tour {
       controller.camera = flight.at(t);
       if (t >= 1) {
         _flight = null;
+        controller.headFor(null);
         _holdFrom = controller.camera;
         _turned = _drifted = 0;
         _phaseStart = elapsed;

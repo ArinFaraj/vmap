@@ -25,9 +25,8 @@ VmapOverlay overlayFor({
   final sources = <String, Object?>{
     if (terrain) 'dem': _dem,
     if (shade) 'dem-shade': _dem,
-    if (quakes != null && data == DataLayer.heatmap)
-      'quakes': {'type': 'geojson', 'data': quakes},
-    if (quakes != null && data == DataLayer.clusters)
+    if (quakes != null) ...{
+      'quakes-heat': {'type': 'geojson', 'data': quakes},
       'quakes': {
         'type': 'geojson',
         'data': quakes,
@@ -35,6 +34,7 @@ VmapOverlay overlayFor({
         'clusterMaxZoom': 12,
         'clusterRadius': 48,
       },
+    },
   };
   final layers = <Map<String, Object?>>[
     if (shade)
@@ -49,8 +49,12 @@ VmapOverlay overlayFor({
           'hillshade-highlight-color': '#FFFFFF',
         },
       },
-    if (quakes != null && data == DataLayer.heatmap) _heatmap,
-    if (quakes != null && data == DataLayer.clusters) ..._clusters,
+    // Both are always there and only their opacity changes, so switching
+    // between them fades instead of building every tile of the style again.
+    if (quakes != null) ...[
+      _heatmap(data == DataLayer.heatmap ? 1 : 0),
+      ..._clusters(data == DataLayer.clusters ? 1 : 0),
+    ],
   ];
   return VmapOverlay(
     sources: sources,
@@ -59,10 +63,10 @@ VmapOverlay overlayFor({
   );
 }
 
-const Map<String, Object?> _heatmap = {
+Map<String, Object?> _heatmap(double shown) => {
   'id': 'quakes-heat',
   'type': 'heatmap',
-  'source': 'quakes',
+  'source': 'quakes-heat',
   'paint': {
     'heatmap-weight': [
       'interpolate',
@@ -108,11 +112,11 @@ const Map<String, Object?> _heatmap = {
       9,
       22,
     ],
-    'heatmap-opacity': 0.85,
+    'heatmap-opacity': 0.85 * shown,
   },
 };
 
-const List<Map<String, Object?>> _clusters = [
+List<Map<String, Object?>> _clusters(double shown) => [
   {
     'id': 'quakes-clusters',
     'type': 'circle',
@@ -137,9 +141,10 @@ const List<Map<String, Object?>> _clusters = [
         200,
         30,
       ],
-      'circle-opacity': 0.88,
+      'circle-opacity': 0.88 * shown,
       'circle-stroke-width': 2,
       'circle-stroke-color': 'rgba(255,255,255,0.85)',
+      'circle-stroke-opacity': shown,
     },
   },
   {
@@ -151,8 +156,10 @@ const List<Map<String, Object?>> _clusters = [
       'text-field': '{point_count_abbreviated}',
       'text-font': ['Noto Sans Bold'],
       'text-size': 13,
+      'text-allow-overlap': true,
+      'text-ignore-placement': true,
     },
-    'paint': {'text-color': '#ffffff'},
+    'paint': {'text-color': '#ffffff', 'text-opacity': shown},
   },
   {
     'id': 'quakes-points',
@@ -165,8 +172,10 @@ const List<Map<String, Object?>> _clusters = [
     'paint': {
       'circle-color': '#5AC8FA',
       'circle-radius': 4,
+      'circle-opacity': shown,
       'circle-stroke-width': 1,
       'circle-stroke-color': '#ffffff',
+      'circle-stroke-opacity': shown,
     },
   },
 ];
