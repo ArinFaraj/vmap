@@ -21,7 +21,8 @@ jobs:
       - run: flutter pub get --directory vmap_flutter_map
       - run: flutter pub get --directory example
       - run: flutter pub get --directory bench
-      - run: dart format --output=none --set-exit-if-changed lib test tool bench/lib example/lib example/test vmap_flutter_map
+      - run: flutter pub get --directory demo
+      - run: dart format --output=none --set-exit-if-changed lib test tool bench/lib example/lib example/test demo/lib vmap_flutter_map
       - run: flutter analyze
       - run: flutter test
       - run: flutter test

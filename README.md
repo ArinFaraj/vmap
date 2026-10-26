@@ -10,6 +10,10 @@
   Android, iOS, macOS, Windows, Linux and the web.
 </p>
 
+<p align="center">
+  <a href="https://arinfaraj.github.io/vmap/"><b>Try the live demo</b></a>
+</p>
+
 ---
 
 - **Any MapLibre style.** vmap passes 1,394 of the 1,519 MapLibre render

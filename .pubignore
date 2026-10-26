@@ -1,6 +1,7 @@
 # Development only: the benchmark app, tools, the flutter_map adapter
 # (published on its own), internal notes and generated files.
 /bench/
+/demo/
 /tool/
 /vmap_flutter_map/
 /docs/
