@@ -372,9 +372,32 @@ class SdfTextGpu implements SdfText {
   /// to draw it on the canvas.
   FramePlanes? planes;
 
+  /// The map's texture this frame's text is drawn into, over the map,
+  /// rather than into an image of its own; set for each frame.
+  gpu.Texture? into;
+
+  /// Whether this frame's text is in the image shown already, the last
+  /// frame's shown again, so none is drawn; set for each frame.
+  bool inShown = false;
+
+  /// Whether this frame's text went into [into].
+  bool drewInto = false;
+
+  /// Text drawn into a texture of its own while its map waits to be laid
+  /// down, handed to the page after it by [layKept].
+  gpu.Texture? _kept;
+
   @override
-  ui.Canvas end(ui.Canvas canvas) {
-    if (_count == 0 || !ready) return canvas;
+  ui.Canvas layKept(ui.Canvas canvas) {
+    final kept = _kept, planes = this.planes;
+    _kept = null;
+    if (kept == null || planes == null) return canvas;
+    return planes.hand([(gpu.gpuHost.textureToBitmap(kept)!, 1)], null);
+  }
+
+  @override
+  ui.Canvas end(ui.Canvas canvas, {bool drawnBelow = false}) {
+    if (_count == 0 || !ready || inShown) return canvas;
     final width = (_size.width * _dpr).round();
     final height = (_size.height * _dpr).round();
     if (width <= 0 || height <= 0) return canvas;
@@ -395,8 +418,12 @@ class SdfTextGpu implements SdfText {
       );
       _targets.add((texture, texture.asImage()));
     }
-    final (target, image) = _targets[_next];
-    _next = (_next + 1) % _targets.length;
+    // Over an icon drawn on the canvas, the text cannot go into the map,
+    // which is laid down under the canvas.
+    final into = drawnBelow ? null : this.into;
+    final (own, image) = _targets[_next];
+    if (into == null) _next = (_next + 1) % _targets.length;
+    final target = into ?? own;
     if (_dirty) {
       _atlas!.overwrite(ByteData.sublistView(_texels));
       _dirty = false;
@@ -441,7 +468,11 @@ class SdfTextGpu implements SdfText {
     final commands = gpu.gpuContext.createCommandBuffer();
     final pass = commands.createRenderPass(
       gpu.RenderTarget.singleColor(
-        gpu.ColorAttachment(texture: target, clearValue: Vector4.zero()),
+        gpu.ColorAttachment(
+          texture: target,
+          loadAction: into == null ? gpu.LoadAction.clear : gpu.LoadAction.load,
+          clearValue: Vector4.zero(),
+        ),
       ),
     );
     final sheet = _device.sprites.texture ?? _device.sprites.blank;
@@ -510,6 +541,14 @@ class SdfTextGpu implements SdfText {
       }
     }
     commands.submit();
+    if (into != null) {
+      drewInto = true;
+      return canvas;
+    }
+    if (this.into != null && planes != null) {
+      _kept = own;
+      return canvas;
+    }
     if (planes case final planes?) {
       return planes.hand([(gpu.gpuHost.textureToBitmap(target)!, 1)], null);
     }

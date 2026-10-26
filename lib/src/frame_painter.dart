@@ -367,7 +367,11 @@ class FramePainter {
       f.waiting = true;
     }
     _drawRuns(f, 0, sheet.labelsRun);
-    _present(f, sheet.labelsRun);
+    // With no horizon to cut the map at, the renderer may draw the labels'
+    // text into the map's image, which is then laid down after them.
+    f.textInMap =
+        f.labelsVisible && f.horizon <= 0 && renderer.textInto(sheet.labelsRun);
+    if (!f.textInMap) _present(f, sheet.labelsRun);
     _buildingMicros = _clock.elapsedMicroseconds - started;
     _uncut(f);
   }
@@ -450,8 +454,9 @@ class FramePainter {
         _transitions.touches({for (final s in sheet.symbols) s.id})) {
       _labels.placeNow();
     }
+    final recorder = f.textInMap ? ui.PictureRecorder() : null;
     final moving = _labels.paint(
-      f.canvas,
+      recorder == null ? f.canvas : ui.Canvas(recorder),
       camera,
       sources: [_markerLabels]
           .followedBy(shown.map((d) => d.tile.labelsIn(_wrapOf(d, camera)))),
@@ -477,6 +482,11 @@ class FramePainter {
     // The text may have gone into a page element, the frame on in a new
     // picture over it.
     if (f.planes?.canvas case final canvas?) f.canvas = canvas;
+    if (recorder != null) {
+      _present(f, sheet.labelsRun);
+      f.canvas.drawPicture(recorder.endRecording());
+      if (f.renderer.sdfText case final sdf?) f.canvas = sdf.layKept(f.canvas);
+    }
     f.animating = f.animating || moving;
   }
 
@@ -707,4 +717,7 @@ class _Frame {
   bool animating = false;
   int labelsStarted = 0;
   bool labelsVisible = true;
+
+  /// Whether the renderer draws the labels' text into the map's image.
+  bool textInMap = false;
 }

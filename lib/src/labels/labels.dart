@@ -525,7 +525,7 @@ class LabelEngine {
     _view.standAt(0);
     _drawn.clear();
     if (sdfText != null) {
-      canvas = sdfText.end(canvas);
+      canvas = sdfText.end(canvas, drawnBelow: _view.drewBelowText);
       if (sdfText.loading) animating = true;
       _view.sdf = null;
     }

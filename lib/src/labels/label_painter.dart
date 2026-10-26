@@ -142,6 +142,7 @@ class LabelPainter {
       _pinRatio = devicePixelRatio;
     }
     final image = _pinImages[pin] ??= drawPin(pin, pins.size, devicePixelRatio);
+    _view.drewBelowText = true;
     _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
     final extent = pins.size + pinPad * 2;
     _view.project(st.worldX, st.worldY);
@@ -263,6 +264,7 @@ class LabelPainter {
         )) {
       return;
     }
+    _view.drewBelowText = true;
     final onGround = st.iconOnGround;
     for (final filter in [?rim, fill]) {
       _imagePaint.colorFilter = filter;

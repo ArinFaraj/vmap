@@ -59,8 +59,14 @@ abstract class SdfText {
   /// Lays what was queued since [begin] on [canvas]: each layer's icons,
   /// then its text, as MapLibre draws a symbol layer. Returns the canvas
   /// to draw on after it: [canvas], or on the web one over a page element
-  /// that shows the text.
-  ui.Canvas end(ui.Canvas canvas);
+  /// that shows the text. [drawnBelow] says an icon or pin the text must
+  /// cover was drawn on [canvas] since [begin].
+  ui.Canvas end(ui.Canvas canvas, {bool drawnBelow = false});
+
+  /// Lays down text [end] kept back for after the map, in a frame whose
+  /// map is laid down after its labels; returns the canvas to draw on
+  /// after it.
+  ui.Canvas layKept(ui.Canvas canvas) => canvas;
 
   /// Whether a glyph is still on its way to the GPU.
   bool get loading;

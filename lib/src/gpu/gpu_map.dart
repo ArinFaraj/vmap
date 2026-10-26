@@ -180,7 +180,12 @@ class GpuMap extends MapRenderer {
     final made = _ready();
     if (made == null) return true;
     final (:device, :drape, :sdf) = made;
-    sdf.planes = f.planes;
+    if (sdf.drewInto) _frames.textInside = true;
+    sdf
+      ..planes = f.planes
+      ..into = null
+      ..inShown = false
+      ..drewInto = false;
     final GpuDevice(
       pipelines: p,
       :host,
@@ -215,7 +220,6 @@ class GpuMap extends MapRenderer {
     if (!_warm) _warmUp(device);
     if (_frames.showAgain(view, _frame)) {
       f.stats.gpuFramesReused++;
-      if (f.planes != null) _frames.takeLast();
       return true;
     }
     // A render pass encodes into a command buffer of its own: Metal allows
@@ -296,7 +300,6 @@ class GpuMap extends MapRenderer {
     });
     Timeline.timeSync('vmap.gpu.submit', () => _frames.submit(buffers, _heap));
     _frames.drawn(layers, view, snapshot: f.planes == null);
-    if (f.planes != null) _frames.takeLast();
     return reveal.animating ||
         presence.animating ||
         sprites.loading ||
@@ -482,6 +485,18 @@ class GpuMap extends MapRenderer {
       ..globe = f.view.globe
       ..drawRuns([run]);
     return density;
+  }
+
+  @override
+  bool textInto(int run) {
+    final sdf = _made?.sdf;
+    if (sdf == null || !sdf.ready) return false;
+    if (_frames.reused && _frames.textInside) {
+      sdf.inShown = true;
+      return true;
+    }
+    sdf.into = _frames.textTarget(run);
+    return sdf.into != null;
   }
 
   @override

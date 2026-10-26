@@ -174,7 +174,39 @@ class GpuFrames {
     }
     _presented = 0;
     _showView = view;
+    _reused = true;
     return true;
+  }
+
+  /// Whether the frame shown is the last one again.
+  bool get reused => _reused;
+  bool _reused = false;
+
+  /// Whether the last frame drawn has its text in one of its images.
+  bool textInside = false;
+
+  /// The texture of the image laid down at style run [run], for text to be
+  /// drawn into over the map, when that image is a new frame's and opaque.
+  gpu.Texture? textTarget(int run) {
+    final last = _last;
+    if (_reused || last == null || _textures.length != last.length) {
+      return null;
+    }
+    final upTo = _upTo(run, last.length, _splits);
+    if (upTo <= _presented || last[upTo - 1].$2 < 1) return null;
+    return _textures[upTo - 1];
+  }
+
+  /// How many of [length] images come before style run [run].
+  static int _upTo(int run, int length, List<(int, int)> splits) {
+    var upTo = length;
+    for (final (at, image) in splits) {
+      if (at >= run) {
+        upTo = math.min(upTo, image);
+        break;
+      }
+    }
+    return upTo;
   }
 
   /// The next frame of the ring to draw into, with what [device] makes
@@ -213,52 +245,43 @@ class GpuFrames {
   /// The textures behind [_last]'s images.
   List<gpu.Texture> _textures = const [];
 
-  /// The last frame's images as browser bitmaps, their opacity, where
-  /// background and raster runs come between them, and the camera they
-  /// were drawn for.
-  ({List<(Object, double)> images, List<(int, int)> splits, MapView view})?
-  _taken;
-
-  /// Takes the last frame's images out of their textures for the page to
-  /// show, moved to the camera of a frame that shows them again.
-  void takeLast() {
-    final last = _last, view = _lastView;
-    if (last == null || view == null || _textures.length != last.length) {
-      _taken = null;
-      return;
-    }
-    _taken = (
-      images: [
-        for (var i = 0; i < last.length; i++)
-          (gpu.gpuHost.textureToBitmap(_textures[i])!, last[i].$2),
-      ],
-      splits: _splits,
-      view: view,
-    );
-  }
-
   /// Keeps [layers], drawn for [view], as the frame to show. On the web
-  /// with [snapshot], its images are copied out of their textures now.
+  /// with [snapshot], each image is copied out of its texture when it is
+  /// first laid down, after any text drawn into it.
   void drawn(FrameLayers layers, MapView view, {bool snapshot = true}) {
-    final shown = layers.shown;
-    if (kIsWeb && snapshot) _snapshot(shown, layers.textures);
-    _last = shown;
+    _last = layers.shown;
     _textures = layers.textures;
     _splits = layers.splits;
     _presented = 0;
     _lastView = _showView = view;
+    _reused = false;
+    textInside = false;
+    _copied = kIsWeb && snapshot
+        ? List.filled(layers.shown.length, false)
+        : const [];
   }
 
-  /// On the web a texture's image is a copy taken when it is asked for,
-  /// not the texture itself as on Impeller: [shown] takes fresh copies of
-  /// [textures] once they are drawn.
-  void _snapshot(_Shown shown, List<gpu.Texture> textures) {
-    for (final image in _snapshots) {
-      image.dispose();
-    }
-    _snapshots = [for (final t in textures) t.asImage()];
-    for (var i = 0; i < shown.length; i++) {
-      shown[i] = (_snapshots[i], shown[i].$2);
+  /// Which of [_last]'s images are copies taken from their textures, on
+  /// the web, where a texture's image is a copy taken when asked for and
+  /// not the texture itself as on Impeller.
+  List<bool> _copied = const [];
+
+  /// Copies [_last]'s images from [from] to [to] out of their textures,
+  /// those not copied yet, letting go of the last frame's copies.
+  void _copy(int from, int to) {
+    final last = _last!;
+    for (var i = from; i < to && i < _copied.length; i++) {
+      if (_copied[i]) continue;
+      if (!_copied.contains(true)) {
+        for (final image in _snapshots) {
+          image.dispose();
+        }
+        _snapshots = [];
+      }
+      final image = _textures[i].asImage();
+      _snapshots.add(image);
+      last[i] = (image, last[i].$2);
+      _copied[i] = true;
     }
   }
 
@@ -271,39 +294,33 @@ class GpuFrames {
     required bool warps,
     FramePlanes? planes,
   }) {
-    if (planes != null) return _hand(planes, run, warps: warps);
     final last = _last, view = _lastView;
     if (last == null || view == null) return;
-    var upTo = last.length;
-    for (final (at, image) in _splits) {
-      if (at >= run) {
-        upTo = math.min(upTo, image);
-        break;
-      }
-    }
+    final upTo = _upTo(run, last.length, _splits);
     if (upTo <= _presented) return;
-    _present(canvas, last.getRange(_presented, upTo), view, warps: warps);
+    if (planes != null) {
+      _hand(planes, _presented, upTo, view, warps: warps);
+    } else {
+      _copy(_presented, upTo);
+      _present(canvas, last.getRange(_presented, upTo), view, warps: warps);
+    }
     _presented = upTo;
   }
 
-  /// [presentUntil] on the web: hands the images [takeLast] took before
-  /// style run [run] to [planes].
-  void _hand(FramePlanes planes, int run, {required bool warps}) {
-    final taken = _taken;
-    if (taken == null) return;
-    var upTo = taken.images.length;
-    for (final (at, image) in taken.splits) {
-      if (at >= run) {
-        upTo = math.min(upTo, image);
-        break;
-      }
-    }
-    if (upTo <= _presented) return;
-    planes.hand(
-      taken.images.sublist(_presented, upTo),
-      _warp(taken.view, warps),
-    );
-    _presented = upTo;
+  /// [presentUntil] in a page: hands [planes] the images from [from] to
+  /// [to] as browser bitmaps taken out of their textures now.
+  void _hand(
+    FramePlanes planes,
+    int from,
+    int to,
+    MapView view, {
+    required bool warps,
+  }) {
+    if (_textures.length != _last!.length) return;
+    planes.hand([
+      for (var i = from; i < to; i++)
+        (gpu.gpuHost.textureToBitmap(_textures[i])!, _last![i].$2),
+    ], _warp(view, warps));
   }
 
   void _present(
@@ -364,10 +381,7 @@ class GpuFrames {
 typedef _Shown = List<(ui.Image, double)>;
 
 /// What one frame of the ring draws into: the map's texture and, for each
-/// see-through building layer, one more. Building layers are drawn opaque
-/// into their own and laid over the map at their opacity, as MapLibre
-/// draws them, so a see-through building shows the ground behind it and
-/// its walls do not darken where they overlap.
+/// layer drawn whole at an opacity or coloured as a heatmap, one more.
 class _FrameTarget {
   _FrameTarget(this.map) : image = map.asImage();
 

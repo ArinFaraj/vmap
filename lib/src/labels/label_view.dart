@@ -71,8 +71,13 @@ class LabelView {
   /// frame being drawn, when the renderer can.
   SdfText? sdf;
 
+  /// Whether this frame drew an icon or pin on the canvas, which [sdf]
+  /// text must then be laid over.
+  bool drewBelowText = false;
+
   /// Frames [camera], with the ground [terrain] raises, if any.
   void frame(MapFrame camera, [Terrain? terrain]) {
+    drewBelowText = false;
     final view = tilted = camera.view;
     cx = camera.size.width / 2;
     cy = camera.size.height / 2;

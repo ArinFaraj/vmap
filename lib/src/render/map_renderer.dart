@@ -113,6 +113,12 @@ abstract class MapRenderer {
   /// next frame.
   bool presentUntil(ui.Canvas canvas, int run) => false;
 
+  /// Has [sdfText] draw this frame's text into the last image laid down
+  /// before style run [run], over the map, and returns whether it does:
+  /// the caller then lays the images before [run] down after the labels,
+  /// and what the labels drew on the canvas over them.
+  bool textInto(int run) => false;
+
   /// Lets go of the memory of tiles not drawn in the last frame.
   void trimMemory() {}
 
