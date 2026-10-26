@@ -193,7 +193,11 @@ class GpuFrames {
       return null;
     }
     final upTo = _upTo(run, last.length, _splits);
-    if (upTo <= _presented || last[upTo - 1].$2 < 1) return null;
+    if (upTo <= _presented ||
+        last[upTo - 1].$2 < 1 ||
+        _heats.contains(upTo - 1)) {
+      return null;
+    }
     return _textures[upTo - 1];
   }
 
@@ -252,6 +256,7 @@ class GpuFrames {
     _last = layers.shown;
     _textures = layers.textures;
     _splits = layers.splits;
+    _heats = layers.heats;
     _presented = 0;
     _lastView = _showView = view;
     _reused = false;
@@ -260,6 +265,9 @@ class GpuFrames {
         ? List.filled(layers.shown.length, false)
         : const [];
   }
+
+  /// Which of [_last]'s images are heatmaps, which text never goes into.
+  Set<int> _heats = const {};
 
   /// Which of [_last]'s images are copies taken from their textures, on
   /// the web, where a texture's image is a copy taken when asked for and
@@ -308,7 +316,9 @@ class GpuFrames {
   }
 
   /// [presentUntil] in a page: hands [planes] the images from [from] to
-  /// [to] as browser bitmaps taken out of their textures now.
+  /// [to] as browser bitmaps taken out of their textures now, each shown
+  /// before the next is taken: Safari blanks a bitmap whose canvas is drawn
+  /// into again before it is shown.
   void _hand(
     FramePlanes planes,
     int from,
@@ -317,10 +327,12 @@ class GpuFrames {
     required bool warps,
   }) {
     if (_textures.length != _last!.length) return;
-    planes.hand([
-      for (var i = from; i < to; i++)
+    final warp = _warp(view, warps);
+    for (var i = from; i < to; i++) {
+      planes.hand([
         (gpu.gpuHost.textureToBitmap(_textures[i])!, _last![i].$2),
-    ], _warp(view, warps));
+      ], warp);
+    }
   }
 
   void _present(

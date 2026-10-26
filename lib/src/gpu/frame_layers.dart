@@ -49,6 +49,9 @@ class FrameLayers {
   /// The texture behind each of [shown].
   final List<gpu.Texture> textures = [];
 
+  /// Which of [shown] are heatmaps coloured over what is below them.
+  final Set<int> heats = {};
+
   /// Where a background or raster run comes between the images: the index
   /// in the style's runs of each part's first vector run and its first
   /// image.
@@ -133,6 +136,7 @@ class FrameLayers {
     final heat = _heatOf(run);
     if (heat == null) return;
     _openNext();
+    heats.add(shown.length - 1);
     pass.colorHeat(heat.density, heat.row, heat.opacity);
   }
 }
