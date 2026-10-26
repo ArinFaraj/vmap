@@ -120,7 +120,21 @@ class LabelEngine {
   /// The labels that are showing or fading, which is all a frame draws.
   final List<LabelState> _live = [];
   final Stopwatch _clock = Stopwatch()..start();
-  int _pass = 0;
+
+  /// The last placement finished, and the one being placed, a frame's
+  /// share at a time; the same when none is under way.
+  int _pass = 0, _placing = 0;
+
+  /// The placement under way: its labels in order, the next to place, and
+  /// what it was started with.
+  final List<LabelState> _queue = [];
+  int _queueAt = 0, _considered = 0, _fitKey = 0;
+  double _queueZoom = 0;
+
+  /// Placement work a frame may do: a pass of a crowded map takes several
+  /// milliseconds, which done at once would make every placement's frame
+  /// late, so it is spread over frames as MapLibre's pausable placement is.
+  static const int _placeSliceMicros = 1000;
   int _placedAtMs = -1000;
   double _placedZoom = -1;
   int _placedSourcesKey = 0;
@@ -237,7 +251,7 @@ class LabelEngine {
       final dx = (st.candidate.worldX - c.worldX) * world;
       final dy = (st.candidate.worldY - c.worldY) * world;
       if (dx * dx + dy * dy > near) continue;
-      return st.seenPass == _pass ? null : st;
+      return st.seenPass == _placing ? null : st;
     }
     final made = LabelState(c);
     same.add(made);
@@ -334,6 +348,8 @@ class LabelEngine {
     _states.clear();
     _frameStates.clear();
     _live.clear();
+    _queue.clear();
+    _placing = _pass;
     _placeAgain = true;
   }
 
@@ -377,7 +393,12 @@ class LabelEngine {
         sourcesKey != _placedSourcesKey;
     // A frame after the camera stops puts the labels back on the pixels.
     var pending = !_view.still;
-    if (moved || _placeAgain) {
+    if (_placing != _pass) {
+      final t0 = _clock.elapsedMicroseconds;
+      _placeSome(size);
+      lastPlaceMicros = _clock.elapsedMicroseconds - t0;
+      pending = true;
+    } else if (moved || _placeAgain) {
       final zoomingOut = zoom < _lastZoom;
       final interval = !zooming || zoomingOut || _placedZoom - zoom > 0.4
           ? _placementIntervalMs
@@ -392,7 +413,7 @@ class LabelEngine {
         _placedOrigin = origin;
         _placedTilt = tilt;
         _placedSourcesKey = sourcesKey;
-        if (_placeAgain) pending = true;
+        if (_placeAgain || _placing != _pass) pending = true;
       } else {
         pending = true;
       }
@@ -407,7 +428,7 @@ class LabelEngine {
       if (st.sprite?.dropped ?? false) {
         st.sprite = _sprites[_style.spriteKey(st)];
       }
-      if (!st.placed || st.seenPass != _pass) continue;
+      if (!st.placed || st.seenPass < _pass) continue;
       if (!st.candidate.hasText || !st.showText) continue;
       final key = _style.spriteKey(st);
       if (st.sprite != null && !st.resize && st.spriteKey == key) continue;
@@ -436,7 +457,7 @@ class LabelEngine {
     // label before placing any.
     if (!pending) {
       for (final st in _frameStates) {
-        if (st.placed || st.seenPass != _pass || st.sprite != null) continue;
+        if (st.placed || st.seenPass < _pass || st.sprite != null) continue;
         if (!st.candidate.hasText) continue;
         if (timeUp()) {
           pending = true;
@@ -460,7 +481,7 @@ class LabelEngine {
     var kept = 0;
     for (var i = 0; i < _live.length; i++) {
       final st = _live[i];
-      final seen = st.seenPass == _pass;
+      final seen = st.seenPass >= _pass;
       if (st.sprite?.dropped ?? false) {
         st.sprite = _sprites[_style.spriteKey(st)];
       }
@@ -610,7 +631,7 @@ class LabelEngine {
     ui.Offset origin,
     ui.Size size,
   ) {
-    _pass++;
+    _placing = _pass + 1;
     _placeAgain = false;
     occlusion.startPass();
     final styleZoom = zoom - 1 + zoomOffset;
@@ -645,7 +666,7 @@ class LabelEngine {
         final st = _stateFor(c, world);
         if (st == null) continue;
         st
-          ..seenPass = _pass
+          ..seenPass = _placing
           ..perspective = _view.ratio
           ..iconOnGround = _style.symbolOf(c)?.iconOnGround ?? false
           ..candidate = c
@@ -671,9 +692,32 @@ class LabelEngine {
     _road.debugCircles = _points.debugBoxes == null ? null : <double>[];
     _roads.startPass();
     _points.startPass();
-    final fitKey = (zoom * 3).round();
-    var considered = 0;
-    for (final (order, st) in states.indexed) {
+    _queue
+      ..clear()
+      ..addAll(states);
+    _queueAt = 0;
+    _considered = 0;
+    _fitKey = (zoom * 3).round();
+    _queueZoom = zoom;
+    _placeSome(size);
+  }
+
+  /// Places the labels of the placement under way until a frame's share of
+  /// time is spent, and finishes it once all are placed: only then do the
+  /// labels it left out start to fade.
+  void _placeSome(ui.Size size) {
+    final zoom = _queueZoom, fitKey = _fitKey;
+    final styleZoom = zoom - 1 + zoomOffset;
+    _style.layoutZoom = styleZoom.floorToDouble();
+    final until = _clock.elapsedMicroseconds + _placeSliceMicros;
+    var considered = _considered;
+    while (_queueAt < _queue.length) {
+      if (_clock.elapsedMicroseconds > until) {
+        _considered = considered;
+        _view.standAt(0);
+        return;
+      }
+      final order = _queueAt, st = _queue[_queueAt++];
       st.placeOrder = order;
       final c = st.candidate;
       _style.stand(c);
@@ -772,6 +816,8 @@ class LabelEngine {
       }
     }
     _view.standAt(0);
+    _queue.clear();
+    _pass = _placing;
     _states.removeWhere((_, same) {
       same.removeWhere((st) => st.seenPass != _pass && !st.live);
       return same.isEmpty;
@@ -842,7 +888,7 @@ class LabelEngine {
       st.live = true;
       _live.add(st);
     }
-    sprite?.usedPass = _pass;
+    sprite?.usedPass = _placing;
   }
 
   /// Draws the label once, in the look its layer gives it, or for a
@@ -927,7 +973,7 @@ class LabelEngine {
         lineShift: _style.lineShift(c),
       ),
       dpr: _view.devicePixelRatio,
-      pass: _pass,
+      pass: _placing,
       shaped: c is TileLabel ? c.tile.shaped : null,
     );
   }
