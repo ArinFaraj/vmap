@@ -12,12 +12,13 @@ import 'dart:js_interop';
 import 'package:web/web.dart' as web;
 
 import 'src/platform/web_codec.dart';
+import 'src/raster/raster_dem.dart' show ShadeWorker, shadeWorkerMain;
 import 'src/text/glyphs/glyph_raster.dart'
     show GlyphRasterWorker, glyphWorkerMain;
 import 'src/tiles/worker.dart' show tileWorkerMain;
 
-/// Builds tiles, or draws label glyphs, for the page that started this
-/// worker, as the first message it is sent asks.
+/// Builds tiles, draws label glyphs or shades heights for the page that
+/// started this worker, as the first message it is sent asks.
 void runVmapWorker() {
   final scope = globalContext as web.DedicatedWorkerGlobalScope;
   StreamController<Object?>? inbox;
@@ -28,9 +29,11 @@ void runVmapWorker() {
     final box = inbox = StreamController<Object?>();
     scope.postMessage(null);
     final init = message! as List<Object?>;
-    final main = init.isNotEmpty && init[0] == GlyphRasterWorker.glyphWorkerTag
-        ? glyphWorkerMain
-        : tileWorkerMain;
+    final main = switch (init.isEmpty ? null : init[0]) {
+      GlyphRasterWorker.glyphWorkerTag => glyphWorkerMain,
+      ShadeWorker.tag => shadeWorkerMain,
+      _ => tileWorkerMain,
+    };
     unawaited(
       main(init, (answer) {
         final moved = <JSObject>[];

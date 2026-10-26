@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 import '../camera/mercator.dart';
 import '../camera/view.dart';
 import '../platform.dart';
@@ -190,6 +192,17 @@ final class ShadedTiles extends TileDrawing<HillshadeLayer> {
         ],
       ],
     );
+    if (kIsWeb) {
+      final raster = await ShadeWorker.instance.shade(
+        pixels,
+        width,
+        height,
+        relief.terrarium,
+        light,
+        sides,
+      );
+      return imageFromRaster(raster, width + 2, height + 2);
+    }
     final shaded = await runAside(
       () => shadeHeights(
         pixels,
@@ -201,6 +214,107 @@ final class ShadedTiles extends TileDrawing<HillshadeLayer> {
       ),
     );
     return imageFromRgba(shaded, width + 2, height + 2);
+  }
+}
+
+/// Shades tiles of heights in the worker vmap ships, in a browser, where
+/// [runAside] has no thread to give but the page's own; the page gets an
+/// image back without copying its pixels.
+class ShadeWorker {
+  ShadeWorker._() {
+    startWorker(
+      shadeWorkerMain,
+      const [tag],
+      _reply,
+      script: workerScript,
+      debugName: 'vmap shading',
+    ).then((worker) {
+      _worker = worker;
+      for (final m in _queued) {
+        worker.send(m);
+      }
+      _queued.clear();
+    });
+  }
+
+  static final instance = ShadeWorker._();
+
+  /// What the first message to a worker that shades heights is.
+  static const tag = 'vmap shade';
+
+  Worker? _worker;
+  final List<List<Object?>> _queued = [];
+  final Map<int, Completer<Object>> _waiting = {};
+  int _next = 0;
+
+  /// [pixels] shaded as [shadeHeights] shades them, ready for
+  /// [imageFromRaster].
+  Future<Object> shade(
+    Uint8List pixels,
+    int width,
+    int height,
+    bool terrarium,
+    ShadeLight light,
+    List<Uint8List?> sides,
+  ) {
+    final id = _next++;
+    final done = _waiting[id] = Completer<Object>();
+    final message = <Object?>[
+      id,
+      pixels,
+      width,
+      height,
+      terrarium ? 1 : 0,
+      light.method,
+      light.intensity,
+      light.zoom,
+      light.north,
+      light.south,
+      Float64List.fromList(light.accent),
+      Float64List.fromList(light.lights),
+      ...sides,
+    ];
+    final worker = _worker;
+    if (worker == null) {
+      _queued.add(message);
+    } else {
+      worker.send(message);
+    }
+    return done.future;
+  }
+
+  void _reply(Object? message) {
+    final m = message! as List<Object?>;
+    _waiting.remove(m[0]! as int)?.complete(m[1]!);
+  }
+}
+
+/// What a worker shading heights runs: [ShadeWorker]'s other half.
+Future<void> shadeWorkerMain(
+  List<Object?> init,
+  void Function(Object? message) send,
+  Stream<Object?> inbox,
+) async {
+  await for (final request in inbox) {
+    final m = request! as List<Object?>;
+    final width = m[2]! as int, height = m[3]! as int;
+    final shaded = shadeHeights(
+      m[1]! as Uint8List,
+      width,
+      height,
+      m[4] == 1,
+      ShadeLight(
+        method: m[5]! as int,
+        intensity: (m[6]! as num).toDouble(),
+        zoom: m[7]! as int,
+        north: (m[8]! as num).toDouble(),
+        south: (m[9]! as num).toDouble(),
+        accent: m[10]! as Float64List,
+        lights: m[11]! as Float64List,
+      ),
+      sides: [for (var i = 12; i < 16; i++) m[i] as Uint8List?],
+    );
+    send([m[0], await rasterForPage(shaded, width + 2, height + 2)]);
   }
 }
 
