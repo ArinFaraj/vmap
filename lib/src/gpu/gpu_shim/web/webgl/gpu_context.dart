@@ -158,8 +158,7 @@ final class WebGlContext extends GpuContext {
 
   /// Binds [texture] on the reserved setup unit for creation or upload work.
   void _bindTextureForSetup(int target, web.WebGLTexture? texture) {
-    _gl.activeTexture(web.WebGL2RenderingContext.TEXTURE0 + _setupTextureUnit);
-    _gl.bindTexture(target, texture);
+    _state.bindTexture(_setupTextureUnit, target, texture);
   }
 
   @override

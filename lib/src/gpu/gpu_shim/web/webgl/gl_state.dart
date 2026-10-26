@@ -178,4 +178,29 @@ final class _GlState {
     _stencilMask[1] = mask;
     _gl.stencilMask(mask);
   }
+
+  final Map<int, (int, web.WebGLTexture?)> _units = {};
+  int? _activeUnit;
+
+  /// Binds [texture] to [target] on texture unit [unit].
+  void bindTexture(int unit, int target, web.WebGLTexture? texture) {
+    if (_activeUnit != unit) {
+      _activeUnit = unit;
+      _gl.activeTexture(web.WebGL2RenderingContext.TEXTURE0 + unit);
+    }
+    _units[unit] = (target, texture);
+    _gl.bindTexture(target, texture);
+  }
+
+  /// Takes [texture] off every unit it is bound to: a draw whose program
+  /// has a sampler on such a unit while [texture] is drawn into is refused
+  /// as a feedback loop, whether or not it samples it.
+  void unbindTexture(web.WebGLTexture? texture) {
+    if (texture == null) return;
+    for (final MapEntry(key: unit, value: (target, bound)) in [
+      ..._units.entries,
+    ]) {
+      if (bound == texture) bindTexture(unit, target, null);
+    }
+  }
 }

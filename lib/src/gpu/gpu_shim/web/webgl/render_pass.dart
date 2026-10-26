@@ -104,6 +104,12 @@ final class WebGlRenderPass extends RenderPass {
     );
     _fbo = fbo;
     gl.bindFramebuffer(web.WebGL2RenderingContext.FRAMEBUFFER, fbo);
+    if (color.sampleCount == 1) {
+      _gpuContext._state.unbindTexture(color.webGl.glTexture);
+    }
+    if (depth != null && depth.sampleCount == 1) {
+      _gpuContext._state.unbindTexture(depth.webGl.glTexture);
+    }
     gl.viewport(
       0,
       0,
@@ -593,8 +599,7 @@ final class WebGlRenderPass extends RenderPass {
 
     final gl = _gpuContext._gl;
     final target = texture.webGl.glTarget;
-    gl.activeTexture(web.WebGL2RenderingContext.TEXTURE0 + unit);
-    gl.bindTexture(target, texture.webGl.glTexture);
+    _gpuContext._state.bindTexture(unit, target, texture.webGl.glTexture);
     _boundTextureUnits[unit] = target;
     if (sampler != null) {
       // Sampler parameters are per-texture-object GL state; skip the ones
@@ -695,7 +700,6 @@ final class WebGlRenderPass extends RenderPass {
     // them attached lets a draw that should have rebound a slot read the
     // previous draw's resource and render correctly, which hides bind
     // lifetime bugs here that break on the native backends.
-    final gl = _gpuContext._gl;
     if (_vao != null) {
       _gpuContext._state.bindVertexArray(null);
     }
@@ -708,8 +712,7 @@ final class WebGlRenderPass extends RenderPass {
     }
     _boundUniformBlocks.clear();
     for (final entry in _boundTextureUnits.entries) {
-      gl.activeTexture(web.WebGL2RenderingContext.TEXTURE0 + entry.key);
-      gl.bindTexture(entry.value, null);
+      _gpuContext._state.bindTexture(entry.key, entry.value, null);
     }
     _boundTextureUnits.clear();
     _inlineVertexBufferView = null;

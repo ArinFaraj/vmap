@@ -246,6 +246,14 @@ class GpuMap extends MapRenderer {
           ? view.farDistance / view.cameraToCenterDistance
           : 20,
     );
+    final globe = p.globe == null ? null : view.globe;
+    final raised = (terrain != null || globe != null) && p.ground != null;
+    // The drape is drawn before the frame's own pass begins: that pass
+    // samples it, so it goes to the GPU first, and on the web a pass
+    // draws into whatever framebuffer was bound last.
+    if (raised) {
+      Timeline.timeSync('vmap.gpu.drape', () => drape.drawAtlas(buffers, f));
+    }
     final layers = _frames.begin(
       device,
       passOn: (target, {keeps = false}) => MapPass(
@@ -260,15 +268,10 @@ class GpuMap extends MapRenderer {
       ),
       heatOf: (run) => _heat(device, buffers, run, f, clip),
     );
-    final globe = p.globe == null ? null : view.globe;
-    final raised = (terrain != null || globe != null) && p.ground != null;
     layers.composites = !raised && !_frames.sampled && p.composite != null;
-    if (raised) {
-      // The raised ground holds every vector layer, laid after the
-      // backgrounds and rasters under the labels.
-      layers.splits.add((sheet.labelsRun - 1, 0));
-      Timeline.timeSync('vmap.gpu.drape', () => drape.drawAtlas(buffers, f));
-    }
+    // The raised ground holds every vector layer, laid after the
+    // backgrounds and rasters under the labels.
+    if (raised) layers.splits.add((sheet.labelsRun - 1, 0));
     Timeline.timeSync('vmap.gpu.draw', () {
       if (!raised) return _layOut(layers, f, _Layout.flat);
       // The flat layers are in the drape; the ground and buildings stand
