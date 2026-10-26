@@ -51,7 +51,7 @@ final class ShadedTiles extends TileDrawing<HillshadeLayer> {
     int x,
     int y,
   ) async {
-    final data = await image.toByteData();
+    final data = await imagePixels(image);
     tile
       ..pixels = data!.buffer.asUint8List()
       ..width = image.width
@@ -201,7 +201,7 @@ final class ShadedTiles extends TileDrawing<HillshadeLayer> {
         light,
         sides,
       );
-      return imageFromRaster(raster, width + 2, height + 2);
+      return imageFromRaster(raster, width + 2, height + 2, readable: true);
     }
     final shaded = await runAside(
       () => shadeHeights(
@@ -213,7 +213,7 @@ final class ShadedTiles extends TileDrawing<HillshadeLayer> {
         sides: sides,
       ),
     );
-    return imageFromRgba(shaded, width + 2, height + 2);
+    return imageFromRgba(shaded, width + 2, height + 2, readable: true);
   }
 }
 
@@ -349,7 +349,7 @@ final class ReliefTiles extends TileDrawing<ColorReliefLayer> {
     int x,
     int y,
   ) async {
-    final data = await image.toByteData();
+    final data = await imagePixels(image);
     final width = image.width, height = image.height;
     image.dispose();
     if (data == null) return;
@@ -365,7 +365,12 @@ final class ReliefTiles extends TileDrawing<ColorReliefLayer> {
         layer.colors,
       ),
     );
-    final picture = await imageFromRgba(coloured, width, height);
+    final picture = await imageFromRgba(
+      coloured,
+      width,
+      height,
+      readable: true,
+    );
     if (closed) return picture.dispose();
     tile.image?.dispose();
     tile.image = picture;
@@ -744,7 +749,7 @@ final class TerrainTiles extends TileDrawing<TerrainLayer> {
     int x,
     int y,
   ) async {
-    final data = await image.toByteData();
+    final data = await imagePixels(image);
     final dim = image.width;
     image.dispose();
     if (data == null || closed) return;

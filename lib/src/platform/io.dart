@@ -87,8 +87,14 @@ const bool directLabels = false;
 /// The image to make a shader of.
 ui.Image forShader(ui.Image image) => image;
 
-/// An image of [pixels], premultiplied RGBA rows [width] wide.
-Future<ui.Image> imageFromRgba(Uint8List pixels, int width, int height) {
+/// An image of [pixels], premultiplied RGBA rows [width] wide. [readable]
+/// is for a browser, see [imagePixels].
+Future<ui.Image> imageFromRgba(
+  Uint8List pixels,
+  int width,
+  int height, {
+  bool readable = false,
+}) {
   final done = Completer<ui.Image>();
   ui.decodeImageFromPixels(
     pixels,
@@ -99,6 +105,13 @@ Future<ui.Image> imageFromRgba(Uint8List pixels, int width, int height) {
   );
   return done.future;
 }
+
+/// Notes the encoded [bytes] [image] was decoded from; only a browser needs
+/// them, see [imagePixels].
+void decodedFrom(ui.Image image, Uint8List bytes) {}
+
+/// [image]'s premultiplied RGBA pixels.
+Future<ByteData?> imagePixels(ui.Image image) => image.toByteData();
 
 /// Runs [work] off the UI thread where the platform can.
 Future<T> runAside<T>(T Function() work) => Isolate.run(work);
@@ -140,9 +153,14 @@ String? workerScript;
 Future<Object> rasterForPage(Uint8List rgba, int width, int height) async =>
     pack(rgba);
 
-/// The image of a raster from [rasterForPage].
-Future<ui.Image> imageFromRaster(Object raster, int width, int height) =>
-    imageFromRgba(unpackBytes(raster), width, height);
+/// The image of a raster from [rasterForPage]. [readable] is for a
+/// browser, see [imagePixels].
+Future<ui.Image> imageFromRaster(
+  Object raster,
+  int width,
+  int height, {
+  bool readable = false,
+}) => imageFromRgba(unpackBytes(raster), width, height);
 
 /// Starts [body] on an isolate of its own. It must be a top level function.
 /// [script] is for a browser only.

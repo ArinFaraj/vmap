@@ -95,8 +95,15 @@ ui.Image forShader(ui.Image image) => image.clone();
 /// made from an `ImageBitmap` again at every draw: a page of label glyphs
 /// fifteen times a frame. The WebAssembly renderer freezes the page
 /// decoding raw pixels, so it takes an `ImageBitmap`; `ImageData` is
-/// unpremultiplied, so the colours are divided by alpha first.
-Future<ui.Image> imageFromRgba(Uint8List pixels, int width, int height) async {
+/// unpremultiplied, so the colours are divided by alpha first. A
+/// [readable] image keeps [pixels] for [imagePixels].
+Future<ui.Image> imageFromRgba(
+  Uint8List pixels,
+  int width,
+  int height, {
+  bool readable = false,
+}) async {
+  final ui.Image image;
   if (_javaScript) {
     final done = Completer<ui.Image>();
     ui.decodeImageFromPixels(
@@ -106,11 +113,70 @@ Future<ui.Image> imageFromRgba(Uint8List pixels, int width, int height) async {
       ui.PixelFormat.rgba8888,
       done.complete,
     );
-    return done.future;
+    image = await done.future;
+  } else {
+    final data = web.ImageData(_straight(pixels).toJS, width, height.toJS);
+    final bitmap = await web.window.createImageBitmap(data).toDart;
+    image = await ui_web.createImageFromImageBitmap(bitmap);
   }
-  final data = web.ImageData(_straight(pixels).toJS, width, height.toJS);
-  final bitmap = await web.window.createImageBitmap(data).toDart;
-  return await ui_web.createImageFromImageBitmap(bitmap);
+  if (readable) _pixelsOf[image] = pixels;
+  return image;
+}
+
+/// Where an image's pixels can be had without reading the image back.
+/// Flutter's web renderers read an image by resizing the surface the page
+/// is drawn on to the image's size, and a frame drawn meanwhile shows only
+/// that corner of the page, the rest white.
+final Expando<Uint8List> _encodedOf = Expando();
+final Expando<Uint8List> _pixelsOf = Expando();
+final Expando<web.ImageBitmap> _bitmapOf = Expando();
+
+/// Notes the encoded [bytes] [image] was decoded from, for [imagePixels].
+void decodedFrom(ui.Image image, Uint8List bytes) => _encodedOf[image] = bytes;
+
+/// [image]'s premultiplied RGBA pixels: those it was made from, or its
+/// encoded bytes decoded again by the browser, and read back from the image
+/// only when it has neither.
+Future<ByteData?> imagePixels(ui.Image image) async {
+  if (_pixelsOf[image] case final pixels?) return ByteData.sublistView(pixels);
+  if (_bitmapOf[image] case final bitmap?) return _read(bitmap);
+  final encoded = _encodedOf[image];
+  if (encoded == null) return image.toByteData();
+  final bitmap = await web.window
+      .createImageBitmap(
+        web.Blob([encoded.toJS].toJS),
+        web.ImageBitmapOptions(colorSpaceConversion: 'none'),
+      )
+      .toDart;
+  try {
+    return _read(bitmap);
+  } finally {
+    bitmap.close();
+  }
+}
+
+/// [bitmap]'s premultiplied RGBA pixels.
+ByteData _read(web.ImageBitmap bitmap) {
+  final width = bitmap.width, height = bitmap.height;
+  final context =
+      web.OffscreenCanvas(
+            width,
+            height,
+          ).getContext('2d', {'willReadFrequently': true}.jsify())!
+          as web.OffscreenCanvasRenderingContext2D;
+  context.drawImage(bitmap, 0, 0);
+  final pixels = Uint8List.sublistView(
+    context.getImageData(0, 0, width, height).data.toDart,
+  );
+  for (var i = 0; i < pixels.length; i += 4) {
+    final a = pixels[i + 3];
+    if (a == 255) continue;
+    pixels
+      ..[i] = (pixels[i] * a + 127) ~/ 255
+      ..[i + 1] = (pixels[i + 1] * a + 127) ~/ 255
+      ..[i + 2] = (pixels[i + 2] * a + 127) ~/ 255;
+  }
+  return ByteData.sublistView(pixels);
 }
 
 /// A raster of premultiplied [rgba] pixels made ready for the page: in a
@@ -124,11 +190,30 @@ Future<Object> rasterForPage(Uint8List rgba, int width, int height) async {
   return Moved(await scope.createImageBitmap(data).toDart);
 }
 
-/// The image of a raster from [rasterForPage].
-Future<ui.Image> imageFromRaster(Object raster, int width, int height) async =>
-    raster is Moved
-    ? await ui_web.createImageFromImageBitmap(raster.object)
-    : await imageFromRgba(unpackBytes(raster), width, height);
+/// The image of a raster from [rasterForPage]. A [readable] one keeps a
+/// copy of its bitmap for [imagePixels].
+Future<ui.Image> imageFromRaster(
+  Object raster,
+  int width,
+  int height, {
+  bool readable = false,
+}) async {
+  if (raster is! Moved) {
+    return imageFromRgba(
+      unpackBytes(raster),
+      width,
+      height,
+      readable: readable,
+    );
+  }
+  final bitmap = raster.object as web.ImageBitmap;
+  final copy = readable
+      ? await web.window.createImageBitmap(bitmap).toDart
+      : null;
+  final image = await ui_web.createImageFromImageBitmap(bitmap);
+  _bitmapOf[image] = copy;
+  return image;
+}
 
 /// Whether this runs in a worker, which has no document.
 final bool _inWorker = !globalContext.has('document');

@@ -218,6 +218,7 @@ final class PictureDrawing extends RasterDrawing<ImageLayer> {
       final frame = await codec.getNextFrame();
       codec.dispose();
       if (closed) return frame.image.dispose();
+      decodedFrom(frame.image, reply.bytes);
       _picture = frame.image;
       _shader = ui.ImageShader(
         forShader(frame.image),
@@ -779,6 +780,7 @@ abstract class TileDrawing<L extends TiledRasterLayer>
       final codec = await ui.instantiateImageCodec(bytes);
       final frame = await codec.getNextFrame();
       codec.dispose();
+      decodedFrom(frame.image, bytes);
       await keepDecoded(tile, frame.image, z, x, y);
       tile.failures = 0;
     } catch (e) {

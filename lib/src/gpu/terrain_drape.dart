@@ -6,6 +6,7 @@ import 'package:vector_math/vector_math.dart' show Vector4;
 
 import '../camera/globe.dart';
 import '../camera/view.dart';
+import '../platform.dart' show imagePixels;
 import '../render/map_renderer.dart';
 import '../style/expr.dart';
 import '../style/style_model.dart';
@@ -624,7 +625,7 @@ class Drape {
         filtered = await picture.toImage(image.width, image.height);
         picture.dispose();
       }
-      final pixels = await (filtered ?? image).toByteData();
+      final pixels = await (filtered?.toByteData() ?? imagePixels(image));
       if (pixels == null) return;
       _pictures[image] = (
         piece.filter,
