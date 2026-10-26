@@ -28,10 +28,12 @@ What the API looks like and what should change before release:
   run on the iOS simulator (Metal), in Safari (WebAssembly) and on the
   Android emulator on Impeller's OpenGL ES backend, flat and in 3D with
   terrain. That run found and fixed a crash on Android's first frame.
-- **Open before publishing:** step 6 for what is left: a real iPhone,
-  Windows, Linux and Firefox.
-- **Then:** step 8, publishing, which waits for Arin's yes: merging
-  `engine` to `main` and tagging publishes vmap to pub.dev.
+- **Done, 2026-10-26:** the web profiled and sped up in Chrome and Safari
+  (see the 0.27.0 changelog's web section), and the freezes zooming fast
+  fixed.
+- **Publishing 0.27.0, 2026-10-26**, on Arin's yes, with step 6 still open
+  for a real iPhone, Windows, Linux and Firefox: those come in 0.2's run on
+  real devices.
 - Work happens on the `engine` branch of `ArinFaraj/vmap`.
 
 Keep this section current: update it whenever a step starts or finishes.

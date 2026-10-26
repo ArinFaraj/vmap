@@ -84,7 +84,8 @@ moved to an adapter package. This release changes most of the public API:
   `NamedMarker` are in the `vmap_flutter_map` package, so vmap no longer
   depends on flutter_map.
 - Statistics are in `package:vmap/debug.dart`. `VmapPalette` names its
-  colours. `VmapEngine.useWebWorker` sets the web worker.
+  colours. `VmapEngine.useWebWorker` sets the web worker, which draws
+  label glyphs as well as building tiles.
 
 ### The web
 
@@ -105,6 +106,20 @@ moved to an adapter package. This release changes most of the public API:
   is built in.
 - Text from the style's glyph ranges is drawn on the GPU in the browser
   too, as on other platforms.
+- A frame costs Chrome's GPU process about a fifth of what it did: uniform
+  blocks are small, so WebGL no longer copies a whole block each time a
+  draw writes to it; WebGL state already set is not set again; a draw's
+  uniforms go over in one upload; attachments a pass discards are not
+  stored; and handing a frame to the page swaps buffers rather than
+  copying one. Safari's wait for each frame's image is about a third
+  shorter.
+- Label text is drawn into the map's own image when no horizon shows, so a
+  frame hands the page one full-screen image instead of two.
+- Zooming fast no longer freezes the page: each tile has buffers of its
+  own on the web, which WebGL writes without waiting for the GPU to finish
+  drawing from them; label glyphs are drawn and made into images in the
+  web worker; and a glyph added to the text atlas sends only the rows it
+  changed.
 - The map loads sooner: the style is fetched while vmap's fonts load, tile
   workers start while the source's TileJSON is asked for, every glyph
   range and sprite index is fetched once for the page and all workers
@@ -142,6 +157,11 @@ moved to an adapter package. This release changes most of the public API:
   replace, instead of appearing at once.
 - A building whose height, base or colour reads `feature-state` changes
   when the app sets that state, so a tapped building can be highlighted.
+- See-through buildings are drawn as MapLibre draws them, in the map's own
+  pass: their depth first, then their colour where it is nearest, each
+  pixel once.
+- A wheel or trackpad zoom while a fling still glides adds to the glide
+  rather than the two taking turns.
 - On the globe: `background-pattern` is drawn, and the map can be centred
   on a pole while the polar cap fits on the screen.
 
