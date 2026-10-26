@@ -229,13 +229,15 @@ class MapPass {
       bool drawnWhole(PaintLayer layer) =>
           layer is CircleLayer || layer is HeatmapLayer;
       final want = standing;
-      if (clipped && want == null) {
-        _stencilEquals(0);
+      // Unclipped, as on the globe, stand-ins are drawn whole under the
+      // tiles that are ready, which draw over them.
+      final standIns = clipped || !adding;
+      if (clipped) _stencilEquals(0);
+      if (standIns && want == null) {
         for (final d in _fallback[source]) {
           _drawFlat(d, run);
         }
-      } else if (clipped) {
-        _stencilEquals(0);
+      } else if (standIns) {
         for (var at = run.first; at < run.end; at++) {
           if (drawnWhole(_sheet.layers[at]) != want) continue;
           for (final d in _fallback[source]) {
