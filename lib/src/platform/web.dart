@@ -27,22 +27,41 @@ class Net {
   /// A browser sets these itself and refuses them from a page.
   static const _refused = {'user-agent', 'accept-encoding'};
 
+  /// Fetches [url]. The request is aborted when [cancel] is cancelled or
+  /// [timeout] passes, so it stops taking the connection's bandwidth.
   Future<Reply> get(
     String url,
     Map<String, String> headers, {
     Duration timeout = const Duration(seconds: 20),
-  }) => () async {
+    Cancel? cancel,
+  }) async {
+    if (cancel?.cancelled ?? false) throw const Cancelled();
     final sent = web.Headers();
     headers.forEach((name, value) {
       if (!_refused.contains(name.toLowerCase())) sent.append(name, value);
     });
-    final response = await _fetch(
-      url.toJS,
-      web.RequestInit(headers: sent),
-    ).toDart;
-    final body = await response.arrayBuffer().toDart;
-    return Reply(response.status, body.toDart.asUint8List());
-  }().timeout(timeout);
+    final abort = web.AbortController();
+    var timedOut = false;
+    final timer = Timer(timeout, () {
+      timedOut = true;
+      abort.abort();
+    });
+    cancel?.onCancel(() => abort.abort());
+    try {
+      final response = await _fetch(
+        url.toJS,
+        web.RequestInit(headers: sent, signal: abort.signal),
+      ).toDart;
+      final body = await response.arrayBuffer().toDart;
+      return Reply(response.status, body.toDart.asUint8List());
+    } catch (_) {
+      if (timedOut) throw TimeoutException('No answer from $url', timeout);
+      if (cancel?.cancelled ?? false) throw const Cancelled();
+      rethrow;
+    } finally {
+      timer.cancel();
+    }
+  }
 
   void close() {}
 }

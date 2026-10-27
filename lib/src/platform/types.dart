@@ -27,3 +27,37 @@ typedef WorkerBody = Future<void> Function(
   void Function(Object? message) send,
   Stream<Object?> inbox,
 );
+
+/// Lets whoever asked for something call it off.
+class Cancel {
+  bool _cancelled = false;
+  final List<void Function()> _listeners = [];
+
+  bool get cancelled => _cancelled;
+
+  void cancel() {
+    if (_cancelled) return;
+    _cancelled = true;
+    for (final listener in _listeners) {
+      listener();
+    }
+    _listeners.clear();
+  }
+
+  /// Calls [listener] once this is cancelled, at once if it is already.
+  void onCancel(void Function() listener) {
+    if (_cancelled) {
+      listener();
+    } else {
+      _listeners.add(listener);
+    }
+  }
+}
+
+/// What was asked for was called off with a [Cancel].
+class Cancelled implements Exception {
+  const Cancelled();
+
+  @override
+  String toString() => 'Cancelled';
+}

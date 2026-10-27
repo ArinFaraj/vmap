@@ -133,7 +133,6 @@ class FramePainter {
   int _lastPaintMicros = 0;
   int _buildingMicros = 0;
   double _lastZoom = 0;
-  final _zoomOutHold = ZoomOutHold();
   final ZoomHistory _zoomHistory = ZoomHistory();
   final Atmosphere _atmosphere = Atmosphere();
   late final Backdrop _backdrop = Backdrop(_context);
@@ -223,7 +222,6 @@ class FramePainter {
       );
     }
     _lastZoom = camera.zoom;
-    final hold = _zoomOutHold.at(camera.view.zoom, _clock.elapsedMilliseconds);
     if (threeD) {
       final view = camera.view;
       final (view: raised, :easing) = _ground.raise(view);
@@ -239,7 +237,6 @@ class FramePainter {
       }
     }
     lastCamera = camera;
-    if (hold > 0) _host.requestFrame();
     final view = camera.view;
     final terrain = threeD ? _ground.terrain : null;
     final drape = threeD && (terrain != null || view.globe != null);
@@ -260,7 +257,6 @@ class FramePainter {
       styleZoom: styleZoom,
       now: now,
       dt: dt,
-      hold: hold,
       drape: drape,
       horizon: drape || farCut ? 0.0 : view.groundTopY,
       canvasHorizon: farCut ? view.groundTopY : 0.0,
@@ -279,7 +275,6 @@ class FramePainter {
         frame: frame,
         nowMs: _clock.elapsedMilliseconds,
         prepare: _prepare,
-        hold: f.hold,
         variableZoom: _ground.tiles != null && f.renderer.drawsIn3d,
         standing: f.sheet.buildingSources.contains(s.pool.source),
       );
@@ -587,10 +582,8 @@ class FramePainter {
     timings.labels.take(_labels.work);
     if (holes > 0) timings.framesWithHoles++;
     if (_host.transitionsRunning) f.animating = true;
-    // Tiles held while zooming out are swapped for the new zoom's once the
-    // hold ends, which a frame then has to draw.
     _stats
-      ..busy = f.animating || f.waiting || _budget.stale || f.hold > 0
+      ..busy = f.animating || f.waiting || _budget.stale
       ..preparing = f.waiting;
     if (_stats.busy) {
       _host.requestFrame();
@@ -698,7 +691,6 @@ class _Frame {
     required this.styleZoom,
     required this.now,
     required this.dt,
-    required this.hold,
     required this.drape,
     required this.horizon,
     required this.canvasHorizon,
@@ -725,7 +717,6 @@ class _Frame {
 
   /// Seconds since the frame before, at most a tenth.
   final double dt;
-  final double hold;
 
   /// Whether the GPU drapes the flat layers over raised ground or the
   /// globe.

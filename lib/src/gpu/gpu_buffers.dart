@@ -384,9 +384,6 @@ class BuildingGpu {
 
   int get indexCount => extrusion.indices.length;
 
-  /// When the buildings were first drawn, on the renderer's clock.
-  int shownAt = -1;
-
   static const stride = BuiltExtrusion.floatsPerVertex * 4;
 
   int get vertexCount =>

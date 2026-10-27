@@ -15,12 +15,10 @@ import '../tiles/extrusion.dart';
 import '../tiles/gpu_stream.dart';
 import '../tiles/tile_id.dart';
 import '../tiles/tiles.dart';
-import 'building_reveal.dart';
 import 'gpu_buffers.dart';
 import 'gpu_pipelines.dart';
 import 'gpu_shim/gpu.dart' as gpu;
 import 'layer_paint.dart';
-import 'layer_presence.dart';
 import 'line_ramps.dart';
 
 /// The style's sprite sheet on the GPU, for patterned fills, buildings and
@@ -357,10 +355,8 @@ class FrameBlocks {
 /// Each style layer's paint for the tiles drawn this frame, written into
 /// the slot table flat.vert reads per draw.
 class LayerSlots {
-  LayerSlots(this._presence, this._reveal, this._ramps, this._sprites);
+  LayerSlots(this._ramps, this._sprites);
 
-  final LayerPresence _presence;
-  final BuildingReveal _reveal;
   final LineRamps _ramps;
   final SpriteTextures _sprites;
 
@@ -399,56 +395,22 @@ class LayerSlots {
     _dashFade = dashFade;
   }
 
-  /// A layer's paint for tile [d]: faded in and out as the zoom enters and
-  /// leaves its range, and for footprints, kept past their range and faded
-  /// as the tile's own buildings rise out of them, so they stay until those
-  /// buildings are there.
+  /// A layer's paint, or none at a zoom out of its range, where MapLibre
+  /// hides it at once.
   LayerPaint _paintOf(
     StyleSheet sheet,
     int layerIndex,
     EvalContext context,
     double styleZoom,
     Map<String, Object?>? props,
-    TileDraw d,
-    TileGpu data,
   ) {
     final layer = sheet.layers[layerIndex];
+    if (!layer.showsAt(styleZoom)) return LayerPaint.clear;
     final source = sheet.buckets[layer.bucket].source;
     context.state = props == null || source >= _states.length
         ? const {}
         : _states[source]?[featureStateKey(props[r'$id'])] ?? const {};
-    final building = sheet.footprints[layerIndex];
-    if (building == null) {
-      final present = _presence.of(layerIndex);
-      if (present <= 0) return LayerPaint.clear;
-      if (present >= 1) {
-        return LayerPaint.of(layer, context, styleZoom, props, _dashFade);
-      }
-      final zoom = styleZoom.clamp(layer.minZoom, layer.maxZoom - 1e-3);
-      return LayerPaint.of(
-        layer,
-        context,
-        zoom,
-        props,
-        _dashFade,
-      ).scaled(present);
-    }
-    final shown =
-        _presence.of(layerIndex) * (1 - _standingIn(d, data, building));
-    if (shown <= 0) return LayerPaint.clear;
-    final zoom = styleZoom.clamp(layer.minZoom, layer.maxZoom - 1e-3);
-    return LayerPaint.of(layer, context, zoom, props, _dashFade).scaled(shown);
-  }
-
-  /// How far [layer]'s buildings in tile [d] have faded in: 0 where the
-  /// tile has none.
-  double _standingIn(TileDraw d, TileGpu data, ExtrusionLayer layer) {
-    if (!_reveal.shows(layer)) return 0;
-    for (final b in data.buildings) {
-      if (b.extrusion.bucket != layer.bucket) continue;
-      return _reveal.opacity(d.tile, layer, b);
-    }
-    return 0;
+    return LayerPaint.of(layer, context, styleZoom, props, _dashFade);
   }
 
   /// Writes the slots [from] to [to] of [stream] into the slot table, in
@@ -471,17 +433,15 @@ class LayerSlots {
     final stream = data.stream!;
     for (var i = from; i < to; i++) {
       final (layerIndex, props) = stream.slots[i];
-      final paint = props == null && !sheet.footprints.containsKey(layerIndex)
+      final paint = props == null
           ? (_layerPaint[layerIndex] ??= _paintOf(
               sheet,
               layerIndex,
               context,
               styleZoom,
               null,
-              d,
-              data,
             ))
-          : _paintOf(sheet, layerIndex, context, styleZoom, props, d, data);
+          : _paintOf(sheet, layerIndex, context, styleZoom, props);
       paint.writeSlot(
         out,
         (i - from) * LayerPaint.slotFloats,

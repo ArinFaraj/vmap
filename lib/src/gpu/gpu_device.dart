@@ -1,11 +1,9 @@
 import '../tiles/tiles.dart' show TileDraw;
-import 'building_reveal.dart';
 import 'gpu_buffers.dart';
 import 'gpu_pipelines.dart';
 import 'gpu_shim/gpu.dart' as gpu;
 import 'gpu_uniforms.dart';
 import 'ground_heights.dart';
-import 'layer_presence.dart';
 import 'line_ramps.dart';
 
 /// Premultiplied source over, which also leaves the colour untouched where
@@ -42,12 +40,9 @@ class GpuDevice {
   final UniformArena host = UniformArena();
   final FrameBlocks blocks = FrameBlocks();
   final GroundHeights heights = GroundHeights();
-  final Stopwatch _clock = Stopwatch()..start();
   late final LineRamps ramps = LineRamps(fail);
   late final SpriteTextures sprites = SpriteTextures(ramps, fail);
-  late final BuildingReveal reveal = BuildingReveal(_clock);
-  late final LayerPresence presence = LayerPresence(_clock);
-  late final LayerSlots paints = LayerSlots(presence, reveal, ramps, sprites);
+  late final LayerSlots paints = LayerSlots(ramps, sprites);
 
   /// The format a frame is drawn in.
   late final gpu.PixelFormat color =

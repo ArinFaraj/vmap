@@ -128,6 +128,10 @@ sealed class PaintLayer {
   /// The paint reads feature properties, so it is worked out per mesh.
   final bool perFeature;
 
+  /// Whether the layer is drawn at map zoom [zoom], as MapLibre's
+  /// `isHidden` decides: at once, without fading.
+  bool showsAt(double zoom) => zoom >= minZoom && zoom < maxZoom;
+
   /// Circles and glows reach past the edge of their tile, so they are drawn
   /// unclipped and in a run of their own, after everything under them in
   /// every tile.
@@ -641,17 +645,11 @@ class StyleSheet {
     required this.rasters,
     required this.attributions,
     this.extrusions = const [],
-    this.footprints = const {},
   }) : labelsRun = labelsRun ?? runs.length,
        spriteSheets = spriteSheets ?? [if (sprite != null) ('', sprite)];
 
   /// The style's `fill-extrusion` layers, in order.
   final List<ExtrusionLayer> extrusions;
-
-  /// Flat fill layers the buildings replace, by paint layer index: they read
-  /// the same data as a building layer and end at the zoom it starts. Their
-  /// tiles keep them a zoom longer, for them to fade as the buildings rise.
-  final Map<int, ExtrusionLayer> footprints;
 
   /// The heights the root `terrain` raises the ground by, when it has one.
   final TerrainLayer? terrain;

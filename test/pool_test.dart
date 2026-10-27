@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/net/net.dart';
 import 'package:vmap/src/style/style_model.dart';
 import 'package:vmap/src/options.dart';
+import 'package:vmap/src/tiles/tile_id.dart';
 import 'package:vmap/src/tiles/worker.dart';
 
 Future<HttpServer> _serve(void Function(HttpRequest request) answer) async {
@@ -24,8 +25,88 @@ Future<void> _until(bool Function() done) async {
   }
 }
 
+/// A pool of one source whose TileJSON and tiles [server] answers, with
+/// tiles down to zoom 3.
+TilePool _poolOf(
+  HttpServer server, {
+  void Function(TileId id)? loaded,
+  void Function(TileId id)? failed,
+}) {
+  final style = <String, Object?>{
+    'version': 8,
+    'sources': {
+      'roads': {
+        'type': 'vector',
+        'url': 'http://127.0.0.1:${server.port}/tiles.json',
+      },
+    },
+    'layers': [
+      {'id': 'road', 'type': 'line', 'source': 'roads', 'source-layer': 'road'},
+    ],
+  };
+  final pool = TilePool(
+    const VmapNetworkOptions(workers: 2),
+    style: style,
+    nameKeys: null,
+    sheet: StyleSheet.compile(style),
+    source: 0,
+    onLoaded: (id, _) => loaded?.call(id),
+    shared: SharedFetches().fetch,
+    onFailed: (id, _) => failed?.call(id),
+  );
+  addTearDown(pool.close);
+  return pool;
+}
+
+void _answerTileJson(HttpRequest request, int port) => request.response
+  ..write('{"tiles":["http://127.0.0.1:$port/{z}/{x}/{y}"],"maxzoom":3}')
+  ..close();
+
 void main() {
   setUp(() => HttpOverrides.global = null);
+
+  test('the pieces cut from one deepest tile share its download', () async {
+    final asked = <String>[];
+    late final HttpServer server;
+    server = await _serve((request) async {
+      if (request.uri.path == '/tiles.json') {
+        return _answerTileJson(request, server.port);
+      }
+      asked.add(request.uri.path);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await request.response.close();
+    });
+    final loaded = <TileId>{};
+    final pool = _poolOf(server, loaded: loaded.add);
+    final pieces = [
+      for (var y = 0; y < 4; y++)
+        for (var x = 0; x < 4; x++) TileId(5, 8 + x, 8 + y),
+    ];
+    pool.want(pieces);
+    await _until(() => pool.maxZoom == 3);
+    pool.want(pieces);
+    await _until(() => loaded.length == pieces.length);
+    expect(asked, ['/3/2/2']);
+  });
+
+  test('a tile the camera has left is called off, and is no failure', () async {
+    late final HttpServer server;
+    server = await _serve((request) {
+      if (request.uri.path == '/tiles.json') {
+        _answerTileJson(request, server.port);
+      }
+    });
+    final failed = <TileId>[];
+    final pool = _poolOf(server, failed: failed.add);
+    const left = TileId(3, 0, 0), now = TileId(3, 7, 7);
+    pool.want(const [left]);
+    await _until(() => pool.isLoading(left));
+    await _until(() {
+      pool.want(const [now]);
+      return !pool.isLoading(left);
+    });
+    expect(failed, isEmpty);
+  });
 
   test(
     'a source that starts after failing no longer reports the failure',

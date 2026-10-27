@@ -106,6 +106,7 @@ sealed class WorkerRequest {
         limit: wire[4]! as int,
         offset: wire[5]! as int,
       ),
+      'cancel' => CancelTile(job),
       'template' => UseTemplate(wire[2]! as String),
       'fetched' => Fetched(wire[2]! as String, wire[3] as Uint8List?),
       'states' => UseStates(job, [
@@ -141,6 +142,16 @@ final class BuildTile extends WorkerRequest {
     maxZoom,
     tile.over,
   ];
+}
+
+/// Calls off building the tile of [job], whose download is aborted unless
+/// another tile being built needs it too. Answered as the build is: built
+/// if it got that far, failed otherwise.
+final class CancelTile extends WorkerRequest {
+  const CancelTile(super.job);
+
+  @override
+  List<Object?> toWire() => [job, 'cancel'];
 }
 
 /// The tile address a worker fetches from, which a worker started before

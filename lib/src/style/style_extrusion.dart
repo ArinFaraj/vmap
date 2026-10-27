@@ -176,6 +176,10 @@ class ExtrusionLayer {
   final Expr? translate;
   final bool translateOnScreen;
 
+  /// Whether the buildings are drawn at map zoom [zoom]: at once, as
+  /// MapLibre's `isHidden` decides.
+  bool showsAt(double zoom) => zoom >= minZoom && zoom < maxZoom;
+
   /// How far [translate] moves the buildings at [context], in world pixels
   /// across the ground, on a map turned [bearing] degrees.
   (double, double) moved(EvalContext context, double bearing) {

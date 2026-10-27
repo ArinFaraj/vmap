@@ -41,17 +41,20 @@ Future<(String, Reply)> getTile(
   int z,
   int x,
   int row,
-  Map<String, String> headers,
-) async {
+  Map<String, String> headers, {
+  Cancel? cancel,
+}) async {
   final urls = tileUrls(template, z, x, row);
   for (var i = 0; ; i++) {
     final last = i == urls.length - 1;
     try {
-      final reply = await client.get(urls[i], headers);
+      final reply = await client.get(urls[i], headers, cancel: cancel);
       final status = reply.status;
       if (last || status == 200 || status == 204 || status == 404) {
         return (urls[i], reply);
       }
+    } on Cancelled {
+      rethrow;
     } catch (_) {
       if (last) rethrow;
     }

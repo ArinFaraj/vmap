@@ -94,7 +94,20 @@ class TilePool {
 
   final List<_Worker> _workers = [];
   final Map<int, TileId> _inflight = {};
+  final Map<int, _Worker> _jobWorker = {};
   final Set<TileId> _inflightIds = {};
+
+  /// Jobs called off, whose failure is no failure of the tile.
+  final Set<int> _cancelling = {};
+
+  /// When each job's tile was first left out of the wanted tiles. One the
+  /// camera has left, or coarser than the tiles now wanted, which come
+  /// soon, is called off after [_leftMs]; one finer than them, over the
+  /// ground in view as the camera rises, after [_overViewMs], for it can
+  /// stand in for them while they load.
+  final Map<int, int> _unwanted = {};
+  static const _leftMs = 100, _overViewMs = 300;
+
   List<TileId> _wanted = const [];
   int _nextJob = 0;
   bool _closed = false;
@@ -117,12 +130,49 @@ class TilePool {
 
   bool isLoading(TileId id) => _inflightIds.contains(id);
 
-  /// Tiles to load, most urgent first. Replaces the previous list; tiles
-  /// already being fetched are left to finish.
+  /// Whether any tile is being loaded.
+  bool get loading => _inflight.isNotEmpty;
+
+  /// Tiles to load, most urgent first. Replaces the previous list. Tiles
+  /// being loaded that stay out of it are called off, as MapLibre aborts
+  /// the tiles it no longer keeps, so the view's own tiles get the
+  /// connection.
   void want(List<TileId> ids) {
     _wanted = ids;
     _starting ??= _start();
+    if (_inflight.isNotEmpty) {
+      final still = ids.toSet();
+      final wantedKeys = {for (final w in ids) tileKey(w.z, w.x, w.y)};
+      bool overView(TileId t) {
+        for (var up = 0; up <= t.z; up++) {
+          if (wantedKeys.contains(tileKey(t.z - up, t.x >> up, t.y >> up))) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      final now = _clock.elapsedMilliseconds;
+      for (final MapEntry(key: job, value: id) in _inflight.entries) {
+        if (still.contains(id) || _cancelling.contains(job)) {
+          _unwanted.remove(job);
+          continue;
+        }
+        final grace = overView(id) ? _overViewMs : _leftMs;
+        if (now - (_unwanted[job] ??= now) < grace) continue;
+        _unwanted.remove(job);
+        _cancelling.add(job);
+        _jobWorker[job]?.link.send(CancelTile(job).toWire());
+      }
+    }
     _dispatch();
+  }
+
+  /// The data tile [id] is built from: past the deepest zoom, pieces of one
+  /// tile share its download.
+  int _dataKey(TileId id) {
+    final d = math.max(0, id.z - maxZoom);
+    return tileKey(id.z - d, id.x >> d, id.y >> d);
   }
 
   /// Where the tiles of the address this pool is using are kept.
@@ -342,19 +392,31 @@ class TilePool {
 
   void _dispatch() {
     if (_workers.isEmpty || _closed) return;
+    final loadingFrom = <int, _Worker>{
+      for (final MapEntry(key: job, value: id) in _inflight.entries)
+        _dataKey(id): ?_jobWorker[job],
+    };
     for (final id in _wanted) {
       if (_inflightIds.contains(id)) continue;
       if (!_confirmed && !_onDisk(id)) continue;
-      _Worker? free;
-      for (final w in _workers) {
-        if (w.busy < _perWorker && (free == null || w.busy < free.busy)) {
-          free = w;
+      final key = _dataKey(id);
+      // A tile whose data another job is downloading goes to that job's
+      // worker, which shares the download, and costs no bandwidth.
+      var free = loadingFrom[key];
+      if (free != null && free.busy >= 2 * _perWorker) continue;
+      if (free == null) {
+        for (final w in _workers) {
+          if (w.busy < _perWorker && (free == null || w.busy < free.busy)) {
+            free = w;
+          }
         }
+        if (free == null) continue;
       }
-      if (free == null) return;
       final job = _nextJob++;
       _inflight[job] = id;
+      _jobWorker[job] = free;
       _inflightIds.add(id);
+      loadingFrom[key] = free;
       Timeline.instantSync(
         'vmap.tile.asked',
         arguments: {'id': '${id.z}/${id.x}/${id.y}'},
@@ -384,10 +446,14 @@ class TilePool {
 
   void _onResult(_Worker worker, TileOutcome outcome) {
     worker.busy--;
-    final id = _inflight.remove(outcome.job);
+    final job = outcome.job;
+    final id = _inflight.remove(job);
+    _jobWorker.remove(job);
+    _unwanted.remove(job);
+    final calledOff = _cancelling.remove(job);
     if (id == null || _closed) return;
     _inflightIds.remove(id);
-    if (_stale.remove(outcome.job)) {
+    if (_stale.remove(job) || (calledOff && outcome is TileNotBuilt)) {
       _dispatch();
       return;
     }
@@ -585,31 +651,61 @@ Future<void> tileWorkerMain(
 
   if (setup.template.isNotEmpty) useTemplate(setup.template);
 
-  Future<Uint8List> fetch(TileId id) async {
+  // A download shared by every job building from the same data tile,
+  // aborted once all of them are called off.
+  final loading =
+      <int, ({Future<Uint8List> bytes, Cancel cancel, Set<int> jobs})>{};
+  final building = <int>{}, cancelled = <int>{};
+
+  Future<Uint8List> fetch(TileId id, int? job) async {
     final key = tileKey(id.z, id.x, id.y);
     final kept = recent.remove(key);
     if (kept != null) {
       recent[key] = kept;
       return kept;
     }
-    if (store == null) await storeReady.future;
-    final bytes = await store!.read(id.z, id.x, id.y) ?? Uint8List(0);
-    recent[key] = bytes;
-    if (recent.length > 24) recent.remove(recent.keys.first);
-    return bytes;
+    var load = loading[key];
+    if (load == null) {
+      final cancel = Cancel();
+      final bytes = () async {
+        if (store == null) await storeReady.future;
+        final bytes =
+            await store!.read(id.z, id.x, id.y, cancel: cancel) ?? Uint8List(0);
+        recent[key] = bytes;
+        if (recent.length > 24) recent.remove(recent.keys.first);
+        return bytes;
+      }();
+      load = loading[key] = (bytes: bytes, cancel: cancel, jobs: {});
+      unawaited(
+        bytes.then<void>((_) {}, onError: (_) {}).whenComplete(() {
+          if (identical(loading[key]?.bytes, bytes)) loading.remove(key);
+        }),
+      );
+    }
+    load.jobs.add(job ?? -1);
+    return load.bytes;
+  }
+
+  void cancelJob(int job) {
+    if (!building.contains(job)) return;
+    cancelled.add(job);
+    for (final load in loading.values) {
+      if (load.jobs.remove(job) && load.jobs.isEmpty) load.cancel.cancel();
+    }
   }
 
   // The source's deepest zoom, as the pool last told it.
   var dataMaxZoom = def.maxZoom ?? def.defaultMaxZoom;
 
-  Future<Iterable<TileLayer>> layersOf(TileId id) async {
+  Future<Iterable<TileLayer>> layersOf(TileId id, [int? job]) async {
     if (geoJson != null) return (await geoJson).tile(id.z, id.x, id.y);
     if (id.z > dataMaxZoom) {
       final d = id.z - dataMaxZoom;
       final from = TileId(dataMaxZoom, id.x >> d, id.y >> d);
-      return sliceLayers(await layersOf(from), from, id);
+      return sliceLayers(await layersOf(from, job), from, id);
     }
-    final bytes = await fetch(id);
+    final bytes = await fetch(id, job);
+    if (job != null && cancelled.contains(job)) throw const Cancelled();
     if (bytes.isEmpty) return const <TileLayer>[];
     return def is TiledSource && def.mlt
         ? decodeMltTile(bytes)
@@ -624,15 +720,19 @@ Future<void> tileWorkerMain(
       case UseTemplate(:final template):
         useTemplate(template);
         return null;
+      case CancelTile(:final job):
+        cancelJob(job);
+        return null;
       case Fetched(:final url, :final bytes):
         final waiting = asked[url];
         if (waiting != null && !waiting.isCompleted) waiting.complete(bytes);
         return null;
       case BuildTile(:final job, :final tile, :final maxZoom):
         dataMaxZoom = maxZoom;
+        building.add(job);
         try {
           final fetched = Timeline.now;
-          final layers = await layersOf(tile);
+          final layers = await layersOf(tile, job);
           Timeline.instantSync(
             'vmap.tile.fetched',
             arguments: {
@@ -685,11 +785,19 @@ Future<void> tileWorkerMain(
             },
           );
           return TileBuilt(job, built);
+        } on Cancelled {
+          return TileNotBuilt(
+            job,
+            const TileFailure('cancelled', corrupt: false),
+          );
         } catch (e) {
           return TileNotBuilt(
             job,
             TileFailure('$e', corrupt: e is FormatException),
           );
+        } finally {
+          building.remove(job);
+          cancelled.remove(job);
         }
       case final FindInTile find:
         try {

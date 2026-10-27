@@ -186,16 +186,8 @@ class GpuMap extends MapRenderer {
       ..into = null
       ..inShown = false
       ..drewInto = false;
-    final GpuDevice(
-      pipelines: p,
-      :host,
-      :blocks,
-      :sprites,
-      :reveal,
-      :presence,
-      :paints,
-      :ramps,
-    ) = device;
+    final GpuDevice(pipelines: p, :host, :blocks, :sprites, :paints, :ramps) =
+        device;
     final terrain = f.terrain;
     sprites.sheet = f.sprites;
     _frame++;
@@ -233,8 +225,6 @@ class GpuMap extends MapRenderer {
     blocks.frame
       ..[26] = devicePixelRatio
       ..[27] = 1;
-    reveal.begin(sheet, styleZoom);
-    presence.begin(sheet, styleZoom, ideal);
     paints.begin(f.states, f.dashFade);
     ramps.update(sheet, context);
     // Past 60 degrees MapLibre's far plane ends the ground short of the
@@ -298,21 +288,19 @@ class GpuMap extends MapRenderer {
         _layOut(layers, f, _Layout.standing);
       }
       for (final building in sheet.extrusions) {
-        if (reveal.shows(building)) layers.pass.drawBuildings(building);
+        if (building.showsAt(styleZoom)) {
+          layers.pass.drawBuildings(building);
+        }
       }
     });
     Timeline.timeSync('vmap.gpu.submit', () => _frames.submit(buffers, _heap));
     _frames.drawn(layers, view, snapshot: f.planes == null);
-    return reveal.animating ||
-        presence.animating ||
-        sprites.loading ||
-        drape.sending;
+    return sprites.loading || drape.sending;
   }
 
   /// Draws the style's runs into [layers] in order, as [layout] lays them.
   void _layOut(FrameLayers layers, RenderFrame f, _Layout layout) {
     final RenderFrame(:sheet, :context) = f;
-    final reveal = _made!.device.reveal;
     var drawnSinceSplit = false;
     for (final (index, run) in sheet.runs.indexed) {
       if (layout == _Layout.flat) {
@@ -334,7 +322,7 @@ class GpuMap extends MapRenderer {
       if (run.source < 0) continue;
       if (layout == _Layout.flat) {
         if (sheet.extrusionAt(run) case final building?) {
-          if (!reveal.shows(building)) continue;
+          if (!building.showsAt(context.zoom)) continue;
           final opacity = (asNumber(building.opacity(context)) ?? 1).clamp(
             0.0,
             1.0,

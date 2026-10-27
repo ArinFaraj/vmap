@@ -108,11 +108,12 @@ class TileStore {
   /// The bytes of tile [z]/[x]/[y]: empty for a tile with nothing in it,
   /// or outside the tile set's bounds, and null where the server has no
   /// such tile.
-  Future<Uint8List?> read(int z, int x, int y) async {
+  /// [cancel] aborts the download.
+  Future<Uint8List?> read(int z, int x, int y, {Cancel? cancel}) async {
     if (!cover.has(z, x, y)) return Uint8List(0);
     final file = fileOf(z, x, y);
     if (file != null && fileExists(file)) return readFile(file);
-    final bytes = await _fetch(z, x, y);
+    final bytes = await _fetch(z, x, y, cancel: cancel);
     if (file != null && bytes != null && bytes.isNotEmpty) {
       unawaited(writeFile(file, bytes).then<void>((_) {}, onError: (_) {}));
     }
@@ -130,7 +131,7 @@ class TileStore {
     return true;
   }
 
-  Future<Uint8List?> _fetch(int z, int x, int y) async {
+  Future<Uint8List?> _fetch(int z, int x, int y, {Cancel? cancel}) async {
     if (archive case final archive?) return archive.tile(z, x, y);
     final (url, reply) = await getTile(
       client,
@@ -139,6 +140,7 @@ class TileStore {
       x,
       cover.row(z, y),
       headers,
+      cancel: cancel,
     );
     if (reply.status == 204) return Uint8List(0);
     if (reply.status == 404) return null;

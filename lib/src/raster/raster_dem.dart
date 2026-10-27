@@ -727,16 +727,8 @@ final class TerrainTiles extends TileDrawing<TerrainLayer> {
         if (!failed && (tileStore?.cover.has(z, x, y) ?? false)) waiting++;
       }
     }
-    if (heldTiles.length > TileDrawing.maxTiles) {
-      final stale = [
-        for (final e in heldTiles.entries)
-          if (e.value.usedFrame != frameNumber && !e.value.loading) e.key,
-      ];
-      for (final key in stale) {
-        heldTiles.remove(key);
-        heights.remove(tileIdOf(key));
-      }
-    }
+    callOffUnused();
+    trimTiles(asked.length * 5, (key) => heights.remove(tileIdOf(key)));
   }
 
   @override

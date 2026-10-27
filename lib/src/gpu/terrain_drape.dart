@@ -43,6 +43,10 @@ class Drape {
   List<CoverTile> _tiles = const [];
   List<(int, int, int)> _slots = const [];
 
+  /// Where in the atlas each of [_tiles] is read from: its slot, or until
+  /// its slot can be drawn whole, its part of an ancestor's.
+  List<(double, double, double)> _reads = const [];
+
   /// Each tile of ground's slot, kept from frame to frame: a slot is drawn
   /// again only when what it was drawn from changed, so a map at rest or
   /// turning over the same ground costs next to nothing. Free corners by
@@ -169,6 +173,18 @@ class Drape {
     }
   }
 
+  /// The part of the slot of [t]'s nearest drawn ancestor over [t].
+  (double, double, double)? _ancestorRead(CoverTile t) {
+    for (var dz = 1; dz <= t.z; dz++) {
+      final above = _kept[(t.z - dz, t.x >> dz, t.y >> dz)];
+      if (above == null || above.key == null) continue;
+      final part = above.size / (1 << dz);
+      final n = 1 << dz;
+      return (above.x + (t.x % n) * part, above.y + (t.y % n) * part, part);
+    }
+    return null;
+  }
+
   /// Grows the atlas to [height]; what was drawn in it is gone, so every
   /// slot is drawn again.
   void _grow(int height) {
@@ -271,8 +287,10 @@ class Drape {
     ) => l < left + span && l + w > left && t < top + span && t + h > top;
     final vectorsInAtlas = !(view.globe != null && frame.terrain == null);
     // What slot [i] is drawn from: the tiles and pictures in it, as they
-    // stand, and the style at this zoom, to a sixteenth of a level.
-    int keyOf(CoverTile t) {
+    // stand, and the style at this zoom, to a sixteenth of a level. Not
+    // ready while a picture in it is still on its way to the GPU.
+    (int, bool) keyOf(CoverTile t) {
+      var ready = true;
       final span = view.worldSize / (1 << t.z);
       final left = t.x * span - origin.dx, top = t.y * span - origin.dy;
       var h = Object.hash(
@@ -324,6 +342,7 @@ class Drape {
             continue;
           }
           final meanwhile = p.meanwhile?.$1;
+          if (_pictures[p.image] == null && p.opacity > 0) ready = false;
           h = Object.hash(
             h,
             r,
@@ -338,19 +357,34 @@ class Drape {
           );
         }
       }
-      return h;
+      return (h, ready);
     }
 
     // New slots are always drawn, so no ground is ever bare; slots whose
-    // contents changed, a few a frame, nearest first.
+    // contents changed, a few a frame, nearest first. A slot keeps what it
+    // shows until the pictures to draw it again are on the GPU: drawn
+    // before, it would show for a frame without them.
+    // A new slot whose pictures are on their way is read from an ancestor's
+    // slot meanwhile, which shows the ground with them at less detail.
     final redraw = <int>[];
+    _reads = [
+      for (final (_, s) in chosen)
+        (s.x.toDouble(), s.y.toDouble(), s.size.toDouble()),
+    ];
     var stale = 0;
     for (final (i, (t, slot)) in chosen.indexed) {
-      final key = keyOf(t);
+      final (key, ready) = keyOf(t);
       if (slot.key == null) {
+        if (!ready) {
+          if (_ancestorRead(t) case final read?) {
+            _reads[i] = read;
+            sending = true;
+            continue;
+          }
+        }
         redraw.add(i);
         slot.key = key;
-      } else if (slot.key != key && stale < _staleBudget) {
+      } else if (slot.key != key && ready && stale < _staleBudget) {
         stale++;
         redraw.add(i);
         slot.key = key;
@@ -975,7 +1009,7 @@ class Drape {
       );
     final height = _height.toDouble();
     for (final (i, t) in _tiles.indexed) {
-      final (x, y, size) = _slots[i];
+      final (x, y, size) = _reads[i];
       final span = view.worldSize / (1 << t.z);
       _device.blocks.times(
         clip,
@@ -1076,7 +1110,7 @@ class Drape {
       ..[45] = 0.5 / _width
       ..[46] = 0.5 / height;
     for (final (i, t) in _tiles.indexed) {
-      final (x, y, size) = _slots[i];
+      final (x, y, size) = _reads[i];
       final n = 1 << t.z;
       final span = view.worldSize / n;
       _device.blocks.times(

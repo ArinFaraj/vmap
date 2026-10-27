@@ -68,28 +68,6 @@ class VectorLayers {
     _ => _fill(vector),
   };
 
-  /// See [StyleSheet.footprints]. Widens each footprint's bucket by a zoom,
-  /// so tiles past the footprints' range still carry them.
-  Map<int, ExtrusionLayer> footprints() {
-    final found = <int, ExtrusionLayer>{};
-    for (final (p, layer) in layers.indexed) {
-      if (layer is! FillLayer || layer.extruded) continue;
-      final flat = buckets[layer.bucket];
-      for (final building in extrusions) {
-        final tall = buckets[building.bucket];
-        if (layer.maxZoom != building.minZoom ||
-            flat.source != tall.source ||
-            flat.sourceLayer != tall.sourceLayer) {
-          continue;
-        }
-        found[p] = building;
-        flat.maxZoom = math.max(flat.maxZoom, layer.maxZoom + 1);
-        break;
-      }
-    }
-    return found;
-  }
-
   void _symbol(VectorLayerJson vector) {
     final VectorLayerJson(:layer, :source, :sourceLayer, :filter) = vector;
     final paint = layer.paint;

@@ -11,6 +11,21 @@
   MapLibre does; the tiles of zoom 0 to 2 are kept, so a flight over
   ground not loaded never shows it bare; and a raster tile shaded again or
   replaced keeps its last picture until the new one is on the GPU.
+- Tiles load as MapLibre loads them: the pieces cut from one deepest tile
+  share one download; a tile the camera has left is called off, and a
+  request that times out is aborted, so the view's own tiles get the
+  connection; and raster and terrain tiles are kept up to five zooms of
+  the screen's tiles, longest unused first, instead of all dropped at once.
+- A missing tile is drawn from its nearest loaded ancestor, cut to its
+  square, under whichever of its finer tiles are loaded, as MapLibre
+  retains both; a coarse stand-in no longer shows its water through the
+  finer tiles beside it, nor its buildings inside theirs.
+- Layers and buildings show and hide at their zoom range at once, as
+  MapLibre's do, instead of fading; a style's flat building layer ends at
+  its own maxzoom.
+- Raised ground keeps showing a tile's last picture until the new one is
+  on the GPU, and a tile new to the view shows its ancestor's part until
+  then, instead of a frame without its hillshade.
 - Heatmaps stay drawn while their tiles load, without counting heat twice.
 - Changing the overlay's paint keeps the map's labels.
 - The globe and raised ground cost less to draw each frame.

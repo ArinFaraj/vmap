@@ -20,18 +20,36 @@ class Net {
 
   final HttpClient _client;
 
+  /// Fetches [url]. The request is aborted when [cancel] is cancelled or
+  /// [timeout] passes.
   Future<Reply> get(
     String url,
     Map<String, String> headers, {
     Duration timeout = const Duration(seconds: 20),
-  }) => () async {
+    Cancel? cancel,
+  }) async {
+    if (cancel?.cancelled ?? false) throw const Cancelled();
     final request = await _client.getUrl(Uri.parse(url));
     headers.forEach(request.headers.set);
-    final response = await request.close();
-    final builder = BytesBuilder(copy: false);
-    await response.forEach(builder.add);
-    return Reply(response.statusCode, builder.takeBytes());
-  }().timeout(timeout);
+    var timedOut = false;
+    final timer = Timer(timeout, () {
+      timedOut = true;
+      request.abort(TimeoutException('No answer from $url', timeout));
+    });
+    cancel?.onCancel(() => request.abort(const Cancelled()));
+    try {
+      final response = await request.close();
+      final builder = BytesBuilder(copy: false);
+      await response.forEach(builder.add);
+      return Reply(response.statusCode, builder.takeBytes());
+    } catch (_) {
+      if (timedOut) throw TimeoutException('No answer from $url', timeout);
+      if (cancel?.cancelled ?? false) throw const Cancelled();
+      rethrow;
+    } finally {
+      timer.cancel();
+    }
+  }
 
   void close() => _client.close(force: true);
 }

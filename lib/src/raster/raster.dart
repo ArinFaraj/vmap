@@ -26,6 +26,9 @@ class RasterTile {
   int failures = 0;
   bool loading = false;
 
+  /// Calls off the download of a tile that is [loading].
+  Cancel? cancel;
+
   /// The image [image] took the place of, drawn on the GPU until [image]
   /// is there too.
   ui.Image? replaced;
@@ -182,9 +185,10 @@ sealed class RasterDrawing<L extends RasterLayer> {
   }) {
     drawn.clear();
     final styleZoom = context.zoom;
-    if (styleZoom < layer.minZoom || styleZoom >= layer.maxZoom) return;
-    final opacity = (asNumber(layer.opacity(context)) ?? 1).clamp(0.0, 1.0);
-    if (opacity <= 0) return;
+    final opacity = styleZoom < layer.minZoom || styleZoom >= layer.maxZoom
+        ? 0.0
+        : (asNumber(layer.opacity(context)) ?? 1).clamp(0.0, 1.0);
+    if (opacity <= 0) return hidden();
     layerPaint.color = ui.Color.fromRGBO(255, 255, 255, opacity);
     draw(canvas, context, zoom, origin, size, view, drape: drape);
   }
@@ -199,6 +203,10 @@ sealed class RasterDrawing<L extends RasterLayer> {
     MapView view, {
     required bool drape,
   });
+
+  /// Called for a frame the layer does not show in.
+  @protected
+  void hidden() {}
 
   void close() {
     closed = true;
@@ -655,20 +663,38 @@ abstract class TileDrawing<L extends TiledRasterLayer>
         meanwhile: meanwhile,
       );
     }
+    callOffUnused();
     final fadedNow = fading;
     fading = fadedNow || _fadedBefore;
     _fadedBefore = fadedNow;
-    if (heldTiles.length > maxTiles) {
-      final stale = [
-        for (final e in heldTiles.entries)
-          if (e.value.usedFrame != frameNumber &&
-              !e.value.loading &&
-              tileIdOf(e.key).z > keptZoom)
-            e.key,
-      ];
-      for (final key in stale) {
-        heldTiles.remove(key)?.image?.dispose();
-      }
+    final across = (size.width / layer.tileSize).ceil() + 1;
+    final down = (size.height / layer.tileSize).ceil() + 1;
+    trimTiles(across * down * _cachedZooms);
+  }
+
+  /// How many zoom levels of the screen's tiles are kept, as MapLibre sizes
+  /// its tile cache.
+  static const _cachedZooms = 5;
+
+  /// Lets go of the tiles longest out of use until at most [keep] are held,
+  /// and never fewer than [maxTiles]; [dropped] is told of each. Those of
+  /// the [keptZoom] coarsest levels stay, as they stand in anywhere.
+  @protected
+  void trimTiles(int keep, [void Function(int key)? dropped]) {
+    keep = math.max(keep, maxTiles);
+    if (heldTiles.length <= keep) return;
+    final idle = [
+      for (final e in heldTiles.entries)
+        if (e.value.usedFrame != frameNumber &&
+            !e.value.loading &&
+            tileIdOf(e.key).z > keptZoom)
+          e,
+    ]..sort((a, b) => a.value.usedFrame - b.value.usedFrame);
+    for (final e in idle) {
+      if (heldTiles.length <= keep) break;
+      heldTiles.remove(e.key);
+      e.value.image?.dispose();
+      dropped?.call(e.key);
     }
   }
 
@@ -824,8 +850,9 @@ abstract class TileDrawing<L extends TiledRasterLayer>
     if (tile.resting(clock.elapsedMilliseconds)) return;
     tile.loading = true;
     _loading++;
+    final cancel = tile.cancel = Cancel();
     try {
-      final bytes = await tileStore!.read(z, x, y);
+      final bytes = await tileStore!.read(z, x, y, cancel: cancel);
       if (bytes == null) {
         tile.missing = true;
         if (!closed) onLoaded();
@@ -841,6 +868,8 @@ abstract class TileDrawing<L extends TiledRasterLayer>
       decodedFrom(frame.image, bytes);
       await keepDecoded(tile, frame.image, z, x, y);
       tile.failures = 0;
+    } on Cancelled {
+      // Asked for again whenever it is in view again.
     } catch (e) {
       tile
         ..failedAtMs = clock.elapsedMilliseconds
@@ -848,7 +877,27 @@ abstract class TileDrawing<L extends TiledRasterLayer>
       if (!closed) onError?.call(e);
     } finally {
       tile.loading = false;
+      tile.cancel = null;
       _loading--;
+    }
+  }
+
+  @override
+  void hidden() {
+    frameNumber++;
+    callOffUnused();
+  }
+
+  /// Calls off the downloads of tiles out of view for a third of a second, as
+  /// MapLibre aborts the tiles it no longer keeps: few are fetched at once,
+  /// and one the camera has left would keep the view's own waiting.
+  @protected
+  void callOffUnused() {
+    if (_loading == 0) return;
+    for (final tile in heldTiles.values) {
+      if (tile.loading && frameNumber - tile.usedFrame > 20) {
+        tile.cancel?.cancel();
+      }
     }
   }
 

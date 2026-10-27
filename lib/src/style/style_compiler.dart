@@ -64,7 +64,6 @@ class StyleCompiler {
     }
     final runs = _runs();
     final sprite = json['sprite'];
-    final footprints = _vectors.footprints();
     return StyleSheet(
       terrain: _terrain(),
       sky: json['sky'] == null ? null : SkyPaint.of(json['sky']),
@@ -96,7 +95,6 @@ class StyleCompiler {
       glyphs: jsonString(json['glyphs']),
       rasters: _rasters,
       extrusions: _vectors.extrusions,
-      footprints: footprints,
       attributions: {
         for (final s in _sources.values)
           if (s is Map && s['attribution'] is String)
