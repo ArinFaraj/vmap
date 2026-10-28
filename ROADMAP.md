@@ -34,6 +34,16 @@ What the API looks like and what should change before release:
 - **Publishing 0.27.0, 2026-10-26**, on Arin's yes, with step 6 still open
   for a real iPhone, Windows, Linux and Firefox: those come in 0.2's run on
   real devices.
+- **Done, 2026-10-28:** the labels' per-frame cost cut and the frames
+  paced by what they cost, for the web above all: a frame no longer works
+  out each label's text key unless the zoom crosses a level, a label's
+  placement is read a frame's share at a time instead of all at once every
+  90 ms, and the shares a frame gives tiles and label text follow the last
+  twenty frames (see [doc/benchmark.md](doc/benchmark.md#frame-pacing)).
+  The web backend's per-draw work went too: a vertex array object is keyed
+  by a record rather than a string built for every draw, and a uniform
+  slot's block and locations are resolved once instead of per bind. The
+  numbers are not re-measured on a device yet.
 - Work happens on the `engine` branch of `ArinFaraj/vmap`.
 
 Keep this section current: update it whenever a step starts or finishes.

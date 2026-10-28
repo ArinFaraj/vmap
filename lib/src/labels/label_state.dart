@@ -177,6 +177,18 @@ class LabelState {
 
   /// The key [sprite] was drawn under.
   String? spriteKey;
+
+  /// The style zoom [spriteKey] was worked out at, or [keyStale] when it is
+  /// not known to still hold. The key reads the layer's layout expressions,
+  /// which cost more than the comparison, so a frame skips the working out
+  /// while the zoom stays within one level: it changes only when the zoom
+  /// crosses a level, or the label's writing mode or anchor side changes.
+  double spriteKeyZoom = keyStale;
+
+  /// A [spriteKeyZoom] no zoom equals, for a key that must be worked out
+  /// again.
+  static const double keyStale = -1e9;
+
   double opacity = 0;
   bool placed = false;
   int seenPass = -1;

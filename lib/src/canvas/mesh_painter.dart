@@ -16,7 +16,13 @@ import '../render/zoom_history.dart';
 /// What one frame may still spend on the UI thread preparing tiles and
 /// widening lines before the rest waits for the next frame.
 class FrameBudget {
+  /// What a frame may spend when nothing says otherwise.
   static const int micros = 1500;
+
+  /// What this frame may spend: the engine lowers it while frames run long,
+  /// so a slow device keeps its frames on time, and raises it while they
+  /// run short, so ground not yet drawn fills in sooner.
+  int limit = micros;
 
   int spent = 0;
 
@@ -27,9 +33,10 @@ class FrameBudget {
   /// before they are widened again.
   bool zooming = false;
 
-  bool get spentUp => spent >= micros;
+  bool get spentUp => spent >= limit;
 
-  void start({required bool zooming}) {
+  void start({required bool zooming, int? limit}) {
+    if (limit != null) this.limit = limit;
     spent = 0;
     stale = false;
     this.zooming = zooming;

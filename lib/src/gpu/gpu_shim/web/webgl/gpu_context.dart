@@ -65,9 +65,11 @@ final class WebGlContext extends GpuContext {
 
   /// Cached vertex-array objects keyed by (pipeline, vertex streams, index
   /// buffer), in least-recently-used order; see WebGlRenderPass._applyVertexState.
+  /// The keys are records where they can be, which compare without a string
+  /// being built for every draw.
   static const int _kMaxCachedVaos = 512;
-  final Map<String, web.WebGLVertexArrayObject> _vaoCache =
-      <String, web.WebGLVertexArrayObject>{};
+  final Map<Object, web.WebGLVertexArrayObject> _vaoCache =
+      <Object, web.WebGLVertexArrayObject>{};
 
   int _maxSupportedAnisotropy = 1;
 

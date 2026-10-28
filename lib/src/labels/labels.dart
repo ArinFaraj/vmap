@@ -92,7 +92,14 @@ class LabelEngine {
   /// Places and colours every label again on the next frame, each keeping
   /// how far it has faded in, as MapLibre keeps them through a change of
   /// paint. A sprite whose colours changed is drawn again by its key.
-  void restyle() => _placeAgain = true;
+  void restyle() {
+    // A change of paint changes the keys, which are kept by zoom while the
+    // style stays as it is.
+    for (final st in _allStates) {
+      st.spriteKeyZoom = LabelState.keyStale;
+    }
+    _placeAgain = true;
+  }
 
   /// Glyph ranges asked for and not here yet, which labels wait on.
   int get glyphsLoading => _sprites.ranges?.pending ?? 0;
@@ -131,10 +138,24 @@ class LabelEngine {
   int _queueAt = 0, _considered = 0, _fitKey = 0;
   double _queueZoom = 0;
 
+  /// Reading the labels of the tiles in view for a pass, which a crowded map
+  /// spends several milliseconds on: taken a frame's share at a time, list
+  /// by list, so a pass never arrives all at once in one frame. Set while a
+  /// pass is still being read.
+  bool _collecting = false;
+  final List<List<LabelCandidate>> _passLists = [];
+  int _listAt = 0, _candAt = 0;
+  double _passWorld = 0, _passStyleZoom = 0, _passZoom = 0;
+  ui.Size _passSize = ui.Size.zero;
+
   /// Placement work a frame may do: a pass of a crowded map takes several
   /// milliseconds, which done at once would make every placement's frame
   /// late, so it is spread over frames as MapLibre's pausable placement is.
+  /// The engine lowers the share it gives a frame while the map runs long
+  /// and raises it while the map runs short, so a busy frame never pays for
+  /// placement as well as everything else.
   static const int _placeSliceMicros = 1000;
+  int placeSliceMicros = _placeSliceMicros;
   int _placedAtMs = -1000;
   double _placedZoom = -1;
   int _placedSourcesKey = 0;
@@ -189,7 +210,11 @@ class LabelEngine {
   /// it is drawn again, and sharpened once the zoom rests.
   bool _zooming = false;
   int lastRasterMicros = 0;
-  int get stateCount => _allStates.length;
+
+  /// The labels the engine keeps state for, which the statistics count
+  /// every frame: kept as they come and go rather than walked.
+  int get stateCount => _stateTotal;
+  int _stateTotal = 0;
 
   /// Every map label as last placed, for tools that compare placement with
   /// another renderer: its layer, text, icon, point as fractions of the
@@ -255,6 +280,7 @@ class LabelEngine {
     }
     final made = LabelState(c);
     same.add(made);
+    _stateTotal++;
     return made;
   }
 
@@ -346,9 +372,12 @@ class LabelEngine {
     _sprites.clear();
     _painter.dropPins();
     _states.clear();
+    _stateTotal = 0;
     _frameStates.clear();
     _live.clear();
     _queue.clear();
+    _passLists.clear();
+    _collecting = false;
     _placing = _pass;
     _placeAgain = true;
   }
@@ -393,7 +422,13 @@ class LabelEngine {
         sourcesKey != _placedSourcesKey;
     // A frame after the camera stops puts the labels back on the pixels.
     var pending = !_view.still;
-    if (_placing != _pass) {
+    if (_collecting) {
+      // A pass is still being read, a share of it a frame.
+      final t0 = _clock.elapsedMicroseconds;
+      _collectSome();
+      lastPlaceMicros = _clock.elapsedMicroseconds - t0;
+      pending = true;
+    } else if (_placing != _pass) {
       final t0 = _clock.elapsedMicroseconds;
       _placeSome(size);
       lastPlaceMicros = _clock.elapsedMicroseconds - t0;
@@ -424,14 +459,27 @@ class LabelEngine {
     bool timeUp() =>
         _clock.elapsedMicroseconds - rasterStart > rasterBudgetMicros;
     final layoutZoom = zoom - 1 + zoomOffset;
+    // The zoom the labels' keys were worked out at. A key stays the same
+    // while the zoom stays within one level, so working it out again — which
+    // reads the layer's layout expressions and builds a string — is skipped
+    // for the frames between two levels. On a crowded map that is most of
+    // what a frame spends on labels.
+    final keyZoom = _style.layoutZoom;
     for (final st in _frameStates) {
       if (st.sprite?.dropped ?? false) {
         st.sprite = _sprites[_style.spriteKey(st)];
+        st.spriteKeyZoom = LabelState.keyStale;
       }
       if (!st.placed || st.seenPass < _pass) continue;
       if (!st.candidate.hasText || !st.showText) continue;
+      if (st.sprite != null && !st.resize && st.spriteKeyZoom == keyZoom) {
+        continue;
+      }
       final key = _style.spriteKey(st);
-      if (st.sprite != null && !st.resize && st.spriteKey == key) continue;
+      if (st.sprite != null && !st.resize && st.spriteKey == key) {
+        st.spriteKeyZoom = keyZoom;
+        continue;
+      }
       var cached = _sprites[key];
       if (identical(cached, st.sprite)) cached = null;
       if (cached == null &&
@@ -484,6 +532,7 @@ class LabelEngine {
       final seen = st.seenPass >= _pass;
       if (st.sprite?.dropped ?? false) {
         st.sprite = _sprites[_style.spriteKey(st)];
+        st.spriteKeyZoom = LabelState.keyStale;
       }
       final sprite = st.sprite;
       final inRange = _style.inRange(st.candidate, styleZoom);
@@ -581,7 +630,8 @@ class LabelEngine {
     if (sprite == null) return false;
     st
       ..sprite = sprite
-      ..spriteKey = key;
+      ..spriteKey = key
+      ..spriteKeyZoom = _style.layoutZoom;
     _placeAgain = true;
     return true;
   }
@@ -622,8 +672,11 @@ class LabelEngine {
       ..perspective = perspective;
   }
 
-  /// Decides which labels show for this camera. Labels without an image yet
-  /// are placed by an estimated size and drawn once rasterized.
+  /// Starts deciding which labels show for this camera: the first share of
+  /// reading them is taken now, and the rest over the frames that follow,
+  /// [placeSliceMicros] at a time, so a crowded map never makes one frame
+  /// wait for its whole placement. Labels without an image yet are placed by
+  /// an estimated size and drawn once rasterized.
   void _place(
     Iterable<List<LabelCandidate>> sources,
     double zoom,
@@ -636,48 +689,93 @@ class LabelEngine {
     occlusion.startPass();
     final styleZoom = zoom - 1 + zoomOffset;
     _style.layoutZoom = styleZoom.floorToDouble();
-    final states = _frameStates..clear();
+    _frameStates.clear();
+    // The lists of labels are kept for as long as the pass takes, so a tile
+    // that comes or goes between frames does not change what it reads.
+    _passLists
+      ..clear()
+      ..addAll(sources);
+    _listAt = 0;
+    _candAt = 0;
+    _passWorld = world;
+    _passStyleZoom = styleZoom;
+    _passZoom = zoom;
+    _passSize = size;
+    _collecting = true;
+    _collectSome();
+  }
+
+  /// Reads the labels of the lists in view for the pass under way until a
+  /// frame's share of time is spent, then starts placing them.
+  void _collectSome() {
+    final states = _frameStates;
+    final styleZoom = _passStyleZoom;
+    final world = _passWorld;
+    final size = _passSize;
+    final until = _clock.elapsedMicroseconds + placeSliceMicros;
+    // The pass reads its labels at the zoom it started at, whatever the
+    // frames since have drawn.
+    _style.context.zoom = styleZoom;
     // As MapLibre's viewportPadding: its collision grid reaches this far
     // past the screen, and a label whose box reaches into it is placed.
     const margin = 100.0;
-    for (final list in sources) {
-      for (final c in list) {
-        if (!_style.inRange(c, styleZoom)) continue;
-        _style.stand(c);
-        _view.project(c.worldX, c.worldY);
-        _view.standAt(0);
-        final sx = _view.x;
-        final sy = _view.y;
-        if (_view.ratio < _perspectiveCutoff) continue;
-        // A road name drawn as an image is not laid on tilted ground.
-        final tilted = _view.tilted;
-        if (!_glyphText &&
-            (tilted.pitch > 0 || tilted.globe != null) &&
-            c.road != null) {
-          continue;
-        }
-        final reach = margin + _style.reach(c, styleZoom);
-        if (sx < -reach ||
-            sy < -reach ||
-            sx > size.width + reach ||
-            sy > size.height + reach) {
-          continue;
-        }
-        final st = _stateFor(c, world);
-        if (st == null) continue;
-        st
-          ..seenPass = _placing
-          ..perspective = _view.ratio
-          ..iconOnGround = _style.symbolOf(c)?.iconOnGround ?? false
-          ..candidate = c
-          // Ties keep the order the tiles list them in, as MapLibre
-          // places features.
-          ..sortKey =
-              (c.rank - (st.placed ? _style.rules.placedLead : 0)) * 65536 +
-              math.min(states.length, 65535);
-        states.add(st);
+    while (_listAt < _passLists.length) {
+      // Somewhere back from a slice's end, so the clock is read once in a
+      // while rather than for every label; 64 labels is well under the
+      // smallest share of a frame.
+      if (_candAt & 63 == 0 && _clock.elapsedMicroseconds > until) return;
+      final list = _passLists[_listAt];
+      if (_candAt >= list.length) {
+        _listAt++;
+        _candAt = 0;
+        continue;
       }
+      final c = list[_candAt++];
+      if (!_style.inRange(c, styleZoom)) continue;
+      _style.stand(c);
+      _view.project(c.worldX, c.worldY);
+      _view.standAt(0);
+      final sx = _view.x;
+      final sy = _view.y;
+      if (_view.ratio < _perspectiveCutoff) continue;
+      // A road name drawn as an image is not laid on tilted ground.
+      final tilted = _view.tilted;
+      if (!_glyphText &&
+          (tilted.pitch > 0 || tilted.globe != null) &&
+          c.road != null) {
+        continue;
+      }
+      final reach = margin + _style.reach(c, styleZoom);
+      if (sx < -reach ||
+          sy < -reach ||
+          sx > size.width + reach ||
+          sy > size.height + reach) {
+        continue;
+      }
+      final st = _stateFor(c, world);
+      if (st == null) continue;
+      st
+        ..seenPass = _placing
+        ..perspective = _view.ratio
+        ..iconOnGround = _style.symbolOf(c)?.iconOnGround ?? false
+        ..candidate = c
+        // Ties keep the order the tiles list them in, as MapLibre
+        // places features.
+        ..sortKey =
+            (c.rank - (st.placed ? _style.rules.placedLead : 0)) * 65536 +
+            math.min(states.length, 65535);
+      states.add(st);
     }
+    _placeCollected();
+  }
+
+  /// Starts placing what [LabelEngine._collectSome] read, a frame's share at
+  /// a time.
+  void _placeCollected() {
+    final size = _passSize, zoom = _passZoom;
+    _collecting = false;
+    _passLists.clear();
+    final states = _frameStates;
     _order.sortForPlacement(
       states,
       byTile: _style.rules.placesByTile,
@@ -709,7 +807,7 @@ class LabelEngine {
     final zoom = _queueZoom, fitKey = _fitKey;
     final styleZoom = zoom - 1 + zoomOffset;
     _style.layoutZoom = styleZoom.floorToDouble();
-    final until = _clock.elapsedMicroseconds + _placeSliceMicros;
+    final until = _clock.elapsedMicroseconds + placeSliceMicros;
     var considered = _considered;
     while (_queueAt < _queue.length) {
       if (_clock.elapsedMicroseconds > until) {
@@ -818,10 +916,14 @@ class LabelEngine {
     _view.standAt(0);
     _queue.clear();
     _pass = _placing;
+    var gone = 0;
     _states.removeWhere((_, same) {
+      final before = same.length;
       same.removeWhere((st) => st.seenPass != _pass && !st.live);
+      gone += before - same.length;
       return same.isEmpty;
     });
+    if (gone != 0) _stateTotal -= gone;
     _sprites.trim(_pass);
   }
 
@@ -841,7 +943,8 @@ class LabelEngine {
     if (st.spriteKey != key || st.sprite == null) {
       st
         ..sprite = _sprites[key]
-        ..spriteKey = key;
+        ..spriteKey = key
+        ..spriteKeyZoom = _style.layoutZoom;
     }
     final sprite = st.sprite;
     st
@@ -874,9 +977,13 @@ class LabelEngine {
       ..placed = false
       ..showText = c.hasText
       ..showIcon = false;
+    // A point label's side is part of the look its text is drawn in, so a
+    // placement that turns it to another side asks for the key afresh.
+    final sideBefore = st.side;
     final placed = road != null
         ? _road.place(st, road, layer, sprite, size, styleZoom, fitKey)
         : _points.place(st, layer, size, _style.context..zoom = styleZoom);
+    if (st.side != sideBefore) st.spriteKeyZoom = LabelState.keyStale;
     if (placed) _showPlaced(st, sprite);
     return placed;
   }

@@ -25,9 +25,8 @@ import 'style/transitions.dart';
 import 'style/style_model.dart';
 import 'tiles/built_tile.dart';
 import 'tiles/tiles.dart';
+import 'render/frame_pacing.dart';
 import 'render/zoom_history.dart';
-
-const int _labelBudgetMicros = 1000;
 
 /// Saves [canvas] and turns it so the unrolled picture of [view] lands
 /// where its [MapView.roll] puts it.
@@ -113,6 +112,16 @@ class FramePainter {
   final FrameBudget _budget = FrameBudget();
   late final MeshPainter _meshes = MeshPainter(_budget, _stats, _context);
   late final CanvasMap _canvas = CanvasMap(_meshes);
+
+  /// How long the last frames took, which the work that may wait is shared
+  /// out by: smaller shares while the map runs long, larger ones while it
+  /// runs short, so no frame spends so much on tiles or label text that the
+  /// one after it comes late.
+  final FramePacing _pacing = FramePacing();
+
+  /// The tiles in view, in one list kept from frame to frame so a frame does
+  /// not build it anew.
+  final List<TileDraw> _shown = [];
 
   /// Frames painted, which tiles are aged by.
   int frame = 0;
@@ -208,7 +217,11 @@ class FramePainter {
       dashFade: _zoomHistory.fade,
     );
     _backdrop.startFrame();
-    _budget.start(zooming: (camera.zoom - _lastZoom).abs() > 0.002);
+    _budget.start(
+      zooming: (camera.zoom - _lastZoom).abs() > 0.002,
+      limit: _pacing.prepMicros,
+    );
+    _labels.placeSliceMicros = _pacing.placeSliceMicros;
     final gpu = _gpu;
     _use(gpu != null && gpu.supports(sheet) ? gpu : _canvas);
     final renderer = current;
@@ -464,9 +477,12 @@ class FramePainter {
         _rasters.any((r) => r is TileDrawing && r.fading);
     f.labelsStarted = _clock.elapsedMicroseconds;
     if (!f.labelsVisible) return;
-    final shown = [
-      for (final s in _sources) ...[...s.ideal, ...s.fallback],
-    ];
+    final shown = _shown..clear();
+    for (final s in _sources) {
+      shown
+        ..addAll(s.ideal)
+        ..addAll(s.fallback);
+    }
     _labels.occlusion.update(view, shown, sheet, f.styleZoom);
     if (_transitions.isNotEmpty &&
         _transitions.touches({for (final s in sheet.symbols) s.id})) {
@@ -491,7 +507,11 @@ class FramePainter {
           _markerLabels.length,
       background: sheet.background(_context)?.toArgb() ?? 0xFFFFFFFF,
       dt: f.dt,
-      rasterBudgetMicros: _budget.spent > 1000 ? 1 : _labelBudgetMicros,
+      // Text drawn anew waits a frame when tiles took this one's time
+      // already, so the two costs never land on the same frame.
+      rasterBudgetMicros: _budget.spent > 1000
+          ? 1
+          : _pacing.labelRasterMicros,
       styleNowMs: _clock.elapsedMilliseconds.toDouble(),
       zooming: _budget.zooming,
       terrain: f.terrain,
@@ -559,6 +579,13 @@ class FramePainter {
       }
       unpack = math.max(unpack, s.pool.takeMaxUnpackMicros());
     }
+    // What this frame cost decides how much of the next one may wait: the
+    // average of the last twenty, so a single slow frame changes nothing.
+    _pacing.addFrame(finished - now);
+    var rasterLoading = 0;
+    for (final r in _rasters) {
+      if (r is TileDrawing) rasterLoading += r.waiting;
+    }
     final timings = _stats.timings
       ..frame(
         paint: finished - now,
@@ -576,6 +603,7 @@ class FramePainter {
             'glyphs=${_labels.glyphsRasterized}/${_labels.glyphRasterMicros} '
             'pages=${_labels.glyphPageCount} '
             'buildings=$_buildingMicros '
+            'pressure=${_pacing.pressure} '
             'z=${f.camera.zoom.toStringAsFixed(2)} '
             'tiles=$ideal+$fallback cached=$cached',
       );
@@ -596,13 +624,8 @@ class FramePainter {
       ..tilesCached = cached
       ..labelStates = _labels.stateCount
       ..labelSprites = _labels.spriteCount
-      ..tilesLoading =
-          loading +
-          _rasters.whereType<TileDrawing>().fold<int>(
-            0,
-            (n, r) => n + r.waiting,
-          ) +
-          (_ground.tiles?.waiting ?? 0)
+      ..pressure = _pacing.pressure
+      ..tilesLoading = loading + rasterLoading + (_ground.tiles?.waiting ?? 0)
       ..resourcesLoading = _resources.loading + _labels.glyphsLoading;
     for (final s in _sources) {
       // As MapLibre sizes its tile cache: about five screens of tiles, so
@@ -637,7 +660,7 @@ class FramePainter {
     tile.prepare(
       scale,
       _clock,
-      started + FrameBudget.micros - _budget.spent,
+      started + _budget.limit - _budget.spent,
       renderer: current,
     );
     final spent = _clock.elapsedMicroseconds - started;

@@ -112,6 +112,34 @@ slowdown may not slow a worker as much as the page, which would flatter
 the worker. It has not been measured on a real slow device or with tiles
 coming from the network for the first time.
 
+### Frame pacing
+
+The frames skipped above are not all lost to the same thing. Two of them —
+a tile being unpacked for the GPU, and label text being drawn anew after a
+zoom — can wait a frame or two without the map looking worse for it, and
+those are what `FramePacing` (in `lib/src/render/`) limits. Every frame
+reports what it cost; the average of the last twenty picks one of three
+levels, each handing out a different share of the next frame:
+
+| pressure | frame | tile preparation | label text | label placement |
+|---|---|---|---|---|
+| 0 | under 7 ms | 2.5 ms | 2 ms | 1.5 ms |
+| 1 | 7 to 12 ms | 1.5 ms | 1 ms | 1 ms |
+| 2 | over 12 ms | 0.75 ms | 0.5 ms | 0.6 ms |
+
+A level is entered at one average and left at another (2 is left under
+10 ms, 1 under 7 ms), so a map drawing at the edge of a level does not
+switch back and forth, and the first frames of a map — its slowest — only
+count once there are twenty of them. `VmapStats.pressure` reports the
+level, and the benchmark app prints it with the rest of a lap, so a run
+that went slow can be read for whether it was the map's drawing or the
+work that was meant to wait.
+
+Nothing above has been measured again since these changes: the table is
+what the levels hand out, not what a lap drew. Run `tool/bench_device.sh`
+or the browser tour and read `pressure`, `skipped` and `worst gap`, as the
+tables above were read.
+
 ## The comparison picture
 
 ![vmap and vector_map_tiles drawing the same style](images/compare.png)
