@@ -67,6 +67,11 @@ class MapPass {
 
   late final double _perMetre = perMetreAt(_view);
 
+  /// Counts a draw for the statistics, which the canvas renderer counts
+  /// its own by: on the web a draw costs the browser's GPU process a check
+  /// of every binding, so how many a frame makes is what its speed turns on.
+  void _count() => _frame.stats.drawCalls++;
+
   bool _clips(int source) =>
       !adding &&
       globe == null &&
@@ -122,6 +127,7 @@ class MapPass {
           _device.host.emplace(_device.blocks.frameBytes),
         )
         ..draw(6);
+      _count();
     }
 
     void cover(int source, bool clear) {
@@ -222,6 +228,7 @@ class MapPass {
       ..bindTexture(_device.pipelines.heatRamp!, ramp, sampler: linear)
       ..draw(6)
       ..clearBindings();
+    _count();
     _marked = -1;
   }
 
@@ -370,16 +377,19 @@ class MapPass {
       );
     }
 
-    void drawIndices(int first, int count) => renderPass
-      ..bindIndexBuffer(
-        gpu.BufferView(
-          data.indexBuffer!,
-          offsetInBytes: data.indexOffset + first * 4,
-          lengthInBytes: count * 4,
-        ),
-        gpu.IndexType.int32,
-      )
-      ..drawIndexed(count);
+    void drawIndices(int first, int count) {
+      renderPass
+        ..bindIndexBuffer(
+          gpu.BufferView(
+            data.indexBuffer!,
+            offsetInBytes: data.indexOffset + first * 4,
+            lengthInBytes: count * 4,
+          ),
+          gpu.IndexType.int32,
+        )
+        ..drawIndexed(count);
+      _count();
+    }
 
     void drawRange(int from, int to) {
       for (var s = 0; s < segments.length; s += 3) {
@@ -595,6 +605,7 @@ class MapPass {
       )
       ..draw(6)
       ..clearBindings();
+    _count();
     _marked = -1;
   }
 
@@ -674,6 +685,7 @@ class MapPass {
             gpu.IndexType.int32,
           )
           ..drawIndexed(b.indexCount);
+        _count();
       }
     }
   }

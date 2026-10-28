@@ -370,26 +370,8 @@ final class WebGlRenderPass extends RenderPass {
     }
     final gl = _gpuContext._gl;
     final pipeline = _boundPipeline!;
-    final key = StringBuffer()..write(identityHashCode(pipeline));
-    for (final (view, slot, instanceRate) in _pendingVertexBindings) {
-      if (instanceRate) continue;
-      key
-        ..write('|')
-        ..write(view.buffer.webGl._serial)
-        ..write(':')
-        ..write(view.offsetInBytes)
-        ..write(':')
-        ..write(slot);
-    }
     final indexView = needsIndex ? _indexBufferView : null;
-    if (indexView != null) {
-      key
-        ..write('#')
-        ..write(indexView.buffer.webGl._serial)
-        ..write(':')
-        ..write(indexView.offsetInBytes);
-    }
-    final cacheKey = key.toString();
+    final cacheKey = _vaoKey(pipeline, indexView);
     final cache = _gpuContext._vaoCache;
     // Remove-and-reinsert keeps the map in least-recently-used order.
     var vao = cache.remove(cacheKey);
@@ -421,6 +403,70 @@ final class WebGlRenderPass extends RenderPass {
     }
   }
 
+  /// The key a vertex array object is kept under: the pipeline, each vertex
+  /// stream bound to it with its offset and slot, and the index stream.
+  ///
+  /// A record for the one or two vertex streams a pipeline binds, which
+  /// compares without building a string: a frame makes hundreds of draws,
+  /// and a string for every one of them cost more than binding the streams
+  /// did. A pipeline binding more streams falls back to a string over the
+  /// whole set, which none of vmap's own does.
+  Object _vaoKey(WebGlRenderPipeline pipeline, BufferView? indexView) {
+    var streams = 0;
+    for (final binding in _pendingVertexBindings) {
+      if (!binding.$3) streams++;
+    }
+    final indexStream = indexView?.buffer.webGl._serial ?? -1;
+    final indexOffset = indexView?.offsetInBytes ?? -1;
+    if (streams <= 2) {
+      var stream0 = -1, offset0 = -1, slot0 = -1;
+      var stream1 = -1, offset1 = -1, slot1 = -1;
+      var at = 0;
+      for (final (view, slot, instanceRate) in _pendingVertexBindings) {
+        if (instanceRate) continue;
+        if (at++ == 0) {
+          stream0 = view.buffer.webGl._serial;
+          offset0 = view.offsetInBytes;
+          slot0 = slot;
+        } else {
+          stream1 = view.buffer.webGl._serial;
+          offset1 = view.offsetInBytes;
+          slot1 = slot;
+        }
+      }
+      return (
+        pipeline: pipeline.cacheId,
+        stream0: stream0,
+        offset0: offset0,
+        slot0: slot0,
+        stream1: stream1,
+        offset1: offset1,
+        slot1: slot1,
+        indexStream: indexStream,
+        indexOffset: indexOffset,
+      );
+    }
+    final key = StringBuffer()..write(pipeline.cacheId);
+    for (final (view, slot, instanceRate) in _pendingVertexBindings) {
+      if (instanceRate) continue;
+      key
+        ..write('|')
+        ..write(view.buffer.webGl._serial)
+        ..write(':')
+        ..write(view.offsetInBytes)
+        ..write(':')
+        ..write(slot);
+    }
+    if (indexView != null) {
+      key
+        ..write('#')
+        ..write(indexView.buffer.webGl._serial)
+        ..write(':')
+        ..write(indexView.offsetInBytes);
+    }
+    return key.toString();
+  }
+
   @override
   void bindIndexBuffer(BufferView bufferView, IndexType indexType) {
     // Deferred: ELEMENT_ARRAY_BUFFER binding is VAO state, applied (through
@@ -435,13 +481,14 @@ final class WebGlRenderPass extends RenderPass {
     if (pipeline == null) {
       throw StateError('bindUniform called before bindPipeline');
     }
-    final struct = slot.shader.webGl._uniformStructs[slot.uniformName];
+    final binding = pipeline._slotBinding(slot);
+    final struct = binding.struct;
     if (struct == null) {
       // Match the native backend, which throws when the shader has no uniform
       // slot of this name. Swallowing it silently binds nothing and the draw
       // reads stale uniform state, wrong only on web and only for some draw
-      // orders. The lookup reads the shader's live reflection, so it stays
-      // correct across hot reload.
+      // orders. A pipeline is rebuilt when a shader is recompiled, so what is
+      // kept per slot is as live as the reflection it came from.
       throw StateError(
         'Failed to bind uniform. This shader declares no uniform block named '
         '"${slot.uniformName}". A block binds by its type name, not its '
@@ -457,7 +504,7 @@ final class WebGlRenderPass extends RenderPass {
     // layout matches std140 (it is what the reflection metadata describes),
     // and HostBuffer offsets are 256-aligned, satisfying WebGL2's
     // UNIFORM_BUFFER_OFFSET_ALIGNMENT.
-    final blockBinding = pipeline._structBlockBindings[struct.name];
+    final blockBinding = binding.blockBinding;
     if (blockBinding != null) {
       final glBuffer = bufferView.buffer.webGl._bindForTarget(
         web.WebGL2RenderingContext.UNIFORM_BUFFER,
@@ -467,7 +514,7 @@ final class WebGlRenderPass extends RenderPass {
       // too-small range makes the draw a no-op. DeviceBuffer pads its GL
       // data store so the extended range stays inside the buffer.
       var lengthInBytes = bufferView.lengthInBytes;
-      final minBindSize = pipeline._structBlockBindSizes[struct.name];
+      final minBindSize = binding.blockSize;
       if (minBindSize != null && minBindSize > lengthInBytes) {
         lengthInBytes = minBindSize;
       }
@@ -484,7 +531,7 @@ final class WebGlRenderPass extends RenderPass {
 
     final floats = bufferView.buffer.webGl._stagingFloats;
     final base = bufferView.offsetInBytes;
-    final locations = pipeline._structLocations[struct.name];
+    final locations = binding.locations;
     for (var i = 0; i < struct.members.length; i++) {
       final loc = locations?[i];
       if (loc == null) continue; // optimized out by the linker

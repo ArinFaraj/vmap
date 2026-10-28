@@ -52,6 +52,12 @@ final class WebGlRenderPipeline extends RenderPipeline {
   }
 
   final WebGlContext _gpuContext;
+
+  /// A number of this pipeline's own, which the vertex-array cache keys on:
+  /// cheaper than an identity hash for each of a frame's hundreds of draws.
+  final int cacheId = _serials++;
+  static int _serials = 0;
+
   @override
   final WebGlShader vertexShader;
   @override
@@ -86,6 +92,33 @@ final class WebGlRenderPipeline extends RenderPipeline {
   /// The largest block bind size, used to size the zero fallback buffer bound
   /// to every block binding point.
   int _maxBlockSizeBytes = 0;
+
+  /// What binding each of this pipeline's uniform slots needs, worked out
+  /// the first time it is bound. A frame binds several slots for each of
+  /// its draws, and resolving every one of them by name again — the struct
+  /// from the shader's reflection, then the block binding point, its padded
+  /// size and the member locations from this pipeline — was overhead paid
+  /// hundreds of times a frame on the web, where every call is checked
+  /// again in the browser's GPU process. A pipeline is rebuilt when a
+  /// shader is recompiled, so these live as long as the reflection they
+  /// come from.
+  final Map<UniformSlot, _SlotBinding> _slotBindings = {};
+
+  /// What binding [slot] needs, resolved once.
+  _SlotBinding _slotBinding(UniformSlot slot) {
+    final known = _slotBindings[slot];
+    if (known != null) return known;
+    final struct = slot.shader.webGl._uniformStructs[slot.uniformName];
+    final resolved = struct == null
+        ? const _SlotBinding.missing()
+        : _SlotBinding(
+            struct,
+            _structBlockBindings[struct.name],
+            _structBlockBindSizes[struct.name],
+            _structLocations[struct.name],
+          );
+    return _slotBindings[slot] = resolved;
+  }
 
   /// A zero-filled uniform buffer bound to every active block binding point
   /// when this pipeline is bound (see [_bindDefaultUniformBlocks]). Created
@@ -214,4 +247,30 @@ final class WebGlRenderPipeline extends RenderPipeline {
       );
     }
   }
+}
+
+/// What binding one of a pipeline's uniform slots takes: the struct the
+/// shader reflects for it, its block binding point and padded size when the
+/// linker exposes it as a uniform block, and its members' locations when it
+/// does not. Worked out once per pipeline and slot; see
+/// [WebGlRenderPipeline._slotBindings].
+final class _SlotBinding {
+  const _SlotBinding(
+    this.struct,
+    this.blockBinding,
+    this.blockSize,
+    this.locations,
+  );
+
+  /// A slot the shader declares no struct of, which binding reports.
+  const _SlotBinding.missing()
+    : struct = null,
+      blockBinding = null,
+      blockSize = null,
+      locations = null;
+
+  final _UniformStruct? struct;
+  final int? blockBinding;
+  final int? blockSize;
+  final List<web.WebGLUniformLocation?>? locations;
 }

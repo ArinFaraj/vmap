@@ -22,6 +22,11 @@ class VmapStats {
   int labelStates = 0;
   int labelSprites = 0;
 
+  /// How pressed the frames are, as the engine reads its last twenty: 0
+  /// with time to spare, 1 with little, 2 with none, where everything that
+  /// may wait until a calmer frame does.
+  int pressure = 0;
+
   /// Frames the GPU renderer showed its last picture again, warped to the
   /// new camera, because the GPU had not caught up.
   int gpuFramesReused = 0;

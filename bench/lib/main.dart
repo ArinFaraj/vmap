@@ -245,6 +245,7 @@ class _BenchAppState extends State<BenchApp>
         'tile_setup_max_us': engine.stats.timings.maxTileSetupMicros,
         'paints_over_4ms': engine.stats.timings.paintsOver4ms,
         'paints_over_8ms': engine.stats.timings.paintsOver8ms,
+        'pressure': engine.stats.pressure,
         'prep_max_us': engine.stats.timings.maxPrepMicros,
         'place_max_us': engine.stats.timings.maxPlaceMicros,
         'place_total_ms': engine.stats.timings.placeMicros ~/ 1000,
@@ -657,7 +658,8 @@ class _HudState extends State<_Hud> {
     final s = widget.engine.stats;
     final line =
         'fps ${frames.length} skipped $late in ${pace.hitches} hitches, worst gap ${pace.worstGap.toStringAsFixed(0)}ms wait ${pace.waitMax.toStringAsFixed(1)} (all $dropped/$total) build ${worstBuild.toStringAsFixed(1)} raster ${worstRaster.toStringAsFixed(1)} '
-        'rss ${ProcessInfo.currentRss >> 20}MB tiles ${s.tilesCached} states ${s.labelStates} sprites ${s.labelSprites}';
+        'rss ${ProcessInfo.currentRss >> 20}MB tiles ${s.tilesCached} states ${s.labelStates} sprites ${s.labelSprites} '
+        'pressure ${s.pressure}';
     final slow = s.timings.slowPaints;
     if (frames.isNotEmpty) {
       log?.writeln(

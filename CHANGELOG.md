@@ -1,5 +1,30 @@
 ## Unreleased
 
+- Frames are paced by what the last twenty of them cost: while the map
+  draws in under 7 ms it prepares tiles for the GPU and draws label text
+  anew for up to 2.5 ms and 2 ms of each frame, so ground not yet drawn
+  fills in sooner; while it draws in over 12 ms it does 0.75 ms and 0.5 ms,
+  so a slow device keeps its frames on time instead of hitching; between
+  the two it does what vmap has always done. A level is left well past
+  where it was entered, so a map drawing at the edge of one does not
+  switch back and forth. `VmapStats.pressure` says which level the map is
+  at, and the benchmark app prints it with the rest.
+- Placing labels is spread over frames from the start: reading the labels
+  of the tiles in view, which a crowded map spends several milliseconds on,
+  now takes a share of each frame like the weighing that follows it, so a
+  pan or a zoom never stalls one frame in getting its labels placed. The
+  lists of labels a pass reads are kept for as long as the pass takes, so a
+  tile that comes or goes between frames does not change what it reads.
+- A frame no longer works out each label's text key — which reads the
+  layer's `text-field`, `text-font`, letter spacing, line width and
+  justification expressions, and builds a string of them — unless the zoom
+  has crossed into another level or the label's writing mode or anchor side
+  changed. On a crowded map that was most of what a frame spent on labels.
+- The statistics count label states and tiles loading as frames go rather
+  than walking them every frame, the frame's list of the tiles in view is
+  kept from one frame to the next, and the GPU renderer counts its draw
+  calls, which the benchmark app's `draws` line showed as zero for the
+  renderer every platform uses.
 - `VmapController.headFor` tells the map where code that moves the camera
   itself is taking it, so the tiles there load on the way, as they do for
   `flyTo`.
