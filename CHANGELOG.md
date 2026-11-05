@@ -1,5 +1,7 @@
 ## Unreleased
 
+- `VmapController.toLatLng` and `toScreen` answer null until a map has laid
+  the controller out, instead of throwing `Infinity or NaN toInt`.
 - `VmapController.headFor` tells the map where code that moves the camera
   itself is taking it, so the tiles there load on the way, as they do for
   `flyTo`.
