@@ -101,8 +101,10 @@ class VmapController extends ChangeNotifier {
   MapView get _view => _camera.view(_size.width, _size.height);
 
   /// Where [point] is on the map, in logical pixels from its top left, or
-  /// null when it is not in front of the camera.
+  /// null when it is not in front of the camera or no map has laid this
+  /// controller out yet.
   Offset? toScreen(LatLng point) {
+    if (_size.isEmpty) return null;
     final view = _view;
     view.projectTo(
       worldX(point.longitude) * view.worldSize,
@@ -113,8 +115,9 @@ class VmapController extends ChangeNotifier {
   }
 
   /// The place on the ground at [position] on the map, or null where the
-  /// screen shows sky.
+  /// screen shows sky or no map has laid this controller out yet.
   LatLng? toLatLng(Offset position) {
+    if (_size.isEmpty) return null;
     final view = _view;
     final g = view.unproject(position.dx, position.dy);
     if (g == null) return null;

@@ -64,6 +64,13 @@ Future<void> _settle(WidgetTester tester) async {
 }
 
 void main() {
+  test('a controller no map has laid out places nothing', () {
+    final c = VmapController(_erbil);
+    addTearDown(c.dispose);
+    expect(c.toLatLng(const Offset(200, 300)), isNull);
+    expect(c.toScreen(_erbil.center), isNull);
+  });
+
   testWidgets('a drag moves the map with the finger', (tester) async {
     final c = await _pump(tester);
     final before = c.toLatLng(const Offset(400, 300))!;

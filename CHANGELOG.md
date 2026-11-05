@@ -1,3 +1,8 @@
+## 0.27.1
+
+- `VmapController.toLatLng` and `toScreen` answer null until a map has laid
+  the controller out, instead of throwing `Infinity or NaN toInt`.
+
 ## 0.27.0
 
 vmap is now a map engine of its own, drawn on the GPU, with flutter_map
