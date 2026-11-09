@@ -98,8 +98,8 @@ class GpuMap extends MapRenderer {
   /// Made on the first frame drawn, never before: on OpenGL ES a pipeline
   /// made before the app has a surface can deadlock (flutter/flutter#193890).
   _Ready? _ready() {
-    if (_made case final made?) return made;
     if (_failed) return null;
+    if (_made case final made?) return made;
     final library = _library;
     if (library == null) return null;
     try {
@@ -164,8 +164,22 @@ class GpuMap extends MapRenderer {
   /// GPU finishes the frames that may read them.
   bool _shrinking = false;
 
+  /// A device that refuses a texture or a command buffer mid-frame hands
+  /// the map to the canvas from the next frame on, as a shader library
+  /// that would not load does. Nothing is drawn on [canvas] here, so the
+  /// frame needs no unwinding.
   @override
   bool paint(ui.Canvas canvas, RenderFrame f) {
+    try {
+      return _paint(canvas, f);
+    } catch (e) {
+      _failed = true;
+      onFailure?.call(e);
+      return true;
+    }
+  }
+
+  bool _paint(ui.Canvas canvas, RenderFrame f) {
     final RenderFrame(
       :view,
       :origin,
@@ -480,6 +494,7 @@ class GpuMap extends MapRenderer {
 
   @override
   bool textInto(int run) {
+    if (_failed) return false;
     final sdf = _made?.sdf;
     if (sdf == null || !sdf.ready) return false;
     if (_frames.reused && _frames.textInside) {
@@ -492,6 +507,7 @@ class GpuMap extends MapRenderer {
 
   @override
   bool presentUntil(ui.Canvas canvas, int run) {
+    if (_failed) return false;
     _frames.presentUntil(
       canvas,
       run,

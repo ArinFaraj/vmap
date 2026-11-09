@@ -107,21 +107,34 @@ ui.Image forShader(ui.Image image) => image;
 
 /// An image of [pixels], premultiplied RGBA rows [width] wide. [readable]
 /// is for a browser, see [imagePixels].
+///
+/// Not `ui.decodeImageFromPixels`: it drops a failed decode, which Impeller
+/// gives when the GPU refuses the upload, as an error no caller can catch,
+/// and its callback then never runs.
 Future<ui.Image> imageFromRgba(
   Uint8List pixels,
   int width,
   int height, {
   bool readable = false,
-}) {
-  final done = Completer<ui.Image>();
-  ui.decodeImageFromPixels(
-    pixels,
-    width,
-    height,
-    ui.PixelFormat.rgba8888,
-    done.complete,
+}) async {
+  final buffer = await ui.ImmutableBuffer.fromUint8List(pixels);
+  final descriptor = ui.ImageDescriptor.raw(
+    buffer,
+    width: width,
+    height: height,
+    pixelFormat: ui.PixelFormat.rgba8888,
   );
-  return done.future;
+  try {
+    final codec = await descriptor.instantiateCodec();
+    try {
+      return (await codec.getNextFrame()).image;
+    } finally {
+      codec.dispose();
+    }
+  } finally {
+    descriptor.dispose();
+    buffer.dispose();
+  }
 }
 
 /// Notes the encoded [bytes] [image] was decoded from; only a browser needs

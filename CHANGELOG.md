@@ -1,7 +1,5 @@
-## Unreleased
+## 0.28.0
 
-- `VmapController.toLatLng` and `toScreen` answer null until a map has laid
-  the controller out, instead of throwing `Infinity or NaN toInt`.
 - `VmapController.headFor` tells the map where code that moves the camera
   itself is taking it, so the tiles there load on the way, as they do for
   `flyTo`.
@@ -31,6 +29,20 @@
 - Heatmaps stay drawn while their tiles load, without counting heat twice.
 - Changing the overlay's paint keeps the map's labels.
 - The globe and raised ground cost less to draw each frame.
+
+## 0.27.2
+
+- A pixel image the GPU refuses to decode fails its load instead of
+  raising an error no one can catch and leaving the load waiting forever,
+  which also left a label page stuck.
+- A device that refuses a texture or command buffer while the GPU draws
+  hands the map to the canvas from the next frame, instead of throwing
+  out of paint.
+
+## 0.27.1
+
+- `VmapController.toLatLng` and `toScreen` answer null until a map has laid
+  the controller out, instead of throwing `Infinity or NaN toInt`.
 
 ## 0.27.0
 
