@@ -60,7 +60,13 @@ final class ShadedTiles extends TileDrawing<HillshadeLayer> {
     for (final (dx, dy) in _around) {
       final beside = _beside(z, x + dx, y + dy);
       if (beside != null && beside.pixels != null) {
-        unawaited(_reshade(beside, z, (x + dx) % (1 << z), y + dy));
+        unawaited(
+          _reshade(beside, z, (x + dx) % (1 << z), y + dy).catchError((
+            Object e,
+          ) {
+            if (!closed) onError?.call(e);
+          }),
+        );
       }
     }
   }

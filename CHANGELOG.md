@@ -1,3 +1,12 @@
+## 0.27.2
+
+- A pixel image the GPU refuses to decode fails its load instead of
+  raising an error no one can catch and leaving the load waiting forever,
+  which also left a label page stuck.
+- A device that refuses a texture or command buffer while the GPU draws
+  hands the map to the canvas from the next frame, instead of throwing
+  out of paint.
+
 ## 0.27.1
 
 - `VmapController.toLatLng` and `toScreen` answer null until a map has laid
