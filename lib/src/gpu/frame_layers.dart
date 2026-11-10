@@ -14,14 +14,9 @@ typedef FrameImage = (gpu.Texture, ui.Image);
 /// The images one frame's layers are drawn into, in the style's order. A
 /// layer drawn whole at an opacity goes into an image of its own and what
 /// is above it into another, so the canvas lays them over each other in
-/// order; a heatmap is coloured into a new image laid over what is below.
+/// order.
 class FrameLayers {
-  FrameLayers(
-    FrameImage first, {
-    required this._passOn,
-    required this._next,
-    required this._heatOf,
-  }) {
+  FrameLayers(FrameImage first, {required this._passOn, required this._next}) {
     final (texture, image) = first;
     shown.add((image, 1));
     textures.add(texture);
@@ -37,7 +32,6 @@ class FrameLayers {
   /// a pass that goes on drawing would lose.
   bool composites = false;
   final FrameImage Function() _next;
-  final Heat? Function(StyleRun run) _heatOf;
   void Function(MapPass pass)? _setUp;
 
   /// The pass runs are drawn into now.
@@ -48,9 +42,6 @@ class FrameLayers {
 
   /// The texture behind each of [shown].
   final List<gpu.Texture> textures = [];
-
-  /// Which of [shown] are heatmaps coloured over what is below them.
-  final Set<int> heats = {};
 
   /// Where a background or raster run comes between the images: the index
   /// in the style's runs of each part's first vector run and its first
@@ -130,13 +121,9 @@ class FrameLayers {
     if (opacity > 0) draw(pass);
   }
 
-  /// Colours heatmap [run] over what is below it, when it draws at all.
-  void heat(StyleRun run) {
+  /// Colours [heat] over what is below it, in the same image.
+  void heat(Heat heat) {
     flush();
-    final heat = _heatOf(run);
-    if (heat == null) return;
-    _openNext();
-    heats.add(shown.length - 1);
     pass.colorHeat(heat.density, heat.row, heat.opacity);
   }
 }

@@ -1,3 +1,14 @@
+## 0.29.2
+
+- A heatmap is coloured into the image of the layers below it, where it
+  took a full-screen image of its own that label text could not be drawn
+  into. A frame with a heatmap under the labels is one image again, where
+  it was three: the map, the heat and the text. On the web each of those
+  is copied out of its texture, so a globe with a heatmap took about 10 ms
+  to paint a frame and takes 2 to 3 ms.
+- A heatmap at opacity 0 placed after the style's last symbol layer takes
+  no image over the labels.
+
 ## 0.29.1
 
 - On the web, a frame allocates about a third less memory, and the

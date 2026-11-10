@@ -255,6 +255,7 @@ class GpuMap extends MapRenderer {
     if (raised) {
       traced('vmap.gpu.drape', () => drape.drawAtlas(buffers, f));
     }
+    final heats = _heats(device, buffers, f, clip);
     final layers = _frames.begin(
       device,
       passOn: (target, {keeps = false}) => MapPass(
@@ -267,14 +268,13 @@ class GpuMap extends MapRenderer {
         f,
         clip,
       ),
-      heatOf: (run) => _heat(device, buffers, run, f, clip),
     );
     layers.composites = !raised && !_frames.sampled && p.composite != null;
     // The raised ground holds every vector layer, laid after the
     // backgrounds and rasters under the labels.
     if (raised) layers.splits.add((sheet.labelsRun - 1, 0));
     traced('vmap.gpu.draw', () {
-      if (!raised) return _layOut(layers, f, _Layout.flat);
+      if (!raised) return _layOut(layers, f, heats, _Layout.flat);
       // The flat layers are in the drape; the ground and buildings stand
       // in the frame with depth. With terrain MapLibre draws the map into
       // a texture laid over the ground, as the drape is; without, onto
@@ -287,7 +287,7 @@ class GpuMap extends MapRenderer {
       }
       if (globe != null && terrain == null) {
         layers.setUpPasses((pass) => pass.globe = globe);
-        _layOut(layers, f, _Layout.globe);
+        _layOut(layers, f, heats, _Layout.globe);
       } else {
         // Circles and heatmaps stand on raised ground.
         layers.setUpPasses(
@@ -296,7 +296,7 @@ class GpuMap extends MapRenderer {
             ..standing = true
             ..globe = globe,
         );
-        _layOut(layers, f, _Layout.standing);
+        _layOut(layers, f, heats, _Layout.standing);
       }
       for (final building in sheet.extrusions) {
         if (building.showsAt(styleZoom)) {
@@ -309,11 +309,23 @@ class GpuMap extends MapRenderer {
     return sprites.loading || drape.sending;
   }
 
-  /// Draws the style's runs into [layers] in order, as [layout] lays them.
-  void _layOut(FrameLayers layers, RenderFrame f, _Layout layout) {
+  /// Draws the style's runs into [layers] in order, as [layout] lays them,
+  /// each heatmap run coloured from its density in [heats].
+  void _layOut(
+    FrameLayers layers,
+    RenderFrame f,
+    Map<StyleRun, Heat> heats,
+    _Layout layout,
+  ) {
     final RenderFrame(:sheet, :context) = f;
     var drawnSinceSplit = false, underLabels = true;
     for (final (index, run) in sheet.runs.indexed) {
+      final heat = heats[run];
+      if (heat == null &&
+          run.source >= 0 &&
+          sheet.layers[run.first] is HeatmapLayer) {
+        continue;
+      }
       if (layout == _Layout.flat) {
         final over = index >= sheet.labelsRun;
         // An image over the labels is handed to the canvas whole every
@@ -323,7 +335,7 @@ class GpuMap extends MapRenderer {
         if (over &&
             run.source >= 0 &&
             sheet.extrusionAt(run) == null &&
-            sheet.layers[run.first] is! HeatmapLayer &&
+            heat == null &&
             !layers.pass.holds(run)) {
           continue;
         }
@@ -358,8 +370,8 @@ class GpuMap extends MapRenderer {
           continue;
         }
       }
-      if (sheet.layers[run.first] is HeatmapLayer) {
-        layers.heat(run);
+      if (heat != null) {
+        layers.heat(heat);
         continue;
       }
       layers.add(
@@ -370,26 +382,35 @@ class GpuMap extends MapRenderer {
     layers.flush();
   }
 
-  /// Heatmap [run]'s points added up in a texture of its own, when the
-  /// layer shows.
-  Heat? _heat(
+  static const Map<StyleRun, Heat> _noHeats = {};
+
+  /// The points of each heatmap run that shows, added up in a texture of
+  /// its own. They are drawn before the frame's own passes begin: those
+  /// sample them, so they go to the GPU first, and on the web a pass draws
+  /// into whatever framebuffer was bound last.
+  Map<StyleRun, Heat> _heats(
     GpuDevice device,
     List<gpu.CommandBuffer> buffers,
-    StyleRun run,
     RenderFrame f,
     Float64List clip,
   ) {
-    final heat = f.sheet.layers[run.first] as HeatmapLayer;
-    final row = device.ramps.gradientOf(run.first);
-    final opacity = (asNumber(heat.opacity(f.context)) ?? 1).clamp(0.0, 1.0);
-    if (row == null || opacity <= 0 || device.pipelines.heat == null) {
-      return null;
+    if (device.pipelines.heat == null) return _noHeats;
+    var heats = _noHeats;
+    for (final run in f.sheet.runs) {
+      if (run.source < 0) continue;
+      final heat = f.sheet.layers[run.first];
+      if (heat is! HeatmapLayer) continue;
+      final row = device.ramps.gradientOf(run.first);
+      final opacity = (asNumber(heat.opacity(f.context)) ?? 1).clamp(0.0, 1.0);
+      if (row == null || opacity <= 0) continue;
+      if (identical(heats, _noHeats)) heats = {};
+      heats[run] = (
+        density: _drawDensity(device, buffers, run, heats.length, f, clip),
+        row: row,
+        opacity: opacity,
+      );
     }
-    return (
-      density: _drawDensity(device, buffers, run, f, clip),
-      row: row,
-      opacity: opacity,
-    );
+    return heats;
   }
 
   bool _warm = false;
@@ -473,16 +494,18 @@ class GpuMap extends MapRenderer {
     _frames.submit([commands], _heap);
   }
 
-  /// Adds up the kernels of heatmap [run]'s points into the density
-  /// texture, in a command buffer of its own added to [buffers].
+  /// Adds up the kernels of heatmap [run]'s points into the frame's
+  /// density texture [index], in a command buffer of its own added to
+  /// [buffers].
   gpu.Texture _drawDensity(
     GpuDevice device,
     List<gpu.CommandBuffer> buffers,
     StyleRun run,
+    int index,
     RenderFrame f,
     Float64List clip,
   ) {
-    final (density, depth) = _frames.density(device);
+    final (density, depth) = _frames.density(device, index);
     final commands = gpu.gpuContext.createCommandBuffer();
     buffers.add(commands);
     final pass = commands.createRenderPass(

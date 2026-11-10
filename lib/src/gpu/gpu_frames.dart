@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart' show Vector4;
 
 import '../camera/view.dart';
-import '../style/style_model.dart' show StyleRun;
 import '../render/frame_planes.dart';
 import 'frame_layers.dart';
 import 'gpu_buffers.dart';
@@ -28,9 +27,10 @@ class GpuFrames {
   int _next = 0;
   gpu.Texture? _depth, _samples, _singleDepth;
 
-  /// A heatmap layer's density, a quarter of the screen across as
-  /// MapLibre's, and the depth and stencil its pass is drawn with.
-  gpu.Texture? _density, _densityDepth;
+  /// Each heatmap layer's density, a quarter of the screen across as
+  /// MapLibre's, and the depth and stencil their passes are drawn with.
+  final List<gpu.Texture> _densities = [];
+  gpu.Texture? _densityDepth;
 
   /// Whether this frame is multisampled: only the globe, raised ground and
   /// standing buildings are. A flat map's edges are cut at pixel centres,
@@ -82,7 +82,8 @@ class GpuFrames {
     }
     _ring = [for (var i = 0; i < 3; i++) _FrameTarget(target(device))];
     _last = null;
-    _density = _densityDepth = null;
+    _densities.clear();
+    _densityDepth = null;
     final samples = _msaa ? 4 : 1;
     _depth = device.scratch(
       width,
@@ -111,16 +112,22 @@ class GpuFrames {
     format: device.color,
   );
 
-  /// The texture and depth a heatmap's density is added up in.
-  (gpu.Texture, gpu.Texture) density(GpuDevice device) {
+  /// The texture and depth the frame's heatmap [index] adds its density
+  /// up in.
+  (gpu.Texture, gpu.Texture) density(GpuDevice device, int index) {
     final w = math.max(1, width ~/ 4), h = math.max(1, height ~/ 4);
+    while (_densities.length <= index) {
+      _densities.add(
+        gpu.gpuContext.createTexture(
+          gpu.StorageMode.devicePrivate,
+          w,
+          h,
+          format: device.densityFormat,
+        ),
+      );
+    }
     return (
-      _density ??= gpu.gpuContext.createTexture(
-        gpu.StorageMode.devicePrivate,
-        w,
-        h,
-        format: device.densityFormat,
-      ),
+      _densities[index],
       _densityDepth ??= device.scratch(
         w,
         h,
@@ -193,11 +200,7 @@ class GpuFrames {
       return null;
     }
     final upTo = _upTo(run, last.length, _splits);
-    if (upTo <= _presented ||
-        last[upTo - 1].$2 < 1 ||
-        _heats.contains(upTo - 1)) {
-      return null;
-    }
+    if (upTo <= _presented || last[upTo - 1].$2 < 1) return null;
     return _textures[upTo - 1];
   }
 
@@ -218,7 +221,6 @@ class GpuFrames {
   FrameLayers begin(
     GpuDevice device, {
     required MapPass Function(gpu.Texture target, {bool keeps}) passOn,
-    required Heat? Function(StyleRun run) heatOf,
   }) {
     final frame = _ring[_next];
     _next = (_next + 1) % _ring.length;
@@ -227,7 +229,6 @@ class GpuFrames {
       (frame.map, frame.image),
       passOn: passOn,
       next: () => frame.overlay(overlays++, () => target(device)),
-      heatOf: heatOf,
     );
   }
 
@@ -256,7 +257,6 @@ class GpuFrames {
     _last = layers.shown;
     _textures = layers.textures;
     _splits = layers.splits;
-    _heats = layers.heats;
     _presented = 0;
     _lastView = _showView = view;
     _reused = false;
@@ -265,9 +265,6 @@ class GpuFrames {
         ? List.filled(layers.shown.length, false)
         : const [];
   }
-
-  /// Which of [_last]'s images are heatmaps, which text never goes into.
-  Set<int> _heats = const {};
 
   /// Which of [_last]'s images are copies taken from their textures, on
   /// the web, where a texture's image is a copy taken when asked for and
@@ -393,7 +390,7 @@ class GpuFrames {
 typedef _Shown = List<(ui.Image, double)>;
 
 /// What one frame of the ring draws into: the map's texture and, for each
-/// layer drawn whole at an opacity or coloured as a heatmap, one more.
+/// layer drawn whole at an opacity, one more.
 class _FrameTarget {
   _FrameTarget(this.map) : image = map.asImage();
 
