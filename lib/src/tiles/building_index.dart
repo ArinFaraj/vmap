@@ -85,8 +85,10 @@ class BuildingIndex {
   static const _cells = 16;
   static const _cellSize = tileExtent / _cells;
 
-  static int _cell(double v) =>
-      (v / tileExtent * _cells).floor().clamp(0, _cells - 1);
+  static int _cell(double v) {
+    final c = (v / tileExtent * _cells).floor();
+    return c < 0 ? 0 : (c >= _cells ? _cells - 1 : c);
+  }
 
   /// The height in metres of the building that ground point [x], [y], in
   /// tile units, stands in, or 0.
@@ -110,8 +112,9 @@ class BuildingIndex {
   }
 
   /// Whether a wall crosses the stretch from [ax], [ay] to [bx], [by] in
-  /// tile units above the line's height there, which [lineAt] gives in
-  /// world pixels for a distance along the stretch in tile units.
+  /// tile units above the line's height there: [standing] world pixels at
+  /// its start, rising by [slope] for each world pixel along it, [scale]
+  /// tile units a world pixel.
   bool blocks(
     Float32List walls,
     Float32List info,
@@ -119,7 +122,9 @@ class BuildingIndex {
     double ay,
     double bx,
     double by,
-    double Function(double along) lineAt,
+    double standing,
+    double slope,
+    double scale,
     double perMetre,
   ) {
     final minX = math.min(ax, bx), maxX = math.max(ax, bx);
@@ -134,20 +139,18 @@ class BuildingIndex {
     // The line only rises away from the point, so a building, or a cell of
     // them, lower than the line at its nearest edge cannot reach over it.
     double nearest(double x0, double y0, double x1, double y1) {
-      final dx = math.max(math.max(x0 - ax, ax - x1), 0.0);
-      final dy = math.max(math.max(y0 - ay, ay - y1), 0.0);
+      final dx = ax < x0 ? x0 - ax : (ax > x1 ? ax - x1 : 0.0);
+      final dy = ay < y0 ? y0 - ay : (ay > y1 ? ay - y1 : 0.0);
       return math.sqrt(dx * dx + dy * dy);
     }
+
+    double lineAt(double along) => standing + along / scale * slope;
 
     for (var cy = _cell(minY); cy <= _cell(maxY); cy++) {
       for (var cx = _cell(minX); cx <= _cell(maxX); cx++) {
         final c = cy * _cells + cx;
-        final cellNear = nearest(
-          cx * _cellSize,
-          cy * _cellSize,
-          (cx + 1) * _cellSize,
-          (cy + 1) * _cellSize,
-        );
+        final x0 = cx.toDouble() * _cellSize, y0 = cy.toDouble() * _cellSize;
+        final cellNear = nearest(x0, y0, x0 + _cellSize, y0 + _cellSize);
         if (cellTallest[c] * perMetre <= lineAt(cellNear)) continue;
         for (var k = cellStart[c].toInt(); k < cellStart[c + 1].toInt(); k++) {
           final b = cellItems[k].toInt();

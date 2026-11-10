@@ -94,7 +94,7 @@ class GroundTextPainter {
         py - st.worldY,
         tx,
         ty,
-        unit * (scales?[i ~/ 5] ?? 1) / GlyphPbf.em,
+        unit * (scales?[i ~/ 5] ?? 1.0) / GlyphPbf.em,
         own == 0 ? plain : lookOf(own),
       );
     });

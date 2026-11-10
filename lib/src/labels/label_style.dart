@@ -149,6 +149,25 @@ class LabelStyle {
   String spriteKey(LabelState st) {
     final c = st.candidate;
     final symbol = symbolOf(c);
+    if (identical(st.keyCandidate, c) &&
+        identical(st.keyBase, c.spriteKey) &&
+        identical(st.keyLayer, symbol) &&
+        st.keyZoom == layoutZoom &&
+        st.keyVertical == st.vertical &&
+        st.keySide == st.side) {
+      return st.wantedKey;
+    }
+    st
+      ..keyCandidate = c
+      ..keyBase = c.spriteKey
+      ..keyLayer = symbol
+      ..keyZoom = layoutZoom
+      ..keyVertical = st.vertical
+      ..keySide = st.side;
+    return st.wantedKey = _spriteKey(st, c, symbol);
+  }
+
+  String _spriteKey(LabelState st, LabelCandidate c, SymbolLayer? symbol) {
     var key = st.vertical ? '${c.spriteKey}|v' : c.spriteKey;
     if (lineShift(c) case (final ax, final ay, final ox, final oy)) {
       key = '$key|$ax,$ay,$ox,$oy';

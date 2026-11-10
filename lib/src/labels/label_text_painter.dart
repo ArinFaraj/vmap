@@ -214,7 +214,7 @@ class LabelTextPainter {
       final cell = cells[i ~/ 5];
       if (cell == null) continue;
       final own = colors?[i ~/ 5] ?? 0;
-      final k = em / ems[i ~/ 5] * (scales?[i ~/ 5] ?? 1);
+      final k = em / ems[i ~/ 5] * (scales?[i ~/ 5] ?? 1.0);
       final lx = left + g[i + 2] * em, ly = top + g[i + 3] * em;
       pages.add(
         cell,
@@ -291,7 +291,7 @@ class LabelTextPainter {
         continue;
       }
       // A run of a formatted label: its own size and colour.
-      final scale = scales?[i ~/ 5] ?? 1;
+      final scale = scales?[i ~/ 5] ?? 1.0;
       final own = colors?[i ~/ 5] ?? 0;
       final size = scale == 1
           ? sixteenths
@@ -431,7 +431,7 @@ class LabelTextPainter {
       final soften = depth / math.cos(_view.tilted.pitch * math.pi / 180);
       final look0 = lookOf(0, size / GlyphPbf.em, soften);
       _geometry.eachOnGround(st, sprite, unit, (i, px, py, tx, ty, nx, ny) {
-        final gu = unit * (scales?[i ~/ 5] ?? 1) / GlyphPbf.em;
+        final gu = unit * (scales?[i ~/ 5] ?? 1.0) / GlyphPbf.em;
         if (g[i] < 0) {
           // As _inlineImage: a pixel in from the box's corner, three down.
           final (ox, oy, ux, uy, vx, vy) = _geometry.groundQuad(
@@ -485,7 +485,7 @@ class LabelTextPainter {
 
     final flat = lookOf(0, em / GlyphPbf.em, 1);
     void put(int i, double ox, double oy, double c, double s) {
-      final u = em * (scales?[i ~/ 5] ?? 1) / GlyphPbf.em;
+      final u = em * (scales?[i ~/ 5] ?? 1.0) / GlyphPbf.em;
       var ax = c * u, ay = s * u, bx = -s * u, by = c * u;
       // A glyph lying on its side in vertical text turns a quarter more.
       if ((turns?[i ~/ 5] ?? 0) == 1) (ax, ay, bx, by) = (bx, by, -ax, -ay);
@@ -651,7 +651,7 @@ class LabelTextPainter {
     double em,
     LabelState st,
   ) {
-    final unit = em / GlyphPbf.em * (sprite.shaped.scales?[i ~/ 5] ?? 1);
+    final unit = em / GlyphPbf.em * (sprite.shaped.scales?[i ~/ 5] ?? 1.0);
     final x = lx + unit, y = ly + 3 * unit;
     _gpuInlineImage(
       sdf,

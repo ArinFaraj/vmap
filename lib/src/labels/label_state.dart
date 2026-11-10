@@ -215,6 +215,17 @@ class LabelState {
 
   /// The key [sprite] was drawn under.
   String? spriteKey;
+
+  /// The key its text's sprite is wanted under, as last worked out, and
+  /// what it was worked out from: the candidate, its own key, its layer,
+  /// the layout zoom, [vertical] and [side].
+  String wantedKey = '';
+  LabelCandidate? keyCandidate;
+  String? keyBase;
+  Object? keyLayer;
+  double keyZoom = 0;
+  bool keyVertical = false;
+  int keySide = 0;
   double opacity = 0;
   bool placed = false;
   int seenPass = -1;
@@ -222,6 +233,17 @@ class LabelState {
 
   /// Where it falls in its layer's drawing order by screen y.
   double drawY = 0;
+
+  /// What the drawing order compares, set before each sort: its layer,
+  /// whether the layer orders by key or by screen y, and its tile's width
+  /// and place down and across the turned screen. A marker's name has no
+  /// tile, and a width below zero.
+  int drawLayer = 0;
+  bool drawnByKey = false;
+  bool drawnByScreenY = false;
+  double tileWidth = -1;
+  double tileRow = 0;
+  double tileColumn = 0;
   double worldX = 0;
   double worldY = 0;
 

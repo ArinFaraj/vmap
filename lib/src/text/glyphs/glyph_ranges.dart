@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../../style/style_model.dart';
 import '../../net/net.dart';
+import 'glyph_table.dart';
 import 'glyph_pbf.dart';
 
 /// The glyph ranges of a style's `glyphs` URL, fetched as labels need
@@ -34,7 +35,7 @@ class GlyphRanges {
 
   final List<String> _stacks = [];
   final Map<String, int> _faces = {};
-  final List<Map<int, PbfGlyph>> _glyphs = [];
+  final GlyphTable<PbfGlyph> _glyphs = GlyphTable();
   final Set<int> _asked = {};
   final Set<int> _arrived = {};
   Net? _net;
@@ -48,13 +49,11 @@ class GlyphRanges {
     final name = fonts.join(',');
     return _faces.putIfAbsent(name, () {
       _stacks.add(name);
-      _glyphs.add({});
       return GlyphPbf.firstFace + _stacks.length - 1;
     });
   }
 
-  PbfGlyph? glyph(int face, int codePoint) =>
-      _glyphs[face - GlyphPbf.firstFace][codePoint];
+  PbfGlyph? glyph(int face, int codePoint) => _glyphs.at(face, codePoint);
 
   /// Asks for the range of Latin letters, which nearly every label needs,
   /// in each font stack [sheet]'s text names, ahead of any tile.
@@ -93,9 +92,8 @@ class GlyphRanges {
       if (!_closed) onError?.call(e);
     }
     if (_closed) return;
-    final known = _glyphs[face - GlyphPbf.firstFace];
     for (final g in glyphs) {
-      known[g.id] = g;
+      _glyphs.put(face, g.id, g);
     }
     _arrived.add(key);
     onLoaded(face, glyphs);

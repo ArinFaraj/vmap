@@ -101,9 +101,18 @@ class BuildingOcclusion {
       final ax = (px - view.worldSize * _left(d)) * scale;
       final ay = (py - view.worldSize * _top(d)) * scale;
       final bx = ax + ux * reach * scale, by = ay + uy * reach * scale;
-      if (grid.blocks(e.walls, e.info, ax, ay, bx, by, (along) {
-        return standing + along / scale * slope;
-      }, _perMetre)) {
+      if (grid.blocks(
+        e.walls,
+        e.info,
+        ax,
+        ay,
+        bx,
+        by,
+        standing,
+        slope,
+        scale,
+        _perMetre,
+      )) {
         return true;
       }
     }

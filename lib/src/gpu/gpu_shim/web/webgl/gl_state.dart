@@ -14,25 +14,60 @@ final class _GlState {
 
   static const Object _unknown = Object();
 
-  final Map<int, web.WebGLBuffer?> _buffers = {};
-  final Map<int, (web.WebGLBuffer?, int, int)> _uniformBlocks = {};
+  /// No GL enum, mask or range is negative.
+  static const _unset = -1;
+
+  final _Keyed<web.WebGLBuffer> _buffers = _Keyed();
+
+  /// The buffer bound to each uniform block index, and its offset and size
+  /// as a pair in [_blockRanges]: both -1 for a whole buffer.
+  final List<web.WebGLBuffer?> _blockBuffers = [];
+  Int32List _blockRanges = Int32List(0);
+  static const _noRange = -2;
+
   Object? _vertexArray = _unknown;
   Object? _program = _unknown;
-  final Map<int, bool> _enabled = {};
+  final _Keyed<bool> _enabled = _Keyed();
   bool? _depthMask;
   int? _depthFunc, _frontFace, _cullFace;
-  (int, int)? _blendEquation;
-  (int, int, int, int)? _blendFunc;
-  final List<(int, int, int)?> _stencilFunc = [null, null];
-  final List<(int, int, int)?> _stencilOp = [null, null];
-  final List<int?> _stencilMask = [null, null];
+  final Int32List _blendEquation = Int32List(2)..fillRange(0, 2, _unset);
+  final Int32List _blendFunc = Int32List(4)..fillRange(0, 4, _unset);
+
+  /// Three ints for the front face, then three for the back.
+  final Int32List _stencilFunc = Int32List(6)..fillRange(0, 6, _unset);
+  final Int32List _stencilOp = Int32List(6)..fillRange(0, 6, _unset);
+  final Int32List _stencilMask = Int32List(2)..fillRange(0, 2, _unset);
 
   void bindBuffer(int target, web.WebGLBuffer? buffer) {
     if (target != web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER) {
-      if (_buffers.containsKey(target) && _buffers[target] == buffer) return;
-      _buffers[target] = buffer;
+      if (_buffers.holds(target, buffer)) return;
+      _buffers.set(target, buffer);
     }
     _gl.bindBuffer(target, buffer);
+  }
+
+  /// Makes [buffer] from [offset] for [size] what block [index] holds;
+  /// true when it held that already.
+  bool _holdsBlock(int index, web.WebGLBuffer? buffer, int offset, int size) {
+    if (index >= _blockBuffers.length) {
+      final ranges = Int32List((index + 1) * 2)
+        ..fillRange(0, (index + 1) * 2, _noRange)
+        ..setRange(0, _blockRanges.length, _blockRanges);
+      _blockRanges = ranges;
+      while (_blockBuffers.length <= index) {
+        _blockBuffers.add(null);
+      }
+    }
+    final at = index * 2;
+    if (_blockRanges[at] == offset &&
+        _blockRanges[at + 1] == size &&
+        _blockBuffers[index] == buffer) {
+      return true;
+    }
+    _blockBuffers[index] = buffer;
+    _blockRanges[at] = offset;
+    _blockRanges[at + 1] = size;
+    return false;
   }
 
   void bindBufferRange(
@@ -42,28 +77,31 @@ final class _GlState {
     int offset,
     int size,
   ) {
-    _buffers[target] = buffer;
-    if (target == web.WebGL2RenderingContext.UNIFORM_BUFFER) {
-      final bound = (buffer, offset, size);
-      if (_uniformBlocks[index] == bound) return;
-      _uniformBlocks[index] = bound;
+    _buffers.set(target, buffer);
+    if (target == web.WebGL2RenderingContext.UNIFORM_BUFFER &&
+        _holdsBlock(index, buffer, offset, size)) {
+      return;
     }
     _gl.bindBufferRange(target, index, buffer, offset, size);
   }
 
   void bindBufferBase(int target, int index, web.WebGLBuffer? buffer) {
-    _buffers[target] = buffer;
-    if (target == web.WebGL2RenderingContext.UNIFORM_BUFFER) {
-      final bound = (buffer, -1, -1);
-      if (_uniformBlocks[index] == bound) return;
-      _uniformBlocks[index] = bound;
+    _buffers.set(target, buffer);
+    if (target == web.WebGL2RenderingContext.UNIFORM_BUFFER &&
+        _holdsBlock(index, buffer, -1, -1)) {
+      return;
     }
     _gl.bindBufferBase(target, index, buffer);
   }
 
   void deleteBuffer(web.WebGLBuffer buffer) {
-    _buffers.updateAll((_, b) => b == buffer ? null : b);
-    _uniformBlocks.removeWhere((_, bound) => bound.$1 == buffer);
+    _buffers.forget(buffer);
+    for (var index = 0; index < _blockBuffers.length; index++) {
+      if (_blockBuffers[index] != buffer) continue;
+      _blockBuffers[index] = null;
+      _blockRanges[index * 2] = _noRange;
+      _blockRanges[index * 2 + 1] = _noRange;
+    }
     _gl.deleteBuffer(buffer);
   }
 
@@ -94,8 +132,8 @@ final class _GlState {
   void disable(int capability) => setEnabled(capability, false);
 
   void setEnabled(int capability, bool on) {
-    if (_enabled[capability] == on) return;
-    _enabled[capability] = on;
+    if (_enabled.holds(capability, on)) return;
+    _enabled.set(capability, on);
     if (on) {
       _gl.enable(capability);
     } else {
@@ -104,8 +142,13 @@ final class _GlState {
   }
 
   /// Whether [capability] is on, asking GL only when it was never set here.
-  bool isEnabled(int capability) =>
-      _enabled[capability] ??= _gl.isEnabled(capability);
+  bool isEnabled(int capability) {
+    final known = _enabled.of(capability);
+    if (known != null) return known;
+    final on = _gl.isEnabled(capability);
+    _enabled.set(capability, on);
+    return on;
+  }
 
   void depthMask(bool on) {
     if (_depthMask == on) return;
@@ -132,9 +175,9 @@ final class _GlState {
   }
 
   void blendEquationSeparate(int color, int alpha) {
-    final equation = (color, alpha);
-    if (_blendEquation == equation) return;
-    _blendEquation = equation;
+    if (_blendEquation[0] == color && _blendEquation[1] == alpha) return;
+    _blendEquation[0] = color;
+    _blendEquation[1] = alpha;
     _gl.blendEquationSeparate(color, alpha);
   }
 
@@ -144,25 +187,40 @@ final class _GlState {
     int srcAlpha,
     int dstAlpha,
   ) {
-    final function = (srcColor, dstColor, srcAlpha, dstAlpha);
-    if (_blendFunc == function) return;
-    _blendFunc = function;
+    final f = _blendFunc;
+    if (f[0] == srcColor &&
+        f[1] == dstColor &&
+        f[2] == srcAlpha &&
+        f[3] == dstAlpha) {
+      return;
+    }
+    f[0] = srcColor;
+    f[1] = dstColor;
+    f[2] = srcAlpha;
+    f[3] = dstAlpha;
     _gl.blendFuncSeparate(srcColor, dstColor, srcAlpha, dstAlpha);
   }
 
   static int _face(int face) => face == web.WebGL2RenderingContext.BACK ? 1 : 0;
 
+  /// Makes [a], [b] and [c] what [state] holds for [face]; true when it
+  /// held them already.
+  static bool _holdsThree(Int32List state, int face, int a, int b, int c) {
+    final at = _face(face) * 3;
+    if (state[at] == a && state[at + 1] == b && state[at + 2] == c) return true;
+    state[at] = a;
+    state[at + 1] = b;
+    state[at + 2] = c;
+    return false;
+  }
+
   void stencilFuncSeparate(int face, int function, int reference, int mask) {
-    final set = (function, reference, mask);
-    if (_stencilFunc[_face(face)] == set) return;
-    _stencilFunc[_face(face)] = set;
+    if (_holdsThree(_stencilFunc, face, function, reference, mask)) return;
     _gl.stencilFuncSeparate(face, function, reference, mask);
   }
 
   void stencilOpSeparate(int face, int fail, int depthFail, int pass) {
-    final set = (fail, depthFail, pass);
-    if (_stencilOp[_face(face)] == set) return;
-    _stencilOp[_face(face)] = set;
+    if (_holdsThree(_stencilOp, face, fail, depthFail, pass)) return;
     _gl.stencilOpSeparate(face, fail, depthFail, pass);
   }
 
@@ -179,8 +237,15 @@ final class _GlState {
     _gl.stencilMask(mask);
   }
 
-  final Map<int, (int, web.WebGLTexture?)> _units = {};
-  int? _activeUnit;
+  /// The target bound on each texture unit, 0 for none yet, and what is
+  /// bound to it.
+  Int32List _unitTargets = Int32List(16);
+  final List<web.WebGLTexture?> _unitTextures = List.filled(
+    16,
+    null,
+    growable: true,
+  );
+  int _activeUnit = _unset;
 
   /// Binds [texture] to [target] on texture unit [unit].
   void bindTexture(int unit, int target, web.WebGLTexture? texture) {
@@ -188,7 +253,15 @@ final class _GlState {
       _activeUnit = unit;
       _gl.activeTexture(web.WebGL2RenderingContext.TEXTURE0 + unit);
     }
-    _units[unit] = (target, texture);
+    if (unit >= _unitTargets.length) {
+      _unitTargets = Int32List((unit + 1) * 2)
+        ..setRange(0, _unitTargets.length, _unitTargets);
+      while (_unitTextures.length < _unitTargets.length) {
+        _unitTextures.add(null);
+      }
+    }
+    _unitTargets[unit] = target;
+    _unitTextures[unit] = texture;
     _gl.bindTexture(target, texture);
   }
 
@@ -197,10 +270,51 @@ final class _GlState {
   /// as a feedback loop, whether or not it samples it.
   void unbindTexture(web.WebGLTexture? texture) {
     if (texture == null) return;
-    for (final MapEntry(key: unit, value: (target, bound)) in [
-      ..._units.entries,
-    ]) {
-      if (bound == texture) bindTexture(unit, target, null);
+    for (var unit = 0; unit < _unitTargets.length; unit++) {
+      final target = _unitTargets[unit];
+      if (target != 0 && _unitTextures[unit] == texture) {
+        bindTexture(unit, target, null);
+      }
+    }
+  }
+}
+
+/// What was last set under each of a few int keys, found by walking them:
+/// a map keyed by an int boxes the key at every lookup on the web.
+final class _Keyed<T extends Object> {
+  final List<int> _keys = [];
+  final List<T?> _values = [];
+  final List<bool> _set = [];
+
+  int _at(int key) {
+    for (var i = 0; i < _keys.length; i++) {
+      if (_keys[i] == key) return i;
+    }
+    _keys.add(key);
+    _values.add(null);
+    _set.add(false);
+    return _keys.length - 1;
+  }
+
+  /// Whether [key] was last set to [value].
+  bool holds(int key, T? value) {
+    final i = _at(key);
+    return _set[i] && _values[i] == value;
+  }
+
+  /// What [key] was last set to, null when it never was.
+  T? of(int key) => _values[_at(key)];
+
+  void set(int key, T? value) {
+    final i = _at(key);
+    _values[i] = value;
+    _set[i] = true;
+  }
+
+  /// Sets every key that holds [value] to null.
+  void forget(T value) {
+    for (var i = 0; i < _values.length; i++) {
+      if (_values[i] == value) _values[i] = null;
     }
   }
 }

@@ -1,3 +1,23 @@
+## 0.29.1
+
+- On the web, a frame allocates about a third less memory, and the
+  browser collects garbage a little over half as often while a tilted
+  city view turns. Numbers a tile's worker sends that the page reads one
+  at a time (the walls labels are hidden behind, a tile's layer offsets,
+  its text layouts) are copied into Dart's memory when the tile arrives,
+  where each read was a call into the browser. Glyphs are looked up in a
+  table instead of maps keyed by a number, and the WebGL layer compares
+  the state it last set without building a record for each call.
+- On the web, a layer placed after the style's last symbol layer no
+  longer takes a full-screen image of its own in frames where it has
+  nothing in view. A map with such a layer handed two images to the page
+  for every frame.
+- Less work in every frame on all platforms: a label's sprite key is
+  built once instead of in each frame, labels are sorted for drawing on
+  values worked out once a frame, the tiles in view are found against a
+  view outline prepared once, and a tile's paint slots are found without
+  hashing.
+
 ## 0.29.0
 
 - In a view tilted past 60 degrees, buildings stand to the far edge of the

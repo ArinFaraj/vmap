@@ -764,11 +764,12 @@ class MapView {
   ) {
     final (x: camX, y: camY, height: camH) = eye;
     final out = <CoverTile>[];
+    final hull = _Hull(quad);
 
     void visit(int z, int x, int y) {
       final span = worldSize / (1 << z);
       final left = x * span, upper = y * span;
-      if (!_quadMeetsBox(quad, left, upper, left + span, upper + span)) return;
+      if (!hull.meets(left, upper, left + span, upper + span)) return;
       final nx = (camX - left).clamp(0, span) + left;
       final ny = (camY - upper).clamp(0, span) + upper;
       final ddx = nx - camX, ddy = ny - camY;
@@ -825,46 +826,6 @@ class MapView {
           ? tz
           : _descend,
     );
-  }
-
-  /// Whether a convex quadrilateral and an axis-aligned box overlap, by
-  /// looking for an axis that separates them.
-  static bool _quadMeetsBox(
-    List<WorldPoint> quad,
-    double left,
-    double top,
-    double right,
-    double bottom,
-  ) {
-    var minX = double.infinity, maxX = -double.infinity;
-    var minY = double.infinity, maxY = -double.infinity;
-    for (final p in quad) {
-      minX = math.min(minX, p.x);
-      maxX = math.max(maxX, p.x);
-      minY = math.min(minY, p.y);
-      maxY = math.max(maxY, p.y);
-    }
-    if (maxX < left || minX > right || maxY < top || minY > bottom) {
-      return false;
-    }
-    final n = quad.length;
-    for (var i = 0; i < n; i++) {
-      final a = quad[i], b = quad[(i + 1) % n];
-      final nx = b.y - a.y, ny = a.x - b.x;
-      var quadSide = 0.0;
-      for (var j = 0; j < n; j++) {
-        final d = (quad[j].x - a.x) * nx + (quad[j].y - a.y) * ny;
-        if (d.abs() > quadSide.abs()) quadSide = d;
-      }
-      final ax = a.x, ay = a.y;
-      if (((left - ax) * nx + (top - ay) * ny) * quadSide < 0 &&
-          ((right - ax) * nx + (top - ay) * ny) * quadSide < 0 &&
-          ((right - ax) * nx + (bottom - ay) * ny) * quadSide < 0 &&
-          ((left - ax) * nx + (bottom - ay) * ny) * quadSide < 0) {
-        return false;
-      }
-    }
-    return true;
   }
 }
 
@@ -931,5 +892,60 @@ class _TileZoom {
         _log2(_centre / distance / math.max(0.5, math.cos(_fov / 2))) +
         _behaviour * _log2(math.cos(tilePitch)) / 2 -
         _crowding;
+  }
+}
+
+/// A convex polygon tested against many axis-aligned boxes: its bounds and
+/// the side of each edge it lies on are worked out once.
+class _Hull {
+  _Hull(List<WorldPoint> points) : _edges = Float64List(points.length * 5) {
+    final n = points.length;
+    for (final p in points) {
+      _minX = math.min(_minX, p.x);
+      _maxX = math.max(_maxX, p.x);
+      _minY = math.min(_minY, p.y);
+      _maxY = math.max(_maxY, p.y);
+    }
+    for (var i = 0; i < n; i++) {
+      final a = points[i], b = points[(i + 1) % n];
+      final nx = b.y - a.y, ny = a.x - b.x;
+      var side = 0.0;
+      for (final p in points) {
+        final d = (p.x - a.x) * nx + (p.y - a.y) * ny;
+        if (d.abs() > side.abs()) side = d;
+      }
+      _edges
+        ..[i * 5] = a.x
+        ..[i * 5 + 1] = a.y
+        ..[i * 5 + 2] = nx
+        ..[i * 5 + 3] = ny
+        ..[i * 5 + 4] = side;
+    }
+  }
+
+  /// Each edge's start, its normal and how far to that normal's side the
+  /// polygon reaches.
+  final Float64List _edges;
+  var _minX = double.infinity, _maxX = -double.infinity;
+  var _minY = double.infinity, _maxY = -double.infinity;
+
+  /// Whether the box overlaps the polygon: no edge has the whole box on
+  /// the side the polygon is not on.
+  bool meets(double left, double top, double right, double bottom) {
+    if (_maxX < left || _minX > right || _maxY < top || _minY > bottom) {
+      return false;
+    }
+    final edges = _edges;
+    for (var e = 0; e < edges.length; e += 5) {
+      final ax = edges[e], ay = edges[e + 1];
+      final nx = edges[e + 2], ny = edges[e + 3], side = edges[e + 4];
+      if (((left - ax) * nx + (top - ay) * ny) * side < 0 &&
+          ((right - ax) * nx + (top - ay) * ny) * side < 0 &&
+          ((right - ax) * nx + (bottom - ay) * ny) * side < 0 &&
+          ((left - ax) * nx + (bottom - ay) * ny) * side < 0) {
+        return false;
+      }
+    }
+    return true;
   }
 }

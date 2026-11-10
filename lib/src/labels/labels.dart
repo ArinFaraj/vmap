@@ -377,7 +377,7 @@ class LabelEngine {
     // where it can, on the unturned screen of a projected view.
     final ranges = _sprites.ranges;
     final sdfText = _view.sdf = ranges != null ? sdf : null;
-    sdfText?.begin(size, camera.devicePixelRatio, ranges!.glyph, view);
+    sdfText?.begin(size, camera.devicePixelRatio, ranges!, view);
     final tilt = Object.hash(view.pitch, view.bearing, view.roll).toDouble();
     if (_zooming && !zooming) _placeAgain = true;
     _zooming = zooming;

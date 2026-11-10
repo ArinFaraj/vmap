@@ -801,24 +801,25 @@ final class WebGlRenderPass extends RenderPass {
       return;
     }
     gl.enable(web.WebGL2RenderingContext.STENCIL_TEST);
-    for (final (face, config) in [
-      (web.WebGL2RenderingContext.FRONT, _stencilFront),
-      (web.WebGL2RenderingContext.BACK, _stencilBack),
-    ]) {
-      gl.stencilFuncSeparate(
+    _applyStencilFace(web.WebGL2RenderingContext.FRONT, _stencilFront);
+    _applyStencilFace(web.WebGL2RenderingContext.BACK, _stencilBack);
+  }
+
+  void _applyStencilFace(int face, StencilConfig config) {
+    _gpuContext._state
+      ..stencilFuncSeparate(
         face,
         _glCompare(config.compareFunction),
         _stencilReference,
         config.readMask & 0xFF,
-      );
-      gl.stencilOpSeparate(
+      )
+      ..stencilOpSeparate(
         face,
         _glStencilOp(config.stencilFailureOperation),
         _glStencilOp(config.depthFailureOperation),
         _glStencilOp(config.depthStencilPassOperation),
-      );
-      gl.stencilMaskSeparate(face, config.writeMask & 0xFF);
-    }
+      )
+      ..stencilMaskSeparate(face, config.writeMask & 0xFF);
   }
 
   static int _glStencilOp(StencilOperation op) => switch (op) {

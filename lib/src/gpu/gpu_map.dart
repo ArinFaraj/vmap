@@ -312,16 +312,29 @@ class GpuMap extends MapRenderer {
   /// Draws the style's runs into [layers] in order, as [layout] lays them.
   void _layOut(FrameLayers layers, RenderFrame f, _Layout layout) {
     final RenderFrame(:sheet, :context) = f;
-    var drawnSinceSplit = false;
+    var drawnSinceSplit = false, underLabels = true;
     for (final (index, run) in sheet.runs.indexed) {
       if (layout == _Layout.flat) {
+        final over = index >= sheet.labelsRun;
+        // An image over the labels is handed to the canvas whole every
+        // frame, so a layer there with nothing in view takes none.
+        // Buildings are held apart from a tile's layers, and a heatmap
+        // colours the view where nothing adds up too.
+        if (over &&
+            run.source >= 0 &&
+            sheet.extrusionAt(run) == null &&
+            sheet.layers[run.first] is! HeatmapLayer &&
+            !layers.pass.holds(run)) {
+          continue;
+        }
         // A background or raster after vector layers is laid by the canvas
         // between their images, and what comes after the style's last
         // symbol layer over the labels, so the style's order holds.
-        if (drawnSinceSplit && (run.source < 0 || index == sheet.labelsRun)) {
+        if (drawnSinceSplit && (run.source < 0 || (over && underLabels))) {
           layers.split();
           drawnSinceSplit = false;
         }
+        underLabels = !over;
         if (run.source >= 0 && !drawnSinceSplit) {
           layers.splits.add((
             index,

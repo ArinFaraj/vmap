@@ -326,6 +326,17 @@ Uint16List unpackShorts(Object packed) => packed as Uint16List;
 
 Uint8List unpackBytes(Object packed) => packed as Uint8List;
 
+/// [list] in Dart's own memory. A list that arrived from a worker stays in
+/// the browser's, where reading one element is a call out of wasm that
+/// boxes its answer: right for a mesh handed whole to WebGL, far too slow
+/// for a list read element by element in every frame.
+Float32List ownFloats(Float32List list) =>
+    Float32List(list.length)..setRange(0, list.length, list);
+
+/// As [ownFloats], for ints.
+Int32List ownInts(Int32List list) =>
+    Int32List(list.length)..setRange(0, list.length, list);
+
 /// The worker script vmap ships as a web only asset.
 final String defaultWorkerScript = ui_web.assetManager.getAssetUrl(
   'packages/vmap/assets/vmap_worker.js',

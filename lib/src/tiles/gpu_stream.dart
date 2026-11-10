@@ -133,9 +133,9 @@ class GpuStream {
         for (final s in m[2]! as List)
           ((s as List)[0]! as int, (s[1] as Map?)?.cast<String, Object?>()),
       ],
-      m[3]! as Int32List,
-      m[4]! as Int32List,
-      m[5]! as Int32List,
+      ownInts(m[3]! as Int32List),
+      ownInts(m[4]! as Int32List),
+      ownInts(m[5]! as Int32List),
     );
   }
 

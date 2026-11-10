@@ -7,7 +7,9 @@ import 'package:vector_math/vector_math.dart' show Vector4;
 import '../camera/view.dart';
 import '../labels/sdf_text.dart';
 import '../render/frame_planes.dart';
+import '../text/glyphs/glyph_table.dart';
 import '../text/glyphs/glyph_pbf.dart';
+import '../text/glyphs/glyph_ranges.dart';
 import 'gpu_buffers.dart' show framesInFlight;
 import 'gpu_device.dart';
 import 'gpu_shim/gpu.dart' as gpu;
@@ -40,10 +42,9 @@ class SdfTextGpu implements SdfText {
 
   /// Each glyph's corner in the atlas by face and code point, or -1 for
   /// one with no ink.
-  final Map<int, int> _placed = {};
+  final GlyphTable<int> _placed = GlyphTable();
 
-  PbfGlyph? Function(int face, int codePoint) _lookup = _none;
-  static PbfGlyph? _none(int face, int codePoint) => null;
+  GlyphRanges? _glyphs;
 
   ui.Size _size = ui.Size.zero;
   double _dpr = 1;
@@ -175,12 +176,12 @@ class SdfTextGpu implements SdfText {
   void begin(
     ui.Size size,
     double devicePixelRatio,
-    PbfGlyph? Function(int face, int codePoint) glyph,
+    GlyphRanges glyphs,
     MapView view,
   ) {
     _size = size;
     _dpr = devicePixelRatio;
-    _lookup = glyph;
+    _glyphs = glyphs;
     _count = 0;
     view.flatProjection(_groundInfo);
   }
@@ -238,10 +239,12 @@ class SdfTextGpu implements SdfText {
   /// The atlas corner of [codePoint] of [face] as x plus y times the
   /// side, placing it the first time; -1 when it has no ink or is missing.
   int _corner(int face, int codePoint, PbfGlyph glyph) {
-    final key = face << 21 | codePoint;
-    final known = _placed[key];
+    final known = _placed.at(face, codePoint);
     if (known != null) return known;
-    if (glyph.bitmap.isEmpty) return _placed[key] = -1;
+    if (glyph.bitmap.isEmpty) {
+      _placed.put(face, codePoint, -1);
+      return -1;
+    }
     const border = GlyphPbf.border;
     final w = glyph.width + 2 * border, h = glyph.height + 2 * border;
     if (_shelfX + w + 2 > _side) {
@@ -265,16 +268,20 @@ class SdfTextGpu implements SdfText {
     _dirty = true;
     _dirtyTop = math.min(_dirtyTop, y);
     _dirtyBottom = math.max(_dirtyBottom, y + h + 2);
-    return _placed[key] = x + y * _side;
+    final corner = x + y * _side;
+    _placed.put(face, codePoint, corner);
+    return corner;
   }
 
   /// As MapLibre's getGlyphQuads: a glyph's quad covers its field and its
   /// padding, from its left bearing less the border and the padding.
+  /// Each int is made a double first: an int with a double is boxed on
+  /// the web, once for each glyph drawn.
   static const _pad = GlyphPbf.border + 1.0;
-  static double _quadLeft(PbfGlyph g) => g.left - _pad;
-  static double _quadTop(PbfGlyph g) => -g.top - _pad;
-  static double _quadWidth(PbfGlyph g) => g.width + 2 * _pad;
-  static double _quadHeight(PbfGlyph g) => g.height + 2 * _pad;
+  static double _quadLeft(PbfGlyph g) => g.left.toDouble() - _pad;
+  static double _quadTop(PbfGlyph g) => -g.top.toDouble() - _pad;
+  static double _quadWidth(PbfGlyph g) => g.width.toDouble() + 2.0 * _pad;
+  static double _quadHeight(PbfGlyph g) => g.height.toDouble() + 2.0 * _pad;
 
   @override
   void glyph(
@@ -289,7 +296,7 @@ class SdfTextGpu implements SdfText {
     SdfLook look,
     int layer,
   ) {
-    final g = _lookup(face, codePoint);
+    final g = _glyphs?.glyph(face, codePoint);
     if (g == null) return;
     final corner = _corner(face, codePoint, g);
     if (corner < 0) return;
@@ -636,7 +643,7 @@ class _KeptQuads implements KeptText {
     double pixel,
     SdfLook look,
   ) {
-    final g = _text._lookup(face, codePoint);
+    final g = _text._glyphs?.glyph(face, codePoint);
     if (g == null) return false;
     final corner = _text._corner(face, codePoint, g);
     if (corner < 0) return g.bitmap.isEmpty;

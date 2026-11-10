@@ -131,6 +131,8 @@ class _CompareMapState extends State<_CompareMap> {
           'tilesDrawn': stats?.tilesDrawn ?? 0,
           'fallbackTiles': stats?.fallbackTiles ?? 0,
           'tilesCached': stats?.tilesCached ?? 0,
+          'labelStates': stats?.labelStates ?? 0,
+          'labelSprites': stats?.labelSprites ?? 0,
           'gpuFramesReused': stats?.gpuFramesReused ?? 0,
           'slow': [...?t?.slowPaints],
         }.jsify(),

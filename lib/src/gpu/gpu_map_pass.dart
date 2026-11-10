@@ -225,12 +225,25 @@ class MapPass {
     _marked = -1;
   }
 
+  /// Whether a tile in view has anything of [run]'s layers to draw.
+  bool holds(StyleRun run) {
+    final source = run.source;
+    if (source < 0 || source >= _ideal.length) return false;
+    bool has(TileDraw d) {
+      final stream = _device.drawn(d)?.stream;
+      return stream != null &&
+          stream.layerFirst[run.first] != stream.layerFirst[run.end];
+    }
+
+    return _ideal[source].any(has) || _fallback[source].any(has);
+  }
+
   /// Draws the paint layers of [runs] into this pass.
   void drawRuns(Iterable<StyleRun> runs) {
     _writeUniforms(runs);
     var bound = false;
     for (final run in runs) {
-      if (run.source < 0 || run.source >= _ideal.length) continue;
+      if (!holds(run)) continue;
       final source = run.source;
       final clipped = _clips(source);
       if (clipped && _marked != source) {

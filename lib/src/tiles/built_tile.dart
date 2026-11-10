@@ -169,7 +169,9 @@ class BuiltTile {
       final glyphPack,
       final gpu,
     ]) {
-      final glyphs = glyphPack == null ? null : unpackFloats(glyphPack);
+      final glyphs = glyphPack == null
+          ? null
+          : ownFloats(unpackFloats(glyphPack));
       var glyphAt = 0;
       ShapedText? shapedOf(List? s) {
         if (s
@@ -242,7 +244,7 @@ class BuiltTile {
                     text,
                     x.toDouble(),
                     y.toDouble(),
-                    line,
+                    line == null ? null : ownFloats(line),
                     icon: icon,
                     angle: angle.toDouble(),
                     spaced: spaced,

@@ -168,6 +168,12 @@ Uint16List unpackShorts(Object packed) =>
 Uint8List unpackBytes(Object packed) =>
     (packed as TransferableTypedData).materialize().asUint8List();
 
+/// [list] itself: a list from another isolate is already in Dart's memory.
+Float32List ownFloats(Float32List list) => list;
+
+/// As [ownFloats], for ints.
+Int32List ownInts(Int32List list) => list;
+
 class Worker {
   Worker._(this._isolate, this._inbox, this._port);
 

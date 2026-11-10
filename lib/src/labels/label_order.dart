@@ -53,33 +53,54 @@ class LabelOrder {
     final ts = math.sin(bearing), tc = math.cos(bearing);
     for (final st in drawn) {
       final candidate = st.candidate;
-      if (_style.symbolOf(candidate)?.drawnByScreenY != true) continue;
-      if (candidate is TileLabel) {
-        // As MapLibre's getSortedSymbolIndexes: the anchor's turned y in
-        // whole tile units.
-        final x = (st.worldX - candidate.tileX) / candidate.tileSpan;
-        final y = (st.worldY - candidate.tileY) / candidate.tileSpan;
-        st.drawY = ((-ts * x + tc * y) * _sortExtent).roundToDouble();
+      final symbol = _style.symbolOf(candidate);
+      st
+        ..drawLayer = layerOf(candidate)
+        ..drawnByKey = symbol?.drawnByKey == true
+        ..drawnByScreenY = symbol?.drawnByScreenY == true;
+      if (candidate is! TileLabel) {
+        st.tileWidth = -1;
+        if (!st.drawnByScreenY) continue;
+        _style.stand(candidate);
+        _view.project(st.worldX, st.worldY);
+        _view.standAt(0);
+        st.drawY = _view.y.roundToDouble();
         continue;
       }
-      _style.stand(candidate);
-      _view.project(st.worldX, st.worldY);
-      _view.standAt(0);
-      st.drawY = _view.y.roundToDouble();
+      // MapLibre draws a layer's symbols tile by tile: deepest zoom first,
+      // then in rows down the turned screen, each row from left to right
+      // (`getRenderableIds` for symbol layers, reversed by the painter).
+      final span = candidate.tileSpan;
+      final tx = candidate.tileX / span, ty = candidate.tileY / span;
+      st
+        ..tileWidth = span
+        ..tileRow = -ts * tx + tc * ty
+        ..tileColumn = tc * tx + ts * ty;
+      if (!st.drawnByScreenY) continue;
+      // As MapLibre's getSortedSymbolIndexes: the anchor's turned y in
+      // whole tile units.
+      final x = (st.worldX - candidate.tileX) / span;
+      final y = (st.worldY - candidate.tileY) / span;
+      st.drawY = ((-ts * x + tc * y) * _sortExtent).roundToDouble();
     }
-    drawn.sort((a, b) {
-      final byLayer = layerOf(a.candidate) - layerOf(b.candidate);
-      if (byLayer != 0) return byLayer;
-      if (_style.symbolOf(a.candidate)?.drawnByKey != true) {
-        final byTile = _tileOrder(a.candidate, b.candidate, ts, tc);
-        if (byTile != 0) return byTile;
+    drawn.sort(_drawingOrder);
+  }
+
+  static int _drawingOrder(LabelState a, LabelState b) {
+    final byLayer = a.drawLayer - b.drawLayer;
+    if (byLayer != 0) return byLayer;
+    if (!a.drawnByKey && a.tileWidth >= 0 && b.tileWidth >= 0) {
+      if (a.tileWidth != b.tileWidth) {
+        return a.tileWidth.compareTo(b.tileWidth);
       }
-      if (_style.symbolOf(a.candidate)?.drawnByScreenY != true) {
-        return a.sortKey - b.sortKey;
-      }
-      final byY = a.drawY.compareTo(b.drawY);
-      return byY != 0 ? byY : b.sortKey - a.sortKey;
-    });
+      final byRow = a.tileRow.compareTo(b.tileRow);
+      if (byRow != 0) return byRow;
+      final byColumn = a.tileColumn.compareTo(b.tileColumn);
+      if (byColumn != 0) return byColumn;
+    }
+    if (!a.drawnByScreenY) return a.sortKey - b.sortKey;
+    final byY = a.drawY.compareTo(b.drawY);
+    return byY != 0 ? byY : b.sortKey - a.sortKey;
   }
 
   /// MapLibre's placement order: by priority, then a layer's tiles deepest
@@ -117,23 +138,4 @@ class LabelOrder {
 
   /// The tile units MapLibre sorts symbols in, `EXTENT`.
   static const _sortExtent = 8192.0;
-
-  /// MapLibre draws a layer's symbols tile by tile: deepest zoom first,
-  /// then in rows down the turned screen, each row from left to right
-  /// (`getRenderableIds` for symbol layers, reversed by the painter).
-  static int _tileOrder(
-    LabelCandidate a,
-    LabelCandidate b,
-    double s,
-    double c,
-  ) {
-    if (a is! TileLabel || b is! TileLabel) return 0;
-    if (a.tileSpan != b.tileSpan) return a.tileSpan.compareTo(b.tileSpan);
-    if (a.tileX == b.tileX && a.tileY == b.tileY) return 0;
-    final ax = a.tileX / a.tileSpan, ay = a.tileY / a.tileSpan;
-    final bx = b.tileX / b.tileSpan, by = b.tileY / b.tileSpan;
-    final byRow = (-s * ax + c * ay).compareTo(-s * bx + c * by);
-    if (byRow != 0) return byRow;
-    return (c * ax + s * ay).compareTo(c * bx + s * by);
-  }
 }

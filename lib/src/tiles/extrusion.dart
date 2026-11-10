@@ -99,17 +99,17 @@ class BuiltExtrusion {
     final words = unpackFloats(m[6]!);
     return BuiltExtrusion(
       m[0]! as int,
-      unpackFloats(m[1]!),
+      ownFloats(unpackFloats(m[1]!)),
       unpackFloats(m[2]!),
       unpackFloats(m[3]!),
-      unpackFloats(m[4]!),
+      ownFloats(unpackFloats(m[4]!)),
       unpackFloats(m[5]!),
       words.buffer.asUint32List(words.offsetInBytes, words.length),
       BuildingIndex(
-        unpackFloats(m[7]!),
-        unpackFloats(m[8]!),
-        unpackFloats(m[9]!),
-        unpackFloats(m[10]!),
+        ownFloats(unpackFloats(m[7]!)),
+        ownFloats(unpackFloats(m[8]!)),
+        ownFloats(unpackFloats(m[9]!)),
+        ownFloats(unpackFloats(m[10]!)),
       ),
       (m[11]! as List).cast<String>(),
     );

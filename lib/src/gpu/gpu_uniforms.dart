@@ -389,10 +389,10 @@ class LayerSlots {
   /// One layer's paint this frame, in screen pixels, before a tile's scale.
   final Map<int, LayerPaint> _layerPaint = {};
 
-  /// The slots of a tile's segment at a scale as written this frame: over
-  /// raised ground a tile is drawn into every slot of the atlas it reaches,
-  /// with the same paint each time.
-  final Map<(TileGpu, int, double), gpu.BufferView> _written = {};
+  /// Each tile's slots as written this frame: over raised ground a tile is
+  /// drawn into every slot of the atlas it reaches, with the same paint
+  /// each time.
+  final Map<TileGpu, _TileSlots> _written = Map.identity();
 
   /// The slots [write] puts in place for segment [segment] of [data] at
   /// [scale], written once a frame.
@@ -401,7 +401,19 @@ class LayerSlots {
     int segment,
     double scale,
     gpu.BufferView Function() write,
-  ) => _written[(data, segment, scale)] ??= write();
+  ) {
+    final first = _written[data];
+    var slots = first;
+    while (slots != null && slots.scale != scale) {
+      slots = slots.next;
+    }
+    slots ??= _written[data] = _TileSlots(
+      scale,
+      data.stream!.segments.length,
+      first,
+    );
+    return slots.views[segment] ??= write();
+  }
 
   /// Forgets the last frame's paint, for a frame with the features'
   /// [states] by source and its [dashFade].
@@ -484,4 +496,15 @@ class LayerSlots {
     }
     return ByteData.sublistView(slots, 0, (to - from) * LayerPaint.slotFloats);
   }
+}
+
+/// One tile's slots as written this frame at one scale, by segment, and
+/// those written at another scale after it.
+class _TileSlots {
+  _TileSlots(this.scale, int segments, this.next)
+    : views = List.filled(segments, null);
+
+  final double scale;
+  final List<gpu.BufferView?> views;
+  final _TileSlots? next;
 }
