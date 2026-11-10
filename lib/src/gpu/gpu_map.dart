@@ -1,4 +1,3 @@
-import 'dart:developer' show Timeline;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -12,6 +11,7 @@ import '../labels/sdf_text.dart';
 import '../render/map_renderer.dart';
 import '../style/style_model.dart';
 import '../tiles/tiles.dart';
+import '../trace.dart';
 
 import 'gpu_buffers.dart';
 import 'frame_layers.dart';
@@ -131,10 +131,7 @@ class GpuMap extends MapRenderer {
       tile.keepForRenderer(data);
     }
     final sending = data;
-    return Timeline.timeSync(
-      'vmap.gpu.upload',
-      () => sending.send(clock, deadline),
-    );
+    return traced('vmap.gpu.upload', () => sending.send(clock, deadline));
   }
 
   /// Past three quarters of the heap's cap, lets the tiles drawn longest
@@ -256,7 +253,7 @@ class GpuMap extends MapRenderer {
     // samples it, so it goes to the GPU first, and on the web a pass
     // draws into whatever framebuffer was bound last.
     if (raised) {
-      Timeline.timeSync('vmap.gpu.drape', () => drape.drawAtlas(buffers, f));
+      traced('vmap.gpu.drape', () => drape.drawAtlas(buffers, f));
     }
     final layers = _frames.begin(
       device,
@@ -276,7 +273,7 @@ class GpuMap extends MapRenderer {
     // The raised ground holds every vector layer, laid after the
     // backgrounds and rasters under the labels.
     if (raised) layers.splits.add((sheet.labelsRun - 1, 0));
-    Timeline.timeSync('vmap.gpu.draw', () {
+    traced('vmap.gpu.draw', () {
       if (!raised) return _layOut(layers, f, _Layout.flat);
       // The flat layers are in the drape; the ground and buildings stand
       // in the frame with depth. With terrain MapLibre draws the map into
@@ -307,7 +304,7 @@ class GpuMap extends MapRenderer {
         }
       }
     });
-    Timeline.timeSync('vmap.gpu.submit', () => _frames.submit(buffers, _heap));
+    traced('vmap.gpu.submit', () => _frames.submit(buffers, _heap));
     _frames.drawn(layers, view, snapshot: f.planes == null);
     return sprites.loading || drape.sending;
   }

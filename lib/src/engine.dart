@@ -721,6 +721,7 @@ class VmapEngine extends ChangeNotifier {
     gpu: _renderer,
     maxCachedTiles: rendering.maxCachedTiles,
     host: _Host(this),
+    farBuildings: rendering.farBuildings,
   );
 
   /// Whether a paint transition is still running. Once all have ended the

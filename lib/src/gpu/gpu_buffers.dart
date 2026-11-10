@@ -1,4 +1,3 @@
-import 'dart:developer' show Timeline;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -10,6 +9,7 @@ import '../tiles/extrusion.dart';
 import '../tiles/gpu_stream.dart';
 import '../render/map_renderer.dart';
 import '../tiles/tiles.dart';
+import '../trace.dart';
 
 /// Frames the GPU may still be reading while the next one is written.
 const framesInFlight = 4;
@@ -39,12 +39,18 @@ class UniformArena {
     _offset = 0;
   }
 
-  /// Writes [bytes] at the next aligned place, keeping at least [room]
-  /// bytes there: a uniform block is bound at its whole declared size, so
-  /// one written in part still needs that room.
-  gpu.BufferView emplace(ByteData bytes, {int room = 0}) {
+  /// Writes [bytes] at the next aligned place.
+  ///
+  /// A uniform block written in part is still bound at its whole declared
+  /// size, [boundBytes], so the write lands where the buffer has that much
+  /// left. The next write follows the bytes written, inside that range: a
+  /// shader given a block written in part must read no further than
+  /// [bytes], and a frame's blocks then fill a few buffers instead of one
+  /// for every four.
+  gpu.BufferView emplace(ByteData bytes, {int boundBytes = 0}) {
     final length = bytes.lengthInBytes;
-    final kept = math.max(length, room);
+    assert(boundBytes == 0 || boundBytes >= length);
+    final kept = math.max(length, boundBytes);
     var at = (_offset + _align - 1) ~/ _align * _align;
     final blocks = _blocks[_frame];
     if (blocks.isEmpty || at + kept > _blockBytes) {
@@ -62,7 +68,7 @@ class UniformArena {
           : bytes,
       destinationOffsetInBytes: at,
     );
-    _offset = at + kept;
+    _offset = at + length;
     return gpu.BufferView(buffer, offsetInBytes: at, lengthInBytes: length);
   }
 }
@@ -156,7 +162,7 @@ class GpuHeap {
   /// is typed for that one role, so uploads cross to WebGL as the lists
   /// they are instead of byte by byte.
   static gpu.DeviceBuffer _create(int bytes, {required bool indices}) =>
-      Timeline.timeSync('vmap.gpu.alloc', () {
+      traced('vmap.gpu.alloc', () {
         final made = gpu.createGeometryBuffers(
           indices ? 0 : bytes,
           indices ? bytes : 0,

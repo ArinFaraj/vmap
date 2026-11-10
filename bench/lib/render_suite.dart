@@ -327,6 +327,7 @@ class _Session {
             renderer: _gpu ? VmapRenderer.gpu : VmapRenderer.canvas,
             antialias: _multisample,
             maxCachedTiles: 200,
+            farBuildings: false,
           ),
           labels: VmapLabelOptions(
             crossSourceCollisions: crossSourceCollisions,

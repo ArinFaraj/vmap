@@ -43,6 +43,12 @@ class LabelView {
     _fromSea = fromSea;
   }
 
+  /// Whether points lie on the flat map's own ground: none raised by the
+  /// style, no globe, and nothing lifted above it. Text laid on such
+  /// ground keeps its place in the world from frame to frame.
+  bool get onFlatGround =>
+      ground == null && tilted.globe == null && _lift == 0 && !_fromSea;
+
   /// The height in world pixels points at [wx], [wy] are projected at.
   double heightAt(double wx, double wy) =>
       (_fromSea ? seaLevel : ground?.call(wx, wy) ?? 0) + _lift;

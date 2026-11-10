@@ -88,7 +88,7 @@ class GpuPipelines {
     buildingFrame = buildingVertex.getUniformSlot('FrameInfo');
     buildingDem = buildingVertex.getUniformSlot('DemInfo');
     buildingHeights = buildingVertex.getUniformSlot('heights');
-    buildingGlobe = buildingVertex.getUniformSlot('GlobeInfo');
+    buildingTile = buildingVertex.getUniformSlot('TileInfo');
     buildingPatterns = buildingVertex.getUniformSlot('PatternInfo');
     buildingSheet = buildingFragment.getUniformSlot('SheetInfo');
     buildingSprites = buildingFragment.getUniformSlot('sprite_sheet');
@@ -232,7 +232,7 @@ class GpuPipelines {
       buildingFrame,
       buildingDem,
       buildingHeights,
-      buildingGlobe,
+      buildingTile,
       buildingPatterns,
       buildingSheet,
       buildingSprites;

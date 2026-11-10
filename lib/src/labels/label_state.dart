@@ -1,7 +1,10 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show listEquals;
+
 import 'label_sprites.dart';
+import 'sdf_text.dart';
 import '../style/pins.dart';
 import '../style/sprites.dart';
 import '../tiles/built_tile.dart';
@@ -153,10 +156,45 @@ typedef LabelSize = ({
   double iconPad,
 });
 
+/// A label's glyphs laid on the ground once, which the renderer projects
+/// in each frame, with what they were laid out from.
+class GroundText {
+  GroundText(this.text, this.unit, this.sprite, LabelState st, this.flip)
+    : worldX = st.worldX,
+      worldY = st.worldY,
+      angle = st.angle,
+      curve = st.curve,
+      curveMid = st.curveMid;
+
+  final KeptText text;
+
+  /// An em of the text in fractions of the world when laid out.
+  final double unit;
+  final LabelSprite sprite;
+  final bool flip;
+  final double worldX, worldY, angle, curveMid;
+  final Float64List? curve;
+
+  /// Whether [st] is still where the glyphs were laid out, along the same
+  /// road, reading the same way, with the same text. A road name's curve
+  /// is a new list of the same points each time it is placed.
+  bool fits(LabelState st, LabelSprite sprite, bool flip) =>
+      identical(sprite, this.sprite) &&
+      flip == this.flip &&
+      st.worldX == worldX &&
+      st.worldY == worldY &&
+      st.angle == angle &&
+      st.curveMid == curveMid &&
+      listEquals(st.curve, curve);
+}
+
 /// What one label is across frames: whether it is placed, how far it has
 /// faded, and where it sits.
 class LabelState {
   LabelState(this.candidate);
+
+  /// Its text laid on the ground, kept while it fits.
+  GroundText? ground;
 
   /// How far across its road a road name drawn as an image is moved, in
   /// pixels: its `text-offset` at its size, as placement weighed it.

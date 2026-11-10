@@ -47,6 +47,10 @@ final class WebGlRenderPass extends RenderPass {
   /// bound there, occupied since the last [clearBindings]. Recorded so the
   /// clear can release exactly what it handed out.
   final Set<int> _boundUniformBlocks = {};
+
+  /// The binding points under 62 in [_boundUniformBlocks], a bit each, so
+  /// binding one again does not look the set up.
+  int _boundBlockBits = 0;
   final Map<int, int> _boundTextureUnits = {};
   PrimitiveType _primitiveType = PrimitiveType.triangle;
   BufferView? _inlineVertexBufferView;
@@ -369,35 +373,22 @@ final class WebGlRenderPass extends RenderPass {
       return;
     }
     final gl = _gpuContext._gl;
-    final pipeline = _boundPipeline!;
-    final key = StringBuffer()..write(identityHashCode(pipeline));
+    final indexView = needsIndex ? _indexBufferView : null;
+    final key = _gpuContext._vaoProbe..clear(_boundPipeline!);
     for (final (view, slot, instanceRate) in _pendingVertexBindings) {
       if (instanceRate) continue;
-      key
-        ..write('|')
-        ..write(view.buffer.webGl._serial)
-        ..write(':')
-        ..write(view.offsetInBytes)
-        ..write(':')
-        ..write(slot);
+      key.stream(view.buffer.webGl._serial, view.offsetInBytes, slot);
     }
-    final indexView = needsIndex ? _indexBufferView : null;
     if (indexView != null) {
-      key
-        ..write('#')
-        ..write(indexView.buffer.webGl._serial)
-        ..write(':')
-        ..write(indexView.offsetInBytes);
+      key.indices(indexView.buffer.webGl._serial, indexView.offsetInBytes);
     }
-    final cacheKey = key.toString();
     final cache = _gpuContext._vaoCache;
-    // Remove-and-reinsert keeps the map in least-recently-used order.
-    var vao = cache.remove(cacheKey);
-    if (vao != null) {
-      cache[cacheKey] = vao;
-      _gpuContext._state.bindVertexArray(vao);
+    final known = cache[key];
+    if (known != null) {
+      known.used = ++_gpuContext._vaoClock;
+      _gpuContext._state.bindVertexArray(known.vao);
     } else {
-      vao = gl.createVertexArray();
+      final vao = gl.createVertexArray();
       if (vao == null) {
         throw StateError('Failed to create WebGL vertex array');
       }
@@ -410,10 +401,9 @@ final class WebGlRenderPass extends RenderPass {
       indexView?.buffer.webGl._bindForTarget(
         web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER,
       );
-      cache[cacheKey] = vao;
+      cache[key.copy()] = _CachedVao(vao)..used = ++_gpuContext._vaoClock;
       if (cache.length > WebGlContext._kMaxCachedVaos) {
-        final oldest = cache.keys.first;
-        _gpuContext._state.deleteVertexArray(cache.remove(oldest)!);
+        _gpuContext._dropOldVaos();
       }
     }
     for (final (view, slot, instanceRate) in _pendingVertexBindings) {
@@ -434,6 +424,13 @@ final class WebGlRenderPass extends RenderPass {
     final pipeline = _boundPipeline;
     if (pipeline == null) {
       throw StateError('bindUniform called before bindPipeline');
+    }
+    final known = pipeline._boundBlocks;
+    for (var i = 0; i < known.length; i++) {
+      final block = known[i];
+      if (!identical(block.slot, slot)) continue;
+      _bindBlock(block.binding, block.minBindSize, bufferView);
+      return;
     }
     final struct = slot.shader.webGl._uniformStructs[slot.uniformName];
     if (struct == null) {
@@ -459,26 +456,9 @@ final class WebGlRenderPass extends RenderPass {
     // UNIFORM_BUFFER_OFFSET_ALIGNMENT.
     final blockBinding = pipeline._structBlockBindings[struct.name];
     if (blockBinding != null) {
-      final glBuffer = bufferView.buffer.webGl._bindForTarget(
-        web.WebGL2RenderingContext.UNIFORM_BUFFER,
-      );
-      // Bind at least the driver-reported block data size; the emplaced
-      // length alone can be smaller than the driver's padded size, and a
-      // too-small range makes the draw a no-op. DeviceBuffer pads its GL
-      // data store so the extended range stays inside the buffer.
-      var lengthInBytes = bufferView.lengthInBytes;
-      final minBindSize = pipeline._structBlockBindSizes[struct.name];
-      if (minBindSize != null && minBindSize > lengthInBytes) {
-        lengthInBytes = minBindSize;
-      }
-      _gpuContext._state.bindBufferRange(
-        web.WebGL2RenderingContext.UNIFORM_BUFFER,
-        blockBinding,
-        glBuffer,
-        bufferView.offsetInBytes,
-        lengthInBytes,
-      );
-      _boundUniformBlocks.add(blockBinding);
+      final minBindSize = pipeline._structBlockBindSizes[struct.name] ?? 0;
+      pipeline._boundBlocks.add(_BoundBlock(slot, blockBinding, minBindSize));
+      _bindBlock(blockBinding, minBindSize, bufferView);
       return;
     }
 
@@ -491,6 +471,34 @@ final class WebGlRenderPass extends RenderPass {
       final member = struct.members[i];
       _setUniformMember(gl, loc, member, floats, base + member.offsetInBytes);
     }
+  }
+
+  /// Attaches [bufferView] to the uniform block at [blockBinding].
+  ///
+  /// At least [minBindSize] bytes are bound, the driver-reported block data
+  /// size: the emplaced length alone can be smaller than the driver's
+  /// padded size, and a too-small range makes the draw a no-op.
+  /// DeviceBuffer pads its GL data store so the extended range stays inside
+  /// the buffer.
+  void _bindBlock(int blockBinding, int minBindSize, BufferView bufferView) {
+    final glBuffer = bufferView.buffer.webGl._bindForTarget(
+      web.WebGL2RenderingContext.UNIFORM_BUFFER,
+    );
+    var lengthInBytes = bufferView.lengthInBytes;
+    if (minBindSize > lengthInBytes) lengthInBytes = minBindSize;
+    _gpuContext._state.bindBufferRange(
+      web.WebGL2RenderingContext.UNIFORM_BUFFER,
+      blockBinding,
+      glBuffer,
+      bufferView.offsetInBytes,
+      lengthInBytes,
+    );
+    if (blockBinding < 62) {
+      final bit = 1 << blockBinding;
+      if (_boundBlockBits & bit != 0) return;
+      _boundBlockBits |= bit;
+    }
+    _boundUniformBlocks.add(blockBinding);
   }
 
   /// [length] floats of [floats] from [offset], as a JS array of just them.
@@ -711,6 +719,7 @@ final class WebGlRenderPass extends RenderPass {
       );
     }
     _boundUniformBlocks.clear();
+    _boundBlockBits = 0;
     for (final entry in _boundTextureUnits.entries) {
       _gpuContext._state.bindTexture(entry.key, entry.value, null);
     }

@@ -1,5 +1,9 @@
 # Benchmark against vector_map_tiles
 
+These are measurements of the canvas renderer in versions 0.3 to 0.21,
+before vmap drew on the GPU. What the GPU engine measures today, and against
+MapLibre GL JS, is in [performance-plan.md](performance-plan.md).
+
 ![Frames lost during the tour](images/bench.png)
 
 Both renderers drew the Liberty style on the same phone (Vivo V2514, Android,

@@ -12,6 +12,7 @@ import 'label_style.dart';
 import 'label_state.dart';
 import 'label_view.dart';
 import 'glyph_geometry.dart';
+import 'ground_text.dart';
 import 'road_labels.dart';
 import 'sdf_text.dart';
 
@@ -23,6 +24,10 @@ class LabelTextPainter {
     : _geometry = GlyphGeometry(_view);
 
   final GlyphGeometry _geometry;
+  late final GroundTextPainter _groundText = GroundTextPainter(
+    _view,
+    _geometry,
+  );
   final Float64List _along = Float64List(3);
 
   final LabelView _view;
@@ -399,10 +404,7 @@ class LabelTextPainter {
     // As MapLibre's text-rotation-alignment viewport-glyph: along the line,
     // each glyph upright on the screen.
     final upright = st.glyphsUpright;
-    final haloColor = look.halo;
-    final halo = haloColor == null || look.haloWidth <= 0
-        ? null
-        : SdfLook.rgba(haloColor, st.opacity);
+    final halo = SdfLook.haloOf(look.halo, look.haloWidth, st.opacity);
     final overlap = look.haloWidth > 1 || look.letterSpacing < 0;
     final plain = SdfLook.rgba(look.color, st.opacity);
     SdfLook lookOf(int i, double fontScale, double gammaScale) {
@@ -419,6 +421,9 @@ class LabelTextPainter {
     }
 
     if (st.onGround) {
+      if (_groundText.draw(sdf, st, sprite, em, layer, overlap: overlap)) {
+        return;
+      }
       final (size, depth) = _geometry.groundSize(st, em);
       final unit = size / _view.world;
       // As MapLibre's u_gamma_scale for text laid on the map: the clip w

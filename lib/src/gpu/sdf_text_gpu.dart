@@ -4,12 +4,14 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:vector_math/vector_math.dart' show Vector4;
 
+import '../camera/view.dart';
 import '../labels/sdf_text.dart';
 import '../render/frame_planes.dart';
 import '../text/glyphs/glyph_pbf.dart';
 import 'gpu_buffers.dart' show framesInFlight;
 import 'gpu_device.dart';
 import 'gpu_shim/gpu.dart' as gpu;
+import 'sdf_quad.dart';
 
 /// Text from a style's glyph ranges drawn as MapLibre draws it: the
 /// glyphs' distance fields packed into one atlas, each glyph a quad, its
@@ -22,6 +24,7 @@ class SdfTextGpu implements SdfText {
   final gpu.ShaderLibrary _library;
   gpu.RenderPipeline? _pipeline;
   gpu.UniformSlot? _frameSlot, _fragmentFrameSlot, _glyphSlot, _spriteSlot;
+  gpu.UniformSlot? _groundSlot;
   bool _failed = false;
 
   /// The atlas: one byte a texel, glyphs packed on shelves, each with a
@@ -45,9 +48,8 @@ class SdfTextGpu implements SdfText {
   ui.Size _size = ui.Size.zero;
   double _dpr = 1;
 
-  /// One instance a quad, 28 floats, drawn over the six corners of
-  /// [_corners].
-  static const _quadFloats = 28;
+  /// One [SdfQuad] an instance, drawn over the six corners of [_corners].
+  static const _quadFloats = SdfQuad.floats;
   gpu.DeviceBuffer? _corners;
   Float32List _vertices = Float32List(_quadFloats * 256);
   Float32List _ordered = Float32List(_quadFloats * 256);
@@ -67,6 +69,10 @@ class SdfTextGpu implements SdfText {
   int _next = 0;
   final Float32List _frameInfo = Float32List(8);
   late final ByteData _frameBytes = ByteData.sublistView(_frameInfo);
+
+  /// The flat map's projection this frame, for quads kept on the ground.
+  final Float32List _groundInfo = Float32List(12);
+  late final ByteData _groundBytes = ByteData.sublistView(_groundInfo);
 
   bool get ready {
     if (_pipeline != null) return true;
@@ -93,7 +99,7 @@ class SdfTextGpu implements SdfText {
               ],
             ),
             gpu.VertexBuffer(
-              strideInBytes: _quadFloats * 4,
+              strideInBytes: SdfQuad.bytes,
               stepMode: gpu.VertexStepMode.instance,
               attributes: [
                 gpu.VertexAttribute(
@@ -103,32 +109,37 @@ class SdfTextGpu implements SdfText {
                 gpu.VertexAttribute(
                   name: 'axes',
                   format: gpu.VertexFormat.float32x4,
-                  offsetInBytes: 16,
+                  offsetInBytes: SdfQuad.axes * 4,
                 ),
                 gpu.VertexAttribute(
                   name: 'extent',
                   format: gpu.VertexFormat.float32x4,
-                  offsetInBytes: 32,
+                  offsetInBytes: SdfQuad.extent * 4,
                 ),
                 gpu.VertexAttribute(
                   name: 'ink',
                   format: gpu.VertexFormat.float32x4,
-                  offsetInBytes: 48,
+                  offsetInBytes: SdfQuad.ink * 4,
                 ),
                 gpu.VertexAttribute(
                   name: 'halo',
                   format: gpu.VertexFormat.float32x4,
-                  offsetInBytes: 64,
+                  offsetInBytes: SdfQuad.halo * 4,
                 ),
                 gpu.VertexAttribute(
                   name: 'params',
                   format: gpu.VertexFormat.float32x4,
-                  offsetInBytes: 80,
+                  offsetInBytes: SdfQuad.params * 4,
                 ),
                 gpu.VertexAttribute(
                   name: 'clip',
                   format: gpu.VertexFormat.float32x4,
-                  offsetInBytes: 96,
+                  offsetInBytes: SdfQuad.clip * 4,
+                ),
+                gpu.VertexAttribute(
+                  name: 'anchor',
+                  format: gpu.VertexFormat.float32x4,
+                  offsetInBytes: SdfQuad.anchor * 4,
                 ),
               ],
             ),
@@ -141,6 +152,7 @@ class SdfTextGpu implements SdfText {
         ),
       );
       _frameSlot = vertex.getUniformSlot('SdfFrame');
+      _groundSlot = vertex.getUniformSlot('SdfGround');
       _spriteSlot = fragment.getUniformSlot('sprites');
       _fragmentFrameSlot = fragment.getUniformSlot('SdfFrame');
       _glyphSlot = fragment.getUniformSlot('glyphs');
@@ -164,11 +176,63 @@ class SdfTextGpu implements SdfText {
     ui.Size size,
     double devicePixelRatio,
     PbfGlyph? Function(int face, int codePoint) glyph,
+    MapView view,
   ) {
     _size = size;
     _dpr = devicePixelRatio;
     _lookup = glyph;
     _count = 0;
+    view.flatProjection(_groundInfo);
+  }
+
+  @override
+  KeptText keep(int glyphs) => _KeptQuads(this, glyphs);
+
+  /// Queues [kept]'s quads, placed by [SdfQuad.atAnchor].
+  void _queueKept(
+    _KeptQuads kept,
+    double x,
+    double y,
+    double size,
+    double opacity,
+    int layer,
+    bool overlap,
+  ) {
+    final count = kept._count;
+    if (count == 0) return;
+    _reserve(count);
+    final from = _count * _quadFloats;
+    _vertices.setRange(from, from + count * _quadFloats, kept._quads);
+    for (var q = 0; q < count; q++) {
+      final at = _queue(layer, false, overlap);
+      SdfQuad.atAnchor(_vertices, at, x, y, size, opacity);
+    }
+  }
+
+  /// Makes the next quad queued one of [layer]'s and returns where its
+  /// floats go in [_vertices], which it may have replaced with a longer
+  /// list.
+  int _queue(int layer, bool icon, bool overlap) {
+    _reserve(1);
+    _layers[_count] = layer;
+    _icons[_count] = icon ? 1 : 0;
+    _overlaps[_count] = overlap ? 1 : 0;
+    return _count++ * _quadFloats;
+  }
+
+  /// Makes room for [more] quads after the ones queued.
+  void _reserve(int more) {
+    if ((_count + more) * _quadFloats <= _vertices.length) return;
+    var quads = _layers.length;
+    while (quads < _count + more) {
+      quads *= 2;
+    }
+    _vertices = Float32List(quads * _quadFloats)
+      ..setRange(0, _count * _quadFloats, _vertices);
+    _ordered = Float32List(_vertices.length);
+    _layers = Int32List(quads)..setRange(0, _count, _layers);
+    _icons = Uint8List(quads)..setRange(0, _count, _icons);
+    _overlaps = Uint8List(quads)..setRange(0, _count, _overlaps);
   }
 
   /// The atlas corner of [codePoint] of [face] as x plus y times the
@@ -204,6 +268,14 @@ class SdfTextGpu implements SdfText {
     return _placed[key] = x + y * _side;
   }
 
+  /// As MapLibre's getGlyphQuads: a glyph's quad covers its field and its
+  /// padding, from its left bearing less the border and the padding.
+  static const _pad = GlyphPbf.border + 1.0;
+  static double _quadLeft(PbfGlyph g) => g.left - _pad;
+  static double _quadTop(PbfGlyph g) => -g.top - _pad;
+  static double _quadWidth(PbfGlyph g) => g.width + 2 * _pad;
+  static double _quadHeight(PbfGlyph g) => g.height + 2 * _pad;
+
   @override
   void glyph(
     int face,
@@ -221,26 +293,22 @@ class SdfTextGpu implements SdfText {
     if (g == null) return;
     final corner = _corner(face, codePoint, g);
     if (corner < 0) return;
-    // As MapLibre's getGlyphQuads: the quad covers the glyph's field and
-    // its padding, from its left bearing less the border and the padding.
-    const pad = GlyphPbf.border + 1;
-    final u0 = g.left - pad.toDouble(), v0 = -g.top - pad.toDouble();
-    final tw = g.width + 2 * pad.toDouble(), th = g.height + 2 * pad.toDouble();
-    final tx = (corner % _side).toDouble(), ty = (corner ~/ _side).toDouble();
-    _quad(
+    final u0 = _quadLeft(g), v0 = _quadTop(g);
+    final at = _queue(layer, false, look.overlap);
+    SdfQuad.onScreen(
+      _vertices,
+      at,
       ox + u0 * ax + v0 * bx,
       oy + u0 * ay + v0 * by,
       ax,
       ay,
       bx,
       by,
-      tx,
-      ty,
-      tw,
-      th,
+      (corner % _side).toDouble(),
+      (corner ~/ _side).toDouble(),
+      _quadWidth(g),
+      _quadHeight(g),
       look,
-      layer,
-      kind: 0,
     );
   }
 
@@ -261,7 +329,10 @@ class SdfTextGpu implements SdfText {
   }) {
     final sprites = _device.sprites;
     if (sprites.texture == null || sprites.image == null) return false;
-    _quad(
+    final at = _queue(layer, true, look.overlap);
+    SdfQuad.onScreen(
+      _vertices,
+      at,
       ox,
       oy,
       ax,
@@ -273,81 +344,28 @@ class SdfTextGpu implements SdfText {
       source.width,
       source.height,
       look,
-      layer,
       kind: sdf ? 1 : 2,
       linear: linear,
-      clip: clip,
+      within: clip,
     );
     return true;
   }
 
-  /// Queues a quad from [ox], [oy] spanning [tw] texels by [ax], [ay] and
-  /// [th] texels by [bx], [by], sampling from texel [tx], [ty].
-  void _quad(
-    double ox,
-    double oy,
-    double ax,
-    double ay,
-    double bx,
-    double by,
-    double tx,
-    double ty,
-    double tw,
-    double th,
-    SdfLook look,
-    int layer, {
-    required int kind,
-    bool linear = true,
-    ui.Rect clip = ui.Rect.zero,
-  }) {
-    if ((_count + 1) * _quadFloats > _vertices.length) {
-      _vertices = Float32List(_vertices.length * 2)
-        ..setRange(0, _count * _quadFloats, _vertices);
-      _ordered = Float32List(_vertices.length);
-      _layers = Int32List(_layers.length * 2)..setRange(0, _count, _layers);
-      _icons = Uint8List(_icons.length * 2)..setRange(0, _count, _icons);
-      _overlaps = Uint8List(_overlaps.length * 2)
-        ..setRange(0, _count, _overlaps);
-    }
-    _layers[_count] = layer;
-    _icons[_count] = kind > 0 ? 1 : 0;
-    _overlaps[_count] = look.overlap ? 1 : 0;
-    final o = _count * _quadFloats;
-    final ink = look.ink, halo = look.halo;
-    _vertices
-      ..[o] = ox
-      ..[o + 1] = oy
-      ..[o + 2] = tx
-      ..[o + 3] = ty
-      ..[o + 4] = tw * ax
-      ..[o + 5] = tw * ay
-      ..[o + 6] = th * bx
-      ..[o + 7] = th * by
-      ..[o + 8] = tw
-      ..[o + 9] = th
-      ..[o + 10] = kind.toDouble()
-      ..[o + 11] = linear ? 1 : 0
-      ..[o + 12] = ink[0]
-      ..[o + 13] = ink[1]
-      ..[o + 14] = ink[2]
-      ..[o + 15] = ink[3]
-      ..[o + 16] = halo?[0] ?? 0
-      ..[o + 17] = halo?[1] ?? 0
-      ..[o + 18] = halo?[2] ?? 0
-      ..[o + 19] = halo?[3] ?? 0
-      ..[o + 20] = look.haloWidth
-      ..[o + 21] = look.haloBlur
-      ..[o + 22] = look.fontScale
-      ..[o + 23] = look.gammaScale
-      ..[o + 24] = clip.left
-      ..[o + 25] = clip.top
-      ..[o + 26] = clip.right
-      ..[o + 27] = clip.bottom;
-    _count++;
-  }
-
   @override
   bool get loading => false;
+
+  /// Whether no layer's run of quads holds an icon after a glyph, so the
+  /// quads are drawn in the order they were queued.
+  bool _inDrawOrder() {
+    for (var q = 1; q < _count; q++) {
+      if (_icons[q] == 1 &&
+          _icons[q - 1] == 0 &&
+          _layers[q] == _layers[q - 1]) {
+        return false;
+      }
+    }
+    return true;
+  }
 
   /// The quads' buffers, one for each frame the GPU may still be drawing,
   /// grown as text needs, so a frame's quads are written into one rather
@@ -442,40 +460,57 @@ class SdfTextGpu implements SdfText {
     }
     // Each run of one layer's quads: its icons, then its text, as
     // MapLibre draws a symbol layer, each part split where halos are
-    // drawn apart from fills.
+    // drawn apart from fills. Quads are moved only when a layer queued an
+    // icon after its text.
     final draws = <(int, int, bool)>[];
-    var at = 0;
-    for (var from = 0; from < _count;) {
-      var to = from + 1;
-      while (to < _count && _layers[to] == _layers[from]) {
-        to++;
-      }
-      for (final icons in const [1, 0]) {
-        var start = at;
-        var overlap = false;
-        for (var q = from; q < to; q++) {
-          if (_icons[q] != icons) continue;
-          final apart = _overlaps[q] == 1;
-          if (at > start && apart != overlap) {
-            draws.add((start, at, overlap));
-            start = at;
-          }
-          overlap = apart;
-          _ordered.setRange(
-            at * _quadFloats,
-            (at + 1) * _quadFloats,
-            _vertices,
-            q * _quadFloats,
-          );
-          at++;
+    var quads = _vertices;
+    if (_inDrawOrder()) {
+      var start = 0;
+      for (var q = 1; q <= _count; q++) {
+        if (q < _count &&
+            _layers[q] == _layers[start] &&
+            _icons[q] == _icons[start] &&
+            _overlaps[q] == _overlaps[start]) {
+          continue;
         }
-        if (at > start) draws.add((start, at, overlap));
+        draws.add((start, q, _overlaps[start] == 1));
+        start = q;
       }
-      from = to;
+    } else {
+      quads = _ordered;
+      var at = 0;
+      for (var from = 0; from < _count;) {
+        var to = from + 1;
+        while (to < _count && _layers[to] == _layers[from]) {
+          to++;
+        }
+        for (final icons in const [1, 0]) {
+          var start = at;
+          var overlap = false;
+          for (var q = from; q < to; q++) {
+            if (_icons[q] != icons) continue;
+            final apart = _overlaps[q] == 1;
+            if (at > start && apart != overlap) {
+              draws.add((start, at, overlap));
+              start = at;
+            }
+            overlap = apart;
+            _ordered.setRange(
+              at * _quadFloats,
+              (at + 1) * _quadFloats,
+              _vertices,
+              q * _quadFloats,
+            );
+            at++;
+          }
+          if (at > start) draws.add((start, at, overlap));
+        }
+        from = to;
+      }
     }
     final host = _device.host;
     final buffer = _quadBuffer(
-      Float32List.sublistView(_ordered, 0, _count * _quadFloats),
+      Float32List.sublistView(quads, 0, _count * _quadFloats),
     );
     final commands = gpu.gpuContext.createCommandBuffer();
     final pass = commands.createRenderPass(
@@ -522,11 +557,13 @@ class SdfTextGpu implements SdfText {
       ..[5] = _side.toDouble()
       ..[6] = (sheetImage?.width ?? 1).toDouble()
       ..[7] = (sheetImage?.height ?? 1).toDouble();
+    final ground = host.emplace(_groundBytes);
     void draw(int from, int to, double mode) {
       _frameInfo[3] = mode;
       final frame = host.emplace(_frameBytes);
       pass
         ..bindUniform(_frameSlot!, frame)
+        ..bindUniform(_groundSlot!, ground)
         ..bindUniform(_fragmentFrameSlot!, frame)
         ..bindVertexBuffer(
           gpu.BufferView(_corners!, offsetInBytes: 0, lengthInBytes: 48),
@@ -534,8 +571,8 @@ class SdfTextGpu implements SdfText {
         ..bindVertexBuffer(
           gpu.BufferView(
             buffer,
-            offsetInBytes: from * _quadFloats * 4,
-            lengthInBytes: (to - from) * _quadFloats * 4,
+            offsetInBytes: from * SdfQuad.bytes,
+            lengthInBytes: (to - from) * SdfQuad.bytes,
           ),
           slot: 1,
         )
@@ -577,4 +614,58 @@ class SdfTextGpu implements SdfText {
     );
     return canvas;
   }
+}
+
+/// Glyph quads laid on the ground, as [SdfTextGpu] queues them.
+class _KeptQuads implements KeptText {
+  _KeptQuads(this._text, int glyphs)
+    : _quads = Float32List(glyphs * SdfQuad.floats);
+
+  final SdfTextGpu _text;
+  final Float32List _quads;
+  int _count = 0;
+
+  @override
+  bool add(
+    int face,
+    int codePoint,
+    double x,
+    double y,
+    double tx,
+    double ty,
+    double pixel,
+    SdfLook look,
+  ) {
+    final g = _text._lookup(face, codePoint);
+    if (g == null) return false;
+    final corner = _text._corner(face, codePoint, g);
+    if (corner < 0) return g.bitmap.isEmpty;
+    SdfQuad.onGround(
+      _quads,
+      _count++ * SdfQuad.floats,
+      x,
+      y,
+      tx,
+      ty,
+      pixel,
+      SdfTextGpu._quadLeft(g),
+      SdfTextGpu._quadTop(g),
+      (corner % SdfTextGpu._side).toDouble(),
+      (corner ~/ SdfTextGpu._side).toDouble(),
+      SdfTextGpu._quadWidth(g),
+      SdfTextGpu._quadHeight(g),
+      look,
+    );
+    return true;
+  }
+
+  @override
+  void draw(
+    double x,
+    double y,
+    double size,
+    double opacity,
+    int layer, {
+    required bool overlap,
+  }) => _text._queueKept(this, x, y, size, opacity, layer, overlap);
 }

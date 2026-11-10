@@ -2,7 +2,7 @@ name: vmap
 description: >-
   A map engine for Flutter drawn on the GPU: any MapLibre style, 3D buildings,
   terrain and the globe, on every platform.
-version: 0.28.0
+version: 0.29.0
 repository: https://github.com/ArinFaraj/vmap
 issue_tracker: https://github.com/ArinFaraj/vmap/issues
 topics:
@@ -13,10 +13,18 @@ topics:
   - gpu
 
 screenshots:
-  - description: Erbil's citadel in 3D, in OpenFreeMap's Liberty style.
+  - description: Lower Manhattan tilted to 72 degrees, in OpenFreeMap's Liberty style.
     path: doc/screenshots/hero.webp
+  - description: Erbil's citadel in 3D, with Kurdish and Arabic names.
+    path: doc/screenshots/erbil.webp
+  - description: The globe, in OpenFreeMap's Liberty style.
+    path: doc/screenshots/globe.webp
+  - description: The Matterhorn raised from elevation tiles, the map draped over it.
+    path: doc/screenshots/terrain.webp
   - description: Erbil in vmap's built in style, with Kurdish street names.
     path: doc/screenshots/builtin.webp
+  - description: The same view in the built in dark style.
+    path: doc/screenshots/dark.webp
 
 platforms:
   android:

@@ -34,7 +34,23 @@ What the API looks like and what should change before release:
 - **Publishing 0.27.0, 2026-10-26**, on Arin's yes, with step 6 still open
   for a real iPhone, Windows, Linux and Firefox: those come in 0.2's run on
   real devices.
-- Work happens on the `engine` branch of `ArinFaraj/vmap`.
+- **Profiled, 2026-11-10:** 0.28.0's tour in Chrome runs at 60 to 100
+  frames a second on a 120 Hz Mac and 34 to 65 in flights. The cause is
+  work repeated every frame, labels first. The plan, in order, with
+  targets: [doc/performance-plan.md](doc/performance-plan.md).
+- **Started, 2026-11-10:** from that plan, far buildings (step 4), road
+  names kept on the GPU (part of step 1), a frame's tile uniforms sent
+  together and the WebGL layer's lookups made cheap (part of step 2), and
+  the timeline switch and a bench harness in `bench/web/compare.html`
+  (part of step 0). The plan's "Done so far" section has the numbers and
+  what is left.
+- **Done, 2026-11-10:** the README designed again around six pictures the
+  engine draws itself (`tool/readme_shots.sh`), with what each platform has
+  been seen running on and how the engine is tested, and
+  [doc/style-support.md](doc/style-support.md) brought up to the GPU
+  engine.
+- Work happens on the `main` branch of `ArinFaraj/vmap`. The `engine`
+  branch stands at the same commit as `main` as of 0.28.0.
 
 Keep this section current: update it whenever a step starts or finishes.
 
@@ -67,9 +83,13 @@ The engine as it stands, packaged and run on every platform.
 
 Already in, from the work so far:
 
-- Any MapLibre style: 1,394 of the 1,519 render tests that must pass, and at
-  most 4.3% of pixels different from MapLibre over 21 views of the
-  OpenFreeMap liberty, bright and positron styles.
+- Any MapLibre style: 1,394 of the 1,519 render tests that must pass, and
+  real styles close to MapLibre's own picture. On 2026-11-10, over the 21
+  views of the OpenFreeMap liberty, bright and positron styles, 19 differed
+  from MapLibre GL JS by 4.1% of pixels or less and two of those not at
+  all. The two Tokyo views differed by 6.4% and 8.8% because the harness
+  took their pictures before any label was drawn (see "Labels arrive late
+  over Tokyo" in [doc/performance-plan.md](doc/performance-plan.md)).
 - GPU drawing: fills, lines, gradients, dashes and patterns in one draw per
   tile; 3D buildings with a depth buffer; globe, terrain, sky and fog;
   heatmaps; raster and hillshade layers.

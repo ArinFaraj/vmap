@@ -66,8 +66,24 @@ final class WebGlContext extends GpuContext {
   /// Cached vertex-array objects keyed by (pipeline, vertex streams, index
   /// buffer), in least-recently-used order; see WebGlRenderPass._applyVertexState.
   static const int _kMaxCachedVaos = 512;
-  final Map<String, web.WebGLVertexArrayObject> _vaoCache =
-      <String, web.WebGLVertexArrayObject>{};
+  final Map<_VaoKey, _CachedVao> _vaoCache = {};
+
+  /// The key a draw fills in to look its vertex array up, kept so a draw
+  /// allocates none.
+  final _VaoKey _vaoProbe = _VaoKey();
+
+  /// Counts vertex array uses, to tell which were used longest ago.
+  int _vaoClock = 0;
+
+  /// Deletes the quarter of the cached vertex arrays used longest ago.
+  void _dropOldVaos() {
+    final byAge = _vaoCache.entries.toList()
+      ..sort((a, b) => a.value.used - b.value.used);
+    for (final entry in byAge.take(_kMaxCachedVaos ~/ 4)) {
+      _vaoCache.remove(entry.key);
+      _state.deleteVertexArray(entry.value.vao);
+    }
+  }
 
   int _maxSupportedAnisotropy = 1;
 
@@ -501,4 +517,72 @@ _createGeometryBuffers(int vertexBytes, int indexBytes) {
 /// `EXT_clip_control`, which sets the clip-space origin and depth range.
 extension type _ExtClipControl._(JSObject _) implements JSObject {
   external void clipControlEXT(int origin, int depth);
+}
+
+/// A cached vertex array and when it was last used.
+final class _CachedVao {
+  _CachedVao(this.vao);
+
+  final web.WebGLVertexArrayObject vao;
+  int used = 0;
+}
+
+/// What a vertex array was built for: a pipeline, then the serial, offset
+/// and slot of each buffer that feeds it per vertex, then the index
+/// buffer's serial and offset when it has one. Whole numbers compared as
+/// they are: a key built as text hashed a string for every draw.
+final class _VaoKey {
+  WebGlRenderPipeline? _pipeline;
+  Int32List _parts = Int32List(16);
+  int _length = 0;
+
+  void clear(WebGlRenderPipeline pipeline) {
+    _pipeline = pipeline;
+    _length = 0;
+  }
+
+  void stream(int serial, int offset, int slot) {
+    _add(serial);
+    _add(offset);
+    _add(slot);
+  }
+
+  void indices(int serial, int offset) {
+    _add(serial);
+    _add(offset);
+  }
+
+  void _add(int part) {
+    if (_length == _parts.length) {
+      _parts = Int32List(_length * 2)..setRange(0, _length, _parts);
+    }
+    _parts[_length++] = part;
+  }
+
+  _VaoKey copy() => _VaoKey()
+    .._pipeline = _pipeline
+    .._parts = Int32List.fromList(Int32List.sublistView(_parts, 0, _length))
+    .._length = _length;
+
+  @override
+  int get hashCode {
+    var h = identityHashCode(_pipeline);
+    for (var i = 0; i < _length; i++) {
+      h = ((h ^ _parts[i]) * 0x9E3779B1) & 0x3fffffff;
+    }
+    return h;
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! _VaoKey ||
+        !identical(other._pipeline, _pipeline) ||
+        other._length != _length) {
+      return false;
+    }
+    for (var i = 0; i < _length; i++) {
+      if (other._parts[i] != _parts[i]) return false;
+    }
+    return true;
+  }
 }

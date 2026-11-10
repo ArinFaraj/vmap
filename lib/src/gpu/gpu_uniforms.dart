@@ -171,14 +171,14 @@ class SpriteTextures {
 
 /// The uniform blocks the GPU renderer's shaders read, as their structs lay
 /// them out: the frame's, written once a frame and then per tile, the map
-/// shader's, and the buildings' on the globe.
+/// shader's, and a tile's buildings'.
 class FrameBlocks {
   final Float32List frame = Float32List(40);
   late final ByteData frameBytes = ByteData.sublistView(frame);
   final Float32List map = Float32List(64);
   late final ByteData mapBytes = ByteData.sublistView(map);
-  final Float32List _globe = Float32List(32);
-  late final ByteData _globeBytes = ByteData.sublistView(_globe);
+  final Float32List _buildingTile = Float32List(36);
+  late final ByteData _buildingTileBytes = ByteData.sublistView(_buildingTile);
 
   /// How far one screen pixel reaches across clip space, each way.
   (double, double) clipPerPixel = (0, 0);
@@ -250,20 +250,37 @@ class FrameBlocks {
     out[19] = clipPerPixel.$2;
   }
 
-  /// building.vert's GlobeInfo for tile [id], zero off the globe.
+  /// building.vert's TileInfo for tile [id], whose buildings have [sunk]
+  /// of their height yet to rise.
   ///
-  /// [shiftX], [shiftY] are the layer's translate in tile units.
-  ByteData buildingGlobe(
+  /// On [globe] it holds where the tile lies on the sphere and the layer's
+  /// translate [shiftX], [shiftY]. On the flat map it holds the camera at
+  /// [eyeX], [eyeY], [eyeHeight] above the ground, and how far from it
+  /// buildings stand, [reach]; a [reach] of zero lets every building
+  /// stand. All in tile units.
+  ByteData buildingTile(
     Globe? globe,
-    TileId id, [
-    double shiftX = 0,
-    double shiftY = 0,
-  ]) {
-    final out = _globe;
+    TileId id, {
+    required double shiftX,
+    required double shiftY,
+    required double eyeX,
+    required double eyeY,
+    required double eyeHeight,
+    required double reach,
+    required double sunk,
+  }) {
+    final out = _buildingTile;
     if (globe == null) {
-      out.fillRange(0, 32, 0);
-      return _globeBytes;
+      out
+        ..fillRange(0, 32, 0)
+        ..[26] = sunk
+        ..[32] = eyeX
+        ..[33] = eyeY
+        ..[34] = eyeHeight
+        ..[35] = reach;
+      return _buildingTileBytes;
     }
+    out[35] = 0;
     final n = 1 << id.z;
     out
       ..[0] = (id.x % n) / n
@@ -279,7 +296,8 @@ class FrameBlocks {
       ..[21] = globe.camera[1]
       ..[22] = globe.camera[2]
       ..[24] = shiftX
-      ..[25] = shiftY;
+      ..[25] = shiftY
+      ..[26] = sunk;
     // MapLibre's transformLightDirection: the light turned to the map's
     // middle on the sphere.
     final lng = (globe.view.centerX * 360 - 180) * math.pi / 180;
@@ -300,18 +318,20 @@ class FrameBlocks {
       ..[28] = rx * lx + dx * ly + px * lz
       ..[29] = ry * lx + dy * ly + py * lz
       ..[30] = rz * lx + dz * ly + pz * lz;
-    return _globeBytes;
+    return _buildingTileBytes;
   }
 
   /// The frame info block map.vert reads for a tile [id]: [frame]'s first
   /// 28 floats, then where it lays the tile on [globe], zero on the flat
-  /// map, and the frame's dash cross-fade [dashMix] and ramp rows.
+  /// map, and the frame's dash cross-fade [dashMix] and ramp rows. With
+  /// [outline] the block is for the lines around the tile's fills.
   ByteData mapFor(
     Globe? globe,
     TileId id,
     int zoom, {
     required double dashMix,
     required int rampRows,
+    bool outline = false,
   }) {
     final out = map;
     for (var i = 0; i < 28; i++) {
@@ -325,7 +345,7 @@ class FrameBlocks {
       ..[57] = (cornerY >> 16).toDouble()
       ..[58] = (cornerX & 0xFFFF).toDouble()
       ..[59] = (cornerY & 0xFFFF).toDouble()
-      ..[60] = 0
+      ..[60] = outline ? 1 : 0
       ..[61] = dashMix
       ..[62] = rampRows.toDouble();
     if (globe == null) {

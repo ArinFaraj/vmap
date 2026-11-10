@@ -1,17 +1,36 @@
 <p align="center">
-  <img src="doc/screenshots/hero.webp" alt="vmap drawing Erbil's citadel in 3D" width="760">
+  <img src="doc/screenshots/hero.webp" alt="Lower Manhattan drawn by vmap, tilted to 72 degrees, its towers standing to the far edge of the view under the sky">
 </p>
 
 <h1 align="center">vmap</h1>
 
 <p align="center">
-  Maps for Flutter, drawn on the GPU.<br>
+  <b>Maps for Flutter, drawn on the GPU.</b><br>
   Any MapLibre style, 3D buildings, terrain and the globe.<br>
   Android, iOS, macOS, Windows, Linux and the web.
 </p>
 
 <p align="center">
-  <a href="https://arinfaraj.github.io/vmap/"><b>Try the live demo</b></a>
+  <a href="https://pub.dev/packages/vmap"><img src="https://img.shields.io/pub/v/vmap.svg" alt="vmap on pub.dev"></a>
+  <a href="https://github.com/ArinFaraj/vmap/actions/workflows/ci.yml"><img src="https://github.com/ArinFaraj/vmap/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/ArinFaraj/vmap/actions/workflows/render-suite.yml"><img src="https://github.com/ArinFaraj/vmap/actions/workflows/render-suite.yml/badge.svg?branch=main" alt="MapLibre render tests"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <a href="https://arinfaraj.github.io/vmap/"><b>Try the live demo</b></a> |
+  <a href="#get-started">Get started</a> |
+  <a href="https://pub.dev/documentation/vmap/latest/">API reference</a> |
+  <a href="example/lib/main.dart">Example app</a> |
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
+
+<p align="center">
+  <img src="doc/screenshots/globe.webp" alt="The globe, with country names in their own scripts" width="32%">
+  <img src="doc/screenshots/terrain.webp" alt="The Matterhorn raised from elevation tiles, the map draped over it" width="32%">
+  <img src="doc/screenshots/erbil.webp" alt="Erbil's citadel in 3D, with Kurdish and Arabic names" width="32%">
+  <br>
+  <sub>The globe at low zooms. Terrain with the map draped over it. Kurdish and Arabic, shaped and joined.</sub>
 </p>
 
 ---
@@ -19,16 +38,34 @@
 - **Any MapLibre style.** vmap passes 1,394 of the 1,519 MapLibre render
   tests that apply to it, and draws real styles within a few percent of
   MapLibre GL JS.
-- **3D.** Buildings with depth, terrain draped with the map, sky and fog,
-  the globe, and tilt up to 85 degrees.
+- **3D.** Buildings with depth that stand to the far edge of a tilted view,
+  terrain draped with the map, sky and fog, the globe, and tilt up to 85
+  degrees.
 - **Labels that read right.** Arabic, Kurdish and Syriac are shaped
   correctly, and labels are placed as MapLibre places them, steady while the
   map moves.
-- **Flutter all the way down.** One widget, markers that are widgets, and
-  gestures for touch, mouse, trackpad and keyboard.
-- **Your data.** GeoJSON with clustering, feature state for highlighting,
-  and taps that tell you what was hit.
+- **Dart all the way down.** One widget, with no native map SDK under it and
+  no platform channels. Markers are widgets, and gestures cover touch,
+  mouse, trackpad and keyboard.
+- **Your data.** GeoJSON with clustering, heatmaps, feature state for
+  highlighting, and taps that tell you what was hit.
 - **Offline.** A disk cache, regions downloaded ahead, and PMTiles archives.
+
+## Contents
+
+- [Get started](#get-started)
+- The map: [Styles](#styles), [The camera](#the-camera),
+  [Gestures](#gestures), [3D, terrain and the globe](#3d-terrain-and-the-globe),
+  [Rendering options](#rendering-options)
+- What is on it: [Taps and features](#taps-and-features),
+  [Markers](#markers), [Your own data](#your-own-data),
+  [Labels and languages](#labels-and-languages)
+- Around it: [Offline](#offline),
+  [Loading, events and errors](#loading-events-and-errors),
+  [The web](#the-web), [flutter_map](#flutter_map)
+- The project: [Platforms](#platforms), [How it is tested](#how-it-is-tested),
+  [Status and roadmap](#status-and-roadmap),
+  [Working on vmap](#working-on-vmap), [License](#license)
 
 ## Get started
 
@@ -102,6 +139,13 @@ Vmap(style: VmapStyle.url('https://tiles.openfreemap.org/styles/liberty'))
 Vmap(style: VmapStyle.json(myStyleDocument))
 ```
 
+<p align="center">
+  <img src="doc/screenshots/builtin.webp" alt="Erbil in the built in light style, with Kurdish street names" width="49%">
+  <img src="doc/screenshots/dark.webp" alt="The same view in the built in dark style" width="49%">
+  <br>
+  <sub><code>VmapStyle.light</code> and <code>VmapStyle.dark</code> over Erbil.</sub>
+</p>
+
 The style decides the look and where the tiles come from. Styles are
 compared by content, so building one in `build` is fine.
 
@@ -146,7 +190,7 @@ or an interrupted animation keeps its speed. `VmapCamera.padding` keeps part
 of the map free, under a bottom sheet for example. `toScreen` and
 `toLatLng` convert between places and points on the map.
 
-### Gestures
+## Gestures
 
 | Input | What it does |
 | --- | --- |
@@ -169,6 +213,9 @@ Vmap(
 )
 ```
 
+<details>
+<summary>Every gesture option, and its name in MapLibre GL JS</summary>
+
 | Option | MapLibre GL JS | What it switches |
 | --- | --- | --- |
 | `dragPan` | `dragPan` | one finger, a mouse drag, two fingers sliding in an app |
@@ -182,10 +229,64 @@ Vmap(
 | `rotate`, `pitch` | (flutter_map's `rotate` flag) | any turn, any tilt |
 | `inertia` | the drag handlers' inertia | the glide after a release |
 
+</details>
+
 `VmapGestureOptions.none` leaves only code moving the map; taps and long
 presses are still reported. Hosts that draw vmap's camera some other way
 use the same recognizer from `package:vmap/gestures.dart`, as the
 flutter_map adapter does.
+
+## 3D, terrain and the globe
+
+Styles with `fill-extrusion` layers stand their buildings up when the map is
+tilted. `maxPitch` is 60 degrees unless you raise it, to 85 at most; past
+about 60 the horizon shows, and the style's `sky` draws the sky and fog
+beyond it.
+
+```dart
+Vmap(
+  maxPitch: 85,
+  style: VmapStyle.url('https://tiles.openfreemap.org/styles/liberty'),
+)
+```
+
+A style's `terrain` raises the ground, or an overlay adds one:
+
+```dart
+const VmapOverlay(
+  sources: {
+    'dem': {
+      'type': 'raster-dem',
+      'tiles': ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+      'encoding': 'terrarium',
+      'maxzoom': 15,
+    },
+  },
+  terrain: {'source': 'dem', 'exaggeration': 1.5},
+)
+```
+
+A style with `"projection": {"type": "globe"}` draws the globe at low zooms
+and the flat map up close.
+
+## Rendering options
+
+```dart
+Vmap(
+  rendering: const VmapRenderOptions(
+    renderer: VmapRenderer.canvas,
+    farBuildings: false,
+  ),
+)
+```
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `renderer` | `VmapRenderer.gpu` | `canvas` draws with Flutter's canvas, which runs everywhere: a tilted map with flat buildings, and no terrain or globe. The GPU renderer hands the map to it by itself where Flutter GPU does not run. |
+| `antialias` | `true` | Smooths the edges of buildings, raised ground and the globe. The web never smooths them this way. |
+| `glyphs` | `VmapGlyphs.style` | Where the letters of labels come from: the style's glyph ranges, or the app's fonts for every label with `VmapGlyphs.fonts`. |
+| `maxCachedTiles` | `56` | The fewest tiles kept in memory per source beyond those on screen. |
+| `farBuildings` | `true` | In a view tilted past 60 degrees, buildings stand farther from the camera than MapLibre draws them, and sink into the ground before they end. Off, they end at the edge of a tile, where MapLibre's do. |
 
 ## Taps and features
 
@@ -317,6 +418,9 @@ variable weights, and right-to-left text in the Unicode bidirectional
 order. Fonts need TrueType outlines (`.ttf`). Indic and Southeast Asian
 scripts, which need their letters reordered, are planned.
 
+`labels: VmapLabelOptions(...)` hides every label, keeps road names off
+bends, or lets the labels of different sources overlap.
+
 ## Offline
 
 ```dart
@@ -361,28 +465,6 @@ The loading builder covers the map until it first draws tiles. `onError`
 hears every style, tile, sprite, font or GPU failure; the map keeps retrying
 where that can help.
 
-## 3D, terrain and the globe
-
-Styles with `fill-extrusion` layers stand their buildings up when the map is
-tilted. A style's `terrain` raises the ground, or an overlay adds one:
-
-```dart
-const VmapOverlay(
-  sources: {
-    'dem': {
-      'type': 'raster-dem',
-      'tiles': ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
-      'encoding': 'terrarium',
-      'maxzoom': 15,
-    },
-  },
-  terrain: {'source': 'dem', 'exaggeration': 1.5},
-)
-```
-
-A style with `"projection": {"type": "globe"}` draws the globe at low
-zooms, and `sky` draws the sky and fog past the horizon.
-
 ## The web
 
 Build with WebAssembly, and serve Flutter's engine from your own host:
@@ -406,24 +488,69 @@ which draws the map too. Tiles are built in a web worker vmap ships. There
 is no disk cache in a browser, and a PMTiles archive has to be at an
 `https://` address.
 
-## Platforms
-
-| Platform | Draws with |
-| --- | --- |
-| Android 10 and newer | Impeller on Vulkan, or OpenGL ES where Vulkan is missing |
-| iOS, macOS | Impeller on Metal |
-| Windows, Linux | Impeller |
-| Web | WebGL2 |
-
-vmap draws with [Flutter GPU](https://github.com/flutter/flutter/blob/main/docs/engine/impeller/Flutter-GPU.md),
-which Flutter still marks as a preview.
-
 ## flutter_map
 
 Apps already on [flutter_map](https://pub.dev/packages/flutter_map) can
 draw vmap's maps in it with the
 [vmap_flutter_map](https://github.com/ArinFaraj/vmap/tree/main/vmap_flutter_map)
 package: a layer that goes where a `TileLayer` would, without tilt or 3D.
+It lives in this repository and is not on pub.dev yet.
+
+## Platforms
+
+| Platform | Draws with | Seen running on |
+| --- | --- | --- |
+| Android 10 and newer | Impeller on Vulkan, or OpenGL ES where Vulkan is missing | one phone and the emulator |
+| iOS | Impeller on Metal | the simulator |
+| macOS | Impeller on Metal | a Mac, where most of vmap is developed |
+| Windows, Linux | Impeller | built by CI, not run yet |
+| Web | WebGL2 | Chrome and Safari |
+
+vmap draws with [Flutter GPU](https://github.com/flutter/flutter/blob/main/docs/engine/impeller/Flutter-GPU.md),
+which Flutter still marks as a preview. Where it does not run (Android 9 and
+older, Android devices with a Vivante GPU, a browser without WebGL2,
+`flutter test`) the map is drawn with Flutter's canvas instead: tilted, with
+flat buildings, and without terrain or the globe. A real iPhone, Windows,
+Linux and Firefox have not been tried yet. [doc/platform-support.md](doc/platform-support.md) has the details and
+their sources.
+
+## How it is tested
+
+- **MapLibre's own render tests.** CI draws them on the GPU on macOS against
+  a pinned MapLibre GL JS commit, and fails when the count drops below a
+  floor: 1,394 of the 1,519 that apply to vmap pass. The
+  [roadmap](ROADMAP.md) lists the kinds that still fail.
+- **Real styles over real places.** OpenFreeMap's Liberty, Bright and
+  Positron are drawn next to MapLibre GL JS and compared pixel by pixel.
+- **Text.** The shaper and the bidirectional algorithm are held to HarfBuzz
+  and to Unicode's conformance tests.
+- **Speed.** Frame times are measured next to MapLibre GL JS on the same
+  camera path. The numbers, and what is still slow, are in
+  [doc/performance-plan.md](doc/performance-plan.md).
+
+## Status and roadmap
+
+vmap is in its 0.x versions, so the API can still change between minor
+versions. The [changelog](CHANGELOG.md) says what changed in each.
+
+Next, in order: every platform run on real devices, custom GPU layers and
+3D models placed on the map, and the MapLibre render tests that still fail.
+The [roadmap](ROADMAP.md) has each step and the decisions behind them.
+
+## Working on vmap
+
+| To | Run |
+| --- | --- |
+| run the unit and golden tests | `flutter test` |
+| rebuild the web worker, after any change under `lib/` | `dart run tool/build_web_worker.dart` |
+| run the example app | `flutter run`, in `example/` |
+| run the demo | `flutter run -d chrome --wasm`, in `demo/` |
+| run MapLibre's render tests against a checkout of maplibre-gl-js | `tool/render_suite.sh` |
+| draw real styles next to MapLibre GL JS | `tool/compare_style.sh` |
+| draw the pictures on this page | `tool/readme_shots.sh` |
+
+Bugs and questions go to the
+[issue tracker](https://github.com/ArinFaraj/vmap/issues).
 
 ## License
 
@@ -431,4 +558,4 @@ MIT. vmap bundles Vazirmatn and Noto Sans Syriac Eastern under the SIL Open
 Font License, its Unicode tables come from the Unicode Character Database
 (Unicode License V3), and its WebGL2 backend comes from
 [flutter_scene](https://pub.dev/packages/flutter_scene) (MIT). Map data in
-the pictures is from OpenStreetMap.
+the pictures is from OpenStreetMap, through OpenFreeMap's tiles.

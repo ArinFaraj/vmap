@@ -101,7 +101,8 @@
     const loadVmap = () => {
       const c = camera();
       frame.src = `index.html?style=${encodeURIComponent($('style').value)}` +
-        `&lat=${c.lat}&lng=${c.lng}&zoom=${c.zoom}&bearing=${c.bearing}&pitch=${c.pitch}`;
+        `&lat=${c.lat}&lng=${c.lng}&zoom=${c.zoom}&bearing=${c.bearing}&pitch=${c.pitch}` +
+        location.search.replace('?', '&');
     };
     loadVmap();
 
@@ -123,6 +124,86 @@
       map.jumpTo(options);
       frame.contentWindow?.postMessage(camera(), '*');
     };
+
+    // Turns one map around a place for some seconds, the other left still,
+    // and reports how evenly its frames came: bench({target: 'maplibre'}).
+    const vmapStats = (reset) => new Promise((done) => {
+      const heard = (e) => {
+        if (e.data?.type !== 'stats') return;
+        window.removeEventListener('message', heard);
+        done(e.data);
+      };
+      window.addEventListener('message', heard);
+      frame.contentWindow.postMessage({type: 'stats?', reset}, '*');
+    });
+    const bench = async ({
+      target = 'vmap', seconds = 10, center = [-74.0113, 40.7069],
+      zoom = 15.7, pitch = 72, bearing = 28, turn = 20, swing = 0, dive = 0,
+    } = {}) => {
+      const win = target === 'vmap' ? frame.contentWindow : window;
+      // With dive, the camera starts that many zoom levels out, looking
+      // straight down, and comes in over the first half of the run.
+      const ease = (t) => t * t * (3 - 2 * t);
+      const at = (t) => {
+        const down = dive ? 1 - ease(Math.min(1, t / (seconds / 2))) : 0;
+        return {
+          type: 'camera', lat: center[1], lng: center[0], pitch: pitch * (1 - down),
+          zoom: zoom - dive * down + swing * Math.sin(t * 1.3),
+          bearing: bearing + turn * t,
+        };
+      };
+      const move = (c) => target === 'vmap'
+        ? frame.contentWindow.postMessage(c, '*')
+        : map.jumpTo({center: [c.lng, c.lat], zoom: c.zoom, bearing: c.bearing, pitch: c.pitch});
+      move(at(0));
+      await new Promise((r) => setTimeout(r, 4000));
+      if (target === 'vmap') await vmapStats(true);
+      const gaps = [];
+      const start = win.performance.now();
+      let last = 0;
+      await new Promise((done) => {
+        const tick = (now) => {
+          if (last) gaps.push(now - last);
+          last = now;
+          const t = (now - start) / 1000;
+          if (t >= seconds) return done();
+          move(at(t));
+          win.requestAnimationFrame(tick);
+        };
+        win.requestAnimationFrame(tick);
+      });
+      const sorted = [...gaps].sort((a, b) => a - b);
+      const q = (p) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))];
+      const round = (v) => Math.round(v * 100) / 100;
+      const out = {
+        target, frames: gaps.length,
+        fps: round(gaps.length / gaps.reduce((sum, g) => sum + g, 0) * 1000),
+        gapMs: {p50: round(q(0.5)), p95: round(q(0.95)), p99: round(q(0.99)), max: round(sorted.at(-1))},
+        late: gaps.filter((g) => g > q(0.5) * 1.5).length,
+      };
+      if (target === 'vmap') {
+        const s = await vmapStats(false);
+        out.paintMs = {
+          mean: round(s.paintMicros / Math.max(1, s.frames) / 1000),
+          max: round(s.maxPaintMicros / 1000),
+          labels: round(s.labelMicros / Math.max(1, s.frames) / 1000),
+          placing: round(s.placeMicros / Math.max(1, s.frames) / 1000),
+          over4: s.paintsOver4ms, over8: s.paintsOver8ms, frames: s.frames,
+        };
+        out.drawCalls = s.drawCalls;
+        out.tiles = [s.tilesDrawn, s.fallbackTiles, s.tilesCached];
+        out.reused = s.gpuFramesReused;
+        // The slowest paints, and what the paints over 5 ms spent in all.
+        const field = (line, name) => Number(new RegExp(name + '=(\\d+)').exec(line)?.[1] ?? 0);
+        const names = ['paint', 'prep', 'place', 'labels', 'buildings'];
+        out.slowSums = Object.fromEntries(names.map((n) =>
+          [n, Math.round(s.slow.reduce((sum, l) => sum + field(l, n), 0) / 1000)]));
+        out.slowCount = s.slow.length;
+        out.slowest = [...s.slow].sort((a, b) => field(b, 'paint') - field(a, 'paint')).slice(0, 6);
+      }
+      return out;
+    };
+    window.compare = {map, moveBoth, bench};
 
     $('style').onchange = () => {
       map.setStyle($('style').value);

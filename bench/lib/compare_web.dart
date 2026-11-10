@@ -17,6 +17,7 @@ void main() {
       style: q['style'] ?? 'https://tiles.openfreemap.org/styles/liberty',
       workers: int.tryParse(q['workers'] ?? ''),
       labelStats: q['labels'] == 'stats',
+      farBuildings: q['far'] != '0',
       camera: VmapCamera(
         center: LatLng(param('lat', 36.1912), param('lng', 44.0092)),
         zoom: param('zoom', 14),
@@ -33,7 +34,12 @@ class _CompareMap extends StatefulWidget {
     required this.camera,
     this.workers,
     this.labelStats = false,
+    this.farBuildings = true,
   });
+
+  /// Off with `far=0` in the address, to draw buildings as far as MapLibre
+  /// does.
+  final bool farBuildings;
 
   /// Whether to count labels that blink, shown, hidden and shown again
   /// within a second, for the page to read.
@@ -108,6 +114,31 @@ class _CompareMapState extends State<_CompareMap> {
       );
       return;
     }
+    if (data is Map && data['type'] == 'stats?') {
+      final stats = _controller.engine?.stats;
+      final t = stats?.timings;
+      web.window.parent?.postMessage(
+        {
+          'type': 'stats',
+          'frames': t?.frames ?? 0,
+          'paintMicros': t?.paintMicros ?? 0,
+          'maxPaintMicros': t?.maxPaintMicros ?? 0,
+          'paintsOver4ms': t?.paintsOver4ms ?? 0,
+          'paintsOver8ms': t?.paintsOver8ms ?? 0,
+          'labelMicros': t?.labelMicros ?? 0,
+          'placeMicros': t?.placeMicros ?? 0,
+          'drawCalls': stats?.drawCalls ?? 0,
+          'tilesDrawn': stats?.tilesDrawn ?? 0,
+          'fallbackTiles': stats?.fallbackTiles ?? 0,
+          'tilesCached': stats?.tilesCached ?? 0,
+          'gpuFramesReused': stats?.gpuFramesReused ?? 0,
+          'slow': [...?t?.slowPaints],
+        }.jsify(),
+        '*'.toJS,
+      );
+      if (data['reset'] == true) stats?.resetTimers();
+      return;
+    }
     if (data is! Map || data['type'] != 'camera' || !_embedded) return;
     if (event.source != web.window.parent) return;
     double field(String key) => (data[key] as num).toDouble();
@@ -153,6 +184,8 @@ class _CompareMapState extends State<_CompareMap> {
     home: Scaffold(
       body: Vmap(
         style: VmapStyle.url(widget.style),
+        maxPitch: 85,
+        rendering: VmapRenderOptions(farBuildings: widget.farBuildings),
         network: widget.workers == null
             ? const VmapNetworkOptions()
             : VmapNetworkOptions(workers: widget.workers!),

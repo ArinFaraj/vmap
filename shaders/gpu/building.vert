@@ -22,20 +22,29 @@ dem_info;
 
 uniform sampler2D heights;
 
+// What a tile gives its buildings. shift.z is how much of their height
+// they have yet to rise.
+//
 // On the globe, which a tile width in tile.z marks: the tile's corner and
 // width as fractions of the mercator world and in tile.w how far from the
 // flat map to the globe; mvp the matrix from the unit sphere to clip space;
 // camera.xyz the camera on the unit sphere's scale; shift.xy the layer's
-// translate in tile units; light.xyz the light turned to the map's middle on
-// the sphere, MapLibre's u_lightpos_globe.
-uniform GlobeInfo {
+// translate in tile units; light.xyz the light turned to the map's middle
+// on the sphere, MapLibre's u_lightpos_globe.
+//
+// On the flat map, eye.xyz the camera in tile units, z its height above
+// the ground, and eye.w how far from it buildings stand: they sink into
+// the ground over the last three tenths of that, where the tiles past it
+// are too coarse to carry any. Zero lets every building stand.
+uniform TileInfo {
   vec4 tile;
   mat4 mvp;
   vec4 camera;
   vec4 shift;
   vec4 light;
+  vec4 eye;
 }
-globe_info;
+tile_info;
 
 const float PI = 3.141592653589793;
 
@@ -80,7 +89,7 @@ float height_at(vec2 p) {
 
 // The tile point p on the unit sphere, MapLibre's projectToSphere.
 vec3 to_sphere(vec2 p) {
-  vec2 m = globe_info.tile.xy + p / 4096.0 * globe_info.tile.z;
+  vec2 m = tile_info.tile.xy + p / 4096.0 * tile_info.tile.z;
   float lng = m.x * PI * 2.0 + PI;
   float t = exp(PI - m.y * PI * 2.0);
   float d = t * t + 1.0;
@@ -92,19 +101,19 @@ vec3 to_sphere(vec2 p) {
 // normal turned to the sphere at [s], as MapLibre's globeGetRotationMatrix.
 float facing(vec3 normal, vec3 s) {
   float d = clamp(dot(normal, frame_info.light.xyz), 0.0, 1.0);
-  if (globe_info.tile.z > 0.0) {
+  if (tile_info.tile.z > 0.0) {
     vec3 right = vec3(s.z, 0.0, -s.x);
     vec3 down = normalize(cross(right, s));
     vec3 turned = mat3(normalize(right), down, s) * vec3(normal.x, -normal.y, normal.z);
-    float g = clamp(dot(turned, globe_info.light.xyz), 0.0, 1.0);
-    d = mix(d, g, globe_info.tile.w);
+    float g = clamp(dot(turned, tile_info.light.xyz), 0.0, 1.0);
+    d = mix(d, g, tile_info.tile.w);
   }
   return d;
 }
 
 void main() {
-  vec3 s = globe_info.tile.z > 0.0
-      ? to_sphere(position.xy + globe_info.shift.xy)
+  vec3 s = tile_info.tile.z > 0.0
+      ? to_sphere(position.xy + tile_info.shift.xy)
       : vec3(0.0);
   float rgb = color_data.x;
   float b = floor(rgb / 65536.0);
@@ -154,18 +163,27 @@ void main() {
   }
   v_color = vec4(lit, color_data.y / 255.0);
   v_color.a *= frame_info.fade.x;
-  float h = position.z + ground;
+  float risen = 1.0 - tile_info.shift.z;
+  if (tile_info.eye.w > 0.0) {
+    float away = length(vec3(middle - tile_info.eye.xy, tile_info.eye.z));
+    risen *= smoothstep(0.0, 1.0,
+        (tile_info.eye.w - away) / (tile_info.eye.w * 0.3));
+  }
+  float h = position.z * risen + ground;
   vec4 flat_pos = frame_info.mvp * vec4(position.xy, h, 1.0);
+  if (risen <= 0.0) {
+    flat_pos = vec4(2.0, 2.0, 2.0, 1.0);
+  }
   gl_Position = flat_pos;
   v_sphere = vec4(0.0);
-  v_camera = globe_info.camera.xyz;
-  if (globe_info.tile.z > 0.0) {
+  v_camera = tile_info.camera.xyz;
+  if (tile_info.tile.z > 0.0) {
     // MapLibre's projectTileFor3D: raised from the sphere by the height
     // over the earth's radius.
     vec3 raised = s * (1.0 + h / 6371008.8);
     v_sphere = vec4(raised, 1.0);
-    vec4 globe = globe_info.mvp * vec4(raised, 1.0);
-    float amount = globe_info.tile.w;
+    vec4 globe = tile_info.mvp * vec4(raised, 1.0);
+    float amount = tile_info.tile.w;
     gl_Position = amount >= 0.999 ? globe : mix(flat_pos, globe, amount);
   }
 }

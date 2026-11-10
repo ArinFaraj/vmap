@@ -227,6 +227,7 @@ class MapPass {
 
   /// Draws the paint layers of [runs] into this pass.
   void drawRuns(Iterable<StyleRun> runs) {
+    _writeUniforms(runs);
     var bound = false;
     for (final run in runs) {
       if (run.source < 0 || run.source >= _ideal.length) continue;
@@ -306,6 +307,95 @@ class MapPass {
     }
   }
 
+  /// Each tile's frame block as written in this pass, the same for every
+  /// run of its layers, and the one its fills' outlines are drawn with.
+  /// [raise] and [globe] are set before the pass's first draw.
+  final Map<TileDraw, gpu.BufferView> _tileFrames = Map.identity();
+  final Map<TileDraw, gpu.BufferView> _outlineFrames = Map.identity();
+
+  gpu.BufferView _tileFrame(TileDraw d, {bool outline = false}) =>
+      (outline ? _outlineFrames : _tileFrames)[d] ??= () {
+        final blocks = _device.blocks;
+        blocks.times(
+          _clip,
+          d.size / tileExtent,
+          raise ? _perMetre : 1,
+          d.left,
+          d.top,
+          1,
+        );
+        return _device.host.emplace(
+          blocks.mapFor(
+            globe,
+            d.tile.id,
+            _styleZoom.floor(),
+            dashMix: _frame.dashFade.mix,
+            rampRows: _device.ramps.rowCount,
+            outline: outline,
+          ),
+        );
+      }();
+
+  /// The slots of [data]'s segment [s], drawn [scale] pixels a tile unit.
+  gpu.BufferView _slotsOf(TileDraw d, TileGpu data, int s, double scale) {
+    final paints = _device.paints;
+    return paints.written(data, s, scale, () {
+      final stream = data.stream!;
+      final segments = stream.segments;
+      final slotEnd = s + 5 < segments.length
+          ? segments[s + 5]
+          : stream.slots.length;
+      final written = paints.fill(
+        _sheet,
+        d,
+        data,
+        segments[s + 2],
+        slotEnd,
+        scale,
+        _context,
+        _styleZoom,
+        _view.bearing,
+      );
+      return _device.host.emplace(
+        written,
+        boundBytes: paints.slotBytes.lengthInBytes,
+      );
+    });
+  }
+
+  /// Writes the frame block and the slots [runs] draw each tile with,
+  /// before the first of them is drawn. On the web a uniform write reaches
+  /// the GPU at the next draw, so written as they are drawn each draw
+  /// sends its own; written first, they go together.
+  void _writeUniforms(Iterable<StyleRun> runs) {
+    for (final run in runs) {
+      final source = run.source;
+      if (source < 0 || source >= _ideal.length) continue;
+      for (final d in _ideal[source].followedBy(_fallback[source])) {
+        final data = _device.drawn(d);
+        final stream = data?.stream;
+        if (data == null || stream == null) continue;
+        final from = stream.layerFirst[run.first];
+        final to = stream.layerFirst[run.end];
+        if (from == to) continue;
+        _tileFrame(d);
+        final scale = d.size / tileExtent;
+        final segments = stream.segments;
+        for (var s = 0; s < segments.length; s += 3) {
+          if (segments[s] < to && segments[s] + segments[s + 1] > from) {
+            _slotsOf(d, data, s, scale);
+          }
+        }
+        final outlines = stream.outlines;
+        for (var o = 0; o < outlines.length; o += 4) {
+          if (outlines[o] < run.first || outlines[o] >= run.end) continue;
+          _tileFrame(d, outline: true);
+          _slotsOf(d, data, outlines[o + 1] * 3, scale);
+        }
+      }
+    }
+  }
+
   /// Draws [run]'s layers of tile [d].
   void _drawFlat(TileDraw d, StyleRun run) {
     final data = _device.drawn(d);
@@ -314,9 +404,7 @@ class MapPass {
     final from = stream.layerFirst[run.first];
     final to = stream.layerFirst[run.end];
     if (from == to) return;
-    final host = _device.host;
     final scale = d.size / tileExtent;
-    _device.blocks.times(_clip, scale, raise ? _perMetre : 1, d.left, d.top, 1);
     _device.heights.bind(
       renderPass,
       _device.pipelines,
@@ -333,42 +421,12 @@ class MapPass {
           lengthInBytes: stream.vertices.lengthInBytes,
         ),
       )
-      ..bindUniform(
-        _device.pipelines.flatFrame,
-        host.emplace(
-          _device.blocks.mapFor(
-            globe,
-            d.tile.id,
-            _styleZoom.floor(),
-            dashMix: _frame.dashFade.mix,
-            rampRows: _device.ramps.rowCount,
-          ),
-        ),
-      );
+      ..bindUniform(_device.pipelines.flatFrame, _tileFrame(d));
     final segments = stream.segments;
-    void bindSlots(int s) {
-      final paints = _device.paints;
-      renderPass.bindUniform(
-        _device.pipelines.flatSlots,
-        paints.written(data, s, scale, () {
-          final slotEnd = s + 5 < segments.length
-              ? segments[s + 5]
-              : stream.slots.length;
-          final written = paints.fill(
-            _sheet,
-            d,
-            data,
-            segments[s + 2],
-            slotEnd,
-            scale,
-            _context,
-            _styleZoom,
-            _view.bearing,
-          );
-          return host.emplace(written, room: paints.slotBytes.lengthInBytes);
-        }),
-      );
-    }
+    void bindSlots(int s) => renderPass.bindUniform(
+      _device.pipelines.flatSlots,
+      _slotsOf(d, data, s, scale),
+    );
 
     void drawIndices(int first, int count) => renderPass
       ..bindIndexBuffer(
@@ -403,26 +461,14 @@ class MapPass {
         drawRange(done, end);
         done = end;
       }
-      final frame = _device.blocks.mapFor(
-        globe,
-        d.tile.id,
-        _styleZoom.floor(),
-        dashMix: _frame.dashFade.mix,
-        rampRows: _device.ramps.rowCount,
-      );
-      _device.blocks.map[60] = 1;
       bindSlots(outlines[o + 1] * 3);
       renderPass
-        ..bindUniform(_device.pipelines.flatFrame, host.emplace(frame))
+        ..bindUniform(_device.pipelines.flatFrame, _tileFrame(d, outline: true))
         ..setPrimitiveType(gpu.PrimitiveType.line);
       drawIndices(outlines[o + 2], outlines[o + 3]);
-      _device.blocks.map[60] = 0;
       renderPass
         ..setPrimitiveType(gpu.PrimitiveType.triangle)
-        ..bindUniform(
-          _device.pipelines.flatFrame,
-          host.emplace(_device.blocks.mapBytes),
-        );
+        ..bindUniform(_device.pipelines.flatFrame, _tileFrame(d));
     }
     if (to > done) drawRange(done, to);
   }
@@ -474,7 +520,10 @@ class MapPass {
         }
       }
       final standIn = built(shared) && _clips(source);
-      if (!built(ideal) && !built(alone) && !standIn) continue;
+      final far = _frame.farBuildings?.tiles[source] ?? const <TileDraw>[];
+      if (!built(ideal) && !built(alone) && !standIn && !built(far)) {
+        continue;
+      }
       if (standIn) _mark(source);
       renderPass
         ..clearBindings()
@@ -512,6 +561,7 @@ class MapPass {
       );
       _drawBuildingsOf(layer, ideal, opacity);
       _drawBuildingsOf(layer, alone, opacity);
+      _drawBuildingsOf(layer, far, opacity);
       if (standIn) {
         for (final (k, f) in shared.indexed) {
           final mark = sharedMarks[k];
@@ -607,6 +657,8 @@ class MapPass {
     final perMetre = perMetreAt(view);
     final host = _device.host;
     final (mx, my) = layer.moved(_context, view.bearing);
+    final eye = view.eye, origin = _frame.origin;
+    final reach = _frame.farBuildings?.reach;
     for (final d in tiles) {
       final data = _device.drawn(d);
       if (data == null) continue;
@@ -620,14 +672,20 @@ class MapPass {
         _frame.terrain,
         d.tile.id,
       );
+      final unit = d.size / tileExtent;
       renderPass.bindUniform(
-        _device.pipelines.buildingGlobe,
+        _device.pipelines.buildingTile,
         host.emplace(
-          _device.blocks.buildingGlobe(
+          _device.blocks.buildingTile(
             view.globe,
             d.tile.id,
-            mx / d.size * tileExtent,
-            my / d.size * tileExtent,
+            shiftX: mx / unit,
+            shiftY: my / unit,
+            eyeX: (eye.x - origin.dx - d.left - mx) / unit,
+            eyeY: (eye.y - origin.dy - d.top - my) / unit,
+            eyeHeight: eye.height / unit,
+            reach: reach == null ? 0 : reach.of(d.tile.id.z) / unit,
+            sunk: d.sunk,
           ),
         ),
       );

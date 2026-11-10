@@ -83,6 +83,11 @@ final class WebGlRenderPipeline extends RenderPipeline {
   /// smaller range than the driver reports makes WebGL2 reject the draw.
   final Map<String, int> _structBlockBindSizes = {};
 
+  /// The uniform slots bound to this pipeline's blocks so far, found by
+  /// identity: a pipeline has a handful, and looking a block up by name
+  /// hashes a string for every bind of every draw.
+  final List<_BoundBlock> _boundBlocks = [];
+
   /// The largest block bind size, used to size the zero fallback buffer bound
   /// to every block binding point.
   int _maxBlockSizeBytes = 0;
@@ -214,4 +219,13 @@ final class WebGlRenderPipeline extends RenderPipeline {
       );
     }
   }
+}
+
+/// A uniform slot's block in a pipeline: its binding point and the least
+/// bytes it is bound with.
+final class _BoundBlock {
+  const _BoundBlock(this.slot, this.binding, this.minBindSize);
+
+  final UniformSlot slot;
+  final int binding, minBindSize;
 }

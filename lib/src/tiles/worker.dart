@@ -1,4 +1,3 @@
-import 'dart:developer' show Timeline;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
@@ -23,6 +22,7 @@ import 'built_tile.dart';
 import 'tile_store.dart';
 import '../net/net.dart';
 import '../platform.dart';
+import '../trace.dart';
 
 typedef TileLoaded = void Function(TileId id, BuiltTile tile);
 typedef TileFailed = void Function(TileId id, TileFailure failure);
@@ -417,10 +417,7 @@ class TilePool {
       _jobWorker[job] = free;
       _inflightIds.add(id);
       loadingFrom[key] = free;
-      Timeline.instantSync(
-        'vmap.tile.asked',
-        arguments: {'id': '${id.z}/${id.x}/${id.y}'},
-      );
+      traceInstant('vmap.tile.asked', () => {'id': '${id.z}/${id.x}/${id.y}'});
       free.busy++;
       free.link.send(BuildTile(job, id, maxZoom: maxZoom).toWire());
     }
@@ -731,16 +728,16 @@ Future<void> tileWorkerMain(
         dataMaxZoom = maxZoom;
         building.add(job);
         try {
-          final fetched = Timeline.now;
+          final fetched = traceNow;
           final layers = await layersOf(tile, job);
-          Timeline.instantSync(
+          traceInstant(
             'vmap.tile.fetched',
-            arguments: {
+            () => {
               'id': '${tile.z}/${tile.x}/${tile.y}',
-              'ms': '${(Timeline.now - fetched) ~/ 1000}',
+              'ms': '${(traceNow - fetched) ~/ 1000}',
             },
           );
-          final building = Timeline.now;
+          final building = traceNow;
           BuiltTile build() =>
               builder.buildLayers(
                 layers,
@@ -777,11 +774,11 @@ Future<void> tileWorkerMain(
               built.gpu,
             );
           }
-          Timeline.instantSync(
+          traceInstant(
             'vmap.tile.built',
-            arguments: {
+            () => {
               'id': '${tile.z}/${tile.x}/${tile.y}',
-              'ms': '${(Timeline.now - building) ~/ 1000}',
+              'ms': '${(traceNow - building) ~/ 1000}',
             },
           );
           return TileBuilt(job, built);

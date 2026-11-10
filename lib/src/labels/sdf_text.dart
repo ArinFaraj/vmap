@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import '../camera/view.dart';
 import '../text/glyphs/glyph_pbf.dart';
 
 /// Text from a style's glyph ranges drawn as MapLibre draws it: each glyph
@@ -9,13 +10,18 @@ import '../text/glyphs/glyph_pbf.dart';
 /// queue their glyphs during a frame and the renderer lays the result on
 /// the canvas at [end].
 abstract class SdfText {
-  /// Starts a frame [size] logical pixels at [devicePixelRatio], its glyphs
-  /// looked up by [glyph].
+  /// Starts a frame [size] logical pixels at [devicePixelRatio] seen
+  /// through [view], its glyphs looked up by [glyph].
   void begin(
     ui.Size size,
     double devicePixelRatio,
     PbfGlyph? Function(int face, int codePoint) glyph,
+    MapView view,
   );
+
+  /// Room for [glyphs] glyphs laid on the flat map's ground once and drawn
+  /// from frame to frame, projected by the renderer.
+  KeptText keep(int glyphs);
 
   /// Queues glyph [codePoint] of [face] with its pen origin on the shaped
   /// line, MapLibre's positioned glyph, at [ox], [oy] logical pixels; one
@@ -72,6 +78,39 @@ abstract class SdfText {
   bool get loading;
 }
 
+/// Glyphs laid on the ground once, held by the renderer that draws them.
+abstract interface class KeptText {
+  /// Adds glyph [codePoint] of [face]: its pen origin [x], [y] from its
+  /// label's anchor in fractions of the world, the line running along
+  /// [tx], [ty] there, and a glyph pixel [pixel] of the world wide. [look]
+  /// gives its colours unfaded and its size at the label's anchor. False
+  /// when the glyph cannot be drawn yet; one with no ink adds nothing.
+  bool add(
+    int face,
+    int codePoint,
+    double x,
+    double y,
+    double tx,
+    double ty,
+    double pixel,
+    SdfLook look,
+  );
+
+  /// Queues the glyphs for this frame, for a label anchored [x], [y] from
+  /// the camera's centre in fractions of the world, faded to [opacity].
+  /// [size] is the size the glyphs were laid out at over the label's size
+  /// at the centre of the view now: the renderer sizes the label by its
+  /// anchor's distance from that.
+  void draw(
+    double x,
+    double y,
+    double size,
+    double opacity,
+    int layer, {
+    required bool overlap,
+  });
+}
+
 /// How a run of glyphs is drawn: colours premultiplied and faded, halo
 /// width and blur in logical pixels, [fontScale] logical pixels a glyph
 /// pixel, and [gammaScale] how much its edge softens: 1 for text upright
@@ -98,6 +137,11 @@ class SdfLook {
   /// Drawn in two passes, every halo then every glyph, as MapLibre draws a
   /// wide halo or letters that overlap.
   final bool overlap;
+
+  /// A halo of colour [argb], [width] logical pixels wide, faded by
+  /// [opacity]; null when there is none to draw.
+  static Float32List? haloOf(int? argb, double width, double opacity) =>
+      argb == null || width <= 0 ? null : rgba(argb, opacity);
 
   /// [argb] premultiplied and faded by [opacity].
   static Float32List rgba(int argb, double opacity) {

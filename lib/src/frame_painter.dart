@@ -18,7 +18,7 @@ import 'style/raster_style.dart';
 import 'style/style_resources.dart';
 import 'terrain/raised_ground.dart';
 import 'terrain/terrain.dart' show Terrain;
-import 'camera/view.dart' show MapView;
+import 'camera/view.dart' show BuildingReach, MapView;
 import 'canvas/mesh_painter.dart';
 import 'stats.dart';
 import 'style/transitions.dart';
@@ -94,7 +94,10 @@ class FramePainter {
     required this._gpu,
     required this._maxCachedTiles,
     required this._host,
+    this._farBuildings = true,
   });
+
+  final bool _farBuildings;
 
   final List<TileSource> _sources;
   final List<RasterDrawing<RasterLayer>> _rasters;
@@ -245,6 +248,7 @@ class FramePainter {
     // GPU's layers past 60 degrees, as buildings near the far plane stand
     // above that edge; only what the canvas draws is cut at it.
     final farCut = threeD && !drape && view.pitch > 60;
+    final variableZoom = threeD && _ground.tiles != null;
     return _Frame(
       canvas: canvas,
       planes: planes,
@@ -255,6 +259,10 @@ class FramePainter {
       terrain: terrain,
       dataZoom: dataZoom,
       styleZoom: styleZoom,
+      variableZoom: variableZoom,
+      buildingReach: threeD && _farBuildings
+          ? view.buildingReach(variableZoom: variableZoom)
+          : null,
       now: now,
       dt: dt,
       drape: drape,
@@ -269,14 +277,16 @@ class FramePainter {
 
   void _coverTiles(_Frame f) {
     for (final s in _sources) {
+      final buildings = f.sheet.buildingSources.contains(s.pool.source);
       final preparing = s.cover(
         f.camera,
         f.dataZoom,
         frame: frame,
         nowMs: _clock.elapsedMilliseconds,
         prepare: _prepare,
-        variableZoom: _ground.tiles != null && f.renderer.drawsIn3d,
-        standing: f.sheet.buildingSources.contains(s.pool.source),
+        variableZoom: f.variableZoom,
+        standing: buildings,
+        farBuildings: buildings ? f.buildingReach : null,
       );
       if (preparing) f.waiting = true;
       if (s.retrying) _host.requestFrameLater();
@@ -359,6 +369,10 @@ class FramePainter {
         transitioning: _host.transitionsRunning,
         stats: _stats,
         planes: f.planes,
+        farBuildings: switch (f.buildingReach) {
+          null => null,
+          final reach => FarBuildings(reach, [for (final s in _sources) s.far]),
+        },
       ),
     )) {
       f.waiting = true;
@@ -607,7 +621,7 @@ class FramePainter {
     for (final s in _sources) {
       // As MapLibre sizes its tile cache: about five screens of tiles, so
       // panning back or zooming out and in again finds them built.
-      final screen = s.ideal.length + s.fallback.length;
+      final screen = s.ideal.length + s.fallback.length + s.far.length;
       s.evict(math.max(_maxCachedTiles, 5 * screen), frame);
     }
   }
@@ -689,6 +703,8 @@ class _Frame {
     required this.terrain,
     required this.dataZoom,
     required this.styleZoom,
+    required this.variableZoom,
+    required this.buildingReach,
     required this.now,
     required this.dt,
     required this.drape,
@@ -711,6 +727,14 @@ class _Frame {
   /// The raised ground's heights, null for flat ground or the canvas.
   final Terrain? terrain;
   final double dataZoom, styleZoom;
+
+  /// Whether tiles nearer the camera are picked at deeper zooms, as over
+  /// raised ground.
+  final bool variableZoom;
+
+  /// How far buildings stand past the ground tiles that carry them, or
+  /// null where none do.
+  final BuildingReach? buildingReach;
 
   /// When the frame began, in microseconds of the engine's clock.
   final int now;

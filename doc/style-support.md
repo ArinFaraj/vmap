@@ -1,8 +1,14 @@
 # What vmap reads from a MapLibre style
 
+The measure is MapLibre's own render tests: CI draws them on the GPU and
+1,394 of the 1,519 that apply to vmap pass. The tests left out, each with its
+reason, are in `tool/render_suite_out_of_scope.tsv`, and the ones that apply
+but do not have to pass yet are in `tool/render_suite_exceptions.tsv`.
+
 | | |
 | --- | --- |
-| Layers | `background` with `background-pattern`, `fill`, `line`, `circle`, `symbol`, `raster`, `hillshade`, `color-relief`, `heatmap`, `fill-extrusion` (standing on a tilted `VMap`, flat under flutter_map) |
+| Root | `projection` (`mercator`, `globe`, `vertical-perspective`, and a change between them by zoom), `sky`, `terrain`, `light`, `sprite`, `glyphs`, `transition` |
+| Layers | `background` with `background-pattern`, `fill`, `line`, `circle`, `symbol`, `raster`, `hillshade`, `color-relief`, `heatmap`, `fill-extrusion` (standing on a tilted `Vmap`, flat under flutter_map and on the canvas renderer) |
 | Sources | any number of `vector`, `geojson`, `raster`, `raster-dem` and `image` sources. Tiles by TileJSON `url` or `tiles` templates (several addresses are spread over and fall back to one another), with the source's `minzoom`, `maxzoom`, `bounds` and `scheme`, GeoJSON inline or by address, with `cluster`, `clusterRadius`, `clusterMaxZoom`, `clusterMinPoints` and `clusterProperties`. `pmtiles://` archives over HTTP or on disk. Vector tiles as Mapbox Vector Tiles, or in the MapLibre Tile format for a source with `"encoding": "mlt"`. `promoteId`, and `generateId` for GeoJSON |
 | Order | layers are drawn in the style's order, across sources and with raster layers where the style puts them |
 | Fills | colour, opacity, `fill-outline-color`, `fill-pattern`, `fill-translate` with `fill-translate-anchor` |
@@ -21,58 +27,60 @@
 Colours, opacities, widths and radii may read a feature's properties, for
 example a road coloured by its class. So may a label's size, colour, opacity
 and halo and an icon's size, colour and opacity, and all of them may read
-`feature-state`. Features are grouped by the values the paint reads, up to
-64 groups per layer in a tile.
+`feature-state`.
 
 ## What it does not read
 
-- 3D under flutter_map: its camera does not tilt, so `VmapMap` and
-  `VmapLayer` draw flat buildings. `VMap` tilts and stands buildings up;
-  with `GpuMap` it also raises the style's `terrain`.
-- Globe projection and `sky`.
-- `video` sources, and line patterns on round caps.
-- `line-gradient` together with dashes, a pattern, `line-blur`, or a width
-  or colour read from the feature. The gradient is drawn alone.
-- `within` and `distance` in what `featuresAt` returns, and for lines a
-  `within` that looks at more than the line's corners.
-- The style's `glyphs`, unless the engine is made with `styleGlyphs: true`.
-  Otherwise text is drawn in the app's fonts.
-- A road name on a bend sharper than about 24 degrees between one slice of
-  the text and the next is left out there, unless the style sets
-  `text-max-angle`, which is then the limit.
+- HTML `canvas` and `video` sources, and custom layers drawn by JavaScript.
+- The `identity` projection, a camera pitch beyond 90 degrees, and the
+  `font-faces` style property.
+- Dashes on a `line-gradient` line as MapLibre measures them. MapLibre sizes
+  them by their share of the whole line; vmap keeps the lengths the style
+  gives.
+- A `line-pattern` stretched along the line between whole zooms. vmap keeps
+  the image's shape.
+- A heatmap seen through opaque layers drawn above it, which MapLibre shows.
+- Vertical CJK names along steep roads.
+- 3D under flutter_map: its camera does not tilt, so the adapter draws flat
+  buildings.
+- On the canvas renderer, the fallback where Flutter GPU does not run:
+  standing buildings, terrain and the globe.
+
+The [roadmap](../ROADMAP.md) lists the kinds of render tests that still
+fail.
 
 A style is changed while it is shown with `styleEdits`: a paint or layout
 property, a filter, or the zoom range of a layer named by its `id`. Adding
 and removing layers and sources is done with the overlay.
 
-Checked on screen: several sources, GeoJSON, raster order, hillshade,
-heatmap, bent road names and rotation. Seen in a hand written style
-only: `image` sources, `line-blur` on dashes, `line-gradient`, the translate
-anchors, `text-translate` on names along a line, `text-max-angle` and
-`styleEdits`. Covered by tests only, not seen drawn: `line-pattern`,
-SDF icons, their halos and `icon-halo-blur`, a translate that changes with
-the zoom, polygon labels and `hillshade-accent-color`.
-
 ## How it draws
 
-A browser gives Dart no isolates, so on the web steps 1 and 4 below run in
-the web worker vmap ships. With `VmapEngine.webWorker` set to null, or a
-worker the browser will not start, they run on the page's own thread, a tile
-at a time between frames.
+1. Worker isolates download each tile, decode it (Mapbox Vector Tiles or
+   the MapLibre Tile format), run the style's filters, triangulate polygons
+   with earcut and turn roads into strips that can be widened to any width.
+   Layers that select the same features share one mesh. The result crosses
+   to the UI isolate without a copy and is uploaded to the GPU once.
+2. Every frame the engine picks the tiles the camera sees, evaluates the
+   style for the zoom, and draws each tile's layers from the buffers the GPU
+   already holds. A tile that is still loading is stood in for by its
+   nearest loaded ancestor or by its children. Buildings are drawn with a
+   depth buffer, and terrain and the globe move the same meshes in the
+   vertex shader.
+3. Labels are collected across tiles and placed on the screen as a whole,
+   as MapLibre places them, so they never collide or get cut at a tile edge.
+   Letters are distance fields from the style's glyph ranges, or shaped from
+   the app's fonts by vmap's own OpenType shaper for what the ranges cannot
+   join. Names laid on the ground are laid out once and projected by the
+   GPU.
+4. A GeoJSON source is cut into tiles on a worker as they are needed and
+   then takes the same path as a vector tile. A lookup at a point asks the
+   worker to read the tile again and test its features against the point.
 
-1. Worker isolates download each tile, decode it, run the style's filters,
-   triangulate polygons with earcut and turn roads into strips that can be
-   widened to any width. Layers that select the same features share one mesh.
-   The result crosses to the UI isolate without a copy.
-2. Every frame the engine evaluates the style for the zoom and draws the
-   visible tiles with `Canvas.drawVertices`, falling back to parent tiles
-   while a tile loads. Dashes and patterns are a small repeating image the
-   same triangles are drawn through.
-3. Labels are collected across tiles and placed on the screen as a whole, so
-   they never collide or get cut at a tile edge. Each text is drawn once into
-   a small image, icons come straight from the sprite sheet, and both fade in
-   and out. A name on a bend is the same image cut into slices, each turned
-   to the road, so joined scripts stay shaped as one piece of text.
-4. A GeoJSON source is cut into tiles on a worker as they are needed and then
-   takes the same path as a vector tile. A lookup at a point asks the worker
-   to read the tile again and test its features against the point.
+A browser gives Dart no isolates, so on the web steps 1 and 4 run in the web
+worker vmap ships. With `VmapEngine.useWebWorker(null)`, or a worker the
+browser will not start, they run on the page's own thread, a tile at a time
+between frames.
+
+Where Flutter GPU does not run, the canvas renderer draws the same tiles
+with `Canvas.drawVertices`: a tilted map with flat buildings, and no terrain
+or globe.

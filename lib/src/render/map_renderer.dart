@@ -48,7 +48,12 @@ class RenderFrame {
     this.states = const [],
     this.dashFade = ZoomHistory.settled,
     this.transitioning = false,
+    this.farBuildings,
   });
+
+  /// The buildings standing past the ground tiles that carry them, or null
+  /// when every building is on a tile drawn for the ground.
+  final FarBuildings? farBuildings;
 
   final MapView view;
   final ui.Offset origin;
@@ -87,6 +92,17 @@ class RenderFrame {
   /// Where the GPU's images go on the web, as page elements between the
   /// canvas's pictures; null to draw them on the canvas.
   final FramePlanes? planes;
+}
+
+/// A frame's buildings over ground that coarser tiles draw: how far from
+/// the camera they stand, sinking into the ground towards [reach], and
+/// each source's tiles drawn for them alone, indexed by the style's
+/// sources.
+class FarBuildings {
+  const FarBuildings(this.reach, this.tiles);
+
+  final BuildingReach reach;
+  final List<List<TileDraw>> tiles;
 }
 
 /// Draws the map's fill, line and circle layers and its buildings: the GPU

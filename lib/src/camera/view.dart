@@ -333,6 +333,27 @@ class MapView {
     outDepth = depth;
   }
 
+  /// The flat map's projection of the ground as twelve numbers a shader
+  /// applies to a point given from the centre in fractions of the world:
+  /// the world's width and the tilt's pull, the bearing's cosine and sine
+  /// and the pitch's cosine, then the roll's cosine and sine and the
+  /// screen point the camera looks at. What [projectTo] does at no height.
+  void flatProjection(Float32List out) {
+    out
+      ..[0] = 0
+      ..[1] = 0
+      ..[2] = worldSize
+      ..[3] = _k
+      ..[4] = _cosB
+      ..[5] = _sinB
+      ..[6] = _cosP
+      ..[7] = 0
+      ..[8] = _cosR
+      ..[9] = _sinR
+      ..[10] = _sx
+      ..[11] = _sy;
+  }
+
   void _projectFlat(double x, double y, double h) {
     final dx = x - _cx, dy = y - _cy;
     final u = _cosB * dx + _sinB * dy;
@@ -707,11 +728,42 @@ class MapView {
     if (globe case final globe?) {
       return globe.cover(maxZoom: maxZoom, minZoom: minZoom, hold: hold);
     }
-    final quad = ground(beyond: beyond, standing: standing);
-    final (x: camX, y: camY, height: camH) = eye;
+    final camH = eye.height;
     final top = math.min((zoom + hold).floor(), maxZoom);
-    final out = <CoverTile>[];
     final tileZoom = variableZoom || pitch > 60 ? _TileZoom(this) : null;
+    return _tilesOver(ground(beyond: beyond, standing: standing), (
+      z,
+      flat,
+      distance,
+    ) {
+      final asked = tileZoom == null
+          ? (zoom + hold).floor()
+          : tileZoom.at(zoom + hold, flat, camH).floor();
+      // Tiles nearer the camera than the centre ask for deeper zooms than
+      // the view's own, as deep as [maxZoom].
+      final wanted = tileZoom == null ? top : asked;
+      final deepest = tileZoom == null ? top : maxZoom;
+      return z >= deepest || (z >= minZoom && z >= wanted)
+          ? math.max(z, asked)
+          : _descend;
+    });
+  }
+
+  static const _copies = 4;
+  static const _descend = -1, _leaveOut = -2;
+
+  /// The tiles over [quad], nearest the camera first. From the whole world
+  /// down, [rule] says of the tile at zoom `z`, whose nearest ground is
+  /// `flat` world pixels from the point under the camera and `distance`
+  /// from the camera, whether to [_leaveOut] it and all under it, to
+  /// [_descend] to its four children, or to take it, by answering the
+  /// zoom it is laid out for.
+  List<CoverTile> _tilesOver(
+    List<WorldPoint> quad,
+    int Function(int z, double flat, double distance) rule,
+  ) {
+    final (x: camX, y: camY, height: camH) = eye;
+    final out = <CoverTile>[];
 
     void visit(int z, int x, int y) {
       final span = worldSize / (1 << z);
@@ -722,21 +774,10 @@ class MapView {
       final ddx = nx - camX, ddy = ny - camY;
       final flat = math.sqrt(ddx * ddx + ddy * ddy);
       final distance = math.sqrt(flat * flat + camH * camH);
-      final asked = tileZoom == null
-          ? (zoom + hold).floor()
-          : tileZoom.at(zoom + hold, flat, camH).floor();
-      // Tiles nearer the camera than the centre ask for deeper zooms than
-      // the view's own, as deep as [maxZoom].
-      final wanted = tileZoom == null ? top : asked;
-      final deepest = tileZoom == null ? top : maxZoom;
-      if (z >= deepest || (z >= minZoom && z >= wanted)) {
-        out.add((
-          z: z,
-          x: x,
-          y: y,
-          distance: distance,
-          over: math.max(z, asked),
-        ));
+      final over = rule(z, flat, distance);
+      if (over == _leaveOut) return;
+      if (over != _descend) {
+        out.add((z: z, x: x, y: y, distance: distance, over: over));
         return;
       }
       for (var j = 0; j < 2; j++) {
@@ -758,7 +799,33 @@ class MapView {
     return out;
   }
 
-  static const _copies = 4;
+  /// How far from the camera buildings stand in this view, when its cover
+  /// gives far tiles coarser zooms; null where every tile is at the view's
+  /// zoom, and on the globe.
+  ///
+  /// MapLibre's tile zoom follows how small the ground is drawn, and a
+  /// tilted view draws far ground thin; a building stands across the line
+  /// of sight and keeps its size, so its tiles are wanted much farther out
+  /// than the ground's.
+  BuildingReach? buildingReach({bool variableZoom = false}) {
+    if (globe != null || !(variableZoom || pitch > 60)) return null;
+    return BuildingReach._(cameraToCenterDistance, zoom);
+  }
+
+  /// The tiles of zoom [z] in view with ground within [reach] world pixels
+  /// of the camera, nearest first: where buildings stand, whatever zoom
+  /// [cover] gives the ground under them.
+  List<CoverTile> coverWithin(int z, double reach, {double standing = 0}) {
+    if (globe != null) return const [];
+    return _tilesOver(
+      ground(standing: standing),
+      (tz, _, distance) => distance > reach
+          ? _leaveOut
+          : tz >= z
+          ? tz
+          : _descend,
+    );
+  }
 
   /// Whether a convex quadrilateral and an axis-aligned box overlap, by
   /// looking for an axis that separates them.
@@ -799,6 +866,20 @@ class MapView {
     }
     return true;
   }
+}
+
+/// How far from the camera a view's buildings stand: for tiles of zoom z,
+/// as far as a building is drawn at the size it has in the middle of a
+/// flat map one and a quarter zoom levels short of z, and never nearer
+/// than the far edge of a view tilted to 60 degrees, which stands whole.
+final class BuildingReach {
+  const BuildingReach._(this._toCentre, this._zoom);
+
+  final double _toCentre, _zoom;
+
+  /// The reach of tiles of zoom [z], in world pixels.
+  double of(int z) =>
+      _toCentre * math.max(2.6, math.pow(2, _zoom - z + 1.25).toDouble());
 }
 
 /// MapLibre's `createCalculateTileZoomFunction` with its defaults, 9.314

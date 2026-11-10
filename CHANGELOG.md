@@ -1,3 +1,26 @@
+## 0.29.0
+
+- In a view tilted past 60 degrees, buildings stand to the far edge of the
+  view. MapLibre picks coarser tiles for far ground, which carry no
+  buildings, so the skyline ended at a tile's edge and moved as the camera
+  turned. Buildings now keep their own tiles to a distance set by how tall
+  they still look, sink into the ground over the last part of it, and rise
+  when their tile arrives. `VmapRenderOptions(farBuildings: false)` ends
+  them where MapLibre does.
+- Road names laid on a tilted map are laid out once and kept on the GPU,
+  which projects and sizes them each frame, instead of every glyph being
+  placed again on the CPU for every frame.
+- On the web, the tile uniforms of layers drawn together are written
+  before the first of them is drawn and sent together, a tile's frame
+  block is written once a pass instead of once for each run of layers,
+  and the WebGL layer finds a draw's vertex array and uniform blocks
+  without building or hashing a string.
+- `dart:developer` timeline marks are off unless the app is built with
+  `--dart-define=VMAP_TIMELINE=true`; they cost time in release builds.
+- The README has new pictures drawn by the engine, a table of the rendering
+  options, what each platform has been seen running on, and how vmap is
+  tested. `doc/style-support.md` describes the GPU engine.
+
 ## 0.28.0
 
 - `VmapController.headFor` tells the map where code that moves the camera

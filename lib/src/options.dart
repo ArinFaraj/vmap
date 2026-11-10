@@ -85,6 +85,7 @@ class VmapRenderOptions {
     this.antialias = true,
     this.glyphs = VmapGlyphs.style,
     this.maxCachedTiles = 56,
+    this.farBuildings = true,
   });
 
   /// What draws the map: the GPU, or Flutter's canvas.
@@ -101,6 +102,11 @@ class VmapRenderOptions {
   /// The fewest tiles kept in memory per source beyond those on screen;
   /// more are kept when the screen shows many, about five screens' worth.
   final int maxCachedTiles;
+
+  /// In a view tilted past 60 degrees, buildings stand farther from the
+  /// camera than MapLibre draws them, and sink into the ground before they
+  /// end. Off, they end at the edge of a tile, where MapLibre's do.
+  final bool farBuildings;
 }
 
 /// Which labels the map writes and how they are placed.
