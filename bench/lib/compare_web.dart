@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:js_interop';
 
 import 'package:flutter/material.dart';
@@ -7,14 +8,26 @@ import 'package:web/web.dart' as web;
 
 /// vmap's half of web/compare.html: a map that takes its style and camera
 /// from the page's address, follows the camera the page posts to it, and
-/// posts its own camera back when someone moves it.
-void main() {
+/// posts its own camera back when someone moves it. With `globe=1` the
+/// style is drawn as a globe, as the page asks MapLibre to.
+Future<void> main() async {
   final q = Uri.base.queryParameters;
   double param(String key, double fallback) =>
       double.tryParse(q[key] ?? '') ?? fallback;
+  final url = q['style'] ?? 'https://tiles.openfreemap.org/styles/liberty';
+  var style = VmapStyle.url(url);
+  if (q['globe'] == '1') {
+    final response = await web.window.fetch(url.toJS).toDart;
+    final text = (await response.text().toDart).toDart;
+    final document = jsonDecode(text) as Map<String, Object?>;
+    style = VmapStyle.json({
+      ...document,
+      'projection': {'type': 'globe'},
+    });
+  }
   runApp(
     _CompareMap(
-      style: q['style'] ?? 'https://tiles.openfreemap.org/styles/liberty',
+      style: style,
       workers: int.tryParse(q['workers'] ?? ''),
       labelStats: q['labels'] == 'stats',
       farBuildings: q['far'] != '0',
@@ -45,7 +58,7 @@ class _CompareMap extends StatefulWidget {
   /// within a second, for the page to read.
   final bool labelStats;
 
-  final String style;
+  final VmapStyle style;
 
   /// Tile workers per source, from the address, to compare pool sizes.
   final int? workers;
@@ -185,7 +198,7 @@ class _CompareMapState extends State<_CompareMap> {
     debugShowCheckedModeBanner: false,
     home: Scaffold(
       body: Vmap(
-        style: VmapStyle.url(widget.style),
+        style: widget.style,
         maxPitch: 85,
         rendering: VmapRenderOptions(farBuildings: widget.farBuildings),
         network: widget.workers == null

@@ -24,8 +24,11 @@
       pitch: num('pitch', 0),
       maxPitch: 85,
     });
-    const mark = (type) => postMessage({type, at: performance.now()}, '*');
-    map.once('style.load', () => mark('style'));
+    const mark = (type) => parent.postMessage({type, at: performance.now()}, '*');
+    map.once('style.load', () => {
+      if (q.get('globe') === '1') map.setProjection({type: 'globe'});
+      mark('style');
+    });
     map.on('idle', () => mark('idle'));
     window.__mlmap = map;
   </script>
