@@ -1,4 +1,4 @@
-## Unreleased
+## 0.29.3
 
 - On the GPU renderer, joined letters of Arabic, Kurdish and other
   cursive scripts read as one stroke again. A label with a halo 1 pixel
@@ -8,6 +8,24 @@
   before any of its ink, as MapLibre draws it, at any halo width. Latin
   letters that sit close together lose the same faint nick at their
   edges. Quads with no halo cover no pixels in the halo pass.
+- A map that has just loaded draws its last label much sooner. Measured
+  in Chrome on a Windows PC, from a cold start to the map saying it is
+  idle: a tilted Erbil with buildings in 3.0 s where it took 8.7 s, a
+  tilted Manhattan in 3.5 s where it took 4.5 s, and the globe in 2.7 s
+  where it took 3.6 s. MapLibre GL JS takes 1.4 s, 1.8 s and 2.0 s there.
+  Labels were drawn a few a frame, none in a frame that also placed
+  labels, and each label drawn started another placement, so they came in
+  over hundreds of frames. While the camera is still, labels are now drawn
+  through a placement, with four times as long to draw them and to work
+  out which markers buildings hide. A moving map keeps the budgets it had,
+  and the labels that end up shown are the same.
+- A label asks for the glyph ranges it is drawn from when it is first
+  placed, as MapLibre asks for a tile's glyphs when it lays the tile out,
+  where it asked when it was first drawn: the ranges came in over several
+  seconds.
+- Sixteen raster tiles load at once, as many as MapLibre fetches, where
+  four did. A freed slot was taken only in the next frame, so a globe's
+  few dozen shaded relief tiles came in a few at a time.
 
 ## 0.29.2
 
