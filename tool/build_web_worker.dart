@@ -39,7 +39,10 @@ Future<void> main(List<String> arguments) async {
       "import 'package:vmap/web_worker.dart';\n\n"
       'void main() => runVmapWorker();\n',
     );
-  final result = await Process.run('$root/bin/dart', [
+  final dart = Platform.isWindows
+      ? '$root/bin/cache/dart-sdk/bin/dart.exe'
+      : '$root/bin/dart';
+  final result = await Process.run(dart, [
     'compile',
     'js',
     '-O2',
