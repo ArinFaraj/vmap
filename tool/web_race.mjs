@@ -11,8 +11,9 @@
 // With uncapped, Chrome draws as fast as it can instead of at the screen's
 // rate, and the load timing is skipped.
 import {createRequire} from 'node:module';
-import {writeFileSync} from 'node:fs';
+import {existsSync, writeFileSync} from 'node:fs';
 import {execSync} from 'node:child_process';
+import {platform} from 'node:os';
 
 const require = createRequire(new URL('style_compare/package.json', import.meta.url));
 const puppeteer = require('puppeteer-core');
@@ -25,19 +26,31 @@ const rounds = Number(roundsArg);
 const targets = [...names.map((build) => ({build, map: 'vmap'})), {build: names[0], map: 'maplibre'}];
 const label = (t) => t.map === 'maplibre' ? 'maplibre' : `vmap@${t.build}`;
 
+const chrome = process.env.CHROME ?? {
+  darwin: ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'],
+  win32: [
+    `${process.env.PROGRAMFILES}/Google/Chrome/Application/chrome.exe`,
+    `${process.env['PROGRAMFILES(X86)']}/Google/Chrome/Application/chrome.exe`,
+    `${process.env.LOCALAPPDATA}/Google/Chrome/Application/chrome.exe`,
+  ],
+  linux: ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable'],
+}[platform()]?.find((path) => existsSync(path));
 const browser = await puppeteer.launch({
-  executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  executablePath: chrome,
   headless: 'new',
   protocolTimeout: 300000,
   args: [
-    '--window-size=1552,985', '--enable-gpu', '--use-angle=metal', '--ignore-gpu-blocklist',
+    '--window-size=1552,985', '--enable-gpu', '--ignore-gpu-blocklist',
+    ...(platform() === 'darwin' ? ['--use-angle=metal'] : []),
     '--no-first-run', '--enable-blink-features=ForceEagerMeasureMemory',
     ...(uncapped ? ['--disable-frame-rate-limit', '--disable-gpu-vsync'] : []),
   ],
   defaultViewport: {width: 1552, height: 985, deviceScaleFactor: 2},
 });
 const results = {uncapped, flights: [], loads: [], gpu: null};
-const load = () => execSync('uptime').toString().trim().split('averages: ')[1];
+const load = () => platform() === 'win32'
+  ? null
+  : execSync('uptime').toString().trim().split('averages: ')[1];
 
 const open = async (context, t) => {
   const page = await context.newPage();
