@@ -23,6 +23,11 @@ class PbfGlyph {
   final int width, height, left, top, advance;
 }
 
+/// Where distance field glyphs are looked up by face and code point.
+abstract interface class PbfGlyphs {
+  PbfGlyph? glyph(int face, int codePoint);
+}
+
 /// MapLibre's glyph ranges: 256 code points of one font stack per file,
 /// at `{fontstack}/{start}-{end}.pbf` under a style's `glyphs` URL.
 abstract final class GlyphPbf {

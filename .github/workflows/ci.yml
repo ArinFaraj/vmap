@@ -31,6 +31,16 @@ jobs:
         working-directory: example
       - run: dart pub publish --dry-run
 
+  gpu:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: tool/gpu_tests.sh
+
   example-web:
     runs-on: ubuntu-latest
     steps:

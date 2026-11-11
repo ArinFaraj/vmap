@@ -1,4 +1,6 @@
-import 'dart:async';
+@Tags(['gpu'])
+library;
+
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -12,20 +14,21 @@ import 'package:vmap/src/gpu/gpu_shim/gpu.dart' as gpu;
 import 'package:vmap/src/gpu/sdf_text_gpu.dart';
 import 'package:vmap/src/labels/sdf_text.dart';
 import 'package:vmap/src/text/glyphs/glyph_pbf.dart';
-import 'package:vmap/src/text/glyphs/glyph_ranges.dart';
 
-// Needs Flutter GPU, so it is skipped by a plain `flutter test`:
-//     flutter test --enable-impeller --enable-flutter-gpu test/sdf_join_test.dart
-
-/// A letter of a joining script: a bar of ink [inkWidth] glyph pixels long
-/// from [left], its pen moving on by [advance], so the bars of neighbours
-/// overlap where they join, as Arabic letters' do.
+/// A letter of a joining script: a bar of ink [_inkWidth] glyph pixels
+/// long from [_left], its pen moving on by [_advance], so the bars of
+/// neighbours overlap where they join, as Arabic letters' do.
 const _joining = 0xFE8E, _apart = 0x6C;
 const _inkWidth = 10, _inkHeight = 6, _left = -1, _advance = 8;
 const _barTop = 14;
 
 /// A glyph of a script that does not join: the same bar with room after it.
 const _apartAdvance = _inkWidth + 2;
+
+const _face = GlyphPbf.firstFace;
+
+/// Where the first glyph's pen starts, in logical pixels.
+const _penX = 20.0, _baseline = 40.0;
 
 Uint8List _barField() {
   const b = GlyphPbf.border;
@@ -40,109 +43,85 @@ Uint8List _barField() {
         math.pow(math.max(dx, 0), 2) + math.pow(math.max(dy, 0), 2),
       );
       final inside = math.min(math.max(dx, dy), 0);
-      final distance = outside + inside;
-      field[y * w + x] = (192 - distance * 32).round().clamp(0, 255);
+      field[y * w + x] = (192 - (outside + inside) * 32).round().clamp(0, 255);
     }
   }
   return field;
 }
 
-List<int> _varint(int v) {
-  final out = <int>[];
-  while (v >= 0x80) {
-    out.add(v & 0x7f | 0x80);
-    v >>= 7;
+class _Bars implements PbfGlyphs {
+  _Bars() {
+    final field = _barField();
+    for (final (id, advance) in [
+      (_joining, _advance),
+      (_apart, _apartAdvance),
+    ]) {
+      _byCode[id] = PbfGlyph(
+        id,
+        field,
+        _inkWidth,
+        _inkHeight,
+        _left,
+        _barTop,
+        advance,
+      );
+    }
   }
-  return out..add(v);
+
+  final _byCode = <int, PbfGlyph>{};
+
+  @override
+  PbfGlyph? glyph(int face, int codePoint) => _byCode[codePoint];
 }
 
-List<int> _field(int number, List<int> bytes) => [
-  ..._varint(number << 3 | 2),
-  ..._varint(bytes.length),
-  ...bytes,
-];
+/// A row of bars drawn by [SdfTextGpu], read back pixel by pixel.
+class _Drawn {
+  _Drawn(this._pixels, this._width, this._scale, this._dpr);
 
-List<int> _number(int number, int v) => [
-  ..._varint(number << 3),
-  ..._varint(v),
-];
+  final ByteData _pixels;
+  final int _width;
+  final double _scale, _dpr;
 
-List<int> _glyph(int id, Uint8List field, int advance) => [
-  ..._number(1, id),
-  ..._field(2, field),
-  ..._number(3, _inkWidth),
-  ..._number(4, _inkHeight),
-  ..._number(5, _left * -2 - 1),
-  ..._number(6, _barTop * 2),
-  ..._number(7, advance),
-];
+  /// The device pixel column [glyphPixels] along the line from the first
+  /// pen origin.
+  double x(num glyphPixels) => (_penX + glyphPixels * _scale) * _dpr;
 
-Uint8List _range() {
-  final field = _barField();
-  return Uint8List.fromList(
-    _field(1, [
-      ..._field(1, 'Test'.codeUnits),
-      ..._field(3, _glyph(_joining, field, _advance)),
-      ..._field(3, _glyph(_apart, field, _apartAdvance)),
-    ]),
-  );
-}
+  /// The device pixel row through the middle of the bars.
+  int get midRow =>
+      ((_baseline - (_barTop - _inkHeight / 2) * _scale) * _dpr).round();
 
-Future<gpu.ShaderLibrary?> _shaders() async {
-  for (final key in [
-    'build/shaderbundles/vmap_gpu.shaderbundle',
-    'packages/vmap/build/shaderbundles/vmap_gpu.shaderbundle',
-  ]) {
-    try {
-      final library = await gpu.loadShaderLibraryAsync(key);
-      if (library != null) return library;
-    } catch (_) {}
-  }
-  return null;
-}
-
-bool _hasGpu() {
-  try {
-    gpu.gpuContext;
-    return true;
-  } catch (_) {
-    return false;
-  }
+  int red(int x) => _pixels.getUint8((midRow * _width + x) * 4);
+  int alpha(int x) => _pixels.getUint8((midRow * _width + x) * 4 + 3);
 }
 
 void main() {
-  final skip = _hasGpu()
-      ? false
-      : 'needs --enable-impeller --enable-flutter-gpu';
+  final hasGpu = () {
+    try {
+      gpu.gpuContext;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }();
+  final skip = hasGpu ? false : 'needs Flutter GPU: run tool/gpu_tests.sh';
 
   late SdfTextGpu text;
-  late GlyphRanges ranges;
-  late int face;
+  final glyphs = _Bars();
 
   setUpAll(() async {
-    if (skip != false) return;
-    final library = (await _shaders())!;
+    if (!hasGpu) return;
+    const bundle = 'build/shaderbundles/vmap_gpu.shaderbundle';
+    final library = await gpu.loadShaderLibraryAsync(bundle);
+    if (library == null) throw StateError('no shader bundle at $bundle');
     text = SdfTextGpu(
       GpuDevice(GpuPipelines(library), GpuHeap(), fail: (e) => throw e),
       library,
     );
-    final loaded = Completer<void>();
-    ranges = GlyphRanges(
-      'test/{fontstack}/{range}.pbf',
-      fetch: (_) async => _range(),
-      onLoaded: (_, _) {
-        if (!loaded.isCompleted) loaded.complete();
-      },
-    );
-    face = ranges.face(['Test']);
-    ranges.ready(face, 'l');
-    await loaded.future;
   });
 
   /// [count] glyphs [codePoint] in a row, black with a white halo
-  /// [haloWidth] wide, [textSize] logical pixels to the em, drawn at
-  /// [dpr]; returns the image and the bar's span in device pixels.
-  Future<(ByteData, int, int, int, int, int)> draw(
+  /// [haloWidth] wide, [textSize] logical pixels to the em, at [dpr].
+  Future<_Drawn> draw(
     int codePoint,
     int advance, {
     required double textSize,
@@ -159,7 +138,7 @@ void main() {
       width: width,
       height: height,
     );
-    text.begin(const ui.Size(width, height), dpr, ranges, view);
+    text.begin(const ui.Size(width, height), dpr, glyphs, view);
     final look = SdfLook(
       SdfLook.rgba(0xFF000000, 1),
       SdfLook.rgba(0xFFFFFFFF, 1),
@@ -167,37 +146,19 @@ void main() {
       0,
       scale,
     );
-    const x0 = 20.0, baseline = 40.0;
     for (var i = 0; i < count; i++) {
-      text.glyph(
-        face,
-        codePoint,
-        x0 + i * advance * scale,
-        baseline,
-        scale,
-        0,
-        0,
-        scale,
-        look,
-        0,
-      );
+      final pen = _penX + i * advance * scale;
+      text.glyph(_face, codePoint, pen, _baseline, scale, 0, 0, scale, look, 0);
     }
     final recorder = ui.PictureRecorder();
-    final canvas = ui.Canvas(recorder)..scale(dpr);
-    text.end(canvas);
-    final w = (width * dpr).round(), h = (height * dpr).round();
-    final image = await recorder.endRecording().toImage(w, h);
-    final bytes = (await image.toByteData())!;
-    final left = ((x0 + _left * scale) * dpr).ceil();
-    final right =
-        ((x0 + ((count - 1) * advance + _left + _inkWidth) * scale) * dpr)
-            .floor();
-    final mid = ((baseline - (_barTop - _inkHeight / 2) * scale) * dpr).round();
-    return (bytes, w, h, left, right, mid);
+    text.end(ui.Canvas(recorder)..scale(dpr));
+    final w = (width * dpr).round();
+    final image = await recorder.endRecording().toImage(
+      w,
+      (height * dpr).round(),
+    );
+    return _Drawn((await image.toByteData())!, w, scale, dpr);
   }
-
-  int at(ByteData bytes, int w, int x, int y, int channel) =>
-      bytes.getUint8((y * w + x) * 4 + channel);
 
   for (final dpr in [1.0, 2.0, 3.0]) {
     for (final size in [10.0, 14.0, 22.0]) {
@@ -205,17 +166,22 @@ void main() {
         'joined letters are one stroke of ink at ${size}px, dpr $dpr',
         skip: skip,
         () async {
-          final (bytes, w, _, left, right, mid) = await draw(
+          const count = 6;
+          final drawn = await draw(
             _joining,
             _advance,
             textSize: size,
             dpr: dpr,
           );
           final inset = (2 * dpr).ceil();
+          final from = drawn.x(_left).ceil() + inset;
+          final to =
+              drawn.x((count - 1) * _advance + _left + _inkWidth).floor() -
+              inset;
           var lightest = 0;
-          for (var x = left + inset; x <= right - inset; x++) {
-            lightest = math.max(lightest, at(bytes, w, x, mid, 0));
-            expect(at(bytes, w, x, mid, 3), greaterThan(250));
+          for (var x = from; x <= to; x++) {
+            lightest = math.max(lightest, drawn.red(x));
+            expect(drawn.alpha(x), greaterThan(250));
           }
           expect(
             lightest,
@@ -229,7 +195,7 @@ void main() {
 
   test('letters apart keep their halo between them', skip: skip, () async {
     for (final dpr in [1.0, 2.0]) {
-      final (bytes, w, _, left, _, mid) = await draw(
+      final drawn = await draw(
         _apart,
         _apartAdvance,
         textSize: 22,
@@ -237,12 +203,10 @@ void main() {
         haloWidth: 1.5,
         count: 2,
       );
-      const scale = 22 / GlyphPbf.em;
-      final gap = ((20 + (_left + _inkWidth + 1) * scale) * dpr).round();
-      expect(at(bytes, w, gap, mid, 0), greaterThan(200));
-      expect(at(bytes, w, gap, mid, 3), greaterThan(200));
-      final ink = left + (3 * dpr).round();
-      expect(at(bytes, w, ink, mid, 0), lessThan(16));
+      final gap = drawn.x(_left + _inkWidth + 1).round();
+      expect(drawn.red(gap), greaterThan(200));
+      expect(drawn.alpha(gap), greaterThan(200));
+      expect(drawn.red((drawn.x(_left) + 3 * dpr).round()), lessThan(16));
     }
   });
 }

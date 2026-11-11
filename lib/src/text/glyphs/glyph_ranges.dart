@@ -7,7 +7,7 @@ import 'glyph_pbf.dart';
 
 /// The glyph ranges of a style's `glyphs` URL, fetched as labels need
 /// them. Each font stack is a face from [GlyphPbf.firstFace] up.
-class GlyphRanges {
+class GlyphRanges implements PbfGlyphs {
   GlyphRanges(
     this.template, {
     required this.onLoaded,
@@ -53,6 +53,7 @@ class GlyphRanges {
     });
   }
 
+  @override
   PbfGlyph? glyph(int face, int codePoint) => _glyphs.at(face, codePoint);
 
   /// Asks for the range of Latin letters, which nearly every label needs,

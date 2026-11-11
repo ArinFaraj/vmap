@@ -2,7 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import '../camera/view.dart';
-import '../text/glyphs/glyph_ranges.dart';
+import '../text/glyphs/glyph_pbf.dart';
 
 /// Text from a style's glyph ranges drawn as MapLibre draws it: each glyph
 /// a quad sampling its signed distance field, its edge and halo cut by
@@ -15,7 +15,7 @@ abstract class SdfText {
   void begin(
     ui.Size size,
     double devicePixelRatio,
-    GlyphRanges glyphs,
+    PbfGlyphs glyphs,
     MapView view,
   );
 

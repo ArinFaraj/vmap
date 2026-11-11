@@ -9,7 +9,6 @@ import '../labels/sdf_text.dart';
 import '../render/frame_planes.dart';
 import '../text/glyphs/glyph_table.dart';
 import '../text/glyphs/glyph_pbf.dart';
-import '../text/glyphs/glyph_ranges.dart';
 import 'gpu_buffers.dart' show framesInFlight;
 import 'gpu_device.dart';
 import 'gpu_shim/gpu.dart' as gpu;
@@ -44,7 +43,7 @@ class SdfTextGpu implements SdfText {
   /// one with no ink.
   final GlyphTable<int> _placed = GlyphTable();
 
-  GlyphRanges? _glyphs;
+  PbfGlyphs? _glyphs;
 
   ui.Size _size = ui.Size.zero;
   double _dpr = 1;
@@ -174,7 +173,7 @@ class SdfTextGpu implements SdfText {
   void begin(
     ui.Size size,
     double devicePixelRatio,
-    GlyphRanges glyphs,
+    PbfGlyphs glyphs,
     MapView view,
   ) {
     _size = size;
@@ -572,9 +571,6 @@ class SdfTextGpu implements SdfText {
         ..draw(6, instanceCount: to - from);
     }
 
-    // Every halo of a run before any of its fills, as MapLibre draws a
-    // symbol layer: drawn together, the halo of a letter would cover the
-    // ink of the one it joins, a seam in Arabic script.
     for (final (from, to) in draws) {
       draw(from, to, 1);
       draw(from, to, 2);
