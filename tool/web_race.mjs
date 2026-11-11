@@ -1,7 +1,7 @@
 // Races vmap against MapLibre GL JS, and builds of vmap against each other,
 // in Chrome on this machine's GPU, through bench/web/race.html.
 //
-//     node tool/web_race.mjs out.json rounds [uncapped] name=port ...
+//     node tool/web_race.mjs out.json rounds [uncapped] [first=n] name=port ...
 //
 // Each name=port is a build of bench/lib/compare_web.dart served by
 // tool/web_compare.sh; vmap is raced from each, MapLibre from the first.
@@ -9,7 +9,9 @@
 // one round that warms the HTTP cache and is thrown away, then loads each
 // view cold in a fresh browser context to time the first full picture.
 // With uncapped, Chrome draws as fast as it can instead of at the screen's
-// rate, and the load timing is skipped.
+// rate, and the load timing is skipped. With first=n the rounds are numbered,
+// and their order turned, from n on, so a run cut short goes on where it
+// stopped.
 import {createRequire} from 'node:module';
 import {existsSync, writeFileSync} from 'node:fs';
 import {execSync} from 'node:child_process';
@@ -20,7 +22,10 @@ const puppeteer = require('puppeteer-core');
 
 const [out, roundsArg, ...rest] = process.argv.slice(2);
 const uncapped = rest[0] === 'uncapped';
-const builds = Object.fromEntries(rest.filter((a) => a.includes('=')).map((a) => a.split('=')));
+const options = Object.fromEntries(rest.filter((a) => a.includes('=')).map((a) => a.split('=')));
+const first = Number(options.first ?? 0);
+delete options.first;
+const builds = options;
 const names = Object.keys(builds);
 const rounds = Number(roundsArg);
 const targets = [...names.map((build) => ({build, map: 'vmap'})), {build: names[0], map: 'maplibre'}];
@@ -92,12 +97,12 @@ const cold = async (t, view, round) => {
 
 const rotate = (list, n) => list.map((_, i) => list[(i + n) % list.length]);
 for (const t of targets) await fly(t, -1, false);
-for (let round = 0; round < rounds; round++) {
+for (let round = first; round < first + rounds; round++) {
   for (const t of rotate(targets, round)) await fly(t, round, true);
   writeFileSync(out, JSON.stringify(results, null, 1));
 }
 if (!uncapped) {
-  for (let round = 0; round < rounds; round++) {
+  for (let round = first; round < first + rounds; round++) {
     for (const view of ['erbil3d', 'city', 'globe']) {
       for (const t of rotate(targets, round)) await cold(t, view, round);
     }
