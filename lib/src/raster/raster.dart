@@ -454,7 +454,12 @@ abstract class TileDrawing<L extends TiledRasterLayer>
 
   @protected
   static const int maxTiles = 48;
-  static const int _maxLoading = 4;
+
+  /// Tiles fetched and decoded at once, as many as MapLibre's
+  /// `MAX_PARALLEL_IMAGE_REQUESTS`: a slot freed is taken in the next
+  /// frame, so fewer leave a globe's dozens of tiles coming in a few at a
+  /// time.
+  static const int _maxLoading = 16;
 
   @protected
   TileStore? tileStore;
