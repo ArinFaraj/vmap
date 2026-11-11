@@ -265,6 +265,9 @@ class LabelState {
   /// Written down the page, in the vertical writing mode.
   bool vertical = false;
 
+  /// Whether the glyph ranges its text is drawn from have been asked for.
+  bool glyphsAsked = false;
+
   /// For a name that follows a bend: the stretch of road it sits on, as x,y
   /// pairs in fractions of the world, and how far along it the middle of the
   /// text is. Null for a name written straight. The text is laid on it

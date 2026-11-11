@@ -310,6 +310,83 @@ class LabelSprites {
     );
   }
 
+  /// Asks for the glyph ranges [draw] waits on to draw a label of [text]
+  /// in [fontStack], with [format]'s sections, so they are on their way
+  /// before it is drawn, as MapLibre asks for a tile's glyphs when it
+  /// lays the tile out. False when labels are not drawn from ranges yet.
+  bool ask(
+    String text,
+    List<String> fontStack, {
+    List<Object?>? format,
+    ShapedText? shaped,
+  }) {
+    final store = ranges;
+    if (glyphFonts == null || store == null) return false;
+    if (shaped != null) return true;
+    final plain = plainText(text);
+    final face = store.face(fontStack);
+    if (needsFontShaping(plain)) {
+      store.ready(face, _formsText(joinedForms(plain.runes.toList())));
+      return true;
+    }
+    final ranged = _rangeText(text);
+    final sections = _sections(store, face, format);
+    if (sections == null) {
+      store.ready(face, ranged);
+      return true;
+    }
+    final drawn = plainText(ranged);
+    for (final section in {for (final s in sections) s.face}) {
+      store.ready(section, drawn);
+    }
+    return true;
+  }
+
+  /// A formatted label's sections, each in its own face, or null for a
+  /// label of one face.
+  static List<RangeSection>? _sections(
+    GlyphRanges store,
+    int face,
+    List<Object?>? format,
+  ) => format == null
+      ? null
+      : [
+          for (final f in format)
+            if (f case [
+              final num scale,
+              final fonts,
+              final color,
+              final align,
+              _,
+            ])
+              (
+                face: fonts is List ? store.face(fonts.cast<String>()) : face,
+                scale: scale.toDouble(),
+                color: color as int?,
+                align: switch (align) {
+                  'top' => 0.0,
+                  'center' => 0.5,
+                  _ => 1.0,
+                },
+              ),
+        ];
+
+  /// The text a label is laid out from glyph ranges as: its letters
+  /// joined, and written down the page when [vertical]. A formatted label's
+  /// marks join with nothing, so each section is joined on its own, as
+  /// MapLibre shapes each section.
+  static String _rangeText(String text, {bool vertical = false}) {
+    final joined = hasJoiningLetters(text)
+        ? String.fromCharCodes(joinArabic(text.runes.toList()))
+        : text;
+    return vertical ? verticalPunctuation(joined) : joined;
+  }
+
+  static String _formsText(List<int> forms) => String.fromCharCodes([
+    for (final c in forms)
+      if (c >= 0) c,
+  ]);
+
   /// Draws [look] once and keeps it under [key]. The halo is the text
   /// redrawn in the halo colour around itself, so the text is laid out a
   /// single time. Null while the glyph ranges it needs are on their way.
@@ -331,35 +408,8 @@ class LabelSprites {
         shaped == null &&
         !needsFontShaping(plain)) {
       final face = store.face(look.fontStack);
-      List<RangeSection>? sections;
-      if (format != null) {
-        sections = [
-          for (final f in format)
-            if (f case [
-              final num scale,
-              final fonts,
-              final color,
-              final align,
-              _,
-            ])
-              (
-                face: fonts is List ? store.face(fonts.cast<String>()) : face,
-                scale: scale.toDouble(),
-                color: color as int?,
-                align: switch (align) {
-                  'top' => 0.0,
-                  'center' => 0.5,
-                  _ => 1.0,
-                },
-              ),
-        ];
-      }
-      // A formatted label's marks join with nothing, so each section is
-      // joined on its own, as MapLibre shapes each section.
-      final joined = hasJoiningLetters(look.text)
-          ? String.fromCharCodes(joinArabic(look.text.runes.toList()))
-          : look.text;
-      final text = look.vertical ? verticalPunctuation(joined) : joined;
+      final sections = _sections(store, face, format);
+      final text = _rangeText(look.text, vertical: look.vertical);
       if (sections != null) {
         final drawn = plainText(text);
         for (final section in {for (final s in sections) s.face}) {
@@ -399,11 +449,7 @@ class LabelSprites {
     if (fonts != null && store != null && shaped == null) {
       final face = store.face(look.fontStack);
       final forms = joinedForms(plain.runes.toList());
-      final joined = String.fromCharCodes([
-        for (final c in forms)
-          if (c >= 0) c,
-      ]);
-      if (!store.ready(face, joined)) return null;
+      if (!store.ready(face, _formsText(forms))) return null;
       breakAdvance = (i) {
         final c = forms[i];
         if (c < 0) return 0;

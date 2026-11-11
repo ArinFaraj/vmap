@@ -665,6 +665,9 @@ class LabelEngine {
         }
         final st = _stateFor(c, world);
         if (st == null) continue;
+        if (!st.glyphsAsked && st.sprite == null && c.hasText) {
+          st.glyphsAsked = _askGlyphs(c);
+        }
         st
           ..seenPass = _placing
           ..perspective = _view.ratio
@@ -891,6 +894,36 @@ class LabelEngine {
     sprite?.usedPass = _placing;
   }
 
+  /// Asks for the glyph ranges [c]'s text is drawn from, leaving the
+  /// style's context bound as it was, which the placement reads on.
+  bool _askGlyphs(LabelCandidate c) {
+    final context = _style.context;
+    final (props, state, zoom) = (context.props, context.state, context.zoom);
+    final (text, fonts) = _textOf(c);
+    context
+      ..props = props
+      ..state = state
+      ..zoom = zoom;
+    return _sprites.ask(
+      text,
+      fonts,
+      format: _formatOf(c),
+      shaped: c is TileLabel ? c.tile.shaped : null,
+    );
+  }
+
+  /// [c]'s text as its layer shows it, and the fonts it names: for a
+  /// marker's name, its own text in vmap's fonts.
+  (String, List<String>) _textOf(LabelCandidate c) {
+    final symbol = _style.symbolOf(c);
+    if (symbol == null) return (c.text, const []);
+    final layout = _style.layoutContext(c);
+    return (symbol.transformed(c.text, layout), symbol.fontStackAt(layout));
+  }
+
+  static List<Object?>? _formatOf(LabelCandidate c) =>
+      c is TileLabel ? (c.tile.props?[formatKey] as List<Object?>?) : null;
+
   /// Draws the label once, in the look its layer gives it, or for a
   /// marker's name the look the app gives markers.
   LabelSprite? _rasterize(LabelState st, double styleZoom, int background) {
@@ -898,21 +931,16 @@ class LabelEngine {
     final beside = c is MarkerName;
     final symbol = _style.symbolOf(c);
     final ui.TextAlign? align;
-    final String label;
+    final (label, fontStack) = _textOf(c);
     final double letterSpacing, maxWidth;
-    final List<String> fontStack;
     if (symbol == null) {
       align = null;
-      label = c.text;
       letterSpacing = 0;
       maxWidth = 9;
-      fontStack = const [];
     } else {
       final layout = _style.layoutContext(c);
-      label = symbol.transformed(c.text, layout);
       letterSpacing = letterSpacingFor(label, symbol.letterSpacingAt(layout));
       maxWidth = symbol.maxWidthAt(layout);
-      fontStack = symbol.fontStackAt(layout);
       align = symbol.justifyAutoAt(layout)
           ? _style.autoJustify(st, symbol)
           : symbol.justifyAt(_style.layoutContext(c));
@@ -966,9 +994,7 @@ class LabelEngine {
         fontFamily: text.fontFamily,
         fontFamilyFallback: text.fontFamilyFallback,
         fontStack: fontStack,
-        format: c is TileLabel
-            ? (c.tile.props?[formatKey] as List<Object?>?)
-            : null,
+        format: _formatOf(c),
         vertical: st.vertical,
         lineShift: _style.lineShift(c),
       ),
