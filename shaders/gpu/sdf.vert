@@ -1,6 +1,6 @@
 uniform SdfFrame {
   // x, y: the screen in logical pixels; z: the device pixel ratio; w: 1
-  // drawing halos only, 2 glyphs only, 3 both.
+  // drawing halos, 2 drawing glyphs and icons.
   vec4 screen;
   // x, y: the glyph atlas's size in texels; z, w: the sprite sheet's.
   vec4 atlas;
@@ -106,4 +106,7 @@ void main() {
     1.0 - position.y / sdf_frame.screen.y * 2.0,
     0.0,
     1.0);
+  if (sdf_frame.screen.w < 1.5 && (v_halo.a <= 0.0 || extent.z > 1.5)) {
+    gl_Position = vec4(2.0, 2.0, 0.0, 1.0);
+  }
 }

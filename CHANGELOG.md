@@ -1,3 +1,14 @@
+## Unreleased
+
+- On the GPU renderer, joined letters of Arabic, Kurdish and other
+  cursive scripts read as one stroke again. A label with a halo 1 pixel
+  wide or less drew each glyph's halo and ink in one pass, so the halo of
+  each letter was painted over the ink of the letter before it, a thin
+  light line at every join. Every halo of a symbol layer is now drawn
+  before any of its ink, as MapLibre draws it, at any halo width. Latin
+  letters that sit close together lose the same faint nick at their
+  edges. Quads with no halo cover no pixels in the halo pass.
+
 ## 0.29.2
 
 - A heatmap is coloured into the image of the layers below it, where it

@@ -68,7 +68,6 @@ class LabelPainter {
         haloWidth,
         (asNumber(symbol.iconHaloBlur?.call(tint)) ?? 0).toDouble(),
         st.iconScale,
-        overlap: haloWidth > 1,
       );
     } else {
       look = SdfLook(

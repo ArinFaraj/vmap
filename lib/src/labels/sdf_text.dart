@@ -63,7 +63,9 @@ abstract class SdfText {
   });
 
   /// Lays what was queued since [begin] on [canvas]: each layer's icons,
-  /// then its text, as MapLibre draws a symbol layer. Returns the canvas
+  /// then its text, as MapLibre draws a symbol layer, every halo before
+  /// every fill so a glyph's halo never covers the ink of a letter it
+  /// joins or touches. Returns the canvas
   /// to draw on after it: [canvas], or on the web one over a page element
   /// that shows the text. [drawnBelow] says an icon or pin the text must
   /// cover was drawn on [canvas] since [begin].
@@ -101,14 +103,7 @@ abstract interface class KeptText {
   /// [size] is the size the glyphs were laid out at over the label's size
   /// at the centre of the view now: the renderer sizes the label by its
   /// anchor's distance from that.
-  void draw(
-    double x,
-    double y,
-    double size,
-    double opacity,
-    int layer, {
-    required bool overlap,
-  });
+  void draw(double x, double y, double size, double opacity, int layer);
 }
 
 /// How a run of glyphs is drawn: colours premultiplied and faded, halo
@@ -124,7 +119,6 @@ class SdfLook {
     this.haloBlur,
     this.fontScale, {
     this.gammaScale = 1,
-    this.overlap = false,
   });
 
   /// Red, green, blue and alpha, premultiplied.
@@ -133,10 +127,6 @@ class SdfLook {
   /// As [ink], null for none.
   final Float32List? halo;
   final double haloWidth, haloBlur, fontScale, gammaScale;
-
-  /// Drawn in two passes, every halo then every glyph, as MapLibre draws a
-  /// wide halo or letters that overlap.
-  final bool overlap;
 
   /// A halo of colour [argb], [width] logical pixels wide, faded by
   /// [opacity]; null when there is none to draw.

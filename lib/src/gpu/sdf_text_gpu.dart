@@ -56,11 +56,9 @@ class SdfTextGpu implements SdfText {
   Float32List _ordered = Float32List(_quadFloats * 256);
   int _count = 0;
 
-  /// Each quad's style layer, whether it is an icon, and whether its halo
-  /// is drawn apart from its fill.
+  /// Each quad's style layer and whether it is an icon.
   Int32List _layers = Int32List(256);
   Uint8List _icons = Uint8List(256);
-  Uint8List _overlaps = Uint8List(256);
 
   final List<(gpu.Texture, ui.Image)> _targets = [];
 
@@ -197,7 +195,6 @@ class SdfTextGpu implements SdfText {
     double size,
     double opacity,
     int layer,
-    bool overlap,
   ) {
     final count = kept._count;
     if (count == 0) return;
@@ -205,7 +202,7 @@ class SdfTextGpu implements SdfText {
     final from = _count * _quadFloats;
     _vertices.setRange(from, from + count * _quadFloats, kept._quads);
     for (var q = 0; q < count; q++) {
-      final at = _queue(layer, false, overlap);
+      final at = _queue(layer, false);
       SdfQuad.atAnchor(_vertices, at, x, y, size, opacity);
     }
   }
@@ -213,11 +210,10 @@ class SdfTextGpu implements SdfText {
   /// Makes the next quad queued one of [layer]'s and returns where its
   /// floats go in [_vertices], which it may have replaced with a longer
   /// list.
-  int _queue(int layer, bool icon, bool overlap) {
+  int _queue(int layer, bool icon) {
     _reserve(1);
     _layers[_count] = layer;
     _icons[_count] = icon ? 1 : 0;
-    _overlaps[_count] = overlap ? 1 : 0;
     return _count++ * _quadFloats;
   }
 
@@ -233,7 +229,6 @@ class SdfTextGpu implements SdfText {
     _ordered = Float32List(_vertices.length);
     _layers = Int32List(quads)..setRange(0, _count, _layers);
     _icons = Uint8List(quads)..setRange(0, _count, _icons);
-    _overlaps = Uint8List(quads)..setRange(0, _count, _overlaps);
   }
 
   /// The atlas corner of [codePoint] of [face] as x plus y times the
@@ -301,7 +296,7 @@ class SdfTextGpu implements SdfText {
     final corner = _corner(face, codePoint, g);
     if (corner < 0) return;
     final u0 = _quadLeft(g), v0 = _quadTop(g);
-    final at = _queue(layer, false, look.overlap);
+    final at = _queue(layer, false);
     SdfQuad.onScreen(
       _vertices,
       at,
@@ -336,7 +331,7 @@ class SdfTextGpu implements SdfText {
   }) {
     final sprites = _device.sprites;
     if (sprites.texture == null || sprites.image == null) return false;
-    final at = _queue(layer, true, look.overlap);
+    final at = _queue(layer, true);
     SdfQuad.onScreen(
       _vertices,
       at,
@@ -466,21 +461,19 @@ class SdfTextGpu implements SdfText {
       _dirtyBottom = 0;
     }
     // Each run of one layer's quads: its icons, then its text, as
-    // MapLibre draws a symbol layer, each part split where halos are
-    // drawn apart from fills. Quads are moved only when a layer queued an
-    // icon after its text.
-    final draws = <(int, int, bool)>[];
+    // MapLibre draws a symbol layer. Quads are moved only when a layer
+    // queued an icon after its text.
+    final draws = <(int, int)>[];
     var quads = _vertices;
     if (_inDrawOrder()) {
       var start = 0;
       for (var q = 1; q <= _count; q++) {
         if (q < _count &&
             _layers[q] == _layers[start] &&
-            _icons[q] == _icons[start] &&
-            _overlaps[q] == _overlaps[start]) {
+            _icons[q] == _icons[start]) {
           continue;
         }
-        draws.add((start, q, _overlaps[start] == 1));
+        draws.add((start, q));
         start = q;
       }
     } else {
@@ -492,16 +485,9 @@ class SdfTextGpu implements SdfText {
           to++;
         }
         for (final icons in const [1, 0]) {
-          var start = at;
-          var overlap = false;
+          final start = at;
           for (var q = from; q < to; q++) {
             if (_icons[q] != icons) continue;
-            final apart = _overlaps[q] == 1;
-            if (at > start && apart != overlap) {
-              draws.add((start, at, overlap));
-              start = at;
-            }
-            overlap = apart;
             _ordered.setRange(
               at * _quadFloats,
               (at + 1) * _quadFloats,
@@ -510,7 +496,7 @@ class SdfTextGpu implements SdfText {
             );
             at++;
           }
-          if (at > start) draws.add((start, at, overlap));
+          if (at > start) draws.add((start, at));
         }
         from = to;
       }
@@ -586,15 +572,12 @@ class SdfTextGpu implements SdfText {
         ..draw(6, instanceCount: to - from);
     }
 
-    // As MapLibre draws a symbol layer: halo and fill at once, or every
-    // halo before every fill when halos are wide or letters overlap.
-    for (final (from, to, overlap) in draws) {
-      if (overlap) {
-        draw(from, to, 1);
-        draw(from, to, 2);
-      } else {
-        draw(from, to, 3);
-      }
+    // Every halo of a run before any of its fills, as MapLibre draws a
+    // symbol layer: drawn together, the halo of a letter would cover the
+    // ink of the one it joins, a seam in Arabic script.
+    for (final (from, to) in draws) {
+      draw(from, to, 1);
+      draw(from, to, 2);
     }
     commands.submit();
     if (into != null) {
@@ -667,12 +650,6 @@ class _KeptQuads implements KeptText {
   }
 
   @override
-  void draw(
-    double x,
-    double y,
-    double size,
-    double opacity,
-    int layer, {
-    required bool overlap,
-  }) => _text._queueKept(this, x, y, size, opacity, layer, overlap);
+  void draw(double x, double y, double size, double opacity, int layer) =>
+      _text._queueKept(this, x, y, size, opacity, layer);
 }

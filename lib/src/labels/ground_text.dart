@@ -28,9 +28,8 @@ class GroundTextPainter {
     LabelState st,
     RangeSprite sprite,
     double em,
-    int layer, {
-    required bool overlap,
-  }) {
+    int layer,
+  ) {
     if (!_view.onFlatGround || st.dx != 0 || st.dy != 0) return false;
     _view.project(st.worldX, st.worldY);
     // As MapLibre sizes text pitched with the map: by half its anchor's
@@ -52,7 +51,6 @@ class GroundTextPainter {
       kept.unit / atCentre,
       st.opacity,
       layer,
-      overlap: overlap,
     );
     return true;
   }

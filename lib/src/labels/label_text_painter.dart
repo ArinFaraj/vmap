@@ -405,7 +405,6 @@ class LabelTextPainter {
     // each glyph upright on the screen.
     final upright = st.glyphsUpright;
     final halo = SdfLook.haloOf(look.halo, look.haloWidth, st.opacity);
-    final overlap = look.haloWidth > 1 || look.letterSpacing < 0;
     final plain = SdfLook.rgba(look.color, st.opacity);
     SdfLook lookOf(int i, double fontScale, double gammaScale) {
       final own = colors?[i ~/ 5] ?? 0;
@@ -416,12 +415,11 @@ class LabelTextPainter {
         look.haloBlur,
         fontScale,
         gammaScale: gammaScale,
-        overlap: overlap,
       );
     }
 
     if (st.onGround) {
-      if (_groundText.draw(sdf, st, sprite, em, layer, overlap: overlap)) {
+      if (_groundText.draw(sdf, st, sprite, em, layer)) {
         return;
       }
       final (size, depth) = _geometry.groundSize(st, em);

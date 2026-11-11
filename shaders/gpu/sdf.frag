@@ -69,7 +69,7 @@ void main() {
     float alpha = smoothstep(inner_edge - gamma_scaled, inner_edge + gamma_scaled, dist);
     text = alpha * v_ink;
   }
-  if (abs(mode - 2.0) > 0.5 && v_halo.a > 0.0) {
+  if (mode < 1.5 && v_halo.a > 0.0) {
     float gamma_halo = (v_params.y * 1.19 / SDF_PX + EDGE_GAMMA) / font_scale;
     float inner_edge_halo = inner_edge + gamma_halo * gamma_scale;
     float gamma_scaled_halo = gamma_halo * gamma_scale;
@@ -78,11 +78,5 @@ void main() {
     alpha_halo = min(smoothstep(halo_edge - gamma_scaled_halo, halo_edge + gamma_scaled_halo, dist), 1.0 - alpha_halo);
     ring = alpha_halo * v_halo;
   }
-  if (mode > 2.5) {
-    frag_color = text + (1.0 - text.a) * ring;
-  } else if (mode < 1.5) {
-    frag_color = ring;
-  } else {
-    frag_color = text;
-  }
+  frag_color = mode < 1.5 ? ring : text;
 }
