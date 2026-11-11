@@ -82,16 +82,41 @@
 
     // Frames the map handed to the screen and the main thread time each
     // took in the map's own code: vmap's engine paint, MapLibre's _render.
-    // vmap's figure leaves out Flutter's own frame work.
+    // vmap's figure leaves out Flutter's own frame work. A vmap frame is
+    // shown by Flutter's canvases, in its shadow root, and where the map's
+    // GPU images are in page elements by the map's own canvases too, which
+    // then stand for the map. Each counts once a task. Each image vmap
+    // takes out of its WebGL canvas counts too, with its pixels: a copy
+    // where the browser composites on the GPU, a read back where it does
+    // not.
     let workMicros = 0, workFrames = 0;
+    const flutterPresents = [], planePresents = [], transfers = [];
     const hook = () => {
       const w = frame.contentWindow;
       if (target === 'vmap') {
         const proto = w.ImageBitmapRenderingContext.prototype;
         const present = proto.transferFromImageBitmap;
+        let inFlutterTask = false, inPlaneTask = false;
         proto.transferFromImageBitmap = function (bitmap) {
-          presents.push(performance.now());
+          const now = performance.now();
+          if (this.canvas.getRootNode() !== w.document) {
+            if (!inFlutterTask) {
+              inFlutterTask = true;
+              flutterPresents.push(now);
+              queueMicrotask(() => inFlutterTask = false);
+            }
+          } else if (!inPlaneTask) {
+            inPlaneTask = true;
+            planePresents.push(now);
+            queueMicrotask(() => inPlaneTask = false);
+          }
           return present.call(this, bitmap);
+        };
+        const canvas = w.OffscreenCanvas.prototype;
+        const transfer = canvas.transferToImageBitmap;
+        canvas.transferToImageBitmap = function () {
+          transfers.push([performance.now(), this.width * this.height]);
+          return transfer.call(this);
         };
       } else {
         const map = w.__mlmap;
@@ -152,7 +177,7 @@
       const refresh = [...rafs].sort((a, b) => a - b)[15];
       if (target === 'vmap') await vmapStats(true);
       workMicros = workFrames = 0;
-      presents.length = 0;
+      presents.length = flutterPresents.length = planePresents.length = transfers.length = 0;
       const start = performance.now();
       let end = start;
       await new Promise((done) => {
@@ -167,7 +192,18 @@
         };
         requestAnimationFrame(tick);
       });
-      const shown = presents.filter((p) => p >= start && p <= end);
+      const within = (list) => list.filter((p) => p >= start && p <= end);
+      const planes = within(planePresents);
+      const shown = target === 'maplibre' ? within(presents)
+        : planes.length ? planes : within(flutterPresents);
+      // How long after the map's own canvases showed a frame Flutter's
+      // showed the widgets drawn with it.
+      const flutter = within(flutterPresents);
+      const lags = planes.length ? planes.map((p) => {
+        const next = flutter.find((f) => f >= p);
+        return next == null ? null : next - p;
+      }).filter((l) => l != null).sort((a, b) => a - b) : [];
+      const taken = transfers.filter(([at]) => at >= start && at <= end);
       const gaps = shown.slice(1).map((p, i) => p - shown[i]);
       const sorted = [...gaps].sort((a, b) => a - b);
       const q = (p) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))] ?? null;
@@ -186,6 +222,11 @@
         missedPct: r2(Math.max(0, 1 - shown.length / expected) * 100),
         longFrames: gaps.filter((g) => g > refresh * 1.5).length,
         workMs: r2(work),
+        transfersPerFrame: shown.length ? r2(taken.length / shown.length) : 0,
+        transferMp: taken.length
+          ? r2(taken.reduce((n, [, px]) => n + px, 0) / taken.length / 1e6) : 0,
+        overlayLagP50: lags.length ? r2(lags[Math.floor(lags.length / 2)]) : 0,
+        overlayLagP95: lags.length ? r2(lags[Math.floor(lags.length * 0.95)]) : 0,
       };
     };
 

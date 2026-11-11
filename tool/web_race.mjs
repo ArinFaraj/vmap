@@ -77,7 +77,7 @@ const fly = async (t, round, record) => {
   await page.close();
   if (record) results.flights.push(row);
   const brief = ['erbil3d', 'city', 'flight', 'globe']
-    .map((v) => `${v} ${row[v].fps}fps p95 ${row[v].p95} work ${row[v].workMs}`).join(' | ');
+    .map((v) => `${v} ${row[v].fps}fps p95 ${row[v].p95} work ${row[v].workMs} tx ${row[v].transfersPerFrame ?? 0}`).join(' | ');
   console.log(record ? round : 'warm', row.target, `${row.memoryMb} MB`, brief);
 };
 
