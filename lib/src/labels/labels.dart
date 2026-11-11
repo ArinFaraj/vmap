@@ -108,6 +108,12 @@ class LabelEngine {
   /// they wait a frame, so the two costs never land on the same one.
   static const int _heavyPlaceMicros = 800;
 
+  /// With the camera still a late frame shows nothing moving, so a still
+  /// frame draws text through a placement, and draws text and asks which
+  /// labels buildings hide for this many times as long, which settles a
+  /// map that has just loaded in a few frames instead of hundreds.
+  static const int _stillScale = 4;
+
   /// Label states by key; a key holds more than one when places of one
   /// name share a cell, told apart by distance.
   final Map<String, List<LabelState>> _states = {};
@@ -421,8 +427,11 @@ class LabelEngine {
 
     var rasterized = 0;
     final rasterStart = _clock.elapsedMicroseconds;
-    bool timeUp() =>
-        _clock.elapsedMicroseconds - rasterStart > rasterBudgetMicros;
+    final still = _view.still;
+    final rasterMicros = still
+        ? rasterBudgetMicros * _stillScale
+        : rasterBudgetMicros;
+    bool timeUp() => _clock.elapsedMicroseconds - rasterStart > rasterMicros;
     final layoutZoom = zoom - 1 + zoomOffset;
     for (final st in _frameStates) {
       if (st.sprite?.dropped ?? false) {
@@ -435,7 +444,7 @@ class LabelEngine {
       var cached = _sprites[key];
       if (identical(cached, st.sprite)) cached = null;
       if (cached == null &&
-          (lastPlaceMicros > _heavyPlaceMicros ||
+          ((!still && lastPlaceMicros > _heavyPlaceMicros) ||
               (rasterized > 0 && timeUp()))) {
         pending = true;
         break;
@@ -455,7 +464,7 @@ class LabelEngine {
     // A label turned away on its guessed size is drawn too, so the next
     // placement weighs it at its real one, as MapLibre lays out every
     // label before placing any.
-    if (!pending) {
+    if (!pending || still) {
       for (final st in _frameStates) {
         if (st.placed || st.seenPass < _pass || st.sprite != null) continue;
         if (!st.candidate.hasText) continue;
@@ -633,7 +642,7 @@ class LabelEngine {
   ) {
     _placing = _pass + 1;
     _placeAgain = false;
-    occlusion.startPass();
+    occlusion.startPass(scale: _view.still ? _stillScale : 1);
     final styleZoom = zoom - 1 + zoomOffset;
     _style.layoutZoom = styleZoom.floorToDouble();
     final states = _frameStates..clear();
