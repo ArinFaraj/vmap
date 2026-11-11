@@ -1,3 +1,6 @@
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
+
 import 'package:flutter/material.dart';
 
 import 'main.dart';
@@ -105,6 +108,16 @@ class ExplorePanel extends StatelessWidget {
                 ])
                   ActionChip(label: Text(name), onPressed: () => onPlace(stop)),
               ],
+            ),
+            const _Heading('Compare'),
+            OutlinedButton.icon(
+              onPressed: () => globalContext.callMethod(
+                'open'.toJS,
+                'compare/compare.html'.toJS,
+                '_blank'.toJS,
+              ),
+              icon: const Icon(Icons.compare_rounded, size: 18),
+              label: const Text('Side by side with MapLibre GL JS'),
             ),
           ],
         ),

@@ -28,6 +28,25 @@ jobs:
           flutter build web --wasm --release --no-tree-shake-icons
           --no-web-resources-cdn --pwa-strategy=none --base-href /vmap/
         working-directory: demo
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: tool/style_compare
+      - run: flutter pub get
+        working-directory: bench
+      - run: >-
+          flutter build web --wasm --release --no-tree-shake-icons
+          --no-web-resources-cdn --pwa-strategy=none --base-href /vmap/compare/
+          -t lib/compare_web.dart -o ../demo/build/web/compare
+        working-directory: bench
+      - run: |
+          out=demo/build/web/compare
+          mkdir -p "$out/dist"
+          cp tool/style_compare/node_modules/maplibre-gl/dist/maplibre-gl.mjs \
+             tool/style_compare/node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs \
+             tool/style_compare/node_modules/maplibre-gl/dist/maplibre-gl.css "$out/dist/"
+          cp tool/style_compare/node_modules/@mapbox/mapbox-gl-rtl-text/dist/mapbox-gl-rtl-text.js "$out/rtl.js"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: demo/build/web

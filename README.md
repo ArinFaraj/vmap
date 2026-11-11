@@ -19,6 +19,7 @@
 
 <p align="center">
   <a href="https://arinfaraj.github.io/vmap/"><b>Try the live demo</b></a> |
+  <a href="https://arinfaraj.github.io/vmap/compare/compare.html">Side by side with MapLibre GL JS</a> |
   <a href="#get-started">Get started</a> |
   <a href="https://pub.dev/documentation/vmap/latest/">API reference</a> |
   <a href="example/lib/main.dart">Example app</a> |
