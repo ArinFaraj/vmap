@@ -229,7 +229,14 @@ class LabelState {
   double opacity = 0;
   bool placed = false;
   int seenPass = -1;
-  int sortKey = 0;
+
+  /// Where it comes in placement: lowest [rank] first, then as the tiles
+  /// list their labels, [listed].
+  int rank = 0;
+  int listed = 0;
+
+  int compareListed(LabelState other) =>
+      rank != other.rank ? rank - other.rank : listed - other.listed;
 
   /// Where it falls in its layer's drawing order by screen y.
   double drawY = 0;

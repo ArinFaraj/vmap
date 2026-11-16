@@ -1,6 +1,7 @@
 uniform SdfFrame {
   vec4 screen;
   vec4 atlas;
+  vec4 distance_in;
 }
 sdf_frame;
 
@@ -57,7 +58,9 @@ void main() {
   float font_scale = v_params.z;
   float gamma_scale = v_params.w;
   float inner_edge = (256.0 - 64.0) / 256.0;
-  float dist = v_kind.x > 0.5 ? sheet(v_uv).a : texture(glyphs, v_uv).r;
+  float dist = v_kind.x > 0.5
+    ? sheet(v_uv).a
+    : dot(texture(glyphs, v_uv), sdf_frame.distance_in);
   if (sdf_frame.screen.w < 1.5) {
     float gamma_halo = (v_params.y * 1.19 / SDF_PX + EDGE_GAMMA) / font_scale;
     float inner_edge_halo = inner_edge + gamma_halo * gamma_scale;

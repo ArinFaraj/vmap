@@ -102,17 +102,33 @@ final class WebGlRenderPipeline extends RenderPipeline {
 
   web.WebGLProgram get glProgram => _program;
 
+  web.WebGLUniformLocation? _yFlip, _fragY;
+  bool? _upright;
+  int _uprightHeight = 0;
+
+  /// Sets which way up this pipeline, the program in use, draws: top-down
+  /// as Flutter GPU stores a texture it renders to, or [upright] in a
+  /// canvas [height] pixels high. Impeller's generated GLES shaders multiply
+  /// gl_Position.y by a backend uniform for this, and a fragment shader
+  /// reads its pixel's row through [_fragYUniform].
+  void _orient(bool upright, int height) {
+    if (_upright == upright && (!upright || _uprightHeight == height)) return;
+    _upright = upright;
+    _uprightHeight = height;
+    final gl = _gpuContext._gl;
+    if (_yFlip != null) gl.uniform1f(_yFlip, upright ? 1 : -1);
+    if (_fragY != null) {
+      gl.uniform2f(_fragY, upright ? height.toDouble() : 0, upright ? -1 : 1);
+    }
+  }
+
   void _buildUniformCaches() {
     final gl = _gpuContext._gl;
     _gpuContext._state.useProgram(_program);
-    final yFlipLocation = gl.getUniformLocation(_program, '_impeller_y_flip');
-    if (yFlipLocation != null) {
-      // Impeller's generated GLES shaders multiply gl_Position.y by this
-      // backend uniform. The web shim does not use Impeller's runtime uniform
-      // binding layer, so set the value that stores FBO render targets
-      // top-down, matching Flutter GPU's render-to-texture convention.
-      gl.uniform1f(yFlipLocation, -1.0);
-    }
+    _yFlip = gl.getUniformLocation(_program, '_impeller_y_flip');
+    _fragY = gl.getUniformLocation(_program, _fragYUniform);
+    _upright = null;
+    _orient(false, 0);
     var nextUnit = 0;
     var nextBlockBinding = 0;
     for (final shader in [vertexShader, fragmentShader]) {

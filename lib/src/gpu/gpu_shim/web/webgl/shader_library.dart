@@ -86,6 +86,7 @@ final class WebGlShaderLibrary extends ShaderLibrary {
     if (shader.stage == ShaderStage.vertex && webGlContext.clipDepthZeroToOne) {
       source = stripClipSpaceDepthRemap(source);
     }
+    if (shader.stage == ShaderStage.fragment) source = _rowsFromTheTop(source);
     shader.webGl._compile(source);
 
     // Rebuild the reflection state from scratch (a reload may have changed
@@ -282,3 +283,29 @@ Future<String?> _reinitializeShaderLibraryFromBytesAsync(
 ShaderLibrary _compileShaderLibraryInline(
   Map<String, ({String source, ShaderStage stage})> shaders,
 ) => WebGlShaderLibrary.fromInlineMap(shaders);
+
+/// The uniform a fragment shader's pixel row goes through: an offset and a
+/// scale for gl_FragCoord.y.
+const String _fragYUniform = '_vmap_frag_y';
+
+final RegExp _fragCoord = RegExp(r'\bgl_FragCoord\b');
+final RegExp _versionLine = RegExp(r'^#version[^\n]*\n', multiLine: true);
+
+/// [source] reading gl_FragCoord with its rows counted from the top of the
+/// frame whichever way up the frame is drawn, as Flutter GPU's backends
+/// count them.
+String _rowsFromTheTop(String source) {
+  if (!source.contains(_fragCoord)) return source;
+  final version = _versionLine.firstMatch(source);
+  if (version == null) return source;
+  return source
+      .replaceAll(_fragCoord, '_vmap_frag_coord')
+      .replaceRange(
+        version.end,
+        version.end,
+        'uniform highp vec2 $_fragYUniform;\n'
+        '#define _vmap_frag_coord vec4(gl_FragCoord.x, '
+        '$_fragYUniform.x + $_fragYUniform.y * gl_FragCoord.y, '
+        'gl_FragCoord.zw)\n',
+      );
+}

@@ -27,12 +27,8 @@ final class WebGlHost extends GpuHost {
   @override
   Texture? imageToTexture(ui.Image image) => null;
 
-  /// Copies [texture] into the context's canvas and hands that over: a
-  /// page canvas shows it without the copy into Flutter's own WebGL
-  /// context that [textureToImage] costs, which Safari makes on the CPU.
   @override
-  Object? textureToBitmap(Texture texture) =>
-      webGlContext.textureBitmap(texture);
+  PageHost<Texture> get page => const _WebGlPage();
 
   /// Presents [texture] through the backend's own offscreen canvas path.
   @override
@@ -42,3 +38,29 @@ final class WebGlHost extends GpuHost {
 
 /// The WebGL2 backend's host integration.
 const WebGlHost webGlHost = WebGlHost._();
+
+final class _WebGlPage implements PageHost<Texture> {
+  const _WebGlPage();
+
+  @override
+  PageBitmap bitmap(Texture texture) =>
+      PageBitmap(webGlContext.textureBitmap(texture));
+
+  @override
+  PageImage frame(
+    Texture texture, {
+    required Object shower,
+    required bool whole,
+  }) => webGlContext._presenter.frame(
+    webGlContext,
+    texture,
+    shower,
+    whole: whole,
+  );
+
+  @override
+  void left(Object shower) => webGlContext._presenter.forget(shower);
+
+  @override
+  void showsOnce(Texture texture) => texture.webGl._showsOnce = true;
+}

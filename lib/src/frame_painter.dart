@@ -130,6 +130,12 @@ class FramePainter {
   /// Whether the canvas draws the map now, not the GPU.
   bool get drawsWithCanvas => identical(current, _canvas);
 
+  /// Whether the last frame put something that moves with the map on its
+  /// canvas: every layer where the canvas draws the map, and under the GPU
+  /// a raster layer, a patterned background or pins.
+  bool get mapOnCanvas => drawsWithCanvas || _layersOnCanvas;
+  bool _layersOnCanvas = false;
+
   /// Makes room for a style of [layers] layers.
   void resize(int layers) => _meshes.resize(layers);
 
@@ -169,6 +175,7 @@ class FramePainter {
     _drawLabels(f);
     _drawAboveLabels(f);
     _drawAtmosphere(f);
+    _layersOnCanvas = _putsLayersOnCanvas(f);
     _finishFrame(f);
   }
 
@@ -277,6 +284,9 @@ class FramePainter {
 
   void _coverTiles(_Frame f) {
     for (final s in _sources) {
+      // Before the view asks for its tiles, so one the renderer let go of
+      // is asked for again and not made ready from what it no longer has.
+      s.dropSpent(current.canBuild);
       final buildings = f.sheet.buildingSources.contains(s.pool.source);
       final preparing = s.cover(
         f.camera,
@@ -380,8 +390,7 @@ class FramePainter {
     _drawRuns(f, 0, sheet.labelsRun);
     // With no horizon to cut the map at, the renderer may draw the labels'
     // text into the map's image, which is then laid down after them.
-    f.textInMap =
-        f.labelsVisible && f.horizon <= 0 && renderer.textInto(sheet.labelsRun);
+    f.textInMap = f.labelsVisible && f.horizon <= 0 && renderer.textIntoMap();
     if (!f.textInMap) _present(f, sheet.labelsRun);
     _buildingMicros = _clock.elapsedMicroseconds - started;
     _uncut(f);
@@ -422,32 +431,61 @@ class FramePainter {
     final sheet = f.sheet;
     for (var index = from; index < to; index++) {
       final run = sheet.runs[index];
-      if (run.background < 0 && run.raster < 0) continue;
-      if (run.background >= 0 && f.drape) continue;
+      final drawn = _canvasRun(f, run);
+      if (drawn == null) continue;
       _present(f, index);
       final canvas = f.canvas..save();
       if (f.canvasHorizon > 0) _clipGround(canvas, f.view, f.canvasHorizon);
       canvas.transform(f.viewMatrix);
-      if (run.background >= 0) {
-        _backdrop.drawBackground(
-          canvas,
-          sheet.backgrounds[run.background],
-          f.camera,
-          _resources.sprites,
-        );
-      } else if (!f.drape || _rasters[run.raster] is PictureDrawing) {
-        _rasters[run.raster].paint(
-          canvas,
-          _context,
-          f.camera.zoom,
-          f.camera.origin,
-          f.camera.size,
-          view: f.view,
-          drape: f.drape,
-        );
+      switch (drawn) {
+        case _CanvasRun.background:
+          _backdrop.drawBackground(
+            canvas,
+            sheet.backgrounds[run.background],
+            f.camera,
+            _resources.sprites,
+          );
+        case _CanvasRun.raster:
+          _rasters[run.raster].paint(
+            canvas,
+            _context,
+            f.camera.zoom,
+            f.camera.origin,
+            f.camera.size,
+            view: f.view,
+            drape: f.drape,
+          );
       }
       canvas.restore();
     }
+  }
+
+  /// What the canvas draws for style run [run], between the renderer's
+  /// layers. Over draped ground the GPU lays the backgrounds and the tiled
+  /// rasters down, and only a picture source is drawn here.
+  _CanvasRun? _canvasRun(_Frame f, StyleRun run) {
+    if (run.background >= 0) return f.drape ? null : _CanvasRun.background;
+    if (run.raster < 0) return null;
+    return !f.drape || _rasters[run.raster] is PictureDrawing
+        ? _CanvasRun.raster
+        : null;
+  }
+
+  /// Whether the frame puts a layer that moves with the map on its canvas
+  /// under a GPU renderer: a patterned background, a raster layer that
+  /// shows, or pins.
+  bool _putsLayersOnCanvas(_Frame f) {
+    if (f.labelsVisible && _labels.pins != null) return true;
+    for (final run in f.sheet.runs) {
+      final moves = switch (_canvasRun(f, run)) {
+        _CanvasRun.background =>
+          f.sheet.backgrounds[run.background].pattern != null,
+        _CanvasRun.raster => _rasters[run.raster].shows(_context),
+        null => false,
+      };
+      if (moves) return true;
+    }
+    return false;
   }
 
   /// Lays out this frame's raster tiles for the GPU to drape before it
@@ -587,8 +625,8 @@ class FramePainter {
             'place=${_labels.lastPlaceMicros} '
             'lraster=${_labels.lastRasterMicros} '
             'labels=${finished - labelsStarted} '
-            'glyphs=${_labels.glyphsRasterized}/${_labels.glyphRasterMicros} '
-            'pages=${_labels.glyphPageCount} '
+            'glyphs=${_labels.glyphs.rasterized}/${_labels.glyphs.rasterMicros} '
+            'pages=${_labels.glyphs.pageCount} '
             'buildings=$_buildingMicros '
             'z=${f.camera.zoom.toStringAsFixed(2)} '
             'tiles=$ideal+$fallback cached=$cached',
@@ -617,7 +655,7 @@ class FramePainter {
             (n, r) => n + r.waiting,
           ) +
           (_ground.tiles?.waiting ?? 0)
-      ..resourcesLoading = _resources.loading + _labels.glyphsLoading;
+      ..resourcesLoading = _resources.loading + _labels.glyphs.rangesPending;
     for (final s in _sources) {
       // As MapLibre sizes its tile cache: about five screens of tiles, so
       // panning back or zooming out and in again finds them built.
@@ -753,9 +791,13 @@ class _Frame {
 
   bool waiting = false;
   bool animating = false;
+
   int labelsStarted = 0;
   bool labelsVisible = true;
 
   /// Whether the renderer draws the labels' text into the map's image.
   bool textInMap = false;
 }
+
+/// A style run the canvas draws itself.
+enum _CanvasRun { background, raster }

@@ -13,7 +13,7 @@ import 'package:web/web.dart' as web;
 
 import 'src/platform/web_codec.dart';
 import 'src/raster/raster_dem.dart' show ShadeWorker, shadeWorkerMain;
-import 'src/text/glyphs/glyph_raster.dart'
+import 'src/text/glyphs/glyph_worker.dart'
     show GlyphRasterWorker, glyphWorkerMain;
 import 'src/tiles/worker.dart' show tileWorkerMain;
 

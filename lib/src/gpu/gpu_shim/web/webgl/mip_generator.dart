@@ -80,6 +80,7 @@ void main() {
         'Mip generation is only supported for 2D textures',
       );
     }
+    _context._leavePass(reads: texture);
     final gl = _context._gl;
     _ensureProgram(gl);
     const target = web.WebGL2RenderingContext.TEXTURE_2D;

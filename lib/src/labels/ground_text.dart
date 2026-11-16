@@ -26,7 +26,7 @@ class GroundTextPainter {
   bool draw(
     SdfText sdf,
     LabelState st,
-    RangeSprite sprite,
+    GlyphSprite sprite,
     double em,
     int layer,
   ) {
@@ -60,7 +60,7 @@ class GroundTextPainter {
   GroundText? _layOut(
     SdfText sdf,
     LabelState st,
-    RangeSprite sprite,
+    GlyphSprite sprite,
     double unit,
     bool flip,
   ) {
@@ -86,7 +86,7 @@ class GroundTextPainter {
     _geometry.eachOnGround(st, sprite, unit, (i, px, py, tx, ty, nx, ny) {
       final own = colors?[i ~/ 5] ?? 0;
       whole &= text.add(
-        g[i].toInt(),
+        sprite.face(g[i].toInt()),
         g[i + 1].toInt(),
         px - st.worldX,
         py - st.worldY,

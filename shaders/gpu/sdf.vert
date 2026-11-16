@@ -4,6 +4,9 @@ uniform SdfFrame {
   vec4 screen;
   // x, y: the glyph atlas's size in texels; z, w: the sprite sheet's.
   vec4 atlas;
+  // 1 in the channel of the glyph atlas that holds a distance, 0 in the
+  // others: alpha on native, red on the web.
+  vec4 distance_in;
 }
 sdf_frame;
 

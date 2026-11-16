@@ -7,13 +7,11 @@ import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/camera/view.dart';
-import 'package:vmap/src/gpu/gpu_buffers.dart';
-import 'package:vmap/src/gpu/gpu_device.dart';
-import 'package:vmap/src/gpu/gpu_pipelines.dart';
-import 'package:vmap/src/gpu/gpu_shim/gpu.dart' as gpu;
 import 'package:vmap/src/gpu/sdf_text_gpu.dart';
 import 'package:vmap/src/labels/sdf_text.dart';
 import 'package:vmap/src/text/glyphs/glyph_pbf.dart';
+
+import 'support/gpu.dart';
 
 /// A letter of a joining script: a bar of ink [_inkWidth] glyph pixels
 /// long from [_left], its pen moving on by [_advance], so the bars of
@@ -95,28 +93,13 @@ class _Drawn {
 }
 
 void main() {
-  final hasGpu = () {
-    try {
-      gpu.gpuContext;
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }();
-  final skip = hasGpu ? false : 'needs Flutter GPU: run tool/gpu_tests.sh';
-
   late SdfTextGpu text;
   final glyphs = _Bars();
 
   setUpAll(() async {
     if (!hasGpu) return;
-    const bundle = 'build/shaderbundles/vmap_gpu.shaderbundle';
-    final library = await gpu.loadShaderLibraryAsync(bundle);
-    if (library == null) throw StateError('no shader bundle at $bundle');
-    text = SdfTextGpu(
-      GpuDevice(GpuPipelines(library), GpuHeap(), fail: (e) => throw e),
-      library,
-    );
+    final (library, device) = await gpuDevice();
+    text = SdfTextGpu(device, library);
   });
 
   /// [count] glyphs [codePoint] in a row, black with a white halo
@@ -164,7 +147,7 @@ void main() {
     for (final size in [10.0, 14.0, 22.0]) {
       test(
         'joined letters are one stroke of ink at ${size}px, dpr $dpr',
-        skip: skip,
+        skip: gpuSkip,
         () async {
           const count = 6;
           final drawn = await draw(
@@ -193,7 +176,7 @@ void main() {
     }
   }
 
-  test('letters apart keep their halo between them', skip: skip, () async {
+  test('letters apart keep their halo between them', skip: gpuSkip, () async {
     for (final dpr in [1.0, 2.0]) {
       final drawn = await draw(
         _apart,

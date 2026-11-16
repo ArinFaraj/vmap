@@ -3,19 +3,22 @@ import 'package:flutter/widgets.dart';
 
 import '../engine.dart';
 import '../render/frame_planes.dart';
+import 'map_painter.dart';
+import 'map_showing.dart';
 import 'page_plane.dart';
 import 'vmap_controller.dart';
 
-/// The map in Safari and Firefox: each frame's canvas pictures painted in
-/// turn with the GPU's images in page elements between them, which the
-/// browser lays over each other on the GPU. Safari copies an image into
-/// Flutter's own WebGL context on the CPU, about 50 ms for a frame the size
-/// of a window.
+/// The map in a browser: each frame's canvas pictures painted in turn
+/// with the GPU's images in page elements between them, which the browser
+/// lays over each other on the GPU, with no trip through Flutter's
+/// renderer. Safari copies an image into Flutter's own WebGL context on
+/// the CPU, about 50 ms for a frame the size of a window.
 class PlanesView extends StatefulWidget {
   const PlanesView({
     required this.engine,
     required this.controller,
     required this.devicePixelRatio,
+    required this.showing,
     required this.painted,
     super.key,
   });
@@ -23,6 +26,9 @@ class PlanesView extends StatefulWidget {
   final VmapEngine engine;
   final VmapController controller;
   final double devicePixelRatio;
+
+  /// How the page and Flutter's canvas show a frame together.
+  final MapShowing showing;
 
   /// Told after each frame the map drew.
   final VoidCallback painted;
@@ -34,10 +40,23 @@ class PlanesView extends StatefulWidget {
 class _PlanesViewState extends State<PlanesView> {
   final Map<int, PagePlane> _pages = {};
   late final _planes = FramePlanes()
-    ..onHand = (index, plane) => showPlane(_pages, index, plane);
+    ..onHand = (index, plane) => showPlane(
+      _pages,
+      index,
+      plane,
+      held: widget.showing == MapShowing.pageWithCanvas,
+    );
 
-  /// GPU planes the last frame had, which the stack has a place for.
-  int _places = 0;
+  /// GPU planes the last frame had, which the stack has a place for. A
+  /// frame has one nearly always, so its place is there from the start.
+  int _places = 1;
+
+  /// Whether a frame goes into Flutter's own picture for now: where that
+  /// picture reaches the page late, a map moved here from the canvas keeps
+  /// showing there until its page elements exist, with no empty frame in
+  /// between.
+  bool get _onCanvasMeanwhile =>
+      widget.showing.canvasTrails && _pages.length < _places;
 
   void _drawn() {
     final gpu = _planes.gpu;
@@ -59,11 +78,15 @@ class _PlanesViewState extends State<PlanesView> {
       children: [
         CustomPaint(
           painter: _FramePainter(
-            widget.engine,
-            widget.controller,
-            widget.devicePixelRatio,
+            MapPainter(
+              widget.engine,
+              widget.controller,
+              widget.devicePixelRatio,
+              widget.painted,
+            ),
             _planes,
             _drawn,
+            () => _onCanvasMeanwhile,
           ),
         ),
         for (var i = 0; i < _places; i++) ...[
@@ -83,28 +106,24 @@ class _PlanesViewState extends State<PlanesView> {
 
 /// Draws the frame into the planes and paints the first picture.
 class _FramePainter extends CustomPainter {
-  _FramePainter(
-    this.engine,
-    this.controller,
-    this.devicePixelRatio,
-    this.planes,
-    this.drawn,
-  ) : super(repaint: Listenable.merge([engine, controller]));
+  _FramePainter(this.whole, this.planes, this.drawn, this.onCanvas)
+    : super(repaint: Listenable.merge([whole.engine, whole.controller]));
 
-  final VmapEngine engine;
-  final VmapController controller;
-  final double devicePixelRatio;
+  /// Paints the frame when it goes on Flutter's canvas, as [onCanvas] says.
+  final MapPainter whole;
   final FramePlanes planes;
   final VoidCallback drawn;
+  final bool Function() onCanvas;
 
   @override
   void paint(Canvas canvas, Size size) {
-    engine.paintPlanes(
+    if (onCanvas()) return whole.paint(canvas, size);
+    whole.engine.paintPlanes(
       planes,
       size,
-      controller.camera,
-      devicePixelRatio: devicePixelRatio,
-      ahead: controller.destination,
+      whole.controller.camera,
+      devicePixelRatio: whole.devicePixelRatio,
+      ahead: whole.controller.destination,
     );
     canvas
       ..clipRect(Offset.zero & size)
@@ -113,10 +132,7 @@ class _FramePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_FramePainter old) =>
-      old.engine != engine ||
-      old.controller != controller ||
-      old.devicePixelRatio != devicePixelRatio;
+  bool shouldRepaint(_FramePainter old) => whole.shouldRepaint(old.whole);
 }
 
 /// Paints the frame's picture [index], over the GPU's images before it.

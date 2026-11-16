@@ -1,10 +1,8 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import '../../platform.dart';
 import '../font/font.dart';
-import '../../tiles/typed_buffer.dart';
+import 'glyph_ink.dart';
 import 'glyph_layout.dart';
 import 'glyph_pbf.dart';
 
@@ -238,22 +236,15 @@ class GlyphRasterizer {
     if (outline == null) return null;
     final s = emOf(key.size) / fonts.unitsPerEm(face);
     final slant = key.italic ? 0.2 * s : 0.0;
-    final lines = _flatten(outline, s, slant);
+    final lines = flattenOutline(outline, s, slant);
     if (lines.isEmpty) return null;
-    var minX = double.infinity, minY = double.infinity;
-    var maxX = -double.infinity, maxY = -double.infinity;
-    for (var i = 0; i < lines.length; i += 2) {
-      minX = math.min(minX, lines[i]);
-      maxX = math.max(maxX, lines[i]);
-      minY = math.min(minY, lines[i + 1]);
-      maxY = math.max(maxY, lines[i + 1]);
-    }
+    final (minX, minY, maxX, maxY) = boundsOf(lines);
     final halo = key.halo / 4, blur = key.blur / 4;
     final pad = (halo + blur * 2 + 2).ceilToDouble();
     final w = (maxX - minX + pad * 2).ceil();
     final h = (maxY - minY + pad * 2).ceil();
     final dx = pad - minX, dy = pad - minY;
-    final coverage = _coverage(lines, w, h, dx, dy);
+    final coverage = coverageOf(lines, w, h, dx, dy);
     final ink = Uint8List(w * h);
     for (var i = 0; i < ink.length; i++) {
       ink[i] = (coverage[i] * 255 + 0.5).toInt();
@@ -262,435 +253,27 @@ class GlyphRasterizer {
       w,
       h,
       ink,
-      key.halo > 0 ? _halo(coverage, w, h, halo, blur) : null,
+      key.halo > 0 ? haloOf(coverage, w, h, halo, blur) : null,
       minX - pad,
       minY - pad,
     );
   }
 
-  /// The outline as polylines in pixels, y down: flat pairs of points,
-  /// each contour closed, consecutive points joined.
-  static DoubleBuffer _flatten(GlyphOutline outline, double s, double slant) {
-    final out = DoubleBuffer();
-    var cx = 0.0, cy = 0.0;
-    outline.walk(
-      moveTo: (x, y) {
-        cx = x * s + y * slant;
-        cy = -y * s;
-      },
-      lineTo: (x, y) {
-        final nx = x * s + y * slant, ny = -y * s;
-        out.add4(cx, cy, nx, ny);
-        cx = nx;
-        cy = ny;
-      },
-      quadTo: (qx0, qy0, x0, y0) {
-        final qx = qx0 * s + qy0 * slant, qy = -qy0 * s;
-        final x = x0 * s + y0 * slant, y = -y0 * s;
-        final dd = _len(cx - 2 * qx + x, cy - 2 * qy + y);
-        final n = math.max(1, math.min(32, math.sqrt(dd * 2).ceil()));
-        var lx = cx, ly = cy;
-        for (var i = 1; i <= n; i++) {
-          final t = i / n, u = 1 - t;
-          final nx = u * u * cx + 2 * u * t * qx + t * t * x;
-          final ny = u * u * cy + 2 * u * t * qy + t * t * y;
-          out.add4(lx, ly, nx, ny);
-          lx = nx;
-          ly = ny;
-        }
-        cx = x;
-        cy = y;
-      },
-    );
-    return out;
-  }
+  /// Distance fields of [glyphs] of [face] at [weight], one each as
+  /// [fieldOf] makes them. A glyph with no outline, or one that cannot be
+  /// read, has no ink.
+  List<PbfGlyph> fields(int face, int weight, bool italic, List<int> glyphs) =>
+      [for (final glyph in glyphs) _field(face, weight, italic, glyph)];
 
-  static double _len(double x, double y) => math.sqrt(x * x + y * y);
-
-  /// Exact area coverage of the outline, nonzero, clamped to one: each
-  /// edge adds its signed area to the cells it crosses, and a running sum
-  /// along each row turns that into coverage.
-  static Float32List _coverage(
-    DoubleBuffer segments,
-    int w,
-    int h,
-    double dx,
-    double dy,
-  ) {
-    final acc = Float32List(w * h + 2);
-    for (var i = 0; i < segments.length; i += 4) {
-      _line(
-        acc,
-        w,
-        h,
-        segments[i] + dx,
-        segments[i + 1] + dy,
-        segments[i + 2] + dx,
-        segments[i + 3] + dy,
-      );
-    }
-    final out = Float32List(w * h);
-    var sum = 0.0;
-    for (var i = 0; i < out.length; i++) {
-      sum += acc[i];
-      final a = sum.abs();
-      // Rounding leaves crumbs where there is no ink, which the halo's
-      // distance transform would take for edges.
-      out[i] = a < 1 / 512 ? 0 : (a > 1 - 1 / 512 ? 1 : a);
-    }
-    return out;
-  }
-
-  static void _line(
-    Float32List acc,
-    int w,
-    int h,
-    double x0,
-    double y0,
-    double x1,
-    double y1,
-  ) {
-    if (y0 == y1) return;
-    double dir;
-    if (y0 < y1) {
-      dir = 1;
-    } else {
-      dir = -1;
-      final tx = x0, ty = y0;
-      x0 = x1;
-      y0 = y1;
-      x1 = tx;
-      y1 = ty;
-    }
-    final dxdy = (x1 - x0) / (y1 - y0);
-    var x = x0;
-    if (y0 < 0) x -= y0 * dxdy;
-    final yEnd = math.min(h, y1.ceil());
-    for (var y = math.max(0, y0.floor()); y < yEnd; y++) {
-      final ls = y * w;
-      final dy = math.min(y + 1.0, y1) - math.max(y.toDouble(), y0);
-      final xNext = x + dxdy * dy;
-      final d = dy * dir;
-      final xa = x < xNext ? x : xNext, xb = x < xNext ? xNext : x;
-      final xaFloor = xa.floorToDouble();
-      final xai = xaFloor.toInt();
-      final xbCeil = xb.ceilToDouble();
-      final xbi = xbCeil.toInt();
-      if (xbi <= xai + 1) {
-        final xmf = 0.5 * (x + xNext) - xaFloor;
-        acc[ls + xai] += d - d * xmf;
-        acc[ls + xai + 1] += d * xmf;
-      } else {
-        final s = 1 / (xb - xa);
-        final xaf = xa - xaFloor;
-        final a0 = 0.5 * s * (1 - xaf) * (1 - xaf);
-        final xbf = xb - xbCeil + 1;
-        final am = 0.5 * s * xbf * xbf;
-        acc[ls + xai] += d * a0;
-        if (xbi == xai + 2) {
-          acc[ls + xai + 1] += d * (1 - a0 - am);
-        } else {
-          final a1 = s * (1.5 - xaf);
-          acc[ls + xai + 1] += d * (a1 - a0);
-          for (var xi = xai + 2; xi < xbi - 1; xi++) {
-            acc[ls + xi] += d * s;
-          }
-          final a2 = a1 + (xbi - xai - 3) * s;
-          acc[ls + xbi - 1] += d * (1 - a2 - am);
-        }
-        acc[ls + xbi] += d * am;
-      }
-      x = xNext;
-    }
-  }
-
-  static const _far = 1e20;
-
-  /// The halo: everything within [width] pixels of the ink, its edge
-  /// softened over about three [blur] sigmas, as a blurred stroke would be.
-  static Uint8List _halo(
-    Float32List coverage,
-    int w,
-    int h,
-    double width,
-    double blur,
-  ) {
-    final n = w * h;
-    final outer = Float64List(n), inner = Float64List(n);
-    for (var i = 0; i < n; i++) {
-      final a = coverage[i];
-      if (a >= 1) {
-        outer[i] = 0;
-        inner[i] = _far;
-      } else if (a <= 0) {
-        outer[i] = _far;
-        inner[i] = 0;
-      } else {
-        final d = 0.5 - a;
-        outer[i] = d > 0 ? d * d : 0;
-        inner[i] = d < 0 ? d * d : 0;
-      }
-    }
-    final size = math.max(w, h);
-    final f = Float64List(size), z = Float64List(size + 1);
-    final v = Int32List(size);
-    _edt(outer, w, h, f, v, z);
-    _edt(inner, w, h, f, v, z);
-    final out = Uint8List(n);
-    final soft = math.max(0.5, blur * 1.5);
-    for (var i = 0; i < n; i++) {
-      final d = math.sqrt(outer[i]) - math.sqrt(inner[i]);
-      var a = (width + soft - d) / (2 * soft);
-      a = a < 0 ? 0 : (a > 1 ? 1 : a);
-      a = a * a * (3 - 2 * a);
-      out[i] = (a * 255 + 0.5).toInt();
-    }
-    return out;
-  }
-
-  static void _edt(
-    Float64List grid,
-    int w,
-    int h,
-    Float64List f,
-    Int32List v,
-    Float64List z,
-  ) {
-    for (var x = 0; x < w; x++) {
-      _edt1(grid, x, w, h, f, v, z);
-    }
-    for (var y = 0; y < h; y++) {
-      _edt1(grid, y * w, 1, w, f, v, z);
-    }
-  }
-
-  /// Felzenszwalb and Huttenlocher's squared distance transform along one
-  /// row or column.
-  static void _edt1(
-    Float64List grid,
-    int offset,
-    int stride,
-    int length,
-    Float64List f,
-    Int32List v,
-    Float64List z,
-  ) {
-    for (var q = 0; q < length; q++) {
-      f[q] = grid[offset + q * stride];
-    }
-    v[0] = 0;
-    z[0] = -_far;
-    z[1] = _far;
-    var k = 0;
-    for (var q = 1; q < length; q++) {
-      double s;
-      do {
-        final r = v[k];
-        s = (f[q] - f[r] + q * q - r * r) / (q - r) / 2;
-      } while (s <= z[k] && --k > -1);
-      k++;
-      v[k] = q;
-      z[k] = s;
-      z[k + 1] = _far;
-    }
-    k = 0;
-    for (var q = 0; q < length; q++) {
-      while (z[k + 1] < q) {
-        k++;
-      }
-      final r = v[k];
-      grid[offset + q * stride] = f[r] + (q - r) * (q - r);
-    }
-  }
-}
-
-/// A page of glyphs drawn by a [GlyphRasterWorker]: [raster] is ready for
-/// [imageFromRaster], and [cells] says where each glyph is in it.
-typedef DrawnGlyphs = ({
-  int width,
-  int height,
-  Object raster,
-  Float64List cells,
-});
-
-/// A [GlyphRasterizer] in a worker of its own, so glyphs never cost a
-/// frame: an isolate, or in a browser, the worker vmap ships, or failing
-/// that the page's own thread, a batch at a time.
-class GlyphRasterWorker {
-  GlyphRasterWorker(GlyphFonts fonts) {
-    startWorker(
-      glyphWorkerMain,
-      [
-        glyphWorkerTag,
-        [for (final b in fonts.faceBytes) pack(b)],
-        fonts.familyNames,
-      ],
-      _reply,
-      script: workerScript,
-      debugName: 'vmap glyphs',
-    ).then((worker) {
-      if (_disposed) return worker.close();
-      _worker = worker;
-      for (final m in _queued) {
-        worker.send(m);
-      }
-      _queued.clear();
-    }, onError: (Object _) => _fail());
-  }
-
-  /// What the first message to a worker that draws glyphs starts with.
-  static const glyphWorkerTag = 'vmap glyphs';
-
-  /// The worker could not start: every batch waiting and asked for later
-  /// fails, so no page waits forever.
-  void _fail() {
-    _dead = true;
-    for (final c in _waiting.values) {
-      c.completeError(StateError('vmap glyphs: the worker did not start'));
-    }
-    _waiting.clear();
-  }
-
-  bool _dead = false;
-  final Map<int, Completer<DrawnGlyphs>> _waiting = {};
-  final List<List<Object?>> _queued = [];
-  Worker? _worker;
-  int _next = 0;
-  bool _disposed = false;
-
-  Future<DrawnGlyphs> draw(PageKey key, List<int> ids) {
-    if (_dead) {
-      return Future.error(StateError('vmap glyphs: the worker did not start'));
-    }
-    final id = _next++;
-    final done = _waiting[id] = Completer<DrawnGlyphs>();
-    _send(['d', id, ..._keyWire(key), Int32List.fromList(ids)]);
-    return done.future;
-  }
-
-  void forget(PageKey key) => _send(['f', ..._keyWire(key)]);
-
-  /// Hands the rasterizer the glyphs of a style glyph range for [face].
-  void addPbf(int face, List<PbfGlyph> glyphs) => _send([
-    'p',
-    face,
-    [
-      for (final g in glyphs)
-        [g.id, g.bitmap, g.width, g.height, g.left, g.top, g.advance],
-    ],
-  ]);
-
-  static List<Object?> _keyWire(PageKey key) => [
-    key.size,
-    key.weight,
-    key.italic ? 1 : 0,
-    key.halo,
-    key.blur,
-    key.sixteenths,
-    key.phase,
-  ];
-
-  static PageKey _keyOf(List<Object?> m, int at) => (
-    size: m[at]! as int,
-    weight: m[at + 1]! as int,
-    italic: m[at + 2] == 1,
-    halo: m[at + 3]! as int,
-    blur: m[at + 4]! as int,
-    sixteenths: m[at + 5]! as int,
-    phase: m[at + 6]! as int,
-  );
-
-  static void _addPbf(
-    GlyphRasterizer rasterizer,
-    int face,
-    List<Object?> glyphs,
-  ) {
-    final known = rasterizer.ranges[face] ??= {};
-    for (final g in glyphs.cast<List<Object?>>()) {
-      final id = g[0]! as int;
-      known[id] = PbfGlyph(
-        id,
-        g[1]! as Uint8List,
-        g[2]! as int,
-        g[3]! as int,
-        g[4]! as int,
-        g[5]! as int,
-        g[6]! as int,
-      );
-    }
-  }
-
-  /// [ids] drawn by [rasterizer], or an empty raster when a glyph cannot be.
-  static GlyphRaster _drawSafely(
-    GlyphRasterizer rasterizer,
-    PageKey key,
-    List<int> ids,
-  ) {
+  PbfGlyph _field(int face, int weight, bool italic, int glyph) {
     try {
-      return rasterizer.draw(key, ids);
+      final outline = _outline(face, weight, glyph);
+      final field = outline == null
+          ? null
+          : fieldOf(glyph, outline, fonts.unitsPerEm(face), italic: italic);
+      return field ?? PbfGlyph.blank(glyph);
     } catch (_) {
-      return GlyphRaster(1, 1, Uint8List(4), Float64List(0));
-    }
-  }
-
-  void _send(List<Object?> request) {
-    if (_disposed) return;
-    final worker = _worker;
-    if (worker == null) {
-      _queued.add(request);
-    } else {
-      worker.send(request);
-    }
-  }
-
-  void _reply(Object? message) {
-    final m = message! as List<Object?>;
-    _waiting.remove(m[0]! as int)?.complete((
-      width: m[1]! as int,
-      height: m[2]! as int,
-      raster: m[3]!,
-      cells: m[4]! as Float64List,
-    ));
-  }
-
-  void dispose() {
-    _disposed = true;
-    _worker?.close();
-    _waiting.clear();
-  }
-}
-
-/// What a worker drawing glyphs runs: [GlyphRasterWorker]'s other half.
-Future<void> glyphWorkerMain(
-  List<Object?> init,
-  void Function(Object? message) send,
-  Stream<Object?> inbox,
-) async {
-  final rasterizer = GlyphRasterizer(
-    GlyphFonts([
-      for (final f in init[1]! as List) unpackBytes(f!),
-    ], families: (init[2] as List?)?.cast<String>()),
-  );
-  await for (final request in inbox) {
-    final m = request! as List<Object?>;
-    switch (m[0]) {
-      case 'f':
-        rasterizer.forget(GlyphRasterWorker._keyOf(m, 1));
-      case 'p':
-        GlyphRasterWorker._addPbf(rasterizer, m[1]! as int, m[2]! as List);
-      case 'd':
-        final r = GlyphRasterWorker._drawSafely(
-          rasterizer,
-          GlyphRasterWorker._keyOf(m, 2),
-          m[9]! as List<int>,
-        );
-        send([
-          m[1],
-          r.width,
-          r.height,
-          await rasterForPage(r.pixels, r.width, r.height),
-          r.cells,
-        ]);
+      return PbfGlyph.blank(glyph);
     }
   }
 }

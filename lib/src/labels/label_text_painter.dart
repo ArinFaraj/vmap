@@ -2,10 +2,12 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import '../text/glyphs/font_fields.dart';
 import '../text/glyphs/glyph_layout.dart';
 import '../text/glyphs/glyph_pages.dart';
 import '../text/glyphs/glyph_pbf.dart' show GlyphPbf;
 import '../text/glyphs/glyph_raster.dart' show PageKey;
+import 'label_glyphs.dart';
 import 'label_path.dart';
 import 'label_sprites.dart';
 import 'label_style.dart';
@@ -20,7 +22,7 @@ import 'sdf_text.dart';
 /// or laid on the ground, as distance fields when the renderer can, and
 /// images and recordings of text drawn ahead of time.
 class LabelTextPainter {
-  LabelTextPainter(this._view, this._roads, this._style)
+  LabelTextPainter(this._view, this._roads, this._style, this._sources)
     : _geometry = GlyphGeometry(_view);
 
   final GlyphGeometry _geometry;
@@ -34,8 +36,7 @@ class LabelTextPainter {
   final RoadLabels _roads;
   final LabelStyle _style;
 
-  /// Where glyph text is drawn from, once vmap's fonts are loaded.
-  GlyphPages? glyphs;
+  final LabelGlyphs _sources;
 
   final ui.Paint _imagePaint = ui.Paint()
     ..filterQuality = ui.FilterQuality.medium;
@@ -45,9 +46,11 @@ class LabelTextPainter {
   /// so only an image follows a bend.
   void paintText(ui.Canvas canvas, LabelState st, LabelSprite sprite) {
     _imagePaint.color = ui.Color.fromRGBO(255, 255, 255, st.opacity);
-    if (_view.sdf case final sdf? when sprite is RangeSprite) {
-      _sdfText(sdf, st, sprite, canvas);
-      return;
+    if (_view.sdf case final sdf? when sprite is GlyphSprite) {
+      final fields = sprite.fieldsIn(_sources.pages?.fields);
+      if (fields == FieldsState.ready) _sdfText(sdf, st, sprite, canvas);
+      // Text with a font that has no distance fields goes on the canvas.
+      if (fields != FieldsState.never) return;
     }
     switch (sprite) {
       case GlyphSprite() when st.onGround:
@@ -139,7 +142,7 @@ class LabelTextPainter {
   /// and the pages are unchanged, so a steady frame allocates nothing.
   void _resolve(GlyphSprite sprite, double em) {
     final devicePixelRatio = _view.devicePixelRatio;
-    final pages = glyphs!;
+    final pages = _sources.pages!;
     final look = sprite.look;
     final haloWidth = look.halo == null ? 0.0 : look.haloWidth;
     final size = GlyphPages.sizeOf(em * devicePixelRatio);
@@ -192,7 +195,7 @@ class LabelTextPainter {
   }
 
   void _glyphs(LabelState st, GlyphSprite sprite) {
-    final pages = glyphs!;
+    final pages = _sources.pages!;
     _view.project(st.worldX, st.worldY);
     final sx = _view.x + st.dx, sy = _view.y + st.dy;
     final em = sprite.fontSize * st.scale;
@@ -244,7 +247,7 @@ class LabelTextPainter {
     ui.Canvas? canvas,
   }) {
     final devicePixelRatio = _view.devicePixelRatio;
-    final pages = glyphs!;
+    final pages = _sources.pages!;
     final look = sprite.look;
     _view.project(st.worldX, st.worldY);
     final em = sprite.fontSize * st.scale;
@@ -335,7 +338,7 @@ class LabelTextPainter {
   }
 
   void _glyphsBent(LabelState st, GlyphSprite sprite) {
-    final pages = glyphs!;
+    final pages = _sources.pages!;
     final em = sprite.fontSize * st.scale;
     _resolve(sprite, em);
     final cells = sprite.cells, ems = sprite.cellEms;
@@ -360,7 +363,7 @@ class LabelTextPainter {
   /// ground, its size there its size on the screen times half its anchor's
   /// distance ratio and a half, and each glyph projected corner by corner.
   void _glyphsGround(LabelState st, GlyphSprite sprite) {
-    final pages = glyphs!;
+    final pages = _sources.pages!;
     final em = sprite.fontSize * st.scale;
     _resolve(sprite, em);
     final cells = sprite.cells, ems = sprite.cellEms;
@@ -389,7 +392,7 @@ class LabelTextPainter {
   void _sdfText(
     SdfText sdf,
     LabelState st,
-    RangeSprite sprite,
+    GlyphSprite sprite,
     ui.Canvas canvas,
   ) {
     final look = sprite.look;
@@ -466,7 +469,7 @@ class LabelTextPainter {
           gu,
         );
         sdf.glyph(
-          g[i].toInt(),
+          sprite.face(g[i].toInt()),
           g[i + 1].toInt(),
           ox + st.dx,
           oy + st.dy,
@@ -488,7 +491,7 @@ class LabelTextPainter {
       // A glyph lying on its side in vertical text turns a quarter more.
       if ((turns?[i ~/ 5] ?? 0) == 1) (ax, ay, bx, by) = (bx, by, -ax, -ay);
       sdf.glyph(
-        g[i].toInt(),
+        sprite.face(g[i].toInt()),
         g[i + 1].toInt(),
         ox,
         oy,
@@ -556,7 +559,7 @@ class LabelTextPainter {
   /// origin and three down, [perPixel] shaping units a pixel of it.
   void _inlineImage(
     ui.Canvas canvas,
-    RangeSprite sprite,
+    GlyphSprite sprite,
     Float32List g,
     int i,
     double perPixel,
@@ -591,7 +594,7 @@ class LabelTextPainter {
   /// places one.
   void _gpuInlineImage(
     SdfText sdf,
-    RangeSprite sprite,
+    GlyphSprite sprite,
     Float32List g,
     int i,
     double ox,
@@ -637,7 +640,7 @@ class LabelTextPainter {
   /// the image's box corner at [lx], [ly] from there.
   void _turnedInlineImage(
     SdfText sdf,
-    RangeSprite sprite,
+    GlyphSprite sprite,
     Float32List g,
     int i,
     double cx,

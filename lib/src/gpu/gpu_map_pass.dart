@@ -181,7 +181,6 @@ class MapPass {
       ..bindTexture(p.compositeLayer!, image, sampler: nearest)
       ..draw(6)
       ..clearBindings();
-    _marked = -1;
   }
 
   /// Colours a heatmap's [density] through row [row] of the ramps, as
@@ -431,7 +430,7 @@ class MapPass {
         gpu.BufferView(
           data.buffer!,
           offsetInBytes: data.vertexOffset,
-          lengthInBytes: stream.vertices.lengthInBytes,
+          lengthInBytes: stream.vertexBytes,
         ),
       )
       ..bindUniform(_device.pipelines.flatFrame, _tileFrame(d));

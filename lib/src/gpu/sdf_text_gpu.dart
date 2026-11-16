@@ -2,16 +2,17 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:vector_math/vector_math.dart' show Vector4;
 
 import '../camera/view.dart';
 import '../labels/sdf_text.dart';
 import '../render/frame_planes.dart';
-import '../text/glyphs/glyph_table.dart';
 import '../text/glyphs/glyph_pbf.dart';
 import 'gpu_buffers.dart' show framesInFlight;
 import 'gpu_device.dart';
+import 'frame_show.dart' show TextPass;
 import 'gpu_shim/gpu.dart' as gpu;
+import 'pass_target.dart';
+import 'sdf_atlas.dart';
 import 'sdf_quad.dart';
 
 /// Text from a style's glyph ranges drawn as MapLibre draws it: the
@@ -28,20 +29,8 @@ class SdfTextGpu implements SdfText {
   gpu.UniformSlot? _groundSlot;
   bool _failed = false;
 
-  /// The atlas: one byte a texel, glyphs packed on shelves, each with a
-  /// texel of empty space around it as MapLibre's glyph atlas pads them.
-  static const _side = 2048;
-  final Uint8List _texels = Uint8List(_side * _side);
-  gpu.Texture? _atlas;
-  bool _dirty = false;
-
-  /// The rows of [_texels] written since the atlas was last sent.
-  int _dirtyTop = _side, _dirtyBottom = 0;
-  int _shelfX = 0, _shelfY = 0, _shelfH = 0;
-
-  /// Each glyph's corner in the atlas by face and code point, or -1 for
-  /// one with no ink.
-  final GlyphTable<int> _placed = GlyphTable();
+  final SdfAtlas _atlas = SdfAtlas();
+  gpu.Texture? _atlasTexture;
 
   PbfGlyphs? _glyphs;
 
@@ -59,13 +48,15 @@ class SdfTextGpu implements SdfText {
   Int32List _layers = Int32List(256);
   Uint8List _icons = Uint8List(256);
 
-  final List<(gpu.Texture, ui.Image)> _targets = [];
+  /// What text is drawn into when it does not go in the map's pass, a
+  /// ring for the frames the GPU may still be drawing, and their images.
+  final List<(PassTarget, ui.Image)> _targets = [];
 
   /// On the web a texture's image is a copy taken when it is asked for:
   /// the last frame's copy, let go when the next one is taken.
   ui.Image? _webCopy;
   int _next = 0;
-  final Float32List _frameInfo = Float32List(8);
+  final Float32List _frameInfo = Float32List(12)..[8 + SdfAtlas.channel] = 1;
   late final ByteData _frameBytes = ByteData.sublistView(_frameInfo);
 
   /// The flat map's projection this frame, for quads kept on the ground.
@@ -154,12 +145,7 @@ class SdfTextGpu implements SdfText {
       _spriteSlot = fragment.getUniformSlot('sprites');
       _fragmentFrameSlot = fragment.getUniformSlot('SdfFrame');
       _glyphSlot = fragment.getUniformSlot('glyphs');
-      _atlas = gpu.gpuContext.createTexture(
-        gpu.StorageMode.hostVisible,
-        _side,
-        _side,
-        format: gpu.PixelFormat.r8UNormInt,
-      );
+      _atlasTexture = _atlas.createTexture();
       return true;
     } catch (e) {
       _device.fail(e);
@@ -230,43 +216,6 @@ class SdfTextGpu implements SdfText {
     _icons = Uint8List(quads)..setRange(0, _count, _icons);
   }
 
-  /// The atlas corner of [codePoint] of [face] as x plus y times the
-  /// side, placing it the first time; -1 when it has no ink or is missing.
-  int _corner(int face, int codePoint, PbfGlyph glyph) {
-    final known = _placed.at(face, codePoint);
-    if (known != null) return known;
-    if (glyph.bitmap.isEmpty) {
-      _placed.put(face, codePoint, -1);
-      return -1;
-    }
-    const border = GlyphPbf.border;
-    final w = glyph.width + 2 * border, h = glyph.height + 2 * border;
-    if (_shelfX + w + 2 > _side) {
-      _shelfX = 0;
-      _shelfY += _shelfH;
-      _shelfH = 0;
-    }
-    if (_shelfY + h + 2 > _side) return -1;
-    final x = _shelfX, y = _shelfY;
-    for (var row = 0; row < h; row++) {
-      final from = row * w;
-      _texels.setRange(
-        (y + 1 + row) * _side + x + 1,
-        (y + 1 + row) * _side + x + 1 + w,
-        glyph.bitmap,
-        from,
-      );
-    }
-    _shelfX += w + 2;
-    _shelfH = math.max(_shelfH, h + 2);
-    _dirty = true;
-    _dirtyTop = math.min(_dirtyTop, y);
-    _dirtyBottom = math.max(_dirtyBottom, y + h + 2);
-    final corner = x + y * _side;
-    _placed.put(face, codePoint, corner);
-    return corner;
-  }
-
   /// As MapLibre's getGlyphQuads: a glyph's quad covers its field and its
   /// padding, from its left bearing less the border and the padding.
   /// Each int is made a double first: an int with a double is boxed on
@@ -292,7 +241,7 @@ class SdfTextGpu implements SdfText {
   ) {
     final g = _glyphs?.glyph(face, codePoint);
     if (g == null) return;
-    final corner = _corner(face, codePoint, g);
+    final corner = _atlas.corner(face, codePoint, g);
     if (corner < 0) return;
     final u0 = _quadLeft(g), v0 = _quadTop(g);
     final at = _queue(layer, false);
@@ -305,8 +254,8 @@ class SdfTextGpu implements SdfText {
       ay,
       bx,
       by,
-      (corner % _side).toDouble(),
-      (corner ~/ _side).toDouble(),
+      (corner % SdfAtlas.side).toDouble(),
+      (corner ~/ SdfAtlas.side).toDouble(),
       _quadWidth(g),
       _quadHeight(g),
       look,
@@ -392,42 +341,117 @@ class SdfTextGpu implements SdfText {
     return held.$1;
   }
 
-  /// Where the text goes on the web, as a page element of its own; null
-  /// to draw it on the canvas.
-  FramePlanes? planes;
+  /// Where text drawn apart from the map goes on the web, as a page
+  /// element of its own; null to lay it on the canvas.
+  FramePlanes? _planes;
 
-  /// The map's texture this frame's text is drawn into, over the map,
-  /// rather than into an image of its own; set for each frame.
-  gpu.Texture? into;
-
-  /// Whether this frame's text is in the image shown already, the last
-  /// frame's shown again, so none is drawn; set for each frame.
-  bool inShown = false;
-
-  /// Whether this frame's text went into [into].
-  bool drewInto = false;
+  /// The map's pass this frame's text is drawn in, over the map, rather
+  /// than into an image of its own.
+  TextPass? _into;
 
   /// Text drawn into a texture of its own while its map waits to be laid
   /// down, handed to the page after it by [layKept].
   gpu.Texture? _kept;
 
+  /// Starts a frame whose text is drawn apart from the map, in [planes] on
+  /// the web, unless [drawInto] gives it the map's pass.
+  void aimApart(FramePlanes? planes) {
+    _planes = planes;
+    _into = null;
+  }
+
+  /// Has this frame's text drawn in [pass], the map's, over the map.
+  void drawInto(TextPass pass) => _into = pass;
+
   @override
   ui.Canvas layKept(ui.Canvas canvas) {
-    final kept = _kept, planes = this.planes;
+    final kept = _kept, planes = _planes;
     _kept = null;
     if (kept == null || planes == null) return canvas;
-    return planes.hand([(gpu.gpuHost.textureToBitmap(kept)!, 1)], null);
+    return planes.hand([(gpu.gpuHost.page!.bitmap(kept), 1)], null);
+  }
+
+  _TextGoes _goes(bool drawnBelow) {
+    final into = _into;
+    if (_count == 0 || !ready || (into != null && into.sent)) {
+      return _TextGoes.nowhere;
+    }
+    // Over an icon drawn on the canvas, the text cannot go into the map,
+    // which is laid down under the canvas.
+    if (into != null && !drawnBelow) return _TextGoes.intoMap;
+    if (_planes == null) return _TextGoes.onCanvas;
+    return into == null ? _TextGoes.inPage : _TextGoes.inPageAfterMap;
   }
 
   @override
   ui.Canvas end(ui.Canvas canvas, {bool drawnBelow = false}) {
-    if (_count == 0 || !ready || inShown) return canvas;
+    switch (_goes(drawnBelow)) {
+      case _TextGoes.nowhere:
+        break;
+      case _TextGoes.intoMap:
+        final into = _into!;
+        into.pass
+          ..clearBindings()
+          ..setDepthWriteEnable(false)
+          ..setDepthCompareOperation(gpu.CompareFunction.always)
+          ..setStencilConfig(gpu.StencilConfig());
+        _draw(into.pass);
+        into.pass.clearBindings();
+        into.drawn = true;
+      case _TextGoes.onCanvas:
+        if (_drawApart() case (final own, final image)?) {
+          _layOn(canvas, own, image);
+        }
+      case _TextGoes.inPage:
+        if (_drawApart() case (final own, _)?) {
+          return _planes!.hand([
+            (gpu.gpuHost.page!.bitmap(own.texture), 1),
+          ], null);
+        }
+      case _TextGoes.inPageAfterMap:
+        _kept = _drawApart()?.$1.texture;
+    }
+    return canvas;
+  }
+
+  /// Draws the text into an image of its own, the next of [_targets]; null
+  /// on a screen with no pixels.
+  (PassTarget, ui.Image)? _drawApart() {
     final width = (_size.width * _dpr).round();
     final height = (_size.height * _dpr).round();
-    if (width <= 0 || height <= 0) return canvas;
+    if (width <= 0 || height <= 0) return null;
+    final own = _ownTarget(width, height);
+    final commands = gpu.gpuContext.createCommandBuffer();
+    _draw(own.$1.begin(commands));
+    commands.submit();
+    return own;
+  }
+
+  /// Lays the text drawn in [own], shown by [image], on [canvas].
+  void _layOn(ui.Canvas canvas, PassTarget own, ui.Image image) {
+    var shown = image;
+    if (kIsWeb) {
+      _webCopy?.dispose();
+      shown = _webCopy = own.texture.asImage();
+    }
+    canvas.drawImageRect(
+      shown,
+      ui.Rect.fromLTWH(
+        0,
+        0,
+        own.texture.width.toDouble(),
+        own.texture.height.toDouble(),
+      ),
+      ui.Offset.zero & _size,
+      ui.Paint()..filterQuality = ui.FilterQuality.none,
+    );
+  }
+
+  /// The next of [_targets], made again when the screen's size changed.
+  (PassTarget, ui.Image) _ownTarget(int width, int height) {
     if (_targets.isNotEmpty &&
-        (_targets.first.$1.width != width ||
-            _targets.first.$1.height != height)) {
+        (_targets.first.$1.texture.width != width ||
+            _targets.first.$1.texture.height != height)) {
       for (final (_, image) in _targets) {
         image.dispose();
       }
@@ -440,30 +464,19 @@ class SdfTextGpu implements SdfText {
         height,
         format: _device.color,
       );
-      _targets.add((texture, texture.asImage()));
+      _targets.add((PassTarget(texture), texture.asImage()));
     }
-    // Over an icon drawn on the canvas, the text cannot go into the map,
-    // which is laid down under the canvas.
-    final into = drawnBelow ? null : this.into;
-    final (own, image) = _targets[_next];
-    if (into == null) _next = (_next + 1) % _targets.length;
-    final target = into ?? own;
-    if (_dirty) {
-      gpu.overwriteTextureRows(
-        _atlas!,
-        ByteData.sublistView(_texels),
-        top: _dirtyTop,
-        rows: math.min(_dirtyBottom, _side) - _dirtyTop,
-      );
-      _dirty = false;
-      _dirtyTop = _side;
-      _dirtyBottom = 0;
-    }
-    // Each run of one layer's quads: its icons, then its text, as
-    // MapLibre draws a symbol layer. Quads are moved only when a layer
-    // queued an icon after its text.
-    final draws = <(int, int)>[];
-    var quads = _vertices;
+    final target = _targets[_next];
+    _next = (_next + 1) % _targets.length;
+    return target;
+  }
+
+  /// The quads in the order they are drawn, and each run of one layer's
+  /// quads in them: its icons, then its text, as MapLibre draws a symbol
+  /// layer. Quads are moved only when a layer queued an icon after its
+  /// text.
+  (Float32List, List<(int, int)>) _inRuns() {
+    final runs = <(int, int)>[];
     if (_inDrawOrder()) {
       var start = 0;
       for (var q = 1; q <= _count; q++) {
@@ -472,47 +485,44 @@ class SdfTextGpu implements SdfText {
             _icons[q] == _icons[start]) {
           continue;
         }
-        draws.add((start, q));
+        runs.add((start, q));
         start = q;
       }
-    } else {
-      quads = _ordered;
-      var at = 0;
-      for (var from = 0; from < _count;) {
-        var to = from + 1;
-        while (to < _count && _layers[to] == _layers[from]) {
-          to++;
-        }
-        for (final icons in const [1, 0]) {
-          final start = at;
-          for (var q = from; q < to; q++) {
-            if (_icons[q] != icons) continue;
-            _ordered.setRange(
-              at * _quadFloats,
-              (at + 1) * _quadFloats,
-              _vertices,
-              q * _quadFloats,
-            );
-            at++;
-          }
-          if (at > start) draws.add((start, at));
-        }
-        from = to;
-      }
+      return (_vertices, runs);
     }
+    var at = 0;
+    for (var from = 0; from < _count;) {
+      var to = from + 1;
+      while (to < _count && _layers[to] == _layers[from]) {
+        to++;
+      }
+      for (final icons in const [1, 0]) {
+        final start = at;
+        for (var q = from; q < to; q++) {
+          if (_icons[q] != icons) continue;
+          _ordered.setRange(
+            at * _quadFloats,
+            (at + 1) * _quadFloats,
+            _vertices,
+            q * _quadFloats,
+          );
+          at++;
+        }
+        if (at > start) runs.add((start, at));
+      }
+      from = to;
+    }
+    return (_ordered, runs);
+  }
+
+  /// Draws the quads queued in [pass]: each run's halos, then its ink.
+  void _draw(gpu.RenderPass pass) {
+    final atlas = _atlasTexture!;
+    _atlas.send(atlas);
+    final (quads, runs) = _inRuns();
     final host = _device.host;
     final buffer = _quadBuffer(
       Float32List.sublistView(quads, 0, _count * _quadFloats),
-    );
-    final commands = gpu.gpuContext.createCommandBuffer();
-    final pass = commands.createRenderPass(
-      gpu.RenderTarget.singleColor(
-        gpu.ColorAttachment(
-          texture: target,
-          loadAction: into == null ? gpu.LoadAction.clear : gpu.LoadAction.load,
-          clearValue: Vector4.zero(),
-        ),
-      ),
     );
     final sheet = _device.sprites.texture ?? _device.sprites.blank;
     final sheetImage = _device.sprites.image;
@@ -523,7 +533,7 @@ class SdfTextGpu implements SdfText {
       ..setColorBlendEquation(overBlend)
       ..bindTexture(
         _glyphSlot!,
-        _atlas!,
+        atlas,
         sampler: gpu.SamplerOptions(
           minFilter: gpu.MinMagFilter.linear,
           magFilter: gpu.MinMagFilter.linear,
@@ -545,8 +555,8 @@ class SdfTextGpu implements SdfText {
       ..[0] = _size.width
       ..[1] = _size.height
       ..[2] = _dpr
-      ..[4] = _side.toDouble()
-      ..[5] = _side.toDouble()
+      ..[4] = SdfAtlas.side.toDouble()
+      ..[5] = SdfAtlas.side.toDouble()
       ..[6] = (sheetImage?.width ?? 1).toDouble()
       ..[7] = (sheetImage?.height ?? 1).toDouble();
     final ground = host.emplace(_groundBytes);
@@ -571,35 +581,30 @@ class SdfTextGpu implements SdfText {
         ..draw(6, instanceCount: to - from);
     }
 
-    for (final (from, to) in draws) {
+    for (final (from, to) in runs) {
       draw(from, to, 1);
       draw(from, to, 2);
     }
-    commands.submit();
-    if (into != null) {
-      drewInto = true;
-      return canvas;
-    }
-    if (this.into != null && planes != null) {
-      _kept = own;
-      return canvas;
-    }
-    if (planes case final planes?) {
-      return planes.hand([(gpu.gpuHost.textureToBitmap(target)!, 1)], null);
-    }
-    var shown = image;
-    if (kIsWeb) {
-      _webCopy?.dispose();
-      shown = _webCopy = target.asImage();
-    }
-    canvas.drawImageRect(
-      shown,
-      ui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
-      ui.Offset.zero & _size,
-      ui.Paint()..filterQuality = ui.FilterQuality.none,
-    );
-    return canvas;
   }
+}
+
+/// Where a frame's text ends up.
+enum _TextGoes {
+  /// There is none, or the map's pass it is in has gone to the GPU.
+  nowhere,
+
+  /// In the map's pass, over the map.
+  intoMap,
+
+  /// In an image of its own, laid on the canvas.
+  onCanvas,
+
+  /// In a page element of its own, over a map already laid down.
+  inPage,
+
+  /// In a page element of its own, handed to the page once the map it
+  /// covers is laid down.
+  inPageAfterMap,
 }
 
 /// Glyph quads laid on the ground, as [SdfTextGpu] queues them.
@@ -624,7 +629,7 @@ class _KeptQuads implements KeptText {
   ) {
     final g = _text._glyphs?.glyph(face, codePoint);
     if (g == null) return false;
-    final corner = _text._corner(face, codePoint, g);
+    final corner = _text._atlas.corner(face, codePoint, g);
     if (corner < 0) return g.bitmap.isEmpty;
     SdfQuad.onGround(
       _quads,
@@ -636,8 +641,8 @@ class _KeptQuads implements KeptText {
       pixel,
       SdfTextGpu._quadLeft(g),
       SdfTextGpu._quadTop(g),
-      (corner % SdfTextGpu._side).toDouble(),
-      (corner ~/ SdfTextGpu._side).toDouble(),
+      (corner % SdfAtlas.side).toDouble(),
+      (corner ~/ SdfAtlas.side).toDouble(),
       SdfTextGpu._quadWidth(g),
       SdfTextGpu._quadHeight(g),
       look,

@@ -103,6 +103,10 @@ Future<Uint8List> gunzip(Uint8List bytes) async {
 /// makes an image at no cost, so it keeps the images.
 const bool directLabels = _javaScript;
 
+/// Whether Flutter's renderer is skwasm, which rasterizes on a thread of
+/// its own while shader programs compile on the page's.
+const bool rasterizesOnOwnThread = !_javaScript;
+
 const _javaScript = !bool.fromEnvironment('dart.tool.dart2wasm');
 
 /// The image to make a shader of. The web engine's image shader releases

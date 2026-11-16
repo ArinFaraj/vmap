@@ -29,7 +29,7 @@ class LabelOrder {
   }) {
     _keepPlaced = keepPlaced;
     if (!byTile) {
-      states.sort((a, b) => a.sortKey - b.sortKey);
+      states.sort((a, b) => a.compareListed(b));
       return;
     }
     final bearing = -_view.mapTurn;
@@ -98,9 +98,9 @@ class LabelOrder {
       final byColumn = a.tileColumn.compareTo(b.tileColumn);
       if (byColumn != 0) return byColumn;
     }
-    if (!a.drawnByScreenY) return a.sortKey - b.sortKey;
+    if (!a.drawnByScreenY) return a.compareListed(b);
     final byY = a.drawY.compareTo(b.drawY);
-    return byY != 0 ? byY : b.sortKey - a.sortKey;
+    return byY != 0 ? byY : b.compareListed(a);
   }
 
   /// MapLibre's placement order: by priority, then a layer's tiles deepest
@@ -108,7 +108,7 @@ class LabelOrder {
   /// `Style._updatePlacement` sorts them in), then the order the tile lists
   /// its symbols in.
   int _placementOrder(LabelState a, LabelState b) {
-    final byRank = (a.sortKey >> 16) - (b.sortKey >> 16);
+    final byRank = a.rank - b.rank;
     if (byRank != 0) return byRank;
     if (_keepPlaced && a.placed != b.placed) return a.placed ? -1 : 1;
     final ca = a.candidate, cb = b.candidate;
@@ -131,7 +131,7 @@ class LabelOrder {
         if (byY != 0) return byY;
       }
     }
-    return a.sortKey - b.sortKey;
+    return a.listed - b.listed;
   }
 
   bool _keepPlaced = false;

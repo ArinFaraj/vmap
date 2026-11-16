@@ -4,8 +4,6 @@ import 'package:flutter/foundation.dart';
 
 import 'gpu_shim/gpu.dart' as gpu;
 
-import 'package:vector_math/vector_math.dart' show Vector4;
-
 import '../style/expr.dart';
 import '../labels/sdf_text.dart';
 import '../render/map_renderer.dart';
@@ -121,7 +119,7 @@ class GpuMap extends MapRenderer {
   }
 
   @override
-  bool canBuild(LoadedTile tile) => tile.gpu != null;
+  bool canBuild(LoadedTile tile) => tile.gpu?.held ?? false;
 
   @override
   bool makeReady(LoadedTile tile, double scale, Stopwatch clock, int deadline) {
@@ -134,14 +132,18 @@ class GpuMap extends MapRenderer {
     return traced('vmap.gpu.upload', () => sending.send(clock, deadline));
   }
 
+  /// Frames a tile goes undrawn before [_trim] may take its memory: ten
+  /// seconds at 120 frames a second.
+  static const _idleFrames = 1200;
+
   /// Past three quarters of the heap's cap, lets the tiles drawn longest
-  /// ago, and not in the last ten seconds, give their memory back; such a
-  /// tile is sent again if it shows again, a tile standing in meanwhile.
+  /// ago, and not lately, give their memory back; such a tile is fetched
+  /// again if it shows again, a tile standing in meanwhile.
   void _trim() {
     if (_heap.used <= GpuHeap.capBytes * 3 ~/ 4) return;
     final idle = [
       for (final data in _heap.tiles)
-        if (_frame - data.drawnFrame > 1200) data,
+        if (_frame - data.drawnFrame > _idleFrames && !data.tile.standsIn) data,
     ]..sort((a, b) => a.drawnFrame - b.drawnFrame);
     for (final data in idle) {
       if (_heap.used <= GpuHeap.capBytes ~/ 2) break;
@@ -191,12 +193,7 @@ class GpuMap extends MapRenderer {
     final made = _ready();
     if (made == null) return true;
     final (:device, :drape, :sdf) = made;
-    if (sdf.drewInto) _frames.textInside = true;
-    sdf
-      ..planes = f.planes
-      ..into = null
-      ..inShown = false
-      ..drewInto = false;
+    sdf.aimApart(f.planes);
     final GpuDevice(pipelines: p, :host, :blocks, :sprites, :paints, :ramps) =
         device;
     final terrain = f.terrain;
@@ -249,27 +246,14 @@ class GpuMap extends MapRenderer {
     );
     final globe = p.globe == null ? null : view.globe;
     final raised = (terrain != null || globe != null) && p.ground != null;
-    // The drape is drawn before the frame's own pass begins: that pass
-    // samples it, so it goes to the GPU first, and on the web a pass
-    // draws into whatever framebuffer was bound last.
+    // The drape is drawn before the frame's own pass, which samples it.
     if (raised) {
       traced('vmap.gpu.drape', () => drape.drawAtlas(buffers, f));
     }
     final heats = _heats(device, buffers, f, clip);
     final layers = _frames.begin(
-      device,
-      passOn: (target, {keeps = false}) => MapPass(
-        device,
-        _frames.beginPass(
-          (buffers..add(gpu.gpuContext.createCommandBuffer())).last,
-          target,
-          keeps: keeps,
-        ),
-        f,
-        clip,
-      ),
-    );
-    layers.composites = !raised && !_frames.sampled && p.composite != null;
+      passOn: (pass) => MapPass(device, pass, f, clip),
+    )..composites = p.composite != null;
     // The raised ground holds every vector layer, laid after the
     // backgrounds and rasters under the labels.
     if (raised) layers.splits.add((sheet.labelsRun - 1, 0));
@@ -304,8 +288,17 @@ class GpuMap extends MapRenderer {
         }
       }
     });
-    traced('vmap.gpu.submit', () => _frames.submit(buffers, _heap));
-    _frames.drawn(layers, view, snapshot: f.planes == null);
+    traced(
+      'vmap.gpu.submit',
+      () => _frames.finish(
+        layers,
+        view,
+        buffers,
+        _heap,
+        textRun: sheet.labelsRun,
+        snapshot: f.planes == null,
+      ),
+    );
     return sprites.loading || drape.sending;
   }
 
@@ -318,66 +311,47 @@ class GpuMap extends MapRenderer {
     _Layout layout,
   ) {
     final RenderFrame(:sheet, :context) = f;
-    var drawnSinceSplit = false, underLabels = true;
+    final flat = layout == _Layout.flat;
+    final splits = flat ? _FlatSplits(layers, sheet.labelsRun) : null;
     for (final (index, run) in sheet.runs.indexed) {
+      final vector = run.source >= 0;
       final heat = heats[run];
-      if (heat == null &&
-          run.source >= 0 &&
-          sheet.layers[run.first] is HeatmapLayer) {
+      if (vector && heat == null && sheet.layers[run.first] is HeatmapLayer) {
         continue;
       }
-      if (layout == _Layout.flat) {
-        final over = index >= sheet.labelsRun;
-        // An image over the labels is handed to the canvas whole every
-        // frame, so a layer there with nothing in view takes none.
-        // Buildings are held apart from a tile's layers, and a heatmap
-        // colours the view where nothing adds up too.
-        if (over &&
-            run.source >= 0 &&
-            sheet.extrusionAt(run) == null &&
-            heat == null &&
-            !layers.pass.holds(run)) {
-          continue;
-        }
-        // A background or raster after vector layers is laid by the canvas
-        // between their images, and what comes after the style's last
-        // symbol layer over the labels, so the style's order holds.
-        if (drawnSinceSplit && (run.source < 0 || (over && underLabels))) {
-          layers.split();
-          drawnSinceSplit = false;
-        }
-        underLabels = !over;
-        if (run.source >= 0 && !drawnSinceSplit) {
-          layers.splits.add((
-            index,
-            layers.splits.isEmpty ? 0 : layers.shown.length - 1,
-          ));
-          drawnSinceSplit = true;
-        }
+      final building = flat && vector ? sheet.extrusionAt(run) : null;
+      // An image over the labels is handed to the canvas whole every frame,
+      // so a layer there with nothing in view takes none. Buildings are held
+      // apart from a tile's layers, and a heatmap colours the view where
+      // nothing adds up too.
+      if (flat &&
+          vector &&
+          index >= sheet.labelsRun &&
+          building == null &&
+          heat == null &&
+          !layers.pass.holds(run)) {
+        continue;
       }
-      if (run.source < 0) continue;
-      if (layout == _Layout.flat) {
-        if (sheet.extrusionAt(run) case final building?) {
-          if (!building.showsAt(context.zoom)) continue;
-          final opacity = (asNumber(building.opacity(context)) ?? 1).clamp(
-            0.0,
-            1.0,
-          );
-          layers.within(
-            opacity,
-            (into) => into.drawBuildings(building, opacity: opacity),
-          );
-          continue;
-        }
-      }
-      if (heat != null) {
+      splits?.before(index, run);
+      if (!vector) continue;
+      if (building != null) {
+        if (!building.showsAt(context.zoom)) continue;
+        final opacity = (asNumber(building.opacity(context)) ?? 1).clamp(
+          0.0,
+          1.0,
+        );
+        layers.within(
+          opacity,
+          (into) => into.drawBuildings(building, opacity: opacity),
+        );
+      } else if (heat != null) {
         layers.heat(heat);
-        continue;
+      } else {
+        layers.add(
+          run,
+          layout == _Layout.standing ? null : sheet.runOpacity(run, context),
+        );
       }
-      layers.add(
-        run,
-        layout == _Layout.standing ? null : sheet.runOpacity(run, context),
-      );
     }
     layers.flush();
   }
@@ -385,9 +359,8 @@ class GpuMap extends MapRenderer {
   static const Map<StyleRun, Heat> _noHeats = {};
 
   /// The points of each heatmap run that shows, added up in a texture of
-  /// its own. They are drawn before the frame's own passes begin: those
-  /// sample them, so they go to the GPU first, and on the web a pass draws
-  /// into whatever framebuffer was bound last.
+  /// its own. They are drawn before the frame's own passes, which sample
+  /// them.
   Map<StyleRun, Heat> _heats(
     GpuDevice device,
     List<gpu.CommandBuffer> buffers,
@@ -422,7 +395,7 @@ class GpuMap extends MapRenderer {
     _warm = true;
     final GpuDevice(pipelines: p, :host, :blocks, :sprites, :paints) = device;
     final commands = gpu.gpuContext.createCommandBuffer();
-    final pass = _frames.beginPass(commands, _frames.spare);
+    final pass = _frames.spare.begin(commands, multisample: _frames.sampled);
     const size = 3 * BuildingGpu.stride > 96 ? 3 * BuildingGpu.stride : 96;
     final zeros = gpu.gpuContext.createDeviceBufferWithCopy(ByteData(size));
     final vertices = gpu.BufferView(
@@ -491,7 +464,7 @@ class GpuMap extends MapRenderer {
         ..setStencilConfig(config)
         ..draw(3);
     }
-    _frames.submit([commands], _heap);
+    _frames.submit(commands, _heap);
   }
 
   /// Adds up the kernels of heatmap [run]'s points into the frame's
@@ -505,43 +478,31 @@ class GpuMap extends MapRenderer {
     RenderFrame f,
     Float64List clip,
   ) {
-    final (density, depth) = _frames.density(device, index);
+    final density = _frames.density(device, index);
     final commands = gpu.gpuContext.createCommandBuffer();
     buffers.add(commands);
-    final pass = commands.createRenderPass(
-      gpu.RenderTarget.singleColor(
-        gpu.ColorAttachment(texture: density, clearValue: Vector4.zero()),
-        depthStencilAttachment: gpu.DepthStencilAttachment(
-          texture: depth,
-          depthClearValue: 1,
-        ),
-      ),
-    );
-    MapPass(device, pass, f, clip)
+    MapPass(device, density.begin(commands), f, clip)
       ..adding = true
       ..raise = f.terrain != null
       ..globe = f.view.globe
       ..drawRuns([run]);
-    return density;
+    return density.texture;
   }
 
   @override
-  bool textInto(int run) {
+  bool textIntoMap() {
     if (_failed) return false;
     final sdf = _made?.sdf;
-    if (sdf == null || !sdf.ready) return false;
-    if (_frames.reused && _frames.textInside) {
-      sdf.inShown = true;
-      return true;
-    }
-    sdf.into = _frames.textTarget(run);
-    return sdf.into != null;
+    final pass = _frames.shown.textPass;
+    if (sdf == null || !sdf.ready || pass == null) return false;
+    sdf.drawInto(pass);
+    return true;
   }
 
   @override
   bool presentUntil(ui.Canvas canvas, int run) {
     if (_failed) return false;
-    _frames.presentUntil(
+    _frames.shown.presentUntil(
       canvas,
       run,
       warps: _in?.terrain == null,
@@ -557,6 +518,36 @@ class GpuMap extends MapRenderer {
     }
     _heap.clear();
     _frames.dispose();
+  }
+}
+
+/// Where a flat frame's images end. A background or raster after vector
+/// layers is laid by the canvas between their images, and what comes after
+/// the style's last symbol layer over the labels, so the style's order
+/// holds.
+class _FlatSplits {
+  _FlatSplits(this._layers, this._labelsRun);
+
+  final FrameLayers _layers;
+  final int _labelsRun;
+  bool _drawnSinceSplit = false, _underLabels = true;
+
+  /// Ends the image drawn so far when the canvas draws between it and run
+  /// [index], and notes each image's first vector run.
+  void before(int index, StyleRun run) {
+    final over = index >= _labelsRun;
+    if (_drawnSinceSplit && (run.source < 0 || (over && _underLabels))) {
+      _layers.split();
+      _drawnSinceSplit = false;
+    }
+    _underLabels = !over;
+    if (run.source >= 0 && !_drawnSinceSplit) {
+      _layers.splits.add((
+        index,
+        _layers.splits.isEmpty ? 0 : _layers.images.length - 1,
+      ));
+      _drawnSinceSplit = true;
+    }
   }
 }
 

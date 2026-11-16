@@ -17,8 +17,10 @@ import '../style/pins.dart';
 import '../tiles/query.dart';
 import '../style/style.dart';
 import '../labels/text_style.dart';
+import 'map_painter.dart';
 import 'markers.dart';
-import 'page_plane.dart' show pageShowsGpuImages;
+import 'map_showing.dart';
+import 'page_plane.dart' show mapShowing;
 import 'planes_view.dart';
 import 'vmap_controller.dart';
 
@@ -346,8 +348,18 @@ class _VmapState extends State<Vmap>
       final busy = stats.busy || stats.tilesLoading > 0;
       if (_busy && !busy && _engine.styleLoaded) widget.onIdle?.call();
       _busy = busy;
+      if (_showingNow != _showing) setState(() {});
     });
   }
+
+  /// Where the map's frames are shown. [build] decides it, and each frame
+  /// asks for a build when it changed: a style or an option may move a
+  /// layer to the canvas.
+  MapShowing get _showingNow => mapShowing(
+    mapOnCanvas: _engine.paintsMapOnCanvas,
+    widgetsOverMap: _engine.markers.isNotEmpty,
+  );
+  MapShowing? _showing;
 
   void _settled() {
     if (!_loading) return;
@@ -384,6 +396,7 @@ class _VmapState extends State<Vmap>
     final dpr = MediaQuery.devicePixelRatioOf(context);
     final engine = _engine;
     final loading = widget.loadingBuilder;
+    final showing = _showing = _showingNow;
     return LayoutBuilder(
       builder: (context, constraints) {
         _c.layout(constraints.biggest, flat: !engine.drawsGlobe);
@@ -395,18 +408,19 @@ class _VmapState extends State<Vmap>
               // The map paints every frame it moves; left in the semantics
               // tree it has an accessibility service walk it every frame.
               ExcludeSemantics(
-                child: pageShowsGpuImages
-                    ? PlanesView(
+                child: showing == MapShowing.canvas
+                    ? RepaintBoundary(
+                        child: CustomPaint(
+                          size: constraints.biggest,
+                          painter: MapPainter(engine, _c, dpr, _painted),
+                        ),
+                      )
+                    : PlanesView(
                         engine: engine,
                         controller: _c,
                         devicePixelRatio: dpr,
+                        showing: showing,
                         painted: _painted,
-                      )
-                    : RepaintBoundary(
-                        child: CustomPaint(
-                          size: constraints.biggest,
-                          painter: _VmapPainter(engine, _c, dpr, _painted),
-                        ),
                       ),
               ),
               if (widget.markers.isNotEmpty)
@@ -476,31 +490,4 @@ class _Attribution extends StatelessWidget {
       );
     },
   );
-}
-
-class _VmapPainter extends CustomPainter {
-  _VmapPainter(this.engine, this.controller, this.dpr, this.painted)
-    : super(repaint: Listenable.merge([engine, controller]));
-
-  final VmapEngine engine;
-  final VmapController controller;
-  final double dpr;
-  final VoidCallback painted;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.clipRect(Offset.zero & size);
-    engine.paint(
-      canvas,
-      size,
-      controller.camera,
-      devicePixelRatio: dpr,
-      ahead: controller.destination,
-    );
-    painted();
-  }
-
-  @override
-  bool shouldRepaint(_VmapPainter old) =>
-      old.engine != engine || old.controller != controller || old.dpr != dpr;
 }

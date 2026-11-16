@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'collision_boxes.dart';
 import '../style/expr.dart';
 import '../style/format.dart';
+import 'label_glyphs.dart';
 import 'label_painter.dart';
 import 'label_text_painter.dart';
 import 'text_style.dart';
@@ -15,8 +16,6 @@ import 'label_style.dart';
 import 'occlusion.dart';
 import '../text/glyphs/cursive.dart';
 import '../text/glyphs/glyph_layout.dart';
-import '../text/glyphs/glyph_pages.dart';
-import '../text/glyphs/glyph_ranges.dart';
 import 'label_order.dart';
 import 'label_rules.dart';
 import 'label_view.dart';
@@ -94,8 +93,8 @@ class LabelEngine {
   /// paint. A sprite whose colours changed is drawn again by its key.
   void restyle() => _placeAgain = true;
 
-  /// Glyph ranges asked for and not here yet, which labels wait on.
-  int get glyphsLoading => _sprites.ranges?.pending ?? 0;
+  /// The fonts and glyph ranges labels are shaped and drawn from.
+  final LabelGlyphs glyphs = LabelGlyphs();
 
   /// Places the labels again in the next frame, however soon after the
   /// last placement, while a paint property they are placed by changes.
@@ -120,7 +119,7 @@ class LabelEngine {
 
   Iterable<LabelState> get _allStates => _states.values.expand((s) => s);
   final VmapLabelWork work = VmapLabelWork();
-  late final LabelSprites _sprites = LabelSprites(work, _style);
+  late final LabelSprites _sprites = LabelSprites(work, _style, glyphs);
   final List<LabelState> _frameStates = [];
 
   /// The labels that are showing or fading, which is all a frame draws.
@@ -166,7 +165,12 @@ class LabelEngine {
   bool crossSourceCollisions = true;
   late final RoadLabels _roads = RoadLabels(_view, _boxes);
   late final LabelPainter _painter = LabelPainter(_view, _style);
-  late final LabelTextPainter _text = LabelTextPainter(_view, _roads, _style);
+  late final LabelTextPainter _text = LabelTextPainter(
+    _view,
+    _roads,
+    _style,
+    glyphs,
+  );
   late final PointLabels _points = PointLabels(_view, _boxes, _roads, _style);
   late final RoadPlacement _road = RoadPlacement(
     _view,
@@ -278,20 +282,13 @@ class LabelEngine {
   /// still be the same label.
   static const double _sameLabelPx = 3;
 
-  GlyphPages? _glyphPages;
-
   /// Shapes and draws text with [fonts] from now on, where they cover it.
   void useGlyphs(GlyphFonts fonts) {
-    _glyphPages?.dispose();
-    final pages = _glyphPages = GlyphPages(fonts);
-    _sprites.glyphFonts = fonts;
-    _text.glyphs = pages;
+    glyphs.useFonts(fonts);
     clear();
   }
 
-  bool get _glyphText => _glyphPages != null;
-
-  String? _rangesUrl;
+  bool get _glyphText => glyphs.pages != null;
 
   /// Draws labels from the glyph ranges at [url], a style's `glyphs`,
   /// fetched with [config], as MapLibre draws them; from the font files
@@ -303,40 +300,21 @@ class LabelEngine {
     void Function(Object error)? onError,
     FetchBytes? fetch,
   }) {
-    if (url == _rangesUrl) return;
-    _rangesUrl = url;
-    _sprites.ranges?.close();
-    _sprites.ranges = url == null
-        ? null
-        : GlyphRanges(
-            url,
-            userAgent: config.userAgent,
-            headers: config.headers,
-            fetch: fetch,
-            onLoaded: (face, glyphs) {
-              _glyphPages?.addPbf(face, glyphs);
-              onArrived();
-            },
-            onError: onError,
-          );
+    if (!glyphs.useRanges(
+      url,
+      config,
+      onArrived,
+      onError: onError,
+      fetch: fetch,
+    )) {
+      return;
+    }
     _style.rules = url == null ? LabelRules.vmap : LabelRules.mapLibre;
     clear();
   }
 
   /// The camera of the frame before, which [LabelView.still] compares.
   (double, ui.Offset, double)? _frameCamera;
-
-  int get rangesPending => _sprites.ranges?.pending ?? 0;
-
-  /// Glyphs drawn into pages in the last frame, and what that cost.
-  int get glyphsRasterized => _glyphPages?.lastRasterized ?? 0;
-  int get glyphRasterMicros => _glyphPages?.lastRasterMicros ?? 0;
-  int get glyphPageCount => _glyphPages?.pageCount ?? 0;
-
-  void disposeGlyphs() {
-    _glyphPages?.dispose();
-    _glyphPages = null;
-  }
 
   /// Lets go of the label images not drawn in the last pass.
   void trimMemory() => _sprites.drop(_pass);
@@ -379,11 +357,11 @@ class LabelEngine {
     final MapFrame(:zoom, :origin, :size, :view) = camera;
     _view.frame(camera, terrain);
     final world = _view.world;
-    // Text from glyph ranges is drawn by the renderer as distance fields
-    // where it can, on the unturned screen of a projected view.
-    final ranges = _sprites.ranges;
-    final sdfText = _view.sdf = ranges != null ? sdf : null;
-    sdfText?.begin(size, camera.devicePixelRatio, ranges!, view);
+    // Text is drawn by the renderer as distance fields where it can, on
+    // the unturned screen of a projected view.
+    final fieldGlyphs = glyphs.fields;
+    final sdfText = _view.sdf = fieldGlyphs != null ? sdf : null;
+    sdfText?.begin(size, camera.devicePixelRatio, fieldGlyphs!, view);
     final tilt = Object.hash(view.pitch, view.bearing, view.roll).toDouble();
     if (_zooming && !zooming) _placeAgain = true;
     _zooming = zooming;
@@ -520,7 +498,7 @@ class LabelEngine {
     }
     _live.length = kept;
     _order.sortForDrawing(_drawn);
-    final pages = _glyphPages;
+    final pages = glyphs.pages;
     var textLayer = -1 << 30;
     for (final st in _drawn) {
       _style.stand(st.candidate);
@@ -562,6 +540,7 @@ class LabelEngine {
     if (pages != null) {
       pages.flush(canvas);
       if (pages.rasterizePending()) animating = true;
+      if (pages.fields.pending > 0) animating = true;
       pages.endFrame();
     }
     final debugBoxes = _points.debugBoxes;
@@ -684,9 +663,8 @@ class LabelEngine {
           ..candidate = c
           // Ties keep the order the tiles list them in, as MapLibre
           // places features.
-          ..sortKey =
-              (c.rank - (st.placed ? _style.rules.placedLead : 0)) * 65536 +
-              math.min(states.length, 65535);
+          ..rank = c.rank - (st.placed ? _style.rules.placedLead : 0)
+          ..listed = states.length;
         states.add(st);
       }
     }

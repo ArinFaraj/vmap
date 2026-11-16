@@ -8,6 +8,7 @@ import '../style/style_model.dart';
 import '../camera/subdivide.dart';
 import 'tessellate.dart' show LineMesher, MeshChunk;
 import 'built_tile.dart';
+import 'gpu_geometry.dart';
 import 'typed_buffer.dart';
 
 /// One tile's fill and line layers as a single stream the GPU draws in one
@@ -26,10 +27,10 @@ import 'typed_buffer.dart';
 ///   line 131072 times where the vertex sits across it (see [_edgeCode]);
 /// - the distance along the line in tile units, or for a gradient line its
 ///   share of the whole line times [progressSpan].
-class GpuStream {
+class GpuStream extends GpuGeometry {
   GpuStream(
-    this.vertices,
-    this.indices,
+    super.vertices,
+    super.indices,
     this.slots,
     this.segments,
     this.layerFirst, [
@@ -46,9 +47,6 @@ class GpuStream {
   /// and one more entry for the end: a run of the style's layers is the
   /// indices from its first layer's entry to the entry after its last.
   final Int32List layerFirst;
-
-  final Float32List vertices;
-  final Uint32List indices;
 
   static const floatsPerVertex = 6;
 

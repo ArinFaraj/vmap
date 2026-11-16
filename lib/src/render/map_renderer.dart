@@ -129,8 +129,8 @@ abstract class MapRenderer {
   bool makeReady(LoadedTile tile, double scale, Stopwatch clock, int deadline);
 
   /// Whether it can make [tile] ready from what the tile still holds,
-  /// after another renderer made it ready. A tile it cannot is dropped and
-  /// fetched again.
+  /// after it or another renderer made it ready and let go of it. A tile
+  /// it cannot is dropped and fetched again.
   bool canBuild(LoadedTile tile);
 
   /// Draws on [canvas] the vector layers before the style's run [run] that
@@ -141,10 +141,10 @@ abstract class MapRenderer {
   bool presentUntil(ui.Canvas canvas, int run) => false;
 
   /// Has [sdfText] draw this frame's text into the last image laid down
-  /// before style run [run], over the map, and returns whether it does:
-  /// the caller then lays the images before [run] down after the labels,
-  /// and what the labels drew on the canvas over them.
-  bool textInto(int run) => false;
+  /// before the style's labels, over the map, and returns whether it does:
+  /// the caller then lays the images before the labels down after them,
+  /// and what the labels drew on the canvas over those.
+  bool textIntoMap() => false;
 
   /// Lets go of the memory of tiles not drawn in the last frame.
   void trimMemory() {}

@@ -188,6 +188,10 @@ class VmapEngine extends ChangeNotifier {
   /// Whether the style draws the map as a globe at some zoom.
   bool get drawsGlobe => _sheet?.projection.isGlobe ?? false;
 
+  /// Whether the last frame painted anything that moves with the map on
+  /// Flutter's canvas.
+  bool get paintsMapOnCanvas => _painter.mapOnCanvas;
+
   /// What keeps the map from showing, if anything: a style that could not
   /// be loaded, or a source whose tiles cannot be read at all.
   VmapError? get error {
@@ -748,7 +752,7 @@ class VmapEngine extends ChangeNotifier {
     _sources.clear();
     _labels
       ..clear()
-      ..disposeGlyphs();
+      ..glyphs.disposePages();
     _painter.dispose();
     _renderer?.dispose();
     _resources.dispose();

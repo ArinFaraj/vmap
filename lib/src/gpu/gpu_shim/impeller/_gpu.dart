@@ -9,6 +9,7 @@ import '../shared/encoded_image_types.dart';
 import '../shared/shader_library_sources.dart';
 
 import '../shared/gpu_capabilities.dart';
+import '../shared/page_image.dart';
 
 export 'package:flutter_gpu/gpu.dart';
 
