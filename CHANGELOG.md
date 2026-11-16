@@ -60,6 +60,9 @@
 - An unscaled upright icon is sampled texel for pixel, its corner on the
   device pixel at or below the half, as MapLibre samples it nearest. Seven
   of MapLibre's icon render tests that failed pass.
+- vmap depends on the `material_ui` package, for the icons of its pins,
+  where it imported them from `package:flutter/material.dart`, which
+  Flutter 3.50 deprecates. It needs Flutter 3.47 or newer, as vmap does.
 - On the web, where Flutter draws on a thread of its own, the sky and
   atmosphere shaders are compiled 400 ms in and tried again when a compile
   fails: Flutter's renderer can trap when a shader is compiled while it

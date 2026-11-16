@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:js_interop';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:vmap/vmap.dart';
 import 'package:web/web.dart' as web;
