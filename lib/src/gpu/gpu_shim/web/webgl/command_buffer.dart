@@ -1,9 +1,8 @@
 part of '_webgl.dart';
 
-/// CommandBuffer is a thin convenience wrapper. WebGL2 doesn't batch like
-/// Vulkan or Metal - GL calls execute immediately - so `submit` is a
-/// no-op and `createRenderPass` returns a pass that drives the GL context
-/// in place.
+/// CommandBuffer is a thin convenience wrapper. A pass records its calls
+/// and issues them to the GL context when it ends: when the next pass
+/// begins, or at `submit`.
 final class WebGlCommandBuffer extends CommandBuffer {
   WebGlCommandBuffer._(this._gpuContext);
 
@@ -23,8 +22,8 @@ final class WebGlCommandBuffer extends CommandBuffer {
 
   @override
   void submit({CompletionCallback? completionCallback}) {
-    // WebGL2 commands are already submitted; finishing the last pass runs
-    // its MSAA resolve. `gl.flush()` is implicit at raster boundaries.
+    // Finishing the last pass issues its calls and runs its MSAA resolve.
+    // `gl.flush()` is implicit at raster boundaries.
     _activePass?._finish();
     _activePass = null;
     completionCallback?.call(CompletionStatus.successful);

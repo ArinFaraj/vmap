@@ -1,15 +1,15 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import '../style/color.dart';
 import '../camera/globe.dart';
+import '../platform.dart';
 import '../style/style_model.dart';
 
 /// The globe's sky and the air around it, drawn as MapLibre's `drawSky`
 /// and `drawAtmosphere` draw them.
 class Atmosphere {
-  static final _Program _atmosphere = _Program('atmosphere');
-  static final _Program _sky = _Program('sky');
   final ui.Paint _paint = ui.Paint();
 
   /// Draws the atmosphere of [globe], seen on a screen of [size], over
@@ -26,7 +26,7 @@ class Atmosphere {
     final (cx, cy, cz) = globe.viewCentre;
     final amount = blend * globe.transition * _altitudeBlend(globe);
     if (amount <= 0) return true;
-    final shader = _atmosphere.shader;
+    final shader = _Programs.atmosphere;
     if (shader == null) return false;
     final (sx, sy, sz) = globe.sunAt(light.position, viewport: light.viewport);
     var i = 0;
@@ -62,7 +62,7 @@ class Atmosphere {
     required double horizonY,
     required double atmosphereBlend,
   }) {
-    final shader = _sky.shader;
+    final shader = _Programs.sky;
     if (shader == null) return false;
     final (cx, cy, cz) = globe.viewCentre;
     var i = 0;
@@ -103,18 +103,55 @@ class Atmosphere {
   }
 }
 
-class _Program {
-  _Program(this.name);
+/// The shader programs, loaded together when one is first asked for. None
+/// is drawn with before all have compiled: the first draw with one compiles
+/// on the raster thread too.
+abstract final class _Programs {
+  static ui.FragmentShader? _atmosphere, _sky;
+  static bool _asked = false;
 
-  final String name;
-  Future<void>? _loading;
-  ui.FragmentShader? _shader;
+  /// Null until the programs have loaded, which asking starts.
+  static ui.FragmentShader? get atmosphere {
+    _ask();
+    return _atmosphere;
+  }
 
-  /// Null until the shader has loaded, which asking starts.
-  ui.FragmentShader? get shader {
-    _loading ??= ui.FragmentProgram.fromAsset(
-      'packages/vmap/shaders/$name.frag',
-    ).then((p) => _shader = p.fragmentShader());
-    return _shader;
+  static ui.FragmentShader? get sky {
+    _ask();
+    return _sky;
+  }
+
+  static void _ask() {
+    if (_asked) return;
+    _asked = true;
+    unawaited(rasterizesOnOwnThread ? _loadHeldBack() : _load());
+  }
+
+  static Future<ui.FragmentProgram> _program(String name) =>
+      ui.FragmentProgram.fromAsset('packages/vmap/shaders/$name.frag');
+
+  static Future<void> _load() async {
+    final atmosphere = await _program('atmosphere');
+    final sky = await _program('sky');
+    _atmosphere = atmosphere.fragmentShader();
+    _sky = sky.fragmentShader();
+  }
+
+  /// A program compiled while Flutter's raster thread draws an app's first
+  /// frames can fail or trap inside Skia's shader compiler: 1 page load in
+  /// 8 on a busy machine, and none in 90 with the programs held back for
+  /// [_wait] and a load that died tried again after [_again].
+  static const _wait = Duration(milliseconds: 400);
+  static const _again = Duration(seconds: 2);
+
+  /// A compile that traps ends its callback there, with nothing to catch
+  /// and no future that completes, so each load is given [_again] to land
+  /// rather than waited on.
+  static Future<void> _loadHeldBack() async {
+    for (var tries = 3; tries > 0 && _sky == null; tries--) {
+      await Future<void>.delayed(_wait);
+      unawaited(_load());
+      await Future<void>.delayed(_again);
+    }
   }
 }

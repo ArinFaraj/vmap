@@ -12,42 +12,41 @@ import 'round_corners.dart';
 import '../style/style_model.dart';
 import '../camera/subdivide.dart';
 import 'built_tile.dart';
+import 'gpu_geometry.dart';
 import 'tiles.dart' show TileDraw;
 import '../camera/view.dart';
 import 'typed_buffer.dart';
 
 /// One tile's buildings of one `fill-extrusion` bucket: their walls, roofs,
 /// heights and colours, in tile units.
-class BuiltExtrusion {
+///
+/// Every wall and roof is in [vertices], ready for the GPU,
+/// [floatsPerVertex] floats a vertex: x and y in tile units, height in
+/// metres, the colour as red plus 256 green plus 65536 blue, from 0 to 255
+/// each, alpha from 0 to 255, the wall's outward normal and its gradient,
+/// where its pattern is, in tile units, and which pattern, then the middle
+/// of its polygon, in tile units, which raised ground lifts it from. Every
+/// one exact, so OpenGL ES 2 shaders, which have no integers, unpack them.
+/// [indices] are their triangles, three each: a wall is two triangles over
+/// its four corners, a roof shares its points. Both are empty for a
+/// renderer that draws buildings from [walls].
+class BuiltExtrusion extends GpuGeometry {
   BuiltExtrusion(
     this.bucket,
     this.walls,
     this.roof,
     this.roofIndices,
     this.info,
-    this.vertices,
-    this.indices,
+    Float32List vertices,
+    Uint32List indices,
     this.index, [
     this.patterns = const [],
-  ]);
+  ]) : super(vertices, indices);
 
   /// The buildings by where they stand, for what hides labels.
   final BuildingIndex index;
 
-  /// Every wall and roof ready for the GPU, [floatsPerVertex]
-  /// floats a vertex: x and y in tile units, height in metres, the colour
-  /// as red plus 256 green plus 65536 blue, from 0 to 255 each, alpha from
-  /// 0 to 255, the wall's outward normal and its gradient, where its
-  /// pattern is, in tile units, and which pattern, then the middle of its
-  /// polygon, in tile units, which raised ground lifts it from. Every one
-  /// exact, so
-  /// OpenGL ES 2 shaders, which have no integers, unpack them.
-  final Float32List vertices;
-
-  /// The triangles of [vertices], three indices each: a wall is two
-  /// triangles over its four corners, a roof shares its points. Empty, as
-  /// [vertices] is, for a renderer that draws buildings from [walls].
-  final Uint32List indices;
+  int get vertexCount => vertexBytes ~/ (floatsPerVertex * 4);
 
   static const floatsPerVertex = 13;
 

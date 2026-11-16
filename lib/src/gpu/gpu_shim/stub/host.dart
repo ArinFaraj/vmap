@@ -17,10 +17,10 @@ class GpuHost {
 
   ui.Image textureToImage(Texture texture) => _stub();
 
-  /// Null: there is no page to show a texture in.
-  Object? textureToBitmap(Texture texture) => null;
-
   Texture? imageToTexture(ui.Image image) => null;
+
+  /// Null: there is no page to show a texture in.
+  PageHost<Texture>? get page => null;
 
   Future<ui.Image> present(Texture texture, {bool transferOwnership = false}) =>
       _stub();

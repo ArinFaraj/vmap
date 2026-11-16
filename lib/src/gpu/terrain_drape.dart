@@ -2,8 +2,6 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:vector_math/vector_math.dart' show Vector4;
-
 import '../camera/globe.dart';
 import '../camera/view.dart';
 import '../platform.dart' show imagePixels;
@@ -16,6 +14,7 @@ import '../tiles/tiles.dart';
 import 'gpu_device.dart';
 import 'gpu_map_pass.dart';
 import 'gpu_shim/gpu.dart' as gpu;
+import 'pass_target.dart';
 import 'terrain_grid.dart';
 
 /// The map laid over raised ground, as MapLibre draws terrain: each tile's
@@ -32,10 +31,10 @@ class Drape {
   static const _width = 4096, _maxHeight = 4096;
   static const _sizes = [1024, 512, 256];
 
-  gpu.Texture? _atlas, _atlasDepth;
+  PassTarget? _atlas;
 
   /// A second atlas, for a layer drawn whole at an opacity.
-  gpu.Texture? _layerAtlas;
+  PassTarget? _layerAtlas;
   int _height = 0;
 
   /// The tiles of ground drawn this frame, nearest first, and their slots:
@@ -189,24 +188,22 @@ class Drape {
   /// slot is drawn again.
   void _grow(int height) {
     _height = height;
-    _atlas = gpu.gpuContext.createTexture(
+    gpu.Texture texture() => gpu.gpuContext.createTexture(
       gpu.StorageMode.devicePrivate,
       _width,
       height,
       format: _device.color,
     );
-    _layerAtlas = gpu.gpuContext.createTexture(
-      gpu.StorageMode.devicePrivate,
-      _width,
-      height,
-      format: _device.color,
-    );
-    _atlasDepth = _device.scratch(
+    final depth = _device.scratch(
       _width,
       height,
       gpu.gpuContext.defaultDepthStencilFormat,
       1,
     );
+    // The atlas keeps the slots not drawn in a frame, so every pass on it
+    // keeps what it holds, its first too.
+    _atlas = PassTarget(texture(), depth: depth, keeps: true);
+    _layerAtlas = PassTarget(texture(), depth: depth);
     for (final slot in _kept.values) {
       slot.key = null;
     }
@@ -402,24 +399,10 @@ class Drape {
     if (stale >= _staleBudget) sending = true;
     if (redraw.isEmpty) return;
 
-    gpu.RenderPass begin(gpu.Texture target, {bool keep = false}) {
+    gpu.RenderPass begin(PassTarget target) {
       final commands = gpu.gpuContext.createCommandBuffer();
       buffers.add(commands);
-      return commands.createRenderPass(
-        gpu.RenderTarget.singleColor(
-          // Clear: where no layer is drawn, the canvas's background, drawn
-          // under the GPU's picture, shows through.
-          gpu.ColorAttachment(
-            texture: target,
-            loadAction: keep ? gpu.LoadAction.load : gpu.LoadAction.clear,
-            clearValue: Vector4.zero(),
-          ),
-          depthStencilAttachment: gpu.DepthStencilAttachment(
-            texture: _atlasDepth!,
-            depthClearValue: 1,
-          ),
-        ),
-      );
+      return target.begin(commands);
     }
 
     // Each slot drawn this frame in turn: its viewport, and the matrix that
@@ -522,7 +505,7 @@ class Drape {
         groups.add((run, []));
       }
     }
-    var pass = begin(_atlas!, keep: true);
+    var pass = begin(_atlas!);
     for (final (index, (apart, runs)) in groups.indexed) {
       if (apart != null) {
         final opacity = sheet.runOpacity(apart, context)!;
@@ -531,13 +514,13 @@ class Drape {
           inSlots(alone, (i, clip, left, top, span) {
             vector(alone, [apart], i, clip, left, top, span);
           });
-          pass = begin(_atlas!, keep: true);
+          pass = begin(_atlas!);
           final into = pass;
           inSlots(into, (i, clip, left, top, span) {
             _lay(into, i, clip, left, top, span, opacity);
           });
         } else if (runs.isNotEmpty) {
-          pass = begin(_atlas!, keep: true);
+          pass = begin(_atlas!);
         }
       }
       final p = pass;
@@ -637,7 +620,7 @@ class Drape {
     pass
       ..bindTexture(
         _device.pipelines.groundDrape!,
-        _layerAtlas!,
+        _layerAtlas!.texture,
         sampler: gpu.SamplerOptions(
           minFilter: gpu.MinMagFilter.nearest,
           magFilter: gpu.MinMagFilter.nearest,
@@ -967,7 +950,7 @@ class Drape {
     Float64List clip,
   ) {
     final pipeline = _device.pipelines.ground;
-    final atlas = _atlas;
+    final atlas = _atlas?.texture;
     if (pipeline == null || atlas == null || _tiles.isEmpty) return;
     final corners = _corners ??= gridCorners();
     final indices = _indices ??= gridIndices();
@@ -1068,7 +1051,7 @@ class Drape {
     Float64List clip,
   ) {
     final pipeline = _device.pipelines.globe;
-    final atlas = _atlas;
+    final atlas = _atlas?.texture;
     if (pipeline == null || atlas == null || _tiles.isEmpty) return;
     final corners = _globeCorners ??= globeGridCorners();
     final indices = _globeIndices ??= globeGridIndices();

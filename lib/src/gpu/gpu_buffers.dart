@@ -86,9 +86,11 @@ class GpuHeap {
   static const _slabBytes = gpu.geometryInOwnBuffers ? 0 : 4 << 20;
   static const align = 256;
 
-  /// The most it holds; past three quarters, tiles not drawn lately let
-  /// their ranges go.
-  static const capBytes = 96 << 20;
+  /// The most it holds; past three quarters, tiles not drawn lately are
+  /// let go. A tile let go is built again when it shows, so this is room
+  /// for a whole tile cache of city tiles, and the cache's tile count is
+  /// what decides which tiles stay.
+  static const capBytes = 256 << 20;
 
   /// Free room kept ahead of what uploads ask for.
   static const _headroom = 12 << 20;
@@ -330,9 +332,10 @@ class TileGpu implements RendererTileData {
 
   gpu.DeviceBuffer? get indexBuffer => _indices?.buffer;
 
-  /// What to copy, each with the buffer and offset it goes to, in order.
+  /// What is left to copy, each with the buffer and offset it goes to, in
+  /// order, and how much of the first has gone.
   final List<(TypedData, gpu.DeviceBuffer, int)> _parts;
-  int _part = 0, _sent = 0;
+  int _sent = 0;
 
   static const _piece = 256 * 1024;
 
@@ -346,13 +349,14 @@ class TileGpu implements RendererTileData {
     _ => Uint8List.sublistView(data, from, to),
   };
 
-  bool get ready => _part >= _parts.length;
+  bool get ready => _parts.isEmpty;
 
   /// Copies pieces until [clock] passes [deadline], at least one, and
-  /// returns [ready].
+  /// returns [ready]. Once all of it is copied the tile's own copy is let
+  /// go, so its geometry is held once, on the GPU.
   bool send(Stopwatch clock, int deadline) {
     while (!ready) {
-      final (source, buffer, at) = _parts[_part];
+      final (source, buffer, at) = _parts.first;
       final n = math.min(_piece, source.lengthInBytes - _sent);
       gpu.writeGeometryData(
         buffer,
@@ -362,12 +366,20 @@ class TileGpu implements RendererTileData {
       buffer.flush(offsetInBytes: at + _sent, lengthInBytes: n);
       _sent += n;
       if (_sent >= source.lengthInBytes) {
-        _part++;
+        _parts.removeAt(0);
         _sent = 0;
+        if (ready) _letSourceGo();
       }
       if (clock.elapsedMicroseconds >= deadline) break;
     }
     return ready;
+  }
+
+  void _letSourceGo() {
+    stream?.letGo();
+    for (final building in buildings) {
+      building.extrusion.letGo();
+    }
   }
 
   @override
@@ -388,10 +400,9 @@ class BuildingGpu {
   final BuiltExtrusion extrusion;
   final int offset, indexOffset;
 
-  int get indexCount => extrusion.indices.length;
+  int get indexCount => extrusion.indexCount;
 
   static const stride = BuiltExtrusion.floatsPerVertex * 4;
 
-  int get vertexCount =>
-      extrusion.vertices.length ~/ BuiltExtrusion.floatsPerVertex;
+  int get vertexCount => extrusion.vertexCount;
 }

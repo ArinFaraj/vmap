@@ -1,6 +1,6 @@
 part of '_webgl.dart';
 
-/// Global graphics context. Lazily creates a shared `OffscreenCanvas` +
+/// Global graphics context. Lazily creates a shared canvas +
 /// `WebGL2RenderingContext` the first time it's accessed; all resources
 /// (buffers, textures, pipelines) live in this context.
 ///
@@ -9,7 +9,6 @@ part of '_webgl.dart';
 /// platform-specific native wrapper.
 final class WebGlContext extends GpuContext {
   WebGlContext._createDefault() {
-    _canvas = web.OffscreenCanvas(1, 1);
     // antialias:false makes the default framebuffer single-sampled, so we
     // can blitFramebuffer single-sample render targets onto it for present.
     // Without preserveDrawingBuffer, transferToImageBitmap hands the canvas's
@@ -18,8 +17,8 @@ final class WebGlContext extends GpuContext {
     final attrs = web.WebGLContextAttributes(
       antialias: false,
       alpha: true,
-      depth: false,
-      stencil: false,
+      depth: _presenter.framesInCanvas,
+      stencil: _presenter.framesInCanvas,
       preserveDrawingBuffer: false,
     );
     final gl =
@@ -52,19 +51,20 @@ final class WebGlContext extends GpuContext {
     }
   }
 
+  final _Presenter _presenter = _Presenter();
+  _Canvas get _canvas => _presenter.canvas;
+
   bool _clipDepthZeroToOne = false;
 
   /// Whether clip-space depth spans `[0, 1]` (EXT_clip_control), so GLES
   /// shaders run without their `[-1, 1]` depth remap.
   bool get clipDepthZeroToOne => _clipDepthZeroToOne;
 
-  late final web.OffscreenCanvas _canvas;
-
   late final web.WebGL2RenderingContext _gl;
   late final _GlState _state = _GlState(_gl);
 
   /// Cached vertex-array objects keyed by (pipeline, vertex streams, index
-  /// buffer), in least-recently-used order; see WebGlRenderPass._applyVertexState.
+  /// buffer), in least-recently-used order; see _PassExecutor._applyVertexState.
   static const int _kMaxCachedVaos = 512;
   final Map<_VaoKey, _CachedVao> _vaoCache = {};
 
@@ -91,8 +91,9 @@ final class WebGlContext extends GpuContext {
   /// unavailable, which disables anisotropic filtering).
   int get maxSupportedAnisotropy => _maxSupportedAnisotropy;
 
-  /// The underlying `OffscreenCanvas`. Resized on demand by `snapshot`.
-  web.OffscreenCanvas get canvas => _canvas;
+  /// The underlying canvas, an `OffscreenCanvas` in Chromium and an
+  /// `HTMLCanvasElement` elsewhere. Resized on demand by `snapshot`.
+  JSObject get canvas => _canvas;
 
   /// The underlying WebGL2 context. Exposed for advanced consumers and the
   /// shim's own internal tests.
@@ -221,7 +222,32 @@ final class WebGlContext extends GpuContext {
         held: true,
       );
 
-  /// Uniform buffers written since the last draw, each to be sent once.
+  /// The calls of [_openPass], the pass being recorded, which issues them
+  /// when it ends, another pass begins, or something reads what it draws.
+  final _PassRecord _record = _PassRecord();
+  WebGlRenderPass? _openPass;
+
+  /// The pass whose framebuffer is bound, null once anything else binds one.
+  _PassExecutor? _boundPass;
+
+  void _flushPass() {
+    final pass = _openPass;
+    if (pass == null) return;
+    _openPass = null;
+    pass._issue();
+  }
+
+  /// Readies the context for GL calls made outside a pass: the pass being
+  /// recorded is issued first, and the framebuffer a pass bound is taken
+  /// to be lost. A frame drawn in the canvas goes to its texture before
+  /// work that reads [reads] there, or that [usesCanvas].
+  void _leavePass({Texture? reads, bool usesCanvas = false}) {
+    if (reads != null || usesCanvas) _presenter.spill(this, only: reads);
+    _flushPass();
+    _boundPass = null;
+  }
+
+  /// Uniform buffers written since the last upload, each to be sent once.
   final List<WebGlDeviceBuffer> _held = [];
 
   void _sendHeld() {
@@ -318,6 +344,7 @@ final class WebGlContext extends GpuContext {
     if (_pipelineCache.length >= 512) {
       // Far above any realistic working set; clearing keeps stale
       // hot-reload generations from accumulating without bookkeeping.
+      _leavePass();
       for (final pipeline in _pipelineCache.values) {
         _state.deleteProgram(pipeline._program);
       }
@@ -338,7 +365,6 @@ final class WebGlContext extends GpuContext {
     int mipLevel,
     int slice,
     Texture? depth,
-    web.WebGLFramebuffer Function() create,
   ) {
     final key = (color, mipLevel, slice, depth);
     final cached = _framebufferCache[key];
@@ -349,10 +375,80 @@ final class WebGlContext extends GpuContext {
       }
       _framebufferCache.clear();
     }
-    return _framebufferCache[key] = create();
+    return _framebufferCache[key] = _createFramebuffer(
+      color,
+      mipLevel,
+      slice,
+      depth,
+    );
   }
 
-  /// Snapshot the underlying `OffscreenCanvas` into a `ui.Image` for display
+  web.WebGLFramebuffer _createFramebuffer(
+    Texture color,
+    int mipLevel,
+    int slice,
+    Texture? depth,
+  ) {
+    final gl = _gl;
+    final fbo = gl.createFramebuffer();
+    if (fbo == null) {
+      throw StateError('Failed to create WebGL framebuffer');
+    }
+    gl.bindFramebuffer(web.WebGL2RenderingContext.FRAMEBUFFER, fbo);
+
+    if (color.sampleCount == 1) {
+      // For a cube the attachment target is the face; for 2D it is TEXTURE_2D.
+      gl.framebufferTexture2D(
+        web.WebGL2RenderingContext.FRAMEBUFFER,
+        web.WebGL2RenderingContext.COLOR_ATTACHMENT0,
+        color.webGl.glSliceTarget(slice),
+        color.webGl.glTexture,
+        mipLevel,
+      );
+    } else {
+      assert(
+        mipLevel == 0,
+        'Multisampled attachments cannot target a mip level',
+      );
+      gl.framebufferRenderbuffer(
+        web.WebGL2RenderingContext.FRAMEBUFFER,
+        web.WebGL2RenderingContext.COLOR_ATTACHMENT0,
+        web.WebGL2RenderingContext.RENDERBUFFER,
+        color.webGl.glRenderbuffer,
+      );
+    }
+
+    if (depth != null) {
+      if (depth.sampleCount == 1) {
+        gl.framebufferTexture2D(
+          web.WebGL2RenderingContext.FRAMEBUFFER,
+          web.WebGL2RenderingContext.DEPTH_STENCIL_ATTACHMENT,
+          web.WebGL2RenderingContext.TEXTURE_2D,
+          depth.webGl.glTexture,
+          0,
+        );
+      } else {
+        gl.framebufferRenderbuffer(
+          web.WebGL2RenderingContext.FRAMEBUFFER,
+          web.WebGL2RenderingContext.DEPTH_STENCIL_ATTACHMENT,
+          web.WebGL2RenderingContext.RENDERBUFFER,
+          depth.webGl.glRenderbuffer,
+        );
+      }
+    }
+
+    final status = gl.checkFramebufferStatus(
+      web.WebGL2RenderingContext.FRAMEBUFFER,
+    );
+    if (status != web.WebGL2RenderingContext.FRAMEBUFFER_COMPLETE) {
+      throw Exception(
+        'Framebuffer incomplete (status 0x${status.toRadixString(16)})',
+      );
+    }
+    return fbo;
+  }
+
+  /// Snapshot the underlying canvas into a `ui.Image` for display
   /// in a Flutter widget. The canvas is resized if [width] / [height] differ
   /// from its current dimensions. Web-specific addition; not in flutter_gpu.
   Future<ui.Image> snapshot({
@@ -360,24 +456,26 @@ final class WebGlContext extends GpuContext {
     required int height,
     bool transferOwnership = false,
   }) async {
+    _leavePass(usesCanvas: true);
     if (_canvas.width != width) _canvas.width = width;
     if (_canvas.height != height) _canvas.height = height;
     return await ui_web.createImageFromTextureSource(
-      _canvas as JSAny,
+      _canvas,
       width: width,
       height: height,
       transferOwnership: transferOwnership,
     );
   }
 
-  /// Blit a single-sample [texture]'s contents onto the underlying
-  /// `OffscreenCanvas`, resizing it to match. Shared by the present paths.
+  /// Blit a single-sample [texture]'s contents onto the underlying canvas,
+  /// resizing it to match. Shared by the present paths.
   void _blitTextureToCanvas(Texture texture) {
     if (texture.sampleCount != 1) {
       throw UnimplementedError(
         'Cannot present an MSAA texture directly; use its resolve texture.',
       );
     }
+    _leavePass(usesCanvas: true);
     if (_canvas.width != texture.width) _canvas.width = texture.width;
     if (_canvas.height != texture.height) _canvas.height = texture.height;
 
@@ -418,14 +516,13 @@ final class WebGlContext extends GpuContext {
   }
 
   /// Synchronously snapshot [texture] into a `ui.Image`. Blits to the
-  /// OffscreenCanvas, transfers the canvas content out as an ImageBitmap,
+  /// canvas, takes the canvas content out as an ImageBitmap,
   /// and wraps it. `transferToImageBitmap` and `createImageFromImageBitmap`
   /// are both synchronous on CanvasKit and Skwasm, so this works inside a
   /// synchronous paint callback - which is what flutter_scene's
   /// `Texture.asImage()` -> `canvas.drawImageRect` path needs.
   ui.Image snapshotTextureSync(Texture texture) {
-    _blitTextureToCanvas(texture);
-    final bitmap = _canvas.transferToImageBitmap();
+    final bitmap = textureBitmap(texture);
     final result = ui_web.createImageFromImageBitmap(bitmap as JSAny);
     if (result is ui.Image) return result;
     throw StateError(
@@ -434,21 +531,19 @@ final class WebGlContext extends GpuContext {
     );
   }
 
-  /// [texture] as an `ImageBitmap`, taken from the OffscreenCanvas.
-  web.ImageBitmap textureBitmap(Texture texture) {
-    _blitTextureToCanvas(texture);
-    return _canvas.transferToImageBitmap();
-  }
+  /// [texture] as an `ImageBitmap`, taken from the canvas.
+  web.ImageBitmap textureBitmap(Texture texture) =>
+      _presenter.bitmapOf(this, texture);
 
-  /// Blit [texture] onto the OffscreenCanvas and return it as a `ui.Image`
-  /// via `createImageFromTextureSource` (async copy path).
+  /// Blit [texture] onto the canvas and return it as a `ui.Image` via
+  /// `createImageFromTextureSource` (async copy path).
   Future<ui.Image> _presentTextureAsImage(
     Texture texture, {
     bool transferOwnership = false,
   }) async {
     _blitTextureToCanvas(texture);
     return ui_web.createImageFromTextureSource(
-      _canvas as JSAny,
+      _canvas,
       width: texture.width,
       height: texture.height,
       transferOwnership: transferOwnership,

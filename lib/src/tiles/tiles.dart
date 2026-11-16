@@ -65,6 +65,11 @@ class LoadedTile {
 
   int usedFrame = 0;
 
+  /// Whether this is a tile of the [keptZoom] coarsest levels, at most 21
+  /// of them, which no cache drops: they stand in anywhere on the world,
+  /// so a flight over ground not yet loaded never shows it bare.
+  bool get standsIn => id.z <= keptZoom;
+
   /// When the tile last became ready to draw, on the clock [prepare] was
   /// given.
   int readySinceMs = 0;
@@ -91,7 +96,7 @@ class LoadedTile {
   bool _ready = false;
 
   /// Made ready once, then let go by its renderer, which makes it ready
-  /// again from what it kept.
+  /// again if the tile still has what it is drawn from.
   bool get waitsForRenderer => !_ready && _built == null;
 
   int _labelAt = 0;
@@ -730,16 +735,24 @@ class TileSource {
     return any;
   }
 
-  /// Drops the tiles longest out of use until at most [keep] are held.
-  /// The tiles of the [keptZoom] coarsest levels stay, at most 21 of them:
-  /// they stand in anywhere on the world, so a flight over ground not yet
-  /// loaded never shows it bare.
+  /// Drops the tiles a renderer let go of that [canBuild] says it cannot
+  /// make ready again, so they are fetched again when the view wants them.
+  void dropSpent(bool Function(LoadedTile tile) canBuild) {
+    for (final held in [tiles, previous]) {
+      held.removeWhere((_, tile) {
+        if (!tile.waitsForRenderer || canBuild(tile)) return false;
+        tile.dispose();
+        return true;
+      });
+    }
+  }
+
+  /// Drops the tiles longest out of use until at most [keep] are held,
+  /// but for those that [LoadedTile.standsIn].
   void evict(int keep, int frame) {
     if (tiles.length <= keep) return;
     final stale =
-        tiles.values
-            .where((t) => t.usedFrame != frame && t.id.z > keptZoom)
-            .toList()
+        tiles.values.where((t) => t.usedFrame != frame && !t.standsIn).toList()
           ..sort((a, b) => a.usedFrame - b.usedFrame);
     for (final t in stale) {
       if (tiles.length <= keep) break;

@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import '../shared/encoded_image_types.dart';
 
 import '../shared/gpu_capabilities.dart';
+import '../shared/page_image.dart';
 
 part 'encoded_image.dart';
 part 'host.dart';

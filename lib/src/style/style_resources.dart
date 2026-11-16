@@ -57,7 +57,7 @@ class StyleResources {
   SpriteSheet? get sprites => _joined ?? _styleSprites;
 
   /// Sprite sheets and glyph ranges asked for and not yet answered.
-  int get loading => _spritesLoading + _labels.rangesPending;
+  int get loading => _spritesLoading + _labels.glyphs.rangesPending;
 
   /// Loads [given] and vmap's own fonts for labels. The tile workers shape
   /// with them unless [shapeInWorkers] is false.

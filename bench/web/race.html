@@ -112,9 +112,36 @@
           }
           return present.call(this, bitmap);
         };
+        // A frame left in the map's own WebGL canvas, which is then a page
+        // element: a blit into the canvas that no bitmap is taken from.
+        // Flutter's own canvases are in its shadow root and do not count.
+        let left = false;
+        const toCanvas = new WeakSet();
+        const inPage = (canvas) => canvas instanceof w.HTMLCanvasElement &&
+          !(canvas.getRootNode() instanceof w.ShadowRoot);
+        const gl = w.WebGL2RenderingContext.prototype;
+        const bind = gl.bindFramebuffer, blit = gl.blitFramebuffer;
+        gl.bindFramebuffer = function (where, to) {
+          if (where !== this.READ_FRAMEBUFFER) {
+            if (to === null) toCanvas.add(this); else toCanvas.delete(this);
+          }
+          return bind.call(this, where, to);
+        };
+        gl.blitFramebuffer = function (...args) {
+          if (!left && toCanvas.has(this) && inPage(this.canvas)) {
+            left = true;
+            const now = performance.now();
+            queueMicrotask(() => {
+              if (left) planePresents.push(now);
+              left = false;
+            });
+          }
+          return blit.apply(this, args);
+        };
         const canvas = w.OffscreenCanvas.prototype;
         const transfer = canvas.transferToImageBitmap;
         canvas.transferToImageBitmap = function () {
+          left = false;
           transfers.push([performance.now(), this.width * this.height]);
           return transfer.call(this);
         };

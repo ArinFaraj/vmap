@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import '../style/format.dart';
 import '../text/glyphs/arabic_forms.dart';
+import '../text/glyphs/font_fields.dart';
 import '../text/glyphs/glyph_layout.dart';
 import '../text/glyphs/glyph_pages.dart';
 import '../text/glyphs/glyph_pbf.dart';
@@ -11,6 +12,7 @@ import '../text/glyphs/glyph_ranges.dart';
 import '../text/glyphs/maplibre_shaping.dart';
 import '../platform.dart';
 import '../stats.dart';
+import 'label_glyphs.dart';
 import 'label_style.dart';
 
 /// A label's text drawn once, to be placed every frame.
@@ -102,8 +104,6 @@ final class PictureSprite extends LabelSprite {
   }
 }
 
-/// Text shaped by vmap itself and drawn glyph by glyph from shared pages,
-/// at any size, turned, or along a bent road.
 /// Text from a style's glyph ranges, drawn where MapLibre draws it.
 final class RangeSprite extends GlyphSprite {
   RangeSprite(
@@ -115,8 +115,16 @@ final class RangeSprite extends GlyphSprite {
     super.textHeight,
     super.fontSize,
   );
+
+  @override
+  int face(int font) => font;
+
+  @override
+  FieldsState fieldsIn(FieldGlyphs? fields) => FieldsState.ready;
 }
 
+/// Text shaped by vmap itself and drawn glyph by glyph from shared pages,
+/// at any size, turned, or along a bent road.
 final class GlyphSprite extends LabelSprite {
   GlyphSprite(
     this.shaped,
@@ -126,10 +134,27 @@ final class GlyphSprite extends LabelSprite {
     super.textWidth,
     super.textHeight,
     super.fontSize,
-  );
+  ) : _fieldLook = FontLook(look.weight, look.italic);
 
   final ShapedText shaped;
   final TextLook look;
+
+  final FontLook _fieldLook;
+  FieldsState _fields = FieldsState.coming;
+
+  /// The face the glyphs of [font], a glyph's first number, have among
+  /// distance fields.
+  int face(int font) => _fieldLook.face(font);
+
+  /// Whether its glyphs can be drawn from [fields], which is asked for
+  /// those it lacks.
+  FieldsState fieldsIn(FieldGlyphs? fields) {
+    if (fields == null) return FieldsState.never;
+    if (_fields == FieldsState.coming) {
+      _fields = fields.state(shaped.glyphs, _fieldLook);
+    }
+    return _fields;
+  }
 
   /// The cells this label's glyphs were last drawn from, kept while its
   /// page look and the pages stay the same, so a frame does no lookups.
@@ -215,19 +240,13 @@ class TextLook {
 /// The drawn labels, one for each text and look, shared by every label
 /// that shows it.
 class LabelSprites {
-  LabelSprites(this.work, this._style);
+  LabelSprites(this.work, this._style, this._glyphs);
 
   final VmapLabelWork work;
   final LabelStyle _style;
   final Map<String, LabelSprite> _byKey = {};
 
-  /// Set once vmap's own fonts are loaded: text they cover is shaped by
-  /// vmap and drawn from glyph pages, the rest is drawn as before.
-  GlyphFonts? glyphFonts;
-
-  /// The style's glyph ranges, which labels are laid out and drawn with
-  /// instead of [glyphFonts] when set.
-  GlyphRanges? ranges;
+  final LabelGlyphs _glyphs;
 
   final Stopwatch _clock = Stopwatch()..start();
 
@@ -320,8 +339,8 @@ class LabelSprites {
     List<Object?>? format,
     ShapedText? shaped,
   }) {
-    final store = ranges;
-    if (glyphFonts == null || store == null) return false;
+    final store = _glyphs.ranges;
+    if (_glyphs.fonts == null || store == null) return false;
     if (shaped != null) return true;
     final plain = plainText(text);
     final face = store.face(fontStack);
@@ -397,8 +416,8 @@ class LabelSprites {
     required int pass,
     ShapedText? shaped,
   }) {
-    final fonts = glyphFonts;
-    final store = ranges;
+    final fonts = _glyphs.fonts;
+    final store = _glyphs.ranges;
     final format = look.format;
     final plain = plainText(look.text);
     // Glyph ranges cannot join a letter Unicode gives no forms, such as the

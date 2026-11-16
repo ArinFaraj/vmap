@@ -14,6 +14,15 @@ class PbfGlyph {
     this.advance,
   );
 
+  /// A glyph with no ink.
+  PbfGlyph.blank(this.id)
+    : bitmap = Uint8List(0),
+      width = 0,
+      height = 0,
+      left = 0,
+      top = 0,
+      advance = 0;
+
   /// The Unicode code point.
   final int id;
 

@@ -165,7 +165,6 @@ class LabelPainter {
     SymbolLayer? symbol,
     EvalContext? tint,
   ) {
-    final LabelView(:devicePixelRatio, :still, :moving) = _view;
     _imagePaint.color = ui.Color.fromRGBO(
       255,
       255,
@@ -227,27 +226,18 @@ class LabelPainter {
             anchor: ui.Offset(-st.iconDx, -st.iconDy),
           )
         : [(icon.source, area)];
-    final (from0, to0) = pieces.first;
-    final texelForPixel =
-        still &&
-        turn == 0 &&
-        !icon.sdf &&
-        _view.tilted.pitch == 0 &&
-        !(symbol?.iconSizeByFeature ?? false) &&
-        pieces.length == 1 &&
-        to0.width * devicePixelRatio == from0.width &&
-        to0.height * devicePixelRatio == from0.height;
-    // As MapLibre, an icon at its own size and density, upright and not
-    // zooming, is sampled nearest, its pieces stretched or not.
-    final nearest =
-        still &&
-        !moving &&
-        turn == 0 &&
-        !icon.sdf &&
-        _view.tilted.pitch == 0 &&
-        st.iconScale == 1 &&
-        !(symbol?.iconSizeByFeature ?? false) &&
-        icon.pixelRatio == devicePixelRatio;
+    final sampling = _sampling(st, icon, symbol, turn, pieces);
+    final to0 = pieces.first.$2;
+    // Where the icon's own origin is drawn: on the device pixel that puts
+    // an unscaled icon's corner at or below the half, as MapLibre's nearest
+    // sampling does, so a pixel reads the middle of its texel and not the
+    // edge between two, where rounding picks either.
+    final (px, py) = sampling == _IconSampling.texelForPixel
+        ? (
+            _pixelAtOrBelowHalf(ix + to0.left) - to0.left,
+            _pixelAtOrBelowHalf(iy + to0.top) - to0.top,
+          )
+        : (ix, iy);
     if (_view.sdf case final gpu?
         when _gpuIcon(
           gpu,
@@ -256,93 +246,132 @@ class LabelPainter {
           symbol,
           tint,
           pieces,
-          ix,
-          iy,
+          px,
+          py,
           basis,
-          linear: !(nearest || texelForPixel),
+          linear: !sampling.onTexels,
         )) {
       return;
     }
     _view.drewBelowText = true;
-    final onGround = st.iconOnGround;
     for (final filter in [?rim, fill]) {
       _imagePaint.colorFilter = filter;
-      if (onGround) {
-        final (ux, uy, vx, vy) = basis;
-        canvas
-          ..save()
-          ..transform(
-            Float64List(16)
-              ..[0] = ux
-              ..[1] = uy
-              ..[4] = vx
-              ..[5] = vy
-              ..[10] = 1
-              ..[12] = ix
-              ..[13] = iy
-              ..[15] = 1,
+      switch (sampling) {
+        case _IconSampling.onGround:
+          canvas
+            ..save()
+            ..transform(
+              Float64List(16)
+                ..[0] = ux
+                ..[1] = uy
+                ..[4] = vx
+                ..[5] = vy
+                ..[10] = 1
+                ..[12] = ix
+                ..[13] = iy
+                ..[15] = 1,
+            );
+          for (final (from, to) in pieces) {
+            canvas.drawImageRect(sheet.image, from, to, _imagePaint);
+          }
+          canvas.restore();
+        case _IconSampling.nearest:
+          _imagePaint.filterQuality = ui.FilterQuality.none;
+          for (final (from, to) in pieces) {
+            final (snappedFrom, snappedTo) = _toPixelCentres(
+              from,
+              to.translate(ix, iy),
+              _view.devicePixelRatio,
+            );
+            if (snappedTo.isEmpty) continue;
+            canvas.drawImageRect(
+              sheet.image,
+              snappedFrom,
+              snappedTo,
+              _imagePaint,
+            );
+          }
+          _imagePaint.filterQuality = ui.FilterQuality.medium;
+        case _IconSampling.texelForPixel:
+          _drawPieces(canvas, sheet, pieces, px, py);
+        case _IconSampling.snapped:
+          _drawPieces(
+            canvas,
+            sheet,
+            pieces,
+            _view.onPixel(ix),
+            _view.onPixel(iy),
           );
-        for (final (from, to) in pieces) {
-          canvas.drawImageRect(sheet.image, from, to, _imagePaint);
-        }
-        canvas.restore();
-      } else if (nearest && !texelForPixel) {
-        _imagePaint.filterQuality = ui.FilterQuality.none;
-        for (final (from, to) in pieces) {
-          final (snappedFrom, snappedTo) = _toPixelCentres(
-            from,
-            to.translate(ix, iy),
-            devicePixelRatio,
-          );
-          if (snappedTo.isEmpty) continue;
-          canvas.drawImageRect(
-            sheet.image,
-            snappedFrom,
-            snappedTo,
-            _imagePaint,
-          );
-        }
-        _imagePaint.filterQuality = ui.FilterQuality.medium;
-      } else if (texelForPixel) {
-        // MapLibre samples an unscaled icon nearest, which puts its corner
-        // on the device pixel at or below the half.
-        final x = ((ix + to0.left) * devicePixelRatio - 0.5).ceilToDouble();
-        final y = ((iy + to0.top) * devicePixelRatio - 0.5).ceilToDouble();
-        canvas.drawImageRect(
-          sheet.image,
-          from0,
-          ui.Rect.fromLTWH(
-            x / devicePixelRatio,
-            y / devicePixelRatio,
-            to0.width,
-            to0.height,
-          ),
-          _imagePaint,
-        );
-      } else if (turn == 0 && _style.rules.snapIcons && still) {
-        final dx = _view.onPixel(ix);
-        final dy = _view.onPixel(iy);
-        for (final (from, to) in pieces) {
-          canvas.drawImageRect(
-            sheet.image,
-            from,
-            to.translate(dx, dy),
-            _imagePaint,
-          );
-        }
-      } else {
-        canvas
-          ..save()
-          ..translate(ix, iy)
-          ..rotate(turn);
-        for (final (from, to) in pieces) {
-          canvas.drawImageRect(sheet.image, from, to, _imagePaint);
-        }
-        canvas.restore();
+        case _IconSampling.linear:
+          canvas
+            ..save()
+            ..translate(ix, iy)
+            ..rotate(turn);
+          for (final (from, to) in pieces) {
+            canvas.drawImageRect(sheet.image, from, to, _imagePaint);
+          }
+          canvas.restore();
       }
     }
     _imagePaint.colorFilter = null;
   }
+
+  /// How [st]'s icon, turned by [turn] and drawn as [pieces], meets the
+  /// screen's pixels, as MapLibre samples it: nearest at its own size and
+  /// density while upright and not zooming, between texels otherwise.
+  _IconSampling _sampling(
+    LabelState st,
+    SpriteImage icon,
+    SymbolLayer? symbol,
+    double turn,
+    List<(ui.Rect, ui.Rect)> pieces,
+  ) {
+    if (st.iconOnGround) return _IconSampling.onGround;
+    final LabelView(:devicePixelRatio, :still, :moving) = _view;
+    if (!still || turn != 0) return _IconSampling.linear;
+    final crisp =
+        !icon.sdf &&
+        _view.tilted.pitch == 0 &&
+        !(symbol?.iconSizeByFeature ?? false);
+    final (from, to) = pieces.first;
+    if (crisp &&
+        pieces.length == 1 &&
+        to.width * devicePixelRatio == from.width &&
+        to.height * devicePixelRatio == from.height) {
+      return _IconSampling.texelForPixel;
+    }
+    if (crisp &&
+        !moving &&
+        st.iconScale == 1 &&
+        icon.pixelRatio == devicePixelRatio) {
+      return _IconSampling.nearest;
+    }
+    return _style.rules.snapIcons
+        ? _IconSampling.snapped
+        : _IconSampling.linear;
+  }
+
+  void _drawPieces(
+    ui.Canvas canvas,
+    SpriteSheet sheet,
+    List<(ui.Rect, ui.Rect)> pieces,
+    double dx,
+    double dy,
+  ) {
+    for (final (from, to) in pieces) {
+      canvas.drawImageRect(
+        sheet.image,
+        from,
+        to.translate(dx, dy),
+        _imagePaint,
+      );
+    }
+  }
+
+  /// [at] moved to the device pixel at or below its half.
+  double _pixelAtOrBelowHalf(double at) =>
+      (at * _view.devicePixelRatio - 0.5).ceilToDouble() /
+      _view.devicePixelRatio;
 
   /// [to] cut to the device pixels whose centres it covers, as GL fills a
   /// quad, with [from] cut to match: sampled nearest, each pixel shows the
@@ -475,4 +504,30 @@ class LabelPainter {
     }
     canvas.restore();
   }
+}
+
+/// How an icon's texels meet the screen's pixels, for the canvas and the
+/// GPU alike.
+enum _IconSampling {
+  /// Lying on the map: between texels, wherever it lands.
+  onGround,
+
+  /// Unscaled and upright: a texel a device pixel, its corner on one.
+  texelForPixel(onTexels: true),
+
+  /// Upright at its own density, its pieces stretched: nearest, each
+  /// device pixel showing the texel under its centre.
+  nearest(onTexels: true),
+
+  /// Upright and still under vmap's own rules: between texels, and on
+  /// the canvas its origin on a device pixel.
+  snapped,
+
+  /// Turned, tilted, scaled or moving: between texels.
+  linear;
+
+  const _IconSampling({this.onTexels = false});
+
+  /// Whether a pixel shows one texel, not a blend of those around it.
+  final bool onTexels;
 }

@@ -3,9 +3,11 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import '../../platform.dart';
+import 'font_fields.dart';
 import 'glyph_layout.dart';
 import 'glyph_pbf.dart';
 import 'glyph_raster.dart';
+import 'glyph_worker.dart';
 
 /// Where one glyph sits in a page, in the page image's pixels, and where
 /// its cell starts relative to the glyph's origin on the baseline.
@@ -156,6 +158,10 @@ class GlyphPages {
   /// Moves on whenever a cell handed out may have gone stale: a page was
   /// dropped, glyphs arrived, or a page was packed into one image.
   int generation = 0;
+
+  /// The fonts' glyphs as distance fields, for a renderer that draws text
+  /// from them.
+  late final FieldGlyphs fields = FieldGlyphs(_worker, _landed);
 
   void _landed() => generation++;
 
@@ -376,6 +382,7 @@ class GlyphPages {
     }
     _pages.clear();
     _lookedUp = null;
+    fields.dispose();
     _worker.dispose();
   }
 }

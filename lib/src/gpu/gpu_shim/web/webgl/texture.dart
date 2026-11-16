@@ -102,6 +102,9 @@ bool _isDepthOrStencilFormat(PixelFormat format) {
 }
 
 final class WebGlTexture extends Texture {
+  /// Whether this is a frame, as [PageHost.showsOnce] says.
+  bool _showsOnce = false;
+
   WebGlTexture._initialize(
     this._gpuContext,
     this.storageMode,

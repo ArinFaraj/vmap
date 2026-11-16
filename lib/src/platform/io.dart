@@ -102,6 +102,9 @@ Future<Uint8List> gunzip(Uint8List bytes) async =>
 /// Labels are drawn into images once and the images drawn every frame.
 const bool directLabels = false;
 
+/// Shader programs compile where they are drawn with.
+const bool rasterizesOnOwnThread = false;
+
 /// The image to make a shader of.
 ui.Image forShader(ui.Image image) => image;
 

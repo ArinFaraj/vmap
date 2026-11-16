@@ -101,6 +101,7 @@ final class WebGlDeviceBuffer extends DeviceBuffer {
   void _release() {
     if (!_valid) return;
     _valid = false;
+    _gpuContext._leavePass();
     for (final buffer in [_glElementBuffer, _glOtherBuffer]) {
       if (buffer != null) _gpuContext._state.deleteBuffer(buffer);
     }

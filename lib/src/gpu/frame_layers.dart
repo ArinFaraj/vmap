@@ -3,45 +3,78 @@ import 'dart:ui' as ui;
 import '../style/style_model.dart' show StyleRun;
 import 'gpu_map_pass.dart';
 import 'gpu_shim/gpu.dart' as gpu;
+import 'pass_target.dart';
 
 /// A heatmap run's points added up in [density], to be coloured with the
 /// gradient in ramp row [row] at [opacity].
 typedef Heat = ({gpu.Texture density, double row, double opacity});
 
 /// A texture a frame draws into and the image the canvas shows it by.
-typedef FrameImage = (gpu.Texture, ui.Image);
+typedef FrameTexture = ({PassTarget target, ui.Image image});
+
+/// A pass begun on a frame's texture and the commands it is recorded in.
+typedef OpenPass = ({MapPass pass, gpu.CommandBuffer commands});
+
+/// The textures of one frame, handed out in the order its images begin.
+abstract interface class FrameTextures {
+  /// The texture of the frame's first image, the map's.
+  FrameTexture get map;
+
+  /// The next texture for an image the canvas shows.
+  FrameTexture nextShown();
+
+  /// The next texture for an image a pass of the frame reads.
+  PassTarget nextFed();
+}
+
+/// One image of a frame: its texture, the pass that draws it, and how the
+/// canvas lays it down.
+class FrameImage {
+  FrameImage(FrameTexture texture, OpenPass open, {this.opacity = 1})
+    : texture = texture.target.texture,
+      image = texture.image,
+      pass = open.pass,
+      commands = open.commands;
+
+  final gpu.Texture texture;
+
+  /// What the canvas shows [texture] by: on the web a copy, taken when the
+  /// image is first laid down.
+  ui.Image image;
+  bool copied = false;
+
+  final double opacity;
+  final MapPass pass;
+  final gpu.CommandBuffer commands;
+
+  /// The commands of the images [pass] reads, which the GPU runs before
+  /// [commands].
+  final List<gpu.CommandBuffer> before = [];
+}
 
 /// The images one frame's layers are drawn into, in the style's order. A
 /// layer drawn whole at an opacity goes into an image of its own and what
 /// is above it into another, so the canvas lays them over each other in
 /// order.
 class FrameLayers {
-  FrameLayers(FrameImage first, {required this._passOn, required this._next}) {
-    final (texture, image) = first;
-    shown.add((image, 1));
-    textures.add(texture);
-    pass = _passOn(texture);
+  FrameLayers(this._textures, {required this._passOn}) {
+    images.add(FrameImage(_textures.map, _passOn(_textures.map.target)));
   }
 
-  final MapPass Function(gpu.Texture target, {bool keeps}) _passOn;
+  final FrameTextures _textures;
+  final OpenPass Function(PassTarget target) _passOn;
 
   /// Whether an image drawn whole is laid over the one below on the GPU,
   /// at its opacity, rather than handed over as an image of its own: one
   /// image a frame where the canvas or a page lays fewer over each other.
-  /// Not over raised ground or with multisampling, whose depth and samples
-  /// a pass that goes on drawing would lose.
   bool composites = false;
-  final FrameImage Function() _next;
   void Function(MapPass pass)? _setUp;
 
+  /// The images the canvas lays over each other, in order.
+  final List<FrameImage> images = [];
+
   /// The pass runs are drawn into now.
-  late MapPass pass;
-
-  /// The images the canvas lays over each other, each at its opacity.
-  final List<(ui.Image, double)> shown = [];
-
-  /// The texture behind each of [shown].
-  final List<gpu.Texture> textures = [];
+  MapPass get pass => images.last.pass;
 
   /// Where a background or raster run comes between the images: the index
   /// in the style's runs of each part's first vector run and its first
@@ -56,18 +89,14 @@ class FrameLayers {
     setUp(pass);
   }
 
-  MapPass _open(gpu.Texture target, {bool keeps = false}) {
-    final pass = _passOn(target, keeps: keeps);
-    _setUp?.call(pass);
-    return pass;
+  OpenPass _open(PassTarget target) {
+    final open = _passOn(target);
+    _setUp?.call(open.pass);
+    return open;
   }
 
-  void _openNext() {
-    final (texture, image) = _next();
-    pass = _open(texture);
-    shown.add((image, 1));
-    textures.add(texture);
-  }
+  void _show(FrameTexture texture, {double opacity = 1}) =>
+      images.add(FrameImage(texture, _open(texture.target), opacity: opacity));
 
   /// Queues [run], or with a [whole] opacity draws it [apart].
   void add(StyleRun run, double? whole) {
@@ -87,7 +116,7 @@ class FrameLayers {
   /// Ends the image being drawn: what comes next goes into a new one.
   void split() {
     flush();
-    _openNext();
+    _show(_textures.nextShown());
   }
 
   /// Draws [draw] whole at [opacity]: into the image below when opaque,
@@ -99,20 +128,17 @@ class FrameLayers {
       draw(pass);
       return;
     }
-    final (alone, aloneImage) = _next();
-    draw(_open(alone));
     if (composites) {
-      pass = _open(textures.last, keeps: true)..composite(alone, opacity);
+      final fed = _textures.nextFed();
+      final open = _open(fed);
+      draw(open.pass);
+      images.last.before.add(open.commands);
+      pass.composite(fed.texture, opacity);
       return;
     }
-    final (above, aboveImage) = _next();
-    pass = _open(above);
-    shown
-      ..add((aloneImage, opacity))
-      ..add((aboveImage, 1));
-    textures
-      ..add(alone)
-      ..add(above);
+    _show(_textures.nextShown(), opacity: opacity);
+    draw(pass);
+    _show(_textures.nextShown());
   }
 
   /// Draws [draw] into the image below, which draws at [opacity] itself.

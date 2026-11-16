@@ -170,6 +170,16 @@ sealed class RasterDrawing<L extends RasterLayer> {
   /// The tiles the last [paint] laid down.
   final List<RasterPiece> drawn = [];
 
+  /// The layer's opacity at the zoom and state of [context], 0 outside its
+  /// zoom range.
+  double _opacity(EvalContext context) =>
+      context.zoom < layer.minZoom || context.zoom >= layer.maxZoom
+      ? 0.0
+      : (asNumber(layer.opacity(context)) ?? 1).clamp(0.0, 1.0);
+
+  /// Whether the layer shows at the zoom and state of [context].
+  bool shows(EvalContext context) => _opacity(context) > 0;
+
   /// Draws the layer for the view. [zoom] is the slippy-map zoom, [origin]
   /// the world pixel at the canvas origin, and [view] what a tilted screen
   /// shows. With [drape], a tiled layer only gathers its tiles into
@@ -184,10 +194,7 @@ sealed class RasterDrawing<L extends RasterLayer> {
     bool drape = false,
   }) {
     drawn.clear();
-    final styleZoom = context.zoom;
-    final opacity = styleZoom < layer.minZoom || styleZoom >= layer.maxZoom
-        ? 0.0
-        : (asNumber(layer.opacity(context)) ?? 1).clamp(0.0, 1.0);
+    final opacity = _opacity(context);
     if (opacity <= 0) return hidden();
     layerPaint.color = ui.Color.fromRGBO(255, 255, 255, opacity);
     draw(canvas, context, zoom, origin, size, view, drape: drape);
