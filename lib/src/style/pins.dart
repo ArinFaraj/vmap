@@ -1,6 +1,6 @@
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart' show Icons;
+import 'package:material_ui/material_ui.dart' show Icons;
 import 'package:flutter/widgets.dart' show IconData;
 
 /// A round pin: an icon in white on a coloured disc.
