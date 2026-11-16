@@ -501,18 +501,18 @@ It lives in this repository and is not on pub.dev yet.
 
 | Platform | Draws with | Seen running on |
 | --- | --- | --- |
-| Android 10 and newer | Impeller on Vulkan, or OpenGL ES where Vulkan is missing | one phone and the emulator |
+| Android 10 and newer | Impeller on Vulkan, or OpenGL ES where Vulkan is missing | a phone on each, and the emulator |
 | iOS | Impeller on Metal | the simulator |
 | macOS | Impeller on Metal | a Mac, where most of vmap is developed |
 | Windows, Linux | Impeller | built by CI, not run yet |
-| Web | WebGL2 | Chrome and Safari |
+| Web | WebGL2 | Chrome and Safari, and Firefox and WebKit headless |
 
 vmap draws with [Flutter GPU](https://github.com/flutter/flutter/blob/main/docs/engine/impeller/Flutter-GPU.md),
 which Flutter still marks as a preview. Where it does not run (Android 9 and
 older, Android devices with a Vivante GPU, a browser without WebGL2,
 `flutter test`) the map is drawn with Flutter's canvas instead: tilted, with
-flat buildings, and without terrain or the globe. A real iPhone, Windows,
-Linux and Firefox have not been tried yet. [doc/platform-support.md](doc/platform-support.md) has the details and
+flat buildings, and without terrain or the globe. A real iPhone, Windows
+and Linux have not been tried yet. [doc/platform-support.md](doc/platform-support.md) has the details and
 their sources.
 
 ## How it is tested
