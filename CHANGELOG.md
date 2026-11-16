@@ -1,3 +1,70 @@
+## 0.30.0
+
+- The map draws again on Android phones that use Vulkan. On Flutter 3.50
+  such a phone showed labels and icons over an empty map, with no land,
+  roads or buildings, in 0.27.0 through 0.29.3: seen on a vivo V2514, the
+  one Vulkan phone tried. Flutter's Vulkan backend there begins every pass
+  on a texture as the first pass made for it, so the second pass vmap
+  opened on a frame for its text cleared the map under it. Text and
+  see-through layers are now drawn inside the map's own pass, which is one
+  pass fewer a frame on every platform, and each texture is drawn in one
+  pass a frame, always of the same shape.
+- The numbers in road shields show on Android phones that draw with
+  OpenGL ES. The glyph atlas was a one-channel red texture, which draws
+  nothing there (seen on a OnePlus 8 Pro, Adreno 650). Off the web it is
+  an alpha texture now.
+- A tile's geometry is kept once, on the GPU, where a second copy stayed
+  in Dart memory. Over the bench's tour, peak memory went from 646 to 658
+  MB down to 475 to 486 MB on the vivo, and from 673 to 725 MB down to 518
+  to 523 MB on the OnePlus, with frame times and dropped frames unchanged.
+  The example app at rest on a Mac went from 411 MB to 304 MB. The GPU
+  heap holds up to 256 MB where it held 96, so `maxCachedTiles` is what
+  decides which tiles stay. A tile trimmed from the heap, or dropped when
+  the system asks for memory, is fetched again when it comes back into
+  view.
+- In Chrome the map's frames go straight to the page. A frame is drawn in
+  the WebGL canvas itself and handed over with no copy, where each one
+  crossed Flutter's renderer as a full-screen image that piled up until
+  the garbage collector ran. A pass's calls are recorded and sent when it
+  ends, so its uniforms go up in one upload: 11 a frame in a tilted Erbil
+  where there were 150. Measured in headless Chrome on an M4 Pro Mac with
+  the Liberty style: page memory at 60 frames a second went from 1,030 to
+  1,186 MB down to 249 MB, where MapLibre GL JS takes 179 MB. With the
+  frame rate uncapped, a tilted Erbil went from 74 to 89 frames a second
+  up to 149 to 172, a flight from 75 to 86 up to 199 to 203, Manhattan
+  from 82 to 87 up to 112 to 135, and the globe from 151 to 163 up to 173
+  to 192. MapLibre GL JS reaches 228 to 295, 359 to 367, 165 to 169 and
+  497 to 499 there, so it is still ahead with the cap off.
+- A map that draws something of its own on Flutter's canvas (a raster
+  layer that shows, a patterned background, pins) is still shown through
+  the canvas in Chrome, whole, so nothing on it trails the rest. A map
+  under widget markers holds each frame until the canvas drawn with it
+  lands, so the markers stay on the map: within 0.4 pixels while it moves,
+  measured in Chrome, Firefox and WebKit.
+- Firefox runs the map at close to the screen's rate. Taking each frame
+  out of the canvas as a bitmap cost Firefox 6 to 26 ms a frame, so in
+  Firefox and Safari the canvas is now an element of the page and a
+  finished frame is left in it. On a 120 Hz screen Firefox drew 22 to 52
+  frames a second with 0.29.3 and draws 81 to 120 now, on a busy machine,
+  where MapLibre GL JS draws 117 to 120. A page with more than one map
+  there shows them as bitmaps, as before.
+- In Firefox and Safari a place's biggest label could be missing, with
+  smaller names in its spot: the name over Erbil's citadel was. They run
+  Flutter's JavaScript build, where the bit shift that read a label's
+  rank kept 32 bits and high ranks wrapped around. The rank is a field of
+  its own now.
+- Text shaped from a font, as Kurdish and Arabic names are, is drawn on
+  the GPU from distance fields like the text from a style's glyph ranges,
+  the fields made in the worker. No label text goes through Flutter's
+  canvas on the GPU renderer.
+- An unscaled upright icon is sampled texel for pixel, its corner on the
+  device pixel at or below the half, as MapLibre samples it nearest. Seven
+  of MapLibre's icon render tests that failed pass.
+- On the web, where Flutter draws on a thread of its own, the sky and
+  atmosphere shaders are compiled 400 ms in and tried again when a compile
+  fails: Flutter's renderer can trap when a shader is compiled while it
+  compiles its own.
+
 ## 0.29.3
 
 - On the GPU renderer, joined letters of Arabic, Kurdish and other
