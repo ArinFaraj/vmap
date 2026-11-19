@@ -14,7 +14,7 @@ WebGL2, and Flutter's test runner.
 
 | Platform | Flutter's renderer | Flutter GPU | The map draws with | Run so far |
 |---|---|---|---|---|
-| iOS | Impeller, the only one | yes, `FLTEnableFlutterGPU` in `Info.plist` | GPU | the simulator |
+| iOS | Impeller, the only one | yes, `FLTEnableFlutterGPU` in `Info.plist` | GPU | an iPhone 13 Pro on iOS 27.2 (flat, 3D, Liberty and Dark, 120 frames a second), the simulator |
 | Android 10+ with Vulkan 1.1 | Impeller on Vulkan | yes, `io.flutter.embedding.android.EnableFlutterGPU` in the manifest | GPU | two phones (a vivo V2514 on 3.50, flat, 3D and terrain), the emulator |
 | Android 10+ without usable Vulkan | Impeller on OpenGL ES | yes, the same flag | GPU, on OpenGL ES | a OnePlus 8 Pro, flat and 3D; the emulator, flat and 3D with terrain |
 | Android 9 and older | Skia on OpenGL ES, unless forced (below) | no, unless forced | canvas | not yet |
@@ -84,7 +84,7 @@ a Mac, in a browser or in the emulator.
   (see the roadmap). OpenGL ES 2.0 hardware may lack what the renderer
   leans on: 32 bit index buffers, depth and stencil formats,
   multisampling.
-- A real iPhone, Windows and Linux.
+- Windows and Linux.
 - Firefox and Safari on a screen at release versions, an iPhone's Safari,
   and Edge. Firefox and WebKit were run headless, through Playwright.
 - Whether `flutter test` can run Flutter GPU. Until it can, map screens in
