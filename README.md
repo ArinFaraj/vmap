@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>Maps for Flutter, drawn on the GPU.</b><br>
-  Any MapLibre style, 3D buildings, terrain and the globe.<br>
+  MapLibre styles, 3D buildings, terrain and the globe.<br>
   Android, iOS, macOS, Windows, Linux and the web.
 </p>
 
@@ -36,7 +36,7 @@
 
 ---
 
-- **Any MapLibre style.** vmap passes 1,394 of the 1,519 MapLibre render
+- **MapLibre styles.** vmap passes 1,394 of the 1,519 MapLibre render
   tests that apply to it, and draws real styles within a few percent of
   MapLibre GL JS.
 - **3D.** Buildings with depth that stand to the far edge of a tilted view,
@@ -502,7 +502,7 @@ It lives in this repository and is not on pub.dev yet.
 | Platform | Draws with | Seen running on |
 | --- | --- | --- |
 | Android 10 and newer | Impeller on Vulkan, or OpenGL ES where Vulkan is missing | a phone on each, and the emulator |
-| iOS | Impeller on Metal | the simulator |
+| iOS | Impeller on Metal | an iPhone 13 Pro, and the simulator |
 | macOS | Impeller on Metal | a Mac, where most of vmap is developed |
 | Windows, Linux | Impeller | built by CI, not run yet |
 | Web | WebGL2 | Chrome and Safari, and Firefox and WebKit headless |
@@ -511,8 +511,8 @@ vmap draws with [Flutter GPU](https://github.com/flutter/flutter/blob/main/docs/
 which Flutter still marks as a preview. Where it does not run (Android 9 and
 older, Android devices with a Vivante GPU, a browser without WebGL2,
 `flutter test`) the map is drawn with Flutter's canvas instead: tilted, with
-flat buildings, and without terrain or the globe. A real iPhone, Windows
-and Linux have not been tried yet. [doc/platform-support.md](doc/platform-support.md) has the details and
+flat buildings, and without terrain or the globe. Windows and Linux have
+not been run yet. [doc/platform-support.md](doc/platform-support.md) has the details and
 their sources.
 
 ## How it is tested

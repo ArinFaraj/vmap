@@ -14,45 +14,18 @@ What the API looks like and what should change before release:
 
 ## Status
 
-- **Done, 2026-10-21:** steps 1 to 5 and 7 below, and the fixes from
-  [doc/review.md](doc/review.md), whose last table gives each finding's
-  state. vmap is 0.27.0 on the `engine` branch, unpublished.
-- **Done, 2026-10-22 and 23:** the web made fast (uniform blocks, shared
-  fetches, earlier loading), gestures matching MapLibre GL JS, vmap's own
-  OpenType shaper in place of payv, and the release pass: `vmap:setup`,
-  `onFeatureTap`, content comparison of styles and overlays, no refresh
-  rate requests, all six platforms in the pubspec, the README rewritten.
-- **Done, 2026-10-25:** the third review's fixes (no part files left,
-  `GpuMap` split into `FrameLayers` and `GpuFrames`, `canBuild` for
-  renderer switches), labels kept while the map turns, and the example
-  run on the iOS simulator (Metal), in Safari (WebAssembly) and on the
-  Android emulator on Impeller's OpenGL ES backend, flat and in 3D with
-  terrain. That run found and fixed a crash on Android's first frame.
-- **Done, 2026-10-26:** the web profiled and sped up in Chrome and Safari
-  (see the 0.27.0 changelog's web section), and the freezes zooming fast
-  fixed.
-- **Publishing 0.27.0, 2026-10-26**, on Arin's yes, with step 6 still open
-  for a real iPhone, Windows, Linux and Firefox: those come in 0.2's run on
-  real devices.
-- **Profiled, 2026-11-10:** 0.28.0's tour in Chrome runs at 60 to 100
-  frames a second on a 120 Hz Mac and 34 to 65 in flights. The cause is
-  work repeated every frame, labels first. The plan, in order, with
-  targets: [doc/performance-plan.md](doc/performance-plan.md).
-- **Started, 2026-11-10:** from that plan, far buildings (step 4), road
-  names kept on the GPU (part of step 1), a frame's tile uniforms sent
-  together and the WebGL layer's lookups made cheap (part of step 2), and
-  the timeline switch and a bench harness in `bench/web/compare.html`
-  (part of step 0). The plan's "Done so far" section has the numbers and
-  what is left.
-- **Done, 2026-11-10:** the README designed again around six pictures the
-  engine draws itself (`tool/readme_shots.sh`), with what each platform has
-  been seen running on and how the engine is tested, and
-  [doc/style-support.md](doc/style-support.md) brought up to the GPU
-  engine.
-- Work happens on the `main` branch of `ArinFaraj/vmap`. The `engine`
-  branch stands at the same commit as `main` as of 0.28.0.
-
-Keep this section current: update it whenever a step starts or finishes.
+- **0.30.0 is on pub.dev** (2026-11-16). It runs on Android phones on
+  Vulkan and on OpenGL ES, an iPhone, a Mac, and in Chrome, Safari and
+  Firefox. Windows and Linux are built by CI but not run yet.
+- **Speed.** At the screen's rate it holds 60 frames a second in Chrome and
+  about 120 on the phones and the iPhone tried. With the frame rate uncapped,
+  MapLibre GL JS is still ahead in Chrome; the numbers are in the
+  [changelog](CHANGELOG.md) and [doc/performance-plan.md](doc/performance-plan.md).
+- **Next:** Windows and Linux on real machines, then 0.2 below.
+- Work happens on the `main` branch of `ArinFaraj/vmap`. The history of
+  each step is in the [changelog](CHANGELOG.md), and the first review of
+  the package, with what came of each finding, in
+  [doc/review.md](doc/review.md).
 
 ## Decided
 
@@ -119,11 +92,12 @@ To do before publishing:
    until it is published after vmap.
 5. Done: CI checks every push, builds the example for the web, Android,
    iOS, Linux and Windows, and runs MapLibre's render tests on the GPU.
-6. Run it on an iPhone, a Windows PC, a Linux PC, Safari and Firefox, and fix
-   what breaks.
+6. Partly done: an iPhone, Safari and Firefox run it. Windows and Linux are
+   left.
 7. Done: the README is written around the engine, with the platform table
    and a guide for moving from 0.26.
-8. Publish vmap, then vmap_flutter_map.
+8. Done for vmap: the engine is on pub.dev since 0.27.0. vmap_flutter_map is
+   next.
 
 ## 0.2: steady on real devices
 
