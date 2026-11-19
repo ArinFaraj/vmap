@@ -39,6 +39,26 @@ void main() {
     expect(shaped.width, lessThanOrEqualTo(8.5));
   });
 
+  test('a wrapped line keeps the direction of its right to left name', () {
+    double glyphOf(String c) => layoutText(fonts, c)!.glyphs[1];
+    for (final mapLibreBreaks in [false, true]) {
+      final shaped = layoutText(
+        fonts,
+        'گەراج (Khoshnaw Parking)',
+        maxWidth: 8,
+        mapLibreBreaks: mapLibreBreaks,
+      )!;
+      expect(shaped.lines, 2);
+      final last = [
+        for (var g = 0; g < shaped.count; g++)
+          if (shaped.glyphs[g * 5 + 3] == shaped.glyphs[shaped.count * 5 - 2])
+            (shaped.glyphs[g * 5 + 2], shaped.glyphs[g * 5 + 1]),
+      ]..sort((a, b) => a.$1.compareTo(b.$1));
+      expect(last.first.$2, glyphOf('('), reason: '$mapLibreBreaks');
+      expect(last.last.$2, glyphOf('g'), reason: '$mapLibreBreaks');
+    }
+  });
+
   test('a newline in a name starts a new line, and a road joins them', () {
     expect(layoutText(fonts, 'Erbil\nهەولێر', maxWidth: 9)!.lines, 2);
     expect(layoutText(fonts, 'Erbil\nهەولێر', singleLine: true)!.lines, 1);
