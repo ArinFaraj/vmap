@@ -147,17 +147,23 @@ class ShapedText {
 bool _space(int c) => c == 0x20 || c == 0xA0 || c == 0x3000;
 
 /// One line's glyphs, its width in ems, or null when no font has them all.
+/// The line is ordered as a line of [paragraph] when given, else as a
+/// paragraph of its own.
 (List<double>, double)? _shapeLine(
   GlyphFonts fonts,
   List<int> scalars,
   int weight,
   double letterSpacing,
-  List<int> order,
-) {
+  List<int> order, {
+  _Line? paragraph,
+}) {
   final out = <double>[];
   var pen = 0.0;
   if (scalars.isEmpty) return (out, 0.0);
-  for (final run in Bidi.resolve(scalars).visualRuns) {
+  final runs = paragraph == null
+      ? Bidi.resolve(scalars).visualRuns
+      : lineRuns(scalars, paragraph.levels, paragraph.level);
+  for (final run in runs) {
     final sub = scalars.sublist(run.start, run.end);
     final rtl = run.rightToLeft;
     final pieces = scriptRuns(sub);
@@ -197,26 +203,44 @@ bool _space(int c) => c == 0x20 || c == 0xA0 || c == 0x3000;
 /// Splits [scalars] into lines no wider than [maxWidth] ems where it can,
 /// breaking at spaces, with the lines evened out the way MapLibre does
 /// rather than filled greedily.
-List<List<int>> _breakLines(
+List<_Line> _breakLines(
   GlyphFonts fonts,
-  List<int> scalars,
+  _Line paragraph,
   int weight,
   double letterSpacing,
   double maxWidth,
   List<int> order,
 ) {
+  final scalars = paragraph.codes;
   final words = <List<int>>[];
+  final starts = <int>[];
   var current = <int>[];
-  for (final c in scalars) {
-    if (_space(c)) {
+  for (var i = 0; i < scalars.length; i++) {
+    if (_space(scalars[i])) {
       if (current.isNotEmpty) words.add(current);
       current = <int>[];
     } else {
-      current.add(c);
+      if (current.isEmpty) starts.add(i);
+      current.add(scalars[i]);
     }
   }
   if (current.isNotEmpty) words.add(current);
-  if (words.length < 2) return [scalars];
+  if (words.length < 2) return [paragraph];
+  _Line join(int from, int to) {
+    final codes = <int>[], levels = <int>[];
+    for (var w = from; w < to; w++) {
+      if (w > from) {
+        codes.add(0x20);
+        levels.add(paragraph.levels[starts[w] - 1]);
+      }
+      codes.addAll(words[w]);
+      levels.addAll(
+        paragraph.levels.sublist(starts[w], starts[w] + words[w].length),
+      );
+    }
+    return (codes: codes, levels: levels, level: paragraph.level);
+  }
+
   final space =
       _shapeLine(fonts, const [0x20], weight, letterSpacing, order)?.$2 ?? 0.25;
   final widths = [
@@ -225,27 +249,25 @@ List<List<int>> _breakLines(
   ];
   final total =
       widths.fold<double>(0, (a, b) => a + b) + space * (words.length - 1);
-  if (total <= maxWidth) return [scalars];
+  if (total <= maxWidth) return [paragraph];
   final count = (total / maxWidth).ceil();
   final target = total / count;
-  final lines = <List<int>>[];
-  var line = <int>[];
+  final lines = <_Line>[];
+  var first = 0;
   var width = 0.0;
   for (var i = 0; i < words.length; i++) {
-    final add = (line.isEmpty ? 0 : space) + widths[i];
-    if (line.isNotEmpty &&
+    final add = (i == first ? 0 : space) + widths[i];
+    if (i > first &&
         width + add > target &&
         (width + add - target) > (target - width) &&
         lines.length < count - 1) {
-      lines.add(line);
-      line = <int>[];
+      lines.add(join(first, i));
+      first = i;
       width = 0;
     }
-    if (line.isNotEmpty) line.add(0x20);
-    line.addAll(words[i]);
-    width += (line.length == words[i].length ? 0 : space) + widths[i];
+    width += (i == first ? 0 : space) + widths[i];
   }
-  if (line.isNotEmpty) lines.add(line);
+  lines.add(join(first, words.length));
   return lines;
 }
 
@@ -288,16 +310,20 @@ ShapedText? layoutText(
       baseline,
     );
   }
-  final lines = <List<int>>[];
+  final lines = <_Line>[];
   var paragraph = <int>[];
   void endParagraph() {
-    if (singleLine || maxWidth.isInfinite) {
-      lines.add(paragraph);
-    } else {
-      lines.addAll(
-        _breakLines(fonts, paragraph, weight, letterSpacing, maxWidth, order),
-      );
-    }
+    final bidi = Bidi.resolve(paragraph);
+    final whole = (
+      codes: paragraph,
+      levels: bidi.levels,
+      level: paragraph.isEmpty ? 0 : bidi.paragraphLevel,
+    );
+    lines.addAll(
+      singleLine || maxWidth.isInfinite
+          ? [whole]
+          : _breakLines(fonts, whole, weight, letterSpacing, maxWidth, order),
+    );
     paragraph = <int>[];
   }
 
@@ -330,11 +356,15 @@ ShapedText? layoutText(
 /// line's y and measure its top from 26 units above the baseline.
 const _rangeBaseline = (26 - 17) / 24;
 
+/// A line's code points, the levels its paragraph resolved for them, and
+/// that paragraph's embedding level.
+typedef _Line = ({List<int> codes, List<int> levels, int level});
+
 /// [text] broken into lines as MapLibre breaks a label drawn from glyph
 /// ranges, the whole text weighed at once, its newlines among the breaks:
 /// each code [advance] ems wide with its letter spacing, or as wide as the
 /// fonts set it alone.
-List<List<int>> _mapLibreLines(
+List<_Line> _mapLibreLines(
   GlyphFonts fonts,
   String text,
   int weight,
@@ -354,20 +384,27 @@ List<List<int>> _mapLibreLines(
     maxWidth,
     spacing: letterSpacing,
   );
-  final lines = <List<int>>[];
+  final bidi = Bidi.resolve(codes);
+  final lines = <_Line>[];
   var from = 0;
   for (final to in breaks) {
-    var line = [
-      for (final c in codes.sublist(from, to))
-        if (c != 0x0A && c != 0x0D) c,
+    var start = from, end = to;
+    bool dropped(int i) => codes[i] == 0x0A || codes[i] == 0x0D;
+    while (start < end && (dropped(start) || _space(codes[start]))) {
+      start++;
+    }
+    while (end > start && (dropped(end - 1) || _space(codes[end - 1]))) {
+      end--;
+    }
+    final kept = [
+      for (var i = start; i < end; i++)
+        if (!dropped(i)) i,
     ];
-    while (line.isNotEmpty && _space(line.first)) {
-      line = line.sublist(1);
-    }
-    while (line.isNotEmpty && _space(line.last)) {
-      line = line.sublist(0, line.length - 1);
-    }
-    lines.add(line);
+    lines.add((
+      codes: [for (final i in kept) codes[i]],
+      levels: [for (final i in kept) bidi.levels[i]],
+      level: paragraphLevelAt(codes, start),
+    ));
     from = to;
   }
   return lines;
@@ -378,7 +415,7 @@ List<List<int>> _mapLibreLines(
 /// and descent centre it.
 ShapedText? _layoutLines(
   GlyphFonts fonts,
-  List<List<int>> lines,
+  List<_Line> lines,
   int weight,
   double letterSpacing,
   double lineHeight,
@@ -388,7 +425,14 @@ ShapedText? _layoutLines(
 ) {
   final shaped = <(List<double>, double)>[];
   for (final line in lines) {
-    final one = _shapeLine(fonts, line, weight, letterSpacing, order);
+    final one = _shapeLine(
+      fonts,
+      line.codes,
+      weight,
+      letterSpacing,
+      order,
+      paragraph: line,
+    );
     if (one == null) return null;
     shaped.add(one);
   }

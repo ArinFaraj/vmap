@@ -101,6 +101,7 @@ ShapedText? layoutRanges(
     maxWidth * em,
     spacing: spacing,
   );
+  final bidi = hasRightToLeft(codes) ? Bidi.resolve(codes) : null;
   final placed = <List<double>>[];
   final scales = <double>[];
   final colors = <int>[];
@@ -140,7 +141,7 @@ ShapedText? layoutRanges(
     if (lineScale != 1 || imageOffset > 0) scaled = true;
     final glyphs = <double>[];
     var x = 0.0;
-    for (final (k, mirror) in _visualIndices(codes.sublist(start, end))) {
+    for (final (k, mirror) in _visualIndices(codes, bidi, start, end)) {
       final i = start + k;
       final c = mirror ? mirrorOf(codes[i]) : codes[i];
       final r = runOf[i];
@@ -376,23 +377,35 @@ List<int> _atParagraphs(List<int> codes, List<int> breaks) {
 bool _paragraphSeparator(int c) =>
     c == 0x1C || c == 0x1D || c == 0x1E || c == 0x85 || c == 0x2029;
 
-/// Where in [codes], one line, each character drawn is, left to right: runs of
-/// right-to-left text reversed by the Unicode bidi algorithm, as MapLibre
-/// orders a line after breaking the text into lines. The characters that
-/// only steer the ordering are dropped, as no font draws them.
-List<(int, bool)> _visualIndices(List<int> codes) {
-  if (!hasRightToLeft(codes)) {
+/// Where in the line of [codes] from [start] to [end] each character drawn
+/// is, left to right, counted from [start]: runs of right-to-left text
+/// reversed by the Unicode bidi algorithm, [bidi] resolved over the whole
+/// text, as MapLibre orders a line after breaking the text into lines. The
+/// characters that only steer the ordering are dropped, as no font draws
+/// them.
+List<(int, bool)> _visualIndices(
+  List<int> codes,
+  Bidi? bidi,
+  int start,
+  int end,
+) {
+  if (bidi == null) {
     return [
-      for (var i = 0; i < codes.length; i++)
-        if (!_bidiControl(codes[i])) (i, false),
+      for (var i = start; i < end; i++)
+        if (!_bidiControl(codes[i])) (i - start, false),
     ];
   }
   final out = <(int, bool)>[];
-  for (final run in Bidi.resolve(codes).visualRuns) {
+  final runs = lineRuns(
+    codes.sublist(start, end),
+    bidi.levels.sublist(start, end),
+    paragraphLevelAt(codes, start),
+  );
+  for (final run in runs) {
     final order = [for (var i = run.start; i < run.end; i++) i];
     final rtl = run.level.isOdd;
     for (final i in rtl ? order.reversed : order) {
-      if (!_bidiControl(codes[i])) out.add((i, rtl));
+      if (!_bidiControl(codes[start + i])) out.add((i, rtl));
     }
   }
   return out;

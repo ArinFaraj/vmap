@@ -62,6 +62,25 @@ void main() {
     expect(runs.first.start, 0);
   });
 
+  test('a line keeps the levels its paragraph resolved', () {
+    final text = 'مكتبة Maktabat al-Iskandar'.runes.toList();
+    final bidi = Bidi.resolve(text);
+    final start = text.indexOf(0x4D), end = text.indexOf(0x2D) + 1;
+    final runs = lineRuns(
+      text.sublist(start, end),
+      bidi.levels.sublist(start, end),
+      paragraphLevelAt(text, start),
+    );
+    expect(runs.map((r) => (r.start, r.end, r.level)), [(0, end - start, 2)]);
+  });
+
+  test('whitespace ending a line goes back to the paragraph level', () {
+    final text = 'مكتبة Maktabat al'.runes.toList();
+    final bidi = Bidi.resolve(text);
+    final runs = lineRuns(text.sublist(6, 15), bidi.levels.sublist(6, 15), 1);
+    expect(runs.map((r) => (r.start, r.end, r.level)), [(8, 9, 1), (0, 8, 2)]);
+  });
+
   test('reads Unicode $unicodeVersion', () {
     expect(bidiClassOf(0x06B5), BidiClass.al);
   });

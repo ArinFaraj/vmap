@@ -59,9 +59,22 @@ class Bidi {
 /// Whether [text] is written right to left: the direction of its first
 /// strong character outside an isolate, as rules P2 and P3 find a
 /// paragraph's.
-bool textIsRightToLeft(String text) {
+bool textIsRightToLeft(String text) => _startsRightToLeft(text.runes);
+
+/// The embedding level, 0 or 1, of the paragraph of [text] that holds the
+/// code point at [at]. Every line broken from a paragraph is ordered at this
+/// level, as ICU's line ordering keeps its paragraph's.
+int paragraphLevelAt(List<int> text, int at) {
+  var start = math.min(at, text.length);
+  while (start > 0 && bidiClassOf(text[start - 1]) != BidiClass.b) {
+    start--;
+  }
+  return _startsRightToLeft(text.skip(start)) ? 1 : 0;
+}
+
+bool _startsRightToLeft(Iterable<int> text) {
   var isolates = 0;
-  for (final c in text.runes) {
+  for (final c in text) {
     switch (bidiClassOf(c)) {
       case BidiClass.lri || BidiClass.rli || BidiClass.fsi:
         isolates++;
@@ -524,32 +537,58 @@ class _Paragraph {
   }
 
   /// Rule L2, by runs of one level.
-  List<BidiRun> visualRuns() {
-    final runs = <BidiRun>[];
-    var from = 0;
-    for (var i = 1; i <= length; i++) {
-      if (i < length && _level(i) == _level(from)) continue;
-      runs.add(BidiRun(start + from, start + i, _level(from)));
-      from = i;
+  List<BidiRun> visualRuns() =>
+      _reorder([for (var i = 0; i < length; i++) _level(i)], start);
+}
+
+/// The runs of one line, left to right as they are drawn: [text] the line's
+/// code points, [levels] the levels its paragraph resolved for them, and
+/// [paragraphLevel] that paragraph's. As ICU orders a line set from a
+/// paragraph, rule L1 sets the whitespace that ends the line back to the
+/// paragraph's level, and rule L2 reverses.
+List<BidiRun> lineRuns(List<int> text, List<int> levels, int paragraphLevel) {
+  final line = List.of(levels);
+  for (var i = text.length - 1; i >= 0; i--) {
+    final c = bidiClassOf(text[i]);
+    if (c != BidiClass.ws &&
+        c != BidiClass.s &&
+        c != BidiClass.b &&
+        c != BidiClass.pdi &&
+        !_isolateInitiator(c) &&
+        !_removed(c)) {
+      break;
     }
-    if (runs.isEmpty) return runs;
-    var highest = 0, lowestOdd = _maxDepth + 2;
-    for (final r in runs) {
-      highest = math.max(highest, r.level);
-      if (r.level.isOdd) lowestOdd = math.min(lowestOdd, r.level);
-    }
-    for (var l = highest; l >= lowestOdd; l--) {
-      for (var i = 0; i < runs.length; i++) {
-        if (runs[i].level < l) continue;
-        var j = i;
-        while (j < runs.length && runs[j].level >= l) {
-          j++;
-        }
-        final reversed = runs.sublist(i, j).reversed.toList();
-        runs.setRange(i, j, reversed);
-        i = j;
-      }
-    }
-    return runs;
+    line[i] = paragraphLevel;
   }
+  return _reorder(line, 0);
+}
+
+/// Rule L2 over [levels], the runs' positions counted from [offset].
+List<BidiRun> _reorder(List<int> levels, int offset) {
+  final runs = <BidiRun>[];
+  var from = 0;
+  for (var i = 1; i <= levels.length; i++) {
+    if (i < levels.length && levels[i] == levels[from]) continue;
+    runs.add(BidiRun(offset + from, offset + i, levels[from]));
+    from = i;
+  }
+  if (runs.isEmpty) return runs;
+  var highest = 0, lowestOdd = _maxDepth + 2;
+  for (final r in runs) {
+    highest = math.max(highest, r.level);
+    if (r.level.isOdd) lowestOdd = math.min(lowestOdd, r.level);
+  }
+  for (var l = highest; l >= lowestOdd; l--) {
+    for (var i = 0; i < runs.length; i++) {
+      if (runs[i].level < l) continue;
+      var j = i;
+      while (j < runs.length && runs[j].level >= l) {
+        j++;
+      }
+      final reversed = runs.sublist(i, j).reversed.toList();
+      runs.setRange(i, j, reversed);
+      i = j;
+    }
+  }
+  return runs;
 }

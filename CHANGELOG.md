@@ -1,3 +1,14 @@
+## 0.30.1
+
+- A right to left name that wraps keeps its direction on every line. Each
+  line was ordered by its own first letter, so a Kurdish or Arabic name
+  with an English part in brackets could end on a line read left to right:
+  "گەراج (Khoshnaw Parking)" broke into a line that read "Parking)" where
+  it reads "(Parking". Every line of a paragraph is now ordered at the
+  paragraph's level, as ICU's line ordering does in MapLibre's right to
+  left plugin. Seen on an iPhone 13 Pro, the first real iPhone vmap has
+  run on.
+
 ## 0.30.0
 
 - The map draws again on Android phones that use Vulkan. On Flutter 3.50
