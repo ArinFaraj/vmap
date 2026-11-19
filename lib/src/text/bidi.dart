@@ -545,7 +545,9 @@ class _Paragraph {
 /// code points, [levels] the levels its paragraph resolved for them, and
 /// [paragraphLevel] that paragraph's. As ICU orders a line set from a
 /// paragraph, rule L1 sets the whitespace that ends the line back to the
-/// paragraph's level, and rule L2 reverses.
+/// paragraph's level, and rule L2 reverses. Characters the algorithm removes,
+/// a joiner among them, keep the level before them, so a joiner stays in the
+/// run of the letter it joins.
 List<BidiRun> lineRuns(List<int> text, List<int> levels, int paragraphLevel) {
   final line = List.of(levels);
   for (var i = text.length - 1; i >= 0; i--) {
@@ -559,6 +561,11 @@ List<BidiRun> lineRuns(List<int> text, List<int> levels, int paragraphLevel) {
       break;
     }
     line[i] = paragraphLevel;
+  }
+  for (var i = 0; i < text.length; i++) {
+    if (_removed(bidiClassOf(text[i]))) {
+      line[i] = i == 0 ? paragraphLevel : line[i - 1];
+    }
   }
   return _reorder(line, 0);
 }
