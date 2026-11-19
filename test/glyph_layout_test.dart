@@ -59,6 +59,17 @@ void main() {
     }
   });
 
+  test('a joiner ending a left to right label still joins its letter', () {
+    Set<double> glyphs(String text) {
+      final shaped = layoutText(fonts, text)!;
+      return {for (var g = 0; g < shaped.count; g++) shaped.glyphs[g * 5 + 1]};
+    }
+
+    final joined = glyphs('\u0628\u200D');
+    expect(joined, isNot(glyphs('\u0628')));
+    expect(glyphs('A \u0628\u200D').containsAll(joined), isTrue);
+  });
+
   test('a newline in a name starts a new line, and a road joins them', () {
     expect(layoutText(fonts, 'Erbil\nهەولێر', maxWidth: 9)!.lines, 2);
     expect(layoutText(fonts, 'Erbil\nهەولێر', singleLine: true)!.lines, 1);
