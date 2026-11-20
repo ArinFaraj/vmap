@@ -458,9 +458,7 @@ flutter build web --wasm --no-web-resources-cdn
 ```
 
 The WebAssembly build draws on a thread of its own, which leaves the page's
-thread to the map: panning over Erbil on an Apple silicon Mac, the page's
-thread sat idle about two thirds of the time, against a tenth in the
-JavaScript build. That thread needs the page served cross-origin isolated:
+thread to the map. That thread needs the page served cross-origin isolated:
 
 ```
 Cross-Origin-Opener-Policy: same-origin
@@ -477,8 +475,9 @@ is no disk cache in a browser, and a PMTiles archive has to be at an
 Apps already on [flutter_map](https://pub.dev/packages/flutter_map) can
 draw vmap's maps in it with the
 [vmap_flutter_map](https://github.com/ArinFaraj/vmap/tree/main/vmap_flutter_map)
-package: a layer that goes where a `TileLayer` would, without tilt or 3D.
-It lives in this repository and is not on pub.dev yet.
+package: a layer that goes where a `TileLayer` would, markers whose names
+the map writes, and vmap's gestures. flutter_map does not tilt, so there is
+no 3D there. It lives in this repository and is not on pub.dev yet.
 
 ## Platforms
 
@@ -493,17 +492,16 @@ It lives in this repository and is not on pub.dev yet.
 vmap draws with [Flutter GPU](https://github.com/flutter/flutter/blob/main/docs/engine/impeller/Flutter-GPU.md),
 which Flutter still marks as a preview. Where it does not run (Android 9 and
 older, Android devices with a Vivante GPU, a browser without WebGL2,
-`flutter test`) the map is drawn with Flutter's canvas instead: tilted, with
-flat buildings, and without terrain or the globe. Windows and Linux have
-not been run yet. [doc/platform-support.md](doc/platform-support.md) has the details and
-their sources.
+`flutter test`) the [canvas renderer](#rendering-options) draws the map.
+[doc/platform-support.md](doc/platform-support.md) has the details and their
+sources.
 
 ## How it is tested
 
 - **MapLibre's own render tests.** CI draws them on the GPU on macOS against
-  a pinned MapLibre GL JS commit, and fails when the count drops below a
-  floor: 1,394 of the 1,519 that apply to vmap pass. The
-  [roadmap](ROADMAP.md) lists the kinds that still fail.
+  a pinned MapLibre GL JS commit, and fails when fewer pass than the floor
+  in `tool/render_suite_floor.txt`. The [roadmap](ROADMAP.md) lists the
+  kinds that still fail.
 - **Real styles over real places.** OpenFreeMap's Liberty, Bright and
   Positron are drawn next to MapLibre GL JS and compared pixel by pixel.
 - **Text.** The shaper and the bidirectional algorithm are held to HarfBuzz
@@ -527,7 +525,7 @@ The [roadmap](ROADMAP.md) has each step and the decisions behind them.
 | --- | --- |
 | run the unit and golden tests | `flutter test` |
 | run the tests that draw with Flutter GPU, on a Mac | `flutter test --enable-impeller --enable-flutter-gpu --tags gpu` |
-| rebuild the web worker, when its test says the code it is built from changed | `dart run tool/build_web_worker.dart` |
+| rebuild the web worker, when `test/web_worker_test.dart` fails | `dart run tool/build_web_worker.dart` |
 | run the example app | `flutter run`, in `example/` |
 | run the demo | `flutter run -d chrome --wasm`, in `demo/` |
 | run MapLibre's render tests against a checkout of maplibre-gl-js | `tool/render_suite.sh` |
