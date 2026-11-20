@@ -640,14 +640,7 @@ class VmapEngine extends ChangeNotifier {
     LatLng point, {
     double radius = 6,
     List<String>? layers,
-  }) async {
-    final found = await _queries.featuresAt(point, radius: radius);
-    if (layers == null) return found;
-    return [
-      for (final f in found)
-        if (f.layers.any(layers.contains)) f,
-    ];
-  }
+  }) => _queries.featuresAt(point, radius: radius, layers: layers);
 
   /// What the map shows inside [bounds]: the features the style draws that
   /// touch the box, topmost first. It reads the tiles again off the UI
