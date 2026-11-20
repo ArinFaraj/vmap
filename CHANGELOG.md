@@ -1,3 +1,17 @@
+## Unreleased
+
+- `featuresAt` takes `layers`, as MapLibre's `queryRenderedFeatures`
+  does: only the features those style layers draw.
+- Setting an engine's `markers` to markers that take the same room as
+  before does nothing, as setting its other options to the same value
+  already did, so an app that sets them on every build does not lay out
+  the labels again.
+- `VmapEngineOptions` holds what an engine is made with:
+  `VmapEngine.withOptions` makes one from them and `VmapEngine.update`
+  follows new ones. `VmapEngineOwner` (`package:vmap/engine_owner.dart`)
+  owns that engine for a map widget other than `Vmap`, as `Vmap` does: the
+  flutter_map layer draws through it.
+
 ## 0.30.1
 
 - A right to left name that wraps keeps its direction on every line. Each

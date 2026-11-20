@@ -1,16 +1,17 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../engine.dart';
+import '../engine_options.dart';
 import '../errors.dart';
 import '../gestures/gesture_options.dart';
 import '../gestures/map_gestures.dart';
 import '../text/glyphs/vmap_font.dart';
 import '../camera/map_camera.dart';
+import 'engine_owner.dart';
 import 'marker.dart';
 import '../options.dart';
 import '../style/pins.dart';
@@ -182,29 +183,32 @@ class Vmap extends StatefulWidget {
   State<Vmap> createState() => _VmapState();
 }
 
-class _VmapState extends State<Vmap>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-  VmapEngine? _owned;
+class _VmapState extends State<Vmap> with SingleTickerProviderStateMixin {
   VmapController? _ownController;
   late final Ticker _ticker = createTicker((elapsed) => _c.tick(elapsed));
 
-  VmapEngine get _engine => widget.engine ?? (_owned ??= _makeEngine());
+  late final _owner = VmapEngineOwner(
+    options: _options,
+    onError: _error,
+    markers: widget.markers,
+    engine: widget.engine,
+    onChanged: _engineChanged,
+  );
 
-  VmapEngine _makeEngine() =>
-      VmapEngine(
-          style: widget.style,
-          network: widget.network,
-          rendering: widget.rendering,
-          labels: widget.labels,
-          text: widget.textStyle,
-          fonts: widget.fonts,
-          pins: widget.pins,
-          overlay: widget.overlay,
-          edits: widget.styleEdits,
-        )
-        ..onError = _error
-        ..markers = widget.markers
-        ..featureStates = widget.featureStates;
+  VmapEngine get _engine => _owner.engine;
+
+  VmapEngineOptions get _options => VmapEngineOptions(
+    style: widget.style,
+    overlay: widget.overlay,
+    styleEdits: widget.styleEdits,
+    featureStates: widget.featureStates,
+    pins: widget.pins,
+    textStyle: widget.textStyle,
+    labels: widget.labels,
+    network: widget.network,
+    rendering: widget.rendering,
+    fonts: widget.fonts,
+  );
 
   void _error(VmapError error) {
     widget.onError?.call(error);
@@ -233,17 +237,7 @@ class _VmapState extends State<Vmap>
     _configureGestures();
     _lastCamera = _c.camera;
     _c.addListener(_cameraChanged);
-    _engine.addListener(_engineChanged);
-    PaintingBinding.instance.systemFonts.addListener(_fontsChanged);
-    WidgetsBinding.instance.addObserver(this);
   }
-
-  @override
-  void didHaveMemoryPressure() => _engine.trimMemory();
-
-  /// A font arriving late, as the browser's fallback fonts do, draws the
-  /// labels again; those drawn before it keep their boxes otherwise.
-  void _fontsChanged() => _engine.fontsChanged();
 
   void _configureGestures() => _gestures
     ..target = _c.gestureTarget
@@ -269,44 +263,23 @@ class _VmapState extends State<Vmap>
         ..detach();
       widget.controller!.addListener(_cameraChanged);
     }
-    if (old.engine != widget.engine) {
-      (old.engine ?? _owned)?.removeListener(_engineChanged);
-      if (widget.engine != null) {
-        _owned?.dispose();
-        _owned = null;
-      }
-      _engine.addListener(_engineChanged);
-    }
+    _owner.update(
+      options: _options,
+      markers: widget.markers,
+      engine: widget.engine,
+    );
     _attach();
     _configureGestures();
-    final owned = _owned;
-    if (owned == null) return;
-    owned
-      ..style = widget.style
-      ..overlay = widget.overlay
-      ..edits = widget.styleEdits
-      ..pins = widget.pins
-      ..text = widget.textStyle
-      ..labels = widget.labels;
-    if (!listEquals(old.featureStates, widget.featureStates)) {
-      owned.featureStates = widget.featureStates;
-    }
-    if (!VmapMarker.sameRooms(old.markers, widget.markers)) {
-      owned.markers = widget.markers;
-    }
   }
 
   @override
   void dispose() {
     _gestures.dispose();
-    WidgetsBinding.instance.removeObserver(this);
-    PaintingBinding.instance.systemFonts.removeListener(_fontsChanged);
     _c
       ..removeListener(_cameraChanged)
       ..detach();
-    _engine.removeListener(_engineChanged);
     _ticker.dispose();
-    _owned?.dispose();
+    _owner.dispose();
     _ownController?.dispose();
     super.dispose();
   }
@@ -374,16 +347,10 @@ class _VmapState extends State<Vmap>
   }
 
   Future<void> _featureTap(LatLng point) async {
-    final features = await _c.featuresAt(point);
+    final features = await _c.featuresAt(point, layers: widget.tappableLayers);
     final onFeatureTap = widget.onFeatureTap;
-    if (!mounted || onFeatureTap == null) return;
-    final layers = widget.tappableLayers;
-    for (final f in features) {
-      if (layers == null || f.layers.any(layers.contains)) {
-        onFeatureTap(f, point);
-        return;
-      }
-    }
+    if (!mounted || onFeatureTap == null || features.isEmpty) return;
+    onFeatureTap(features.first, point);
   }
 
   void _longPress(Offset at) {

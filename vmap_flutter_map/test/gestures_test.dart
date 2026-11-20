@@ -5,13 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:latlong2/latlong.dart';
-import 'package:vmap/vmap.dart' show VmapGestureOptions;
+import 'package:vmap/vmap.dart' show LatLng, VmapGestureOptions;
 import 'package:vmap_flutter_map/vmap_flutter_map.dart';
 
 Future<MapController> _pump(
   WidgetTester tester, {
   VmapGestureOptions options = const VmapGestureOptions(),
+  double? maxZoom,
 }) async {
   final controller = MapController();
   await tester.pumpWidget(
@@ -22,10 +22,13 @@ Future<MapController> _pump(
         options: options,
         child: FlutterMap(
           mapController: controller,
-          options: const MapOptions(
-            initialCenter: LatLng(36.19, 44.01),
+          options: MapOptions(
+            initialCenter: const LatLng(36.19, 44.01),
             initialZoom: 12,
-            interactionOptions: InteractionOptions(flags: InteractiveFlag.none),
+            maxZoom: maxZoom,
+            interactionOptions: const InteractionOptions(
+              flags: InteractiveFlag.none,
+            ),
           ),
           children: const [],
         ),
@@ -53,6 +56,15 @@ void main() {
       c.camera.zoom,
       closeTo(12 + math.log(2 / (1 + math.exp(-300 / 450))) / math.ln2, 1e-6),
     );
+  });
+
+  testWidgets('gestures keep to the zooms the map allows', (tester) async {
+    final c = await _pump(tester, maxZoom: 12.2);
+    final mouse = TestPointer(1, PointerDeviceKind.mouse);
+    await tester.sendEventToBinding(mouse.hover(const Offset(400, 300)));
+    await tester.sendEventToBinding(mouse.scroll(const Offset(0, -300)));
+    await _settle(tester);
+    expect(c.camera.zoom, 12.2);
   });
 
   testWidgets('a trackpad scroll zooms rather than pans', (tester) async {

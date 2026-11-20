@@ -7,6 +7,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:latlong2/latlong.dart' show LatLng;
 
 import 'camera/camera.dart';
+import 'engine_options.dart';
 import 'errors.dart';
 import 'frame_painter.dart';
 import 'render/frame_planes.dart';
@@ -85,6 +86,30 @@ class VmapEngine extends ChangeNotifier {
     _fontsLoaded = _resources.loadFonts(fonts, shapeInWorkers: !_styleGlyphs);
     _loadStyle();
   }
+
+  /// An engine made with [options], as a map widget makes its own.
+  factory VmapEngine.withOptions(VmapEngineOptions options) => VmapEngine(
+    style: options.style,
+    network: options.network,
+    rendering: options.rendering,
+    labels: options.labels,
+    text: options.textStyle,
+    fonts: options.fonts,
+    pins: options.pins,
+    overlay: options.overlay,
+    edits: options.styleEdits,
+  )..featureStates = options.featureStates;
+
+  /// Follows [options], all but their network, rendering and fonts, which
+  /// are read only when the engine is made.
+  void update(VmapEngineOptions options) => this
+    ..style = options.style
+    ..overlay = options.overlay
+    ..edits = options.styleEdits
+    ..pins = options.pins
+    ..text = options.textStyle
+    ..labels = options.labels
+    ..featureStates = options.featureStates;
 
   /// The fonts the tile workers and labels start with. The style is
   /// fetched meanwhile and applied once they are in.
@@ -487,6 +512,7 @@ class VmapEngine extends ChangeNotifier {
   List<VmapMarker> get markers => _markers;
   List<VmapMarker> _markers = const [];
   set markers(List<VmapMarker> value) {
+    if (VmapMarker.sameRooms(value, _markers)) return;
     _markers = value;
     final areas = <LabelObstacle>[];
     _markerLabels.clear();
@@ -606,10 +632,22 @@ class VmapEngine extends ChangeNotifier {
   );
 
   /// What the map shows at [point]: the features the style draws within
-  /// [radius] logical pixels of it, topmost first. It reads the tiles again
-  /// off the UI thread, so it answers a moment later.
-  Future<List<VmapFeature>> featuresAt(LatLng point, {double radius = 6}) =>
-      _queries.featuresAt(point, radius: radius);
+  /// [radius] logical pixels of it, topmost first, only those of the style
+  /// layers [layers] names when given, as MapLibre's
+  /// `queryRenderedFeatures`. It reads the tiles again off the UI thread,
+  /// so it answers a moment later.
+  Future<List<VmapFeature>> featuresAt(
+    LatLng point, {
+    double radius = 6,
+    List<String>? layers,
+  }) async {
+    final found = await _queries.featuresAt(point, radius: radius);
+    if (layers == null) return found;
+    return [
+      for (final f in found)
+        if (f.layers.any(layers.contains)) f,
+    ];
+  }
 
   /// What the map shows inside [bounds]: the features the style draws that
   /// touch the box, topmost first. It reads the tiles again off the UI

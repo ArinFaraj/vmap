@@ -444,7 +444,7 @@ class _BenchAppState extends State<BenchApp>
                             : vmt.TileOffset.DEFAULT,
                         tileProviders: widget.vmtStyle!.providers,
                       ),
-                      _ => VmapLayer.engine(engine),
+                      _ => VmapLayer(engine: engine),
                     },
                   ],
                 ),

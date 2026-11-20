@@ -24,7 +24,7 @@ void main() {
             initialCenter: LatLng(36.19, 44.01),
             initialZoom: 10,
           ),
-          children: [VmapLayer.engine(engine, minZoom: 8, maxZoom: 12)],
+          children: [VmapLayer(engine: engine, minZoom: 8, maxZoom: 12)],
         ),
       ),
     );
@@ -47,7 +47,32 @@ void main() {
     expect(drawing, findsOneWidget);
   });
 
-  testWidgets('the map and the layer hand out the engine that draws them', (
+  testWidgets('the layer hands out the engine that draws it', (tester) async {
+    const empty = VmapStyle.json({
+      'version': 8,
+      'sources': <String, Object?>{},
+      'layers': <Object?>[],
+    });
+    final layer = GlobalKey<VmapLayerState>();
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: FlutterMap(
+          options: const MapOptions(initialCenter: LatLng(36.19, 44.01)),
+          children: [
+            VmapLayer(
+              key: layer,
+              options: const VmapEngineOptions(style: empty),
+            ),
+          ],
+        ),
+      ),
+    );
+    final engine = layer.currentState!.engine;
+    expect(await engine.featuresAt(const LatLng(36.19, 44.01)), isEmpty);
+  });
+
+  testWidgets('a layer swaps between its own engine and an app\'s', (
     tester,
   ) async {
     const empty = VmapStyle.json({
@@ -55,23 +80,29 @@ void main() {
       'sources': <String, Object?>{},
       'layers': <Object?>[],
     });
-    final mapKey = GlobalKey<VmapFlutterMapState>();
-    await tester.pumpWidget(
-      Directionality(
-        textDirection: TextDirection.ltr,
-        child: VmapFlutterMap(
-          key: mapKey,
-          initialCenter: const LatLng(36.19, 44.01),
-          style: empty,
-        ),
+    final app = VmapEngine(style: empty);
+    addTearDown(app.dispose);
+    Widget map(VmapLayer layer) => Directionality(
+      textDirection: TextDirection.ltr,
+      child: FlutterMap(
+        options: const MapOptions(initialCenter: LatLng(36.19, 44.01)),
+        children: [layer],
       ),
     );
-    final engine = mapKey.currentState!.engine;
-    expect(engine, isNotNull);
-    expect(
-      tester.state<VmapLayerState>(find.byType(VmapLayer)).engine,
-      same(engine),
+    VmapEngine drawing() =>
+        tester.state<VmapLayerState>(find.byType(VmapLayer)).engine;
+
+    await tester.pumpWidget(map(VmapLayer(engine: app)));
+    expect(drawing(), same(app));
+
+    await tester.pumpWidget(
+      map(const VmapLayer(options: VmapEngineOptions(style: empty))),
     );
-    expect(await engine!.featuresAt(const LatLng(36.19, 44.01)), isEmpty);
+    final own = drawing();
+    expect(own, isNot(same(app)));
+
+    await tester.pumpWidget(map(VmapLayer(engine: app)));
+    expect(drawing(), same(app));
+    expect(() => own.addListener(() {}), throwsFlutterError);
   });
 }

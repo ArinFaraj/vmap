@@ -1,7 +1,7 @@
 /// vmap's maps inside flutter_map: a layer to put where a `TileLayer` would
-/// go, a whole map in one widget, and gestures that keep the map's speed.
+/// go, markers with names the map writes, and gestures that move the map as
+/// a `Vmap` moves.
 library;
 
 export 'src/gestures.dart' show VmapGestures;
 export 'src/layer.dart' show NamedMarker, VmapLayer, VmapLayerState;
-export 'src/flutter_map_widget.dart' show VmapFlutterMap, VmapFlutterMapState;

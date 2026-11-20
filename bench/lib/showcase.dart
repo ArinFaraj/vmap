@@ -395,6 +395,7 @@ class ShowcaseApp extends StatefulWidget {
 
 class _ShowcaseAppState extends State<ShowcaseApp> {
   final _map = MapController();
+  final _layer = GlobalKey<VmapLayerState>();
   final _boundary = GlobalKey();
   final _messenger = GlobalKey<ScaffoldMessengerState>();
   int? _place = _selected < 0 ? null : _selected;
@@ -536,6 +537,36 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
     exit(0);
   }
 
+  /// A tap clears the picked place, lights the walking route when it is
+  /// under the tap, and names what the map shows there.
+  Future<void> _tapped(LatLng point) async {
+    _select(null);
+    final features = await _layer.currentState?.engine.featuresAt(point);
+    if (!mounted || features == null) return;
+    final own = features.where((f) => f.source == 'walk');
+    setState(
+      () => _featureStates = [
+        if (own.isNotEmpty)
+          VmapFeatureState.of(own.first, const {'picked': true}),
+      ],
+    );
+    if (features.isEmpty) return;
+    final top = features.first;
+    final name = top.properties['name:en'] ?? top.properties['name'];
+    _messenger.currentState
+      ?..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+          content: Text(
+            '${name ?? top.properties['class'] ?? top.sourceLayer}'
+            '  (${top.layers.first})',
+          ),
+        ),
+      );
+  }
+
   void _select(int? index) {
     setState(() => _place = index);
     if (index != null) {
@@ -592,58 +623,53 @@ class _ShowcaseAppState extends State<ShowcaseApp> {
               ],
             )
           else
-            VmapFlutterMap(
+            VmapGestures(
               controller: _map,
-              initialCenter: _centre,
-              initialZoom: _zoomTenths / 10,
-              initialRotation: const int.fromEnvironment('ROT').toDouble(),
-              gestures: VmapGestureOptions(rotate: _rotate),
-              labels: VmapLabelOptions(curved: _curved),
-              backgroundColor: scheme.surface,
-              onTap: (_) => _select(null),
-              style: look.style,
-              markers: markers,
-              pins: _icons == PlaceIcons.custom ? VmapPins.standard : null,
-              styleEdits: _styleEdits,
-              overlay: _overlayShown,
-              featureStates: _featureStates,
-              onFeatureTap: (_, features) {
-                final own = features.where((f) => f.source == 'walk');
-                setState(
-                  () => _featureStates = [
-                    if (own.isNotEmpty)
-                      VmapFeatureState.of(own.first, const {'picked': true}),
-                  ],
-                );
-                if (features.isEmpty) return;
-                final top = features.first;
-                final name =
-                    top.properties['name:en'] ?? top.properties['name'];
-                _messenger.currentState
-                  ?..clearSnackBars()
-                  ..showSnackBar(
-                    SnackBar(
-                      behavior: SnackBarBehavior.floating,
-                      duration: const Duration(seconds: 2),
-                      content: Text(
-                        '${name ?? top.properties['class'] ?? top.sourceLayer}'
-                        '  (${top.layers.first})',
+              options: VmapGestureOptions(rotate: _rotate),
+              child: FlutterMap(
+                mapController: _map,
+                options: MapOptions(
+                  initialCenter: _centre,
+                  initialZoom: _zoomTenths / 10,
+                  initialRotation: const int.fromEnvironment('ROT').toDouble(),
+                  minZoom: 3,
+                  maxZoom: 19,
+                  backgroundColor: scheme.surface,
+                  onTap: (_, point) => _tapped(point),
+                  interactionOptions: const InteractionOptions(
+                    flags: InteractiveFlag.none,
+                  ),
+                ),
+                children: [
+                  VmapLayer(
+                    key: _layer,
+                    markers: markers,
+                    options: VmapEngineOptions(
+                      style: look.style,
+                      labels: VmapLabelOptions(curved: _curved),
+                      pins: _icons == PlaceIcons.custom
+                          ? VmapPins.standard
+                          : null,
+                      styleEdits: _styleEdits,
+                      overlay: _overlayShown,
+                      featureStates: _featureStates,
+                      network: VmapNetworkOptions(
+                        cacheDirectory: widget.cacheDirectory,
+                        userAgent: 'dev.vmap.bench',
+                      ),
+                      textStyle: VmapTextStyle(
+                        fontFamily: 'GoogleSansFlex',
+                        fontFamilyFallback: const ['Vazirmatn'],
+                        markerSize: 12,
+                        markerWeight: 500,
+                        markerColor: look.dark
+                            ? const Color(0xFFE8EAED)
+                            : const Color(0xFF30343A),
                       ),
                     ),
-                  );
-              },
-              network: VmapNetworkOptions(
-                cacheDirectory: widget.cacheDirectory,
-                userAgent: 'dev.vmap.bench',
-              ),
-              textStyle: VmapTextStyle(
-                fontFamily: 'GoogleSansFlex',
-                fontFamilyFallback: const ['Vazirmatn'],
-                markerSize: 12,
-                markerWeight: 500,
-                markerColor: look.dark
-                    ? const Color(0xFFE8EAED)
-                    : const Color(0xFF30343A),
+                  ),
+                  if (markers.isNotEmpty) MarkerLayer(markers: markers),
+                ],
               ),
             ),
           if (!_plain)
