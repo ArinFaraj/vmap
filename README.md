@@ -76,18 +76,19 @@
 flutter pub add vmap
 ```
 
-**2. Switch Flutter GPU on** in your app's platform folders, and let it load
-tiles. Impeller is on by default, but Flutter GPU, the API vmap draws with, is
-a separate switch that Flutter leaves off:
+**2. Switch Flutter GPU on.** It is the API vmap draws with, and Flutter
+leaves it off. Android and the web need nothing: vmap's own Android manifest
+switches it on and asks for the internet. Elsewhere it takes a line or two:
 
-```bash
-dart run vmap:setup
-```
+| Platform | File | Add |
+| --- | --- | --- |
+| iOS, macOS | `ios/Runner/Info.plist`, `macos/Runner/Info.plist` | `<key>FLTEnableFlutterGPU</key><true/>` |
+| macOS, to load tiles | `macos/Runner/DebugProfile.entitlements` and `Release.entitlements` | `<key>com.apple.security.network.client</key><true/>` |
+| Windows | `windows/runner/main.cpp`, after `flutter::DartProject project(...)` | `project.set_enable_flutter_gpu(true);` |
+| Linux | `linux/runner/my_application.cc`, after `fl_dart_project_new()` | `fl_dart_project_set_enable_flutter_gpu(project, TRUE);` |
 
-It edits the Android manifest, the iOS and macOS `Info.plist` files and
-entitlements, and the Windows and Linux runners, and changes nothing that is
-already set. `dart run vmap:setup --check` only reports, and fails if
-anything is missing, for CI. The web needs nothing.
+When it is off, debug builds say which switch is missing, `onError` hears a
+`VmapErrorKind.gpu` error, and the map draws with the canvas.
 
 **3. Show a map.**
 
@@ -112,24 +113,6 @@ That is a whole map: vmap's built in style over
 gestures and the tiles' credit in the corner. The
 [example app](example/lib/main.dart) adds a style switcher, a marker, taps
 and 3D in about a hundred lines.
-
-<details>
-<summary>What <code>vmap:setup</code> changes, to do it by hand</summary>
-
-| Platform | File | Add |
-| --- | --- | --- |
-| Android | `android/app/src/main/AndroidManifest.xml`, inside `<application>` | `<meta-data android:name="io.flutter.embedding.android.EnableFlutterGPU" android:value="true" />` |
-| Android | the same file, inside `<manifest>` | `<uses-permission android:name="android.permission.INTERNET"/>` |
-| iOS, macOS | `ios/Runner/Info.plist`, `macos/Runner/Info.plist` | `<key>FLTEnableFlutterGPU</key><true/>` |
-| macOS | `macos/Runner/DebugProfile.entitlements`, `Release.entitlements` | `<key>com.apple.security.network.client</key><true/>` |
-| Windows | `windows/runner/main.cpp`, after `DartProject project(...)` | `project.set_enable_flutter_gpu(true);` |
-| Linux | `linux/runner/my_application.cc`, after `fl_dart_project_new()` | `fl_dart_project_set_enable_flutter_gpu(project, TRUE);` |
-
-`flutter run --enable-flutter-gpu` switches Flutter GPU on for one run. When
-it is off, debug builds say which switch is missing, and `onError` hears it
-as a `VmapErrorKind.gpu` error.
-
-</details>
 
 ## Styles
 

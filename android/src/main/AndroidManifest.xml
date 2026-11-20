@@ -1,0 +1,10 @@
+<!-- Merged into every app that depends on vmap: tiles come over the network,
+     and Flutter leaves Flutter GPU off unless the app's manifest asks. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <application>
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableFlutterGPU"
+            android:value="true" />
+    </application>
+</manifest>

@@ -36,3 +36,7 @@ migrate_working_dir/
 
 # Generated code graph
 /docs/
+
+# The Android plugin module's build output
+/android/build/
+/android/.gradle/
