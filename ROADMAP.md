@@ -46,6 +46,12 @@ What the API looks like and what should change before release:
 
 ## Still to decide
 
+- **One list of engine options.** `Vmap` and `VmapEngine` take the style,
+  overlay, labels and the rest one by one, as `VmapEngineOptions` holds
+  them, so the list is written out in `Vmap`, `VmapEngineOptions` and
+  the engine's constructor. Taking a `VmapEngineOptions` in both would
+  leave one, but breaks every app that builds a `Vmap`: for a release that
+  breaks the API anyway.
 - **Whether the canvas renderer goes entirely**, once we know whether
   `flutter test` can run Flutter GPU and how Impeller's OpenGL ES backend
   copes on old phones.

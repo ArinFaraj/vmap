@@ -57,7 +57,7 @@ void main() {
             initialCenter: LatLng(36.19, 44.01),
             initialZoom: 10,
           ),
-          children: [VmapLayer.engine(engine)],
+          children: [VmapLayer(engine: engine)],
         ),
       ),
     );

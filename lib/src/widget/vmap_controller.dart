@@ -136,11 +136,17 @@ class VmapController extends ChangeNotifier {
   }
 
   /// What the map shows at [point]: the features the style draws within
-  /// [radius] logical pixels of it, topmost first. It reads the tiles off
-  /// the UI thread, so it answers a moment later, and nothing before the map
-  /// has drawn its first frame.
-  Future<List<VmapFeature>> featuresAt(LatLng point, {double radius = 6}) =>
-      _engine?.featuresAt(point, radius: radius) ?? Future.value(const []);
+  /// [radius] logical pixels of it, topmost first, only those of the style
+  /// layers [layers] names when given. It reads the tiles off the UI
+  /// thread, so it answers a moment later, and nothing before the map has
+  /// drawn its first frame.
+  Future<List<VmapFeature>> featuresAt(
+    LatLng point, {
+    double radius = 6,
+    List<String>? layers,
+  }) =>
+      _engine?.featuresAt(point, radius: radius, layers: layers) ??
+      Future.value(const []);
 
   /// What the map shows inside [bounds]: the features the style draws that
   /// touch it, topmost first.

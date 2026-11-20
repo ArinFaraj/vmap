@@ -574,4 +574,34 @@ void main() {
       expect(c.camera.center, isNot(before));
     });
   });
+
+  testWidgets('a map swaps between its own engine and an app\'s', (
+    tester,
+  ) async {
+    final app = VmapEngine(style: _empty);
+    addTearDown(app.dispose);
+    final controller = VmapController(_erbil);
+    addTearDown(controller.dispose);
+    Widget map(VmapEngine? engine) => Directionality(
+      textDirection: TextDirection.ltr,
+      child: Vmap(
+        controller: controller,
+        engine: engine,
+        style: _empty,
+        rendering: const VmapRenderOptions(renderer: VmapRenderer.canvas),
+        attribution: false,
+      ),
+    );
+
+    await tester.pumpWidget(map(app));
+    expect(controller.engine, same(app));
+
+    await tester.pumpWidget(map(null));
+    final own = controller.engine!;
+    expect(own, isNot(same(app)));
+
+    await tester.pumpWidget(map(app));
+    expect(controller.engine, same(app));
+    expect(() => own.addListener(() {}), throwsFlutterError);
+  });
 }

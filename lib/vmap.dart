@@ -18,6 +18,7 @@ export 'src/gestures/gesture_options.dart' show VmapGestureOptions;
 export 'src/text/glyphs/vmap_font.dart' show VmapFont;
 export 'src/camera/bounds.dart' show VmapBounds;
 export 'src/camera/map_camera.dart' show VmapCamera;
+export 'src/engine_options.dart' show VmapEngineOptions;
 export 'src/widget/marker.dart' show VmapMarker;
 export 'src/options.dart'
     show
