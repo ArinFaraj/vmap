@@ -575,6 +575,31 @@ void main() {
     });
   });
 
+  testWidgets('an engine follows a marker list edited and given again', (
+    tester,
+  ) async {
+    final engine = VmapEngine(style: _empty);
+    addTearDown(engine.dispose);
+    var changes = 0;
+    engine.addListener(() => changes++);
+    final markers = [
+      const VmapMarker(point: LatLng(36.19, 44.01), child: SizedBox()),
+    ];
+    engine.markers = markers;
+    markers.add(
+      const VmapMarker(
+        point: LatLng(36.2, 44.02),
+        name: 'Citadel',
+        child: SizedBox(),
+      ),
+    );
+    engine.markers = markers;
+    expect(engine.markers, hasLength(2));
+    expect(changes, 2);
+    engine.markers = List.of(markers);
+    expect(changes, 2);
+  });
+
   testWidgets('a map swaps between its own engine and an app\'s', (
     tester,
   ) async {

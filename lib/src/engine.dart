@@ -510,7 +510,7 @@ class VmapEngine extends ChangeNotifier {
   List<VmapMarker> _markers = const [];
   set markers(List<VmapMarker> value) {
     if (VmapMarker.sameRooms(value, _markers)) return;
-    _markers = value;
+    _markers = List.unmodifiable(value);
     final areas = <LabelObstacle>[];
     _markerLabels.clear();
     for (var i = 0; i < value.length; i++) {
