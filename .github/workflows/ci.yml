@@ -39,7 +39,7 @@ jobs:
         with:
           channel: stable
       - run: flutter pub get
-      - run: tool/gpu_tests.sh
+      - run: flutter test --enable-impeller --enable-flutter-gpu --tags gpu
 
   example-web:
     runs-on: ubuntu-latest

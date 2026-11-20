@@ -226,10 +226,6 @@ class LabelEngine {
         },
   ];
 
-  /// The collision boxes the last placement took: see
-  /// [CollisionBoxes.taken].
-  List<double> get debugBoxes => _boxes.taken;
-
   int get spriteCount => _sprites.length;
 
   int get shown => _allStates.where((s) => s.opacity > 0).length;

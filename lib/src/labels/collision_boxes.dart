@@ -76,10 +76,6 @@ class CollisionBoxes {
     sy + h / 2 + pad,
   );
 
-  /// Every box taken, as left, top, right and bottom in turn, for tools
-  /// that compare placement.
-  List<double> get taken => [for (var i = 0; i < _count; i++) _boxes[i]];
-
   void clear() {
     _count = 0;
     for (final i in _used) {
