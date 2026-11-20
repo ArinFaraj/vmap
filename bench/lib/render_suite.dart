@@ -42,10 +42,6 @@ const _parallel = int.fromEnvironment('PARALLEL', defaultValue: 6);
 /// that still ask for another: a map that is not moving should draw none.
 const _idleCheck = bool.fromEnvironment('IDLE_CHECK');
 
-/// Whether each test also writes the labels as placed, to labels.json
-/// beside its picture, for comparing placement with MapLibre's.
-const _dumpLabels = bool.fromEnvironment('LABELS');
-
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const SizedBox.expand());
@@ -247,13 +243,6 @@ Future<_Result> _runOne(String id, String dir) async {
     if (_idleCheck) {
       final busy = await session.framesAskedWhileIdle();
       if (busy > 2) result.note ??= 'asked for $busy frames while idle';
-    }
-    if (_dumpLabels) {
-      final out = Directory('$_out/$id')..createSync(recursive: true);
-      File('${out.path}/labels.json')
-          .writeAsStringSync(jsonEncode(session._engine.debugLabels()));
-      File('${out.path}/boxes.json')
-          .writeAsStringSync(jsonEncode(session._engine.debugBoxes()));
     }
     var actual = session.capture();
     // The runner reads back the bottom-left corner of that size.

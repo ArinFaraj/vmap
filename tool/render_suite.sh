@@ -68,8 +68,7 @@ flutter build macos --profile -t lib/render_suite.dart \
   --dart-define=GPU="$gpu" \
   --dart-define=MULTISAMPLE="${MULTISAMPLE:-true}" \
   --dart-define=PARALLEL="${PARALLEL:-6}" \
-  --dart-define=IDLE_CHECK="${IDLE_CHECK:-false}" \
-  --dart-define=LABELS="${LABELS:-false}" >"$out/build.log" 2>&1 || {
+  --dart-define=IDLE_CHECK="${IDLE_CHECK:-false}" >"$out/build.log" 2>&1 || {
   tail -20 "$out/build.log"
   exit 1
 }

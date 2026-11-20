@@ -526,7 +526,8 @@ The [roadmap](ROADMAP.md) has each step and the decisions behind them.
 | To | Run |
 | --- | --- |
 | run the unit and golden tests | `flutter test` |
-| rebuild the web worker, after any change under `lib/` | `dart run tool/build_web_worker.dart` |
+| run the tests that draw with Flutter GPU, on a Mac | `flutter test --enable-impeller --enable-flutter-gpu --tags gpu` |
+| rebuild the web worker, when its test says the code it is built from changed | `dart run tool/build_web_worker.dart` |
 | run the example app | `flutter run`, in `example/` |
 | run the demo | `flutter run -d chrome --wasm`, in `demo/` |
 | run MapLibre's render tests against a checkout of maplibre-gl-js | `tool/render_suite.sh` |
