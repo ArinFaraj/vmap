@@ -24,15 +24,18 @@ class FeatureQueries {
   final StyleSheet? Function() _sheet;
 
   /// What the map shows at [point]: the features the style draws within
-  /// [radius] logical pixels of it, topmost first. It reads the tiles again
-  /// off the UI thread, so it answers a moment later.
+  /// [radius] logical pixels of it, topmost first. With [layers], only
+  /// what those style layers draw, ranked by them alone. It reads the tiles
+  /// again off the UI thread, so it answers a moment later.
   Future<List<VmapFeature>> featuresAt(
     LatLng point, {
     double radius = 6,
+    List<String>? layers,
   }) async {
     final camera = _frame();
     final sheet = _sheet();
     if (camera == null || sheet == null) return const [];
+    final ranks = layers == null ? null : _ranks(sheet, layers);
     final wx = worldX(point.longitude);
     final wy = worldY(point.latitude);
     final styleZoom = camera.zoom - 1 + sheet.zoomOffset;
@@ -53,7 +56,9 @@ class FeatureQueries {
             styleZoom,
           );
           for (final hit in hits) {
-            found.add(_feature(s.def.name, TileId(z, x, y), hit));
+            final order = ranks == null ? hit.order : _topmost(hit, ranks);
+            if (order == null) continue;
+            found.add((order, _feature(s.def.name, TileId(z, x, y), hit)));
           }
         }(),
     ]);
@@ -61,31 +66,46 @@ class FeatureQueries {
     return [for (final f in found) f.$2];
   }
 
-  static (int, VmapFeature) _feature(String source, TileId tile, TileHit hit) {
+  /// Where each of [layers] draws in [sheet], counted from the bottom as
+  /// [TileHit.order] counts.
+  static Map<String, int> _ranks(StyleSheet sheet, List<String> layers) => {
+    for (final (i, layer) in sheet.layers.indexed)
+      if (layers.contains(layer.id)) layer.id: i,
+    for (final (i, symbol) in sheet.symbols.indexed)
+      if (layers.contains(symbol.id)) symbol.id: sheet.layers.length + i,
+  };
+
+  /// The rank of the topmost of [ranks]' layers that draws [hit], or null
+  /// when none does.
+  static int? _topmost(TileHit hit, Map<String, int> ranks) {
+    for (final id in hit.layers) {
+      if (ranks[id] case final rank?) return rank;
+    }
+    return null;
+  }
+
+  static VmapFeature _feature(String source, TileId tile, TileHit hit) {
     final n = 1 << tile.z;
-    return (
-      hit.order,
-      VmapFeature(
-        source: source,
-        sourceLayer: hit.sourceLayer,
-        geometryType: hit.geometryType,
-        layers: hit.layers,
-        geometry: [
-          for (final ring in hit.rings)
-            [
-              for (var i = 0; i + 1 < ring.length; i += 2)
-                LatLng(
-                  latitudeAt((tile.y + ring[i + 1] / 4096) / n),
-                  longitudeAt((tile.x + ring[i] / 4096) / n),
-                ),
-            ],
-        ],
-        id: hit.properties[r'$id'],
-        properties: {
-          for (final e in hit.properties.entries)
-            if (e.key != r'$id') e.key: e.value,
-        },
-      ),
+    return VmapFeature(
+      source: source,
+      sourceLayer: hit.sourceLayer,
+      geometryType: hit.geometryType,
+      layers: hit.layers,
+      geometry: [
+        for (final ring in hit.rings)
+          [
+            for (var i = 0; i + 1 < ring.length; i += 2)
+              LatLng(
+                latitudeAt((tile.y + ring[i + 1] / 4096) / n),
+                longitudeAt((tile.x + ring[i] / 4096) / n),
+              ),
+          ],
+      ],
+      id: hit.properties[r'$id'],
+      properties: {
+        for (final e in hit.properties.entries)
+          if (e.key != r'$id') e.key: e.value,
+      },
     );
   }
 
@@ -138,11 +158,8 @@ class FeatureQueries {
                   ),
                 );
                 for (final hit in hits) {
-                  final (order, feature) = _feature(
-                    s.def.name,
-                    TileId(z, x, y),
-                    hit,
-                  );
+                  final order = hit.order;
+                  final feature = _feature(s.def.name, TileId(z, x, y), hit);
                   // A feature lying over a tile edge is in both tiles, and
                   // only an id tells its two halves from two features.
                   final key = feature.id == null
