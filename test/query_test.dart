@@ -70,6 +70,7 @@ const _style = VmapStyle.json({
 
 Future<VmapController> _drawn(
   WidgetTester tester, {
+  VmapStyle style = _style,
   void Function(VmapFeature feature, LatLng point)? onFeatureTap,
   List<String>? tappableLayers,
 }) async {
@@ -82,7 +83,7 @@ Future<VmapController> _drawn(
       textDirection: TextDirection.ltr,
       child: Vmap(
         controller: controller,
-        style: _style,
+        style: style,
         rendering: const VmapRenderOptions(renderer: VmapRenderer.canvas),
         attribution: false,
         onFeatureTap: onFeatureTap,
@@ -104,6 +105,15 @@ Future<VmapController> _drawn(
   }
   return controller;
 }
+
+Map<String, Object?> _namedSquare(String name) => {
+  'type': 'Feature',
+  'properties': {'name': name},
+  'geometry': {
+    'type': 'Polygon',
+    'coordinates': [_square],
+  },
+};
 
 void main() {
   testWidgets('a tap finds the feature under it, with where it is', (
@@ -135,6 +145,43 @@ void main() {
       () => controller.featuresAt(const LatLng(36.10, 43.90)),
     ))!;
     expect(nothing.where((f) => f.source == 'mine'), isEmpty);
+  });
+
+  testWidgets('features of some layers come in those layers\' order', (
+    tester,
+  ) async {
+    Map<String, Object?> fill(String id, String name) => {
+      'id': id,
+      'type': 'fill',
+      'source': 'mine',
+      'filter': ['==', 'name', name],
+      'paint': {'fill-color': '#ff0000'},
+    };
+    final controller = await _drawn(
+      tester,
+      style: VmapStyle.json({
+        'version': 8,
+        'sources': {
+          'mine': {
+            'type': 'geojson',
+            'data': {
+              'type': 'FeatureCollection',
+              'features': [_namedSquare('a'), _namedSquare('b')],
+            },
+          },
+        },
+        'layers': [fill('base', 'a'), fill('middle', 'b'), fill('top', 'a')],
+      }),
+    );
+    Future<List<String>> names([List<String>? layers]) async => [
+      for (final f in (await tester.runAsync(
+        () => controller.featuresAt(const LatLng(36.19, 44.01), layers: layers),
+      ))!)
+        f.properties['name']! as String,
+    ];
+    expect(await names(), ['a', 'b']);
+    expect(await names(['base', 'middle']), ['b', 'a']);
+    expect(await names(['middle']), ['b']);
   });
 
   testWidgets('an area finds what touches it', (tester) async {
