@@ -150,10 +150,10 @@ class VmapEngine extends ChangeNotifier {
 
   static const _gpuOff =
       'Flutter GPU is off, so the map is drawn with the canvas. Switch it on '
-      'with io.flutter.embedding.android.EnableFlutterGPU in the Android '
-      'manifest, FLTEnableFlutterGPU in the iOS and macOS Info.plist, '
+      'with FLTEnableFlutterGPU in the iOS and macOS Info.plist, '
       'set_enable_flutter_gpu in the Windows and Linux runners, or '
-      '--enable-flutter-gpu for one run.';
+      '--enable-flutter-gpu for one run. On Android vmap switches it on '
+      'itself.';
 
   static bool _gpuReported = false;
 

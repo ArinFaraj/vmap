@@ -1,5 +1,10 @@
 ## Unreleased
 
+- Android apps need no setup: vmap's own Android manifest switches Flutter
+  GPU on and asks for the internet, and the build merges it into the
+  app's. The lines an app added for vmap can go.
+- `dart run vmap:setup` is removed. iOS, macOS, Windows and Linux take a
+  line or two each, which the README lists.
 - `featuresAt` takes `layers`, as MapLibre's `queryRenderedFeatures`
   does: only the features those style layers draw.
 - Setting an engine's `markers` to markers that take the same room as

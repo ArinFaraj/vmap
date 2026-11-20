@@ -58,6 +58,11 @@ dev_dependencies:
     sdk: flutter
 
 flutter:
+  plugin:
+    platforms:
+      android:
+        package: dev.vmap
+        pluginClass: VmapPlugin
   shaders:
     - shaders/atmosphere.frag
     - shaders/sky.frag

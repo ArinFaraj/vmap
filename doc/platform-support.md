@@ -1,9 +1,10 @@
 # Where the map runs, and on what
 
 What each platform draws the map with, checked against Flutter's own docs and
-engine source in October 2026 (Flutter 3.47). Recheck when Flutter moves on:
-Flutter GPU is still a preview, and the Android rules below have changed twice
-since 3.22.
+engine source in November 2026 (Flutter 3.50.1, and master on the same day).
+Recheck when Flutter moves on: Flutter GPU is still a preview that every
+platform leaves off unless asked, and the Android rules below have changed
+twice since 3.22.
 
 ## The short version
 
@@ -15,7 +16,7 @@ WebGL2, and Flutter's test runner.
 | Platform | Flutter's renderer | Flutter GPU | The map draws with | Run so far |
 |---|---|---|---|---|
 | iOS | Impeller, the only one | yes, `FLTEnableFlutterGPU` in `Info.plist` | GPU | an iPhone 13 Pro on iOS 27.2 (flat, 3D, Liberty and Dark, 120 frames a second), the simulator |
-| Android 10+ with Vulkan 1.1 | Impeller on Vulkan | yes, `io.flutter.embedding.android.EnableFlutterGPU` in the manifest | GPU | two phones (a vivo V2514 on 3.50, flat, 3D and terrain), the emulator |
+| Android 10+ with Vulkan 1.1 | Impeller on Vulkan | yes, `io.flutter.embedding.android.EnableFlutterGPU` in vmap's own manifest, which Android merges into the app's | GPU | two phones (a vivo V2514 on 3.50, flat, 3D and terrain), the emulator |
 | Android 10+ without usable Vulkan | Impeller on OpenGL ES | yes, the same flag | GPU, on OpenGL ES | a OnePlus 8 Pro, flat and 3D; the emulator, flat and 3D with terrain |
 | Android 9 and older | Skia on OpenGL ES, unless forced (below) | no, unless forced | canvas | not yet |
 | Android with a Vivante GPU | Skia on OpenGL ES, unless forced | no, unless forced | canvas | not yet |
@@ -25,8 +26,12 @@ WebGL2, and Flutter's test runner.
 | Web | Skia (CanvasKit) | not built in; the WebGL2 shim from flutter_scene stands in | GPU, through WebGL2 | Chrome, Safari; Firefox 157 and WebKit 27.2 headless |
 | `flutter test` | the tester | not checked | canvas | yes, every unit and golden test |
 
-During development `flutter run --enable-flutter-gpu` switches Flutter GPU on
-for one run on any platform.
+On Android vmap is a plugin only for its manifest: the build merges it into
+the app's, which gives the app the switch and the internet permission. A
+plugin cannot change an app's `Info.plist` or runner code, so iOS, macOS,
+Windows and Linux apps set their switch themselves. During development
+`flutter run --enable-flutter-gpu` switches Flutter GPU on for one run on any
+platform.
 
 ## Android in detail
 
