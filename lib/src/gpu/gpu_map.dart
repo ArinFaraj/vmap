@@ -244,8 +244,8 @@ class GpuMap extends MapRenderer {
           ? view.farDistance / view.cameraToCenterDistance
           : 20,
     );
-    final globe = p.globe == null ? null : view.globe;
-    final raised = (terrain != null || globe != null) && p.ground != null;
+    final globe = view.globe;
+    final raised = terrain != null || globe != null;
     // The drape is drawn before the frame's own pass, which samples it.
     if (raised) {
       traced('vmap.gpu.drape', () => drape.drawAtlas(buffers, f));
@@ -253,7 +253,7 @@ class GpuMap extends MapRenderer {
     final heats = _heats(device, buffers, f, clip);
     final layers = _frames.begin(
       passOn: (pass) => MapPass(device, pass, f, clip),
-    )..composites = p.composite != null;
+    );
     // The raised ground holds every vector layer, laid after the
     // backgrounds and rasters under the labels.
     if (raised) layers.splits.add((sheet.labelsRun - 1, 0));
@@ -367,7 +367,6 @@ class GpuMap extends MapRenderer {
     RenderFrame f,
     Float64List clip,
   ) {
-    if (device.pipelines.heat == null) return _noHeats;
     var heats = _noHeats;
     for (final run in f.sheet.runs) {
       if (run.source < 0) continue;
@@ -405,26 +404,22 @@ class GpuMap extends MapRenderer {
     );
     final frame = host.emplace(ByteData(blocks.mapBytes.lengthInBytes));
     final equal = gpu.StencilConfig(compareFunction: gpu.CompareFunction.equal);
-    final stencil = p.stencil;
-    if (stencil != null) {
-      pass
-        ..bindPipeline(stencil)
-        ..setCullMode(gpu.CullMode.none)
-        ..setDepthWriteEnable(false)
-        ..setDepthCompareOperation(gpu.CompareFunction.always)
-        ..setColorBlendEnable(true)
-        ..setColorBlendEquation(overBlend)
-        ..setStencilConfig(
-          gpu.StencilConfig(
-            depthStencilPassOperation: gpu.StencilOperation.setToReferenceValue,
-          ),
-        )
-        ..bindVertexBuffer(vertices)
-        ..bindUniform(p.stencilFrame!, frame)
-        ..draw(3)
-        ..clearBindings();
-    }
     pass
+      ..bindPipeline(p.stencil)
+      ..setCullMode(gpu.CullMode.none)
+      ..setDepthWriteEnable(false)
+      ..setDepthCompareOperation(gpu.CompareFunction.always)
+      ..setColorBlendEnable(true)
+      ..setColorBlendEquation(overBlend)
+      ..setStencilConfig(
+        gpu.StencilConfig(
+          depthStencilPassOperation: gpu.StencilOperation.setToReferenceValue,
+        ),
+      )
+      ..bindVertexBuffer(vertices)
+      ..bindUniform(p.stencilFrame, frame)
+      ..draw(3)
+      ..clearBindings()
       ..bindPipeline(p.flat)
       ..setDepthWriteEnable(false)
       ..setDepthCompareOperation(gpu.CompareFunction.always)

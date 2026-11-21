@@ -654,9 +654,9 @@ Future<void> tileWorkerMain(
       <int, ({Future<Uint8List> bytes, Cancel cancel, Set<int> jobs})>{};
   final building = <int>{}, cancelled = <int>{};
 
-  Future<Uint8List> fetch(TileId id, int? job) async {
+  Future<Uint8List> fetch(TileId id, int? job, {bool fresh = false}) async {
     final key = tileKey(id.z, id.x, id.y);
-    final kept = recent.remove(key);
+    final kept = fresh ? null : recent.remove(key);
     if (kept != null) {
       recent[key] = kept;
       return kept;
@@ -667,7 +667,8 @@ Future<void> tileWorkerMain(
       final bytes = () async {
         if (store == null) await storeReady.future;
         final bytes =
-            await store!.read(id.z, id.x, id.y, cancel: cancel) ?? Uint8List(0);
+            await store!.read(id.z, id.x, id.y, cancel: cancel, fresh: fresh) ??
+            Uint8List(0);
         recent[key] = bytes;
         if (recent.length > 24) recent.remove(recent.keys.first);
         return bytes;
@@ -701,12 +702,36 @@ Future<void> tileWorkerMain(
       final from = TileId(dataMaxZoom, id.x >> d, id.y >> d);
       return sliceLayers(await layersOf(from, job), from, id);
     }
-    final bytes = await fetch(id, job);
-    if (job != null && cancelled.contains(job)) throw const Cancelled();
-    if (bytes.isEmpty) return const <TileLayer>[];
-    return def is TiledSource && def.mlt
-        ? decodeMltTile(bytes)
-        : MvtTile.decode(bytes).layers.values;
+    Iterable<TileLayer>? decoded(Uint8List bytes) {
+      if (job != null && cancelled.contains(job)) throw const Cancelled();
+      if (bytes.isEmpty) return const <TileLayer>[];
+      try {
+        return def is TiledSource && def.mlt
+            ? decodeMltTile(bytes)
+            : MvtTile.decode(bytes).layers.values;
+      } on FormatException {
+        return null;
+      } on RangeError {
+        return null;
+      }
+    }
+
+    // What cannot be read as a tile is not kept, in memory or on disk: a
+    // file cut short, or a network's sign in page answered in a tile's
+    // place. The copy on disk may be the bad one, so the server is asked
+    // once more before the tile is given up.
+    Future<void> forget() async {
+      recent.remove(tileKey(id.z, id.x, id.y));
+      await store?.forget(id.z, id.x, id.y);
+    }
+
+    var layers = decoded(await fetch(id, job));
+    if (layers != null) return layers;
+    await forget();
+    layers = decoded(await fetch(id, job, fresh: true));
+    if (layers != null) return layers;
+    await forget();
+    throw const FormatException('The tile cannot be read');
   }
 
   Future<WorkerReply?> reply(WorkerRequest request) async {

@@ -1,10 +1,43 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vmap/src/render/map_renderer.dart';
+import 'package:vmap/src/style/style_model.dart';
+import 'package:vmap/src/tiles/tiles.dart' show LoadedTile;
 import 'package:vmap/vmap.dart';
+
+/// A renderer whose device gives out on the first frame it draws.
+class _FailingRenderer extends MapRenderer {
+  bool _failed = false;
+
+  @override
+  bool supports(StyleSheet sheet) => !_failed;
+
+  @override
+  bool paint(ui.Canvas canvas, RenderFrame frame) {
+    _failed = true;
+    onFailure?.call(StateError('no texture'));
+    return true;
+  }
+
+  @override
+  bool makeReady(
+    LoadedTile tile,
+    double scale,
+    Stopwatch clock,
+    int deadline,
+  ) => true;
+
+  @override
+  bool canBuild(LoadedTile tile) => true;
+
+  @override
+  void dispose() {}
+}
 
 const _empty = VmapStyle.json({
   'version': 8,
@@ -203,6 +236,44 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(markerTaps, 1);
     expect(mapTaps, 0);
+  });
+
+  testWidgets('a marker moved in a list edited in place moves on the map', (
+    tester,
+  ) async {
+    final controller = VmapController(_erbil);
+    addTearDown(controller.dispose);
+    VmapMarker at(LatLng point) => VmapMarker(
+      point: point,
+      width: 40,
+      height: 40,
+      child: const ColoredBox(color: Color(0xFFFF0000)),
+    );
+    final markers = [at(_erbil.center)];
+    Widget map() => Directionality(
+      textDirection: TextDirection.ltr,
+      child: Vmap(
+        controller: controller,
+        style: _empty,
+        rendering: const VmapRenderOptions(renderer: VmapRenderer.canvas),
+        attribution: false,
+        markers: markers,
+      ),
+    );
+
+    await tester.pumpWidget(map());
+    await tester.pump();
+    final before = tester.getRect(find.byType(ColoredBox)).center;
+
+    const moved = LatLng(36.21, 44.05);
+    markers[0] = at(moved);
+    await tester.pumpWidget(map());
+    await tester.pump();
+    final after = tester.getRect(find.byType(ColoredBox)).center;
+    final expected = controller.toScreen(moved)!;
+    expect(after, isNot(before));
+    expect(after.dx, closeTo(expected.dx, 0.5));
+    expect(after.dy, closeTo(expected.dy, 0.5));
   });
 
   testWidgets('a map laid out with no room yet paints its markers', (
@@ -628,5 +699,176 @@ void main() {
     await tester.pumpWidget(map(app));
     expect(controller.engine, same(app));
     expect(() => own.addListener(() {}), throwsFlutterError);
+  });
+
+  testWidgets('an app\'s engine is given the map\'s markers while it has any', (
+    tester,
+  ) async {
+    final app = VmapEngine(style: _empty);
+    addTearDown(app.dispose);
+    final controller = VmapController(_erbil);
+    addTearDown(controller.dispose);
+    const marker = VmapMarker(
+      point: LatLng(36.19, 44.01),
+      name: 'Citadel',
+      child: SizedBox(),
+    );
+    Widget map(List<VmapMarker> markers) => Directionality(
+      textDirection: TextDirection.ltr,
+      child: Vmap(
+        controller: controller,
+        engine: app,
+        markers: markers,
+        attribution: false,
+      ),
+    );
+
+    await tester.pumpWidget(map(const [marker]));
+    expect(app.markers, [marker]);
+
+    await tester.pumpWidget(map(const []));
+    expect(app.markers, isEmpty);
+
+    app.markers = const [marker];
+    await tester.pumpWidget(map(const []));
+    expect(app.markers, [marker], reason: 'the app set these itself');
+
+    await tester.pumpWidget(map(const [marker, marker]));
+    await tester.pumpWidget(const SizedBox());
+    expect(app.markers, isEmpty);
+  });
+
+  testWidgets('a map gone after its app\'s engine leaves it alone', (
+    tester,
+  ) async {
+    final app = VmapEngine(style: _empty);
+    final controller = VmapController(_erbil);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Vmap(
+          controller: controller,
+          engine: app,
+          markers: const [
+            VmapMarker(point: LatLng(36.19, 44.01), child: SizedBox()),
+          ],
+          attribution: false,
+        ),
+      ),
+    );
+    app.dispose();
+    await tester.pumpWidget(const SizedBox());
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a GPU that fails while painting is reported after the frame', (
+    tester,
+  ) async {
+    final errors = <VmapError>[];
+    final engine = VmapEngine(style: _empty, debugRenderer: _FailingRenderer())
+      ..onError = errors.add;
+    addTearDown(engine.dispose);
+    final controller = VmapController(_erbil);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Vmap(controller: controller, engine: engine, attribution: false),
+      ),
+    );
+    await _settle(tester);
+    expect(tester.takeException(), isNull);
+    expect(errors.single.kind, VmapErrorKind.gpu);
+    expect(engine.drawingWith, VmapRenderer.canvas);
+  });
+
+  testWidgets('a map left without its controller moves with one of its own', (
+    tester,
+  ) async {
+    final given = VmapController(_erbil);
+    addTearDown(given.dispose);
+    final moves = <VmapCamera>[];
+    Widget map(VmapController? controller) => Directionality(
+      textDirection: TextDirection.ltr,
+      child: Vmap(
+        controller: controller,
+        initialCamera: _erbil,
+        style: _empty,
+        rendering: const VmapRenderOptions(renderer: VmapRenderer.canvas),
+        attribution: false,
+        onCameraMove: moves.add,
+      ),
+    );
+
+    await tester.pumpWidget(map(given));
+    expect(given.engine, isNotNull);
+
+    await tester.pumpWidget(map(null));
+    expect(given.engine, isNull);
+    given.camera = _erbil.copyWith(zoom: 5);
+    expect(moves, isEmpty);
+
+    await tester.dragFrom(const Offset(400, 300), const Offset(60, 0));
+    await _settle(tester);
+    expect(moves, isNotEmpty);
+    expect(moves.last.zoom, _erbil.zoom);
+  });
+
+  testWidgets('an engine follows edits and states edited in place', (
+    tester,
+  ) async {
+    final engine = VmapEngine(style: _empty);
+    addTearDown(engine.dispose);
+    await tester.runAsync(() async {
+      while (!engine.styleLoaded) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+    });
+    var changes = 0;
+    engine.addListener(() => changes++);
+
+    final edits = [const VmapStyleEdit.visible('land', false)];
+    engine.edits = edits;
+    expect(changes, 1);
+    edits.add(const VmapStyleEdit.paint('land', 'background-color', '#000'));
+    engine.edits = edits;
+    expect(changes, 2);
+    engine.edits = List.of(edits);
+    expect(changes, 2);
+
+    final states = [
+      const VmapFeatureState(source: 'places', id: 7, state: {'picked': true}),
+    ];
+    engine.featureStates = states;
+    expect(changes, 3);
+    states.add(
+      const VmapFeatureState(source: 'places', id: 8, state: {'picked': true}),
+    );
+    engine.featureStates = states;
+    expect(changes, 4);
+    engine.featureStates = List.of(states);
+    expect(changes, 4);
+  });
+
+  test('pins made again as they were change nothing', () {
+    final engine = VmapEngine(style: _empty);
+    addTearDown(engine.dispose);
+    var changes = 0;
+    engine.addListener(() => changes++);
+
+    VmapPins made() => VmapPins(
+      byIcon: {
+        ...VmapPins.standardIcons,
+        'zoo': const VmapPin(IconData(0xe4a1), Color(0xFF2E7D32)),
+      },
+      size: 26,
+    );
+    engine.pins = made();
+    expect(changes, 1);
+    engine.pins = made();
+    expect(changes, 1);
+    engine.pins = VmapPins(byIcon: made().byIcon, size: 30);
+    expect(changes, 2);
   });
 }

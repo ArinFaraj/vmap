@@ -368,7 +368,7 @@ class SdfTextGpu implements SdfText {
     final kept = _kept, planes = _planes;
     _kept = null;
     if (kept == null || planes == null) return canvas;
-    return planes.hand([(gpu.gpuHost.page!.bitmap(kept), 1)], null);
+    return planes.hand([gpu.gpuHost.page!.bitmap(kept)], null);
   }
 
   _TextGoes _goes(bool drawnBelow) {
@@ -404,9 +404,7 @@ class SdfTextGpu implements SdfText {
         }
       case _TextGoes.inPage:
         if (_drawApart() case (final own, _)?) {
-          return _planes!.hand([
-            (gpu.gpuHost.page!.bitmap(own.texture), 1),
-          ], null);
+          return _planes!.hand([gpu.gpuHost.page!.bitmap(own.texture)], null);
         }
       case _TextGoes.inPageAfterMap:
         _kept = _drawApart()?.$1.texture;

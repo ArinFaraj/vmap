@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -6,7 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/labels/label_state.dart';
 import 'package:vmap/src/labels/labels.dart';
 import 'package:vmap/src/labels/text_style.dart';
+import 'package:vmap/src/options.dart';
 import 'package:vmap/src/style/style_model.dart';
+import 'package:vmap/src/text/glyphs/glyph_layout.dart';
 import 'package:vmap/src/tiles/built_tile.dart';
 import 'package:vmap/src/camera/camera.dart';
 import 'package:vmap/src/camera/view.dart';
@@ -145,6 +148,30 @@ void main() {
       expect(shown, {MarkerName(0, 'Home', 0, 0).key, 'under'});
     },
   );
+
+  test("a marker's name asks the style's glyph server for nothing", () async {
+    final asked = <String>[];
+    final labels = _engine()
+      ..useGlyphs(
+        GlyphFonts([
+          File('assets/fonts/Vazirmatn-Variable.ttf').readAsBytesSync(),
+        ]),
+      )
+      ..useRanges(
+        'https://example.org/{fontstack}/{range}.pbf',
+        const VmapNetworkOptions(),
+        () {},
+        fetch: (url) async {
+          asked.add(url);
+          return null;
+        },
+      );
+    final shown = await _settle(labels, [
+      [MarkerName(0, 'Home', 200 / _world, 200 / _world)],
+    ]);
+    expect(shown, {MarkerName(0, 'Home', 0, 0).key});
+    expect(asked, isEmpty);
+  });
 
   test('a name is written along a straight road', () async {
     final road = TileLabel(

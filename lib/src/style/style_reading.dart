@@ -335,11 +335,17 @@ Float64List? dashOf(Object? json) {
   return gaps <= 0 ? null : out;
 }
 
-/// The names in a `text-font`: a list, or a list given as a literal.
+/// The `text-font` of a layer that gives none, as the style specification
+/// has it.
+const defaultFontStack = ['Open Sans Regular', 'Arial Unicode MS Regular'];
+
+/// The names in a `text-font`: a list, or a list given as a literal. None
+/// for an expression that picks the fonts feature by feature.
 List<String> fontStackOf(Object? value) {
   final list = switch (value) {
+    null => defaultFontStack,
     ['literal', final List<Object?> names] => names,
-    final List<Object?> names => names,
+    final List<Object?> names when !isExpression(names) => names,
     _ => const <Object?>[],
   };
   return [

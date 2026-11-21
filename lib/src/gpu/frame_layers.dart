@@ -30,7 +30,7 @@ abstract interface class FrameTextures {
 /// One image of a frame: its texture, the pass that draws it, and how the
 /// canvas lays it down.
 class FrameImage {
-  FrameImage(FrameTexture texture, OpenPass open, {this.opacity = 1})
+  FrameImage(FrameTexture texture, OpenPass open)
     : texture = texture.target.texture,
       image = texture.image,
       pass = open.pass,
@@ -43,7 +43,6 @@ class FrameImage {
   ui.Image image;
   bool copied = false;
 
-  final double opacity;
   final MapPass pass;
   final gpu.CommandBuffer commands;
 
@@ -52,10 +51,10 @@ class FrameImage {
   final List<gpu.CommandBuffer> before = [];
 }
 
-/// The images one frame's layers are drawn into, in the style's order. A
-/// layer drawn whole at an opacity goes into an image of its own and what
-/// is above it into another, so the canvas lays them over each other in
-/// order.
+/// The images one frame's layers are drawn into, in the style's order: a
+/// new one wherever the canvas draws a background or a raster between the
+/// GPU's layers. A layer drawn whole at an opacity is drawn apart and laid
+/// over the image below on the GPU.
 class FrameLayers {
   FrameLayers(this._textures, {required this._passOn}) {
     images.add(FrameImage(_textures.map, _passOn(_textures.map.target)));
@@ -64,10 +63,6 @@ class FrameLayers {
   final FrameTextures _textures;
   final OpenPass Function(PassTarget target) _passOn;
 
-  /// Whether an image drawn whole is laid over the one below on the GPU,
-  /// at its opacity, rather than handed over as an image of its own: one
-  /// image a frame where the canvas or a page lays fewer over each other.
-  bool composites = false;
   void Function(MapPass pass)? _setUp;
 
   /// The images the canvas lays over each other, in order.
@@ -95,8 +90,8 @@ class FrameLayers {
     return open;
   }
 
-  void _show(FrameTexture texture, {double opacity = 1}) =>
-      images.add(FrameImage(texture, _open(texture.target), opacity: opacity));
+  void _show(FrameTexture texture) =>
+      images.add(FrameImage(texture, _open(texture.target)));
 
   /// Queues [run], or with a [whole] opacity draws it [apart].
   void add(StyleRun run, double? whole) {
@@ -120,7 +115,8 @@ class FrameLayers {
   }
 
   /// Draws [draw] whole at [opacity]: into the image below when opaque,
-  /// else into an image of its own laid over it.
+  /// else into a texture of its own, which the image below then lays over
+  /// itself at that opacity.
   void apart(double opacity, void Function(MapPass into) draw) {
     flush();
     if (opacity <= 0) return;
@@ -128,17 +124,11 @@ class FrameLayers {
       draw(pass);
       return;
     }
-    if (composites) {
-      final fed = _textures.nextFed();
-      final open = _open(fed);
-      draw(open.pass);
-      images.last.before.add(open.commands);
-      pass.composite(fed.texture, opacity);
-      return;
-    }
-    _show(_textures.nextShown(), opacity: opacity);
-    draw(pass);
-    _show(_textures.nextShown());
+    final fed = _textures.nextFed();
+    final open = _open(fed);
+    draw(open.pass);
+    images.last.before.add(open.commands);
+    pass.composite(fed.texture, opacity);
   }
 
   /// Draws [draw] into the image below, which draws at [opacity] itself.

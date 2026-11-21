@@ -13,6 +13,9 @@ labels, better routes and lines, and 3D that looks deliberate.
 | [decisions.md](decisions.md) | Decisions that are settled, with the reason for each |
 | [progress.md](progress.md) | What has been built and measured, by date |
 | [open-decisions.md](open-decisions.md) | Questions only measurement answers, and which decision each could reopen |
+| [gpu-renderer.md](gpu-renderer.md) | How the GPU renderer draws a frame, what each backend asks of it, and the Flutter GPU features weighed |
+| [terrain.md](terrain.md) | Raised ground: the drape, the grid and the heights |
+| [history/](history) | The package review and API review before 0.27, and how the name was chosen |
 | [research/renderers.md](research/renderers.md) | Flutter GPU, Impeller backends per device, and the existing Flutter map packages |
 | [research/labels-in-3d.md](research/labels-in-3d.md) | How MapLibre, Mapbox, Google, Apple and Cesium place labels and pins in 3D |
 | [research/text-shaping.md](research/text-shaping.md) | What a complete shaper does, and how it is proven against HarfBuzz |

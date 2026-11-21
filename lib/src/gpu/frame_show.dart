@@ -19,8 +19,6 @@ class FrameShow {
   final List<ui.Image> _stale = [];
 
   final ui.Paint _paint = ui.Paint()..filterQuality = ui.FilterQuality.low;
-  final ui.Paint _overlayPaint = ui.Paint()
-    ..filterQuality = ui.FilterQuality.low;
 
   /// Whether there is a frame to show.
   bool get hasFrame => _frame != null;
@@ -120,7 +118,7 @@ class FrameShow {
         shower: this,
         whole: whole,
       );
-      planes.hand([(page, image.opacity)], warp);
+      planes.hand([page], warp);
     }
   }
 
@@ -154,15 +152,12 @@ class FrameShow {
         ..save()
         ..transform(warp);
     }
-    for (final FrameImage(:image, :opacity) in images) {
-      final paint = opacity >= 1
-          ? _paint
-          : (_overlayPaint..color = ui.Color.fromRGBO(255, 255, 255, opacity));
+    for (final FrameImage(:image) in images) {
       canvas.drawImageRect(
         image,
         ui.Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
         to,
-        paint,
+        _paint,
       );
     }
     if (warp != null) canvas.restore();

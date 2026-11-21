@@ -68,10 +68,7 @@ class MapPass {
   late final double _perMetre = perMetreAt(_view);
 
   bool _clips(int source) =>
-      !adding &&
-      globe == null &&
-      _device.pipelines.stencil != null &&
-      _ideal[source].length < _drawnBit - 1;
+      !adding && globe == null && _ideal[source].length < _drawnBit - 1;
 
   /// The stencil number of stand-in [index] of [source]'s, after its ideal
   /// tiles' own; 0, where no ideal tile is, when there are too many tiles
@@ -95,7 +92,7 @@ class MapPass {
     if (source == _marked) return;
     renderPass
       ..clearBindings()
-      ..bindPipeline(_device.pipelines.stencil!)
+      ..bindPipeline(_device.pipelines.stencil)
       ..setCullMode(gpu.CullMode.none)
       ..setDepthWriteEnable(false)
       ..setDepthCompareOperation(gpu.CompareFunction.always)
@@ -108,7 +105,7 @@ class MapPass {
       )
       ..bindVertexBuffer(
         gpu.BufferView(
-          _device.pipelines.quad!,
+          _device.pipelines.quad,
           offsetInBytes: 0,
           lengthInBytes: 48,
         ),
@@ -118,7 +115,7 @@ class MapPass {
       renderPass
         ..setStencilReference(reference)
         ..bindUniform(
-          _device.pipelines.stencilFrame!,
+          _device.pipelines.stencilFrame,
           _device.host.emplace(_device.blocks.frameBytes),
         )
         ..draw(6);
@@ -167,7 +164,7 @@ class MapPass {
     );
     renderPass
       ..clearBindings()
-      ..bindPipeline(p.composite!)
+      ..bindPipeline(p.composite)
       ..setCullMode(gpu.CullMode.none)
       ..setDepthWriteEnable(false)
       ..setDepthCompareOperation(gpu.CompareFunction.always)
@@ -175,10 +172,10 @@ class MapPass {
       ..setColorBlendEnable(true)
       ..setColorBlendEquation(overBlend)
       ..bindVertexBuffer(
-        gpu.BufferView(p.screen!, offsetInBytes: 0, lengthInBytes: 48),
+        gpu.BufferView(p.screen, offsetInBytes: 0, lengthInBytes: 48),
       )
-      ..bindUniform(p.compositeInfo!, _device.host.emplace(_heatBytes))
-      ..bindTexture(p.compositeLayer!, image, sampler: nearest)
+      ..bindUniform(p.compositeInfo, _device.host.emplace(_heatBytes))
+      ..bindTexture(p.compositeLayer, image, sampler: nearest)
       ..draw(6)
       ..clearBindings();
   }
@@ -199,7 +196,7 @@ class MapPass {
     );
     renderPass
       ..clearBindings()
-      ..bindPipeline(_device.pipelines.heat!)
+      ..bindPipeline(_device.pipelines.heat)
       ..setCullMode(gpu.CullMode.none)
       ..setDepthWriteEnable(false)
       ..setDepthCompareOperation(gpu.CompareFunction.always)
@@ -208,17 +205,17 @@ class MapPass {
       ..setColorBlendEquation(overBlend)
       ..bindVertexBuffer(
         gpu.BufferView(
-          _device.pipelines.screen!,
+          _device.pipelines.screen,
           offsetInBytes: 0,
           lengthInBytes: 48,
         ),
       )
       ..bindUniform(
-        _device.pipelines.heatInfo!,
+        _device.pipelines.heatInfo,
         _device.host.emplace(_heatBytes),
       )
-      ..bindTexture(_device.pipelines.heatDensity!, density, sampler: linear)
-      ..bindTexture(_device.pipelines.heatRamp!, ramp, sampler: linear)
+      ..bindTexture(_device.pipelines.heatDensity, density, sampler: linear)
+      ..bindTexture(_device.pipelines.heatRamp, ramp, sampler: linear)
       ..draw(6)
       ..clearBindings();
     _marked = -1;
@@ -485,11 +482,8 @@ class MapPass {
     if (to > done) drawRange(done, to);
   }
 
-  /// Buildings after the flat layers, with depth. The flat layers leave an
-  /// index buffer bound, cleared first, or these draws would read their
-  /// vertices through it.
-  /// Draws building layer [layer], standing, depth tested.
-  /// Draws [layer]'s buildings at [opacity]. Below 1 they are drawn as
+  /// Draws [layer]'s buildings at [opacity], standing and depth tested,
+  /// after the flat layers. Below 1 they are drawn as
   /// MapLibre draws them, in this pass: their depth alone first, then their
   /// colour where it is the nearest, each pixel once, so the walls behind
   /// do not show through those in front.
@@ -628,11 +622,9 @@ class MapPass {
 
   /// Zeroes the stencil over the whole screen, so tiles mark it again.
   void _clearStencil() {
-    final stencil = _device.pipelines.stencil;
-    if (stencil == null) return;
     renderPass
       ..clearBindings()
-      ..bindPipeline(stencil)
+      ..bindPipeline(_device.pipelines.stencil)
       ..setCullMode(gpu.CullMode.none)
       ..setDepthWriteEnable(false)
       ..setDepthCompareOperation(gpu.CompareFunction.always)
@@ -646,13 +638,13 @@ class MapPass {
       )
       ..bindVertexBuffer(
         gpu.BufferView(
-          _device.pipelines.quad!,
+          _device.pipelines.quad,
           offsetInBytes: 0,
           lengthInBytes: 48,
         ),
       )
       ..bindUniform(
-        _device.pipelines.stencilFrame!,
+        _device.pipelines.stencilFrame,
         _device.host.emplace(_wholeScreen),
       )
       ..draw(6)

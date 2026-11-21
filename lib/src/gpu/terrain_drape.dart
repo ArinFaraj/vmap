@@ -568,11 +568,10 @@ class Drape {
     double top,
   ) {
     final p = _device.pipelines;
-    if (p.stencil == null) return;
     _device.blocks.times(clip, span / tileExtent, 1, left, top, 1);
     pass
       ..clearBindings()
-      ..bindPipeline(p.stencil!)
+      ..bindPipeline(p.stencil)
       ..setCullMode(gpu.CullMode.none)
       ..setDepthWriteEnable(false)
       ..setDepthCompareOperation(gpu.CompareFunction.always)
@@ -584,10 +583,10 @@ class Drape {
         ),
       )
       ..bindVertexBuffer(
-        gpu.BufferView(p.quad!, offsetInBytes: 0, lengthInBytes: 48),
+        gpu.BufferView(p.quad, offsetInBytes: 0, lengthInBytes: 48),
       )
       ..bindUniform(
-        p.stencilFrame!,
+        p.stencilFrame,
         _device.host.emplace(_device.blocks.frameBytes),
       )
       ..draw(6)
@@ -619,7 +618,7 @@ class Drape {
       ..[27] = opacity;
     pass
       ..bindTexture(
-        _device.pipelines.groundDrape!,
+        _device.pipelines.groundDrape,
         _layerAtlas!.texture,
         sampler: gpu.SamplerOptions(
           minFilter: gpu.MinMagFilter.nearest,
@@ -627,11 +626,11 @@ class Drape {
         ),
       )
       ..bindUniform(
-        _device.pipelines.groundFrame!,
+        _device.pipelines.groundFrame,
         _device.host.emplace(_device.blocks.frameBytes),
       )
       ..bindUniform(
-        _device.pipelines.groundDem!,
+        _device.pipelines.groundDem,
         _device.host.emplace(_device.heights.bytes),
       )
       ..drawIndexed(gridIndexCount);
@@ -694,16 +693,16 @@ class Drape {
           : gpu.MinMagFilter.nearest;
       pass
         ..bindTexture(
-          _device.pipelines.groundDrape!,
+          _device.pipelines.groundDrape,
           texture,
           sampler: gpu.SamplerOptions(minFilter: filter, magFilter: filter),
         )
         ..bindUniform(
-          _device.pipelines.groundFrame!,
+          _device.pipelines.groundFrame,
           _device.host.emplace(_device.blocks.frameBytes),
         )
         ..bindUniform(
-          _device.pipelines.groundDem!,
+          _device.pipelines.groundDem,
           _device.host.emplace(_device.heights.bytes),
         )
         ..drawIndexed(gridIndexCount);
@@ -718,7 +717,7 @@ class Drape {
     final indices = _indices ??= gridIndices();
     pass
       ..clearBindings()
-      ..bindPipeline(_device.pipelines.ground!)
+      ..bindPipeline(_device.pipelines.ground)
       ..setCullMode(gpu.CullMode.none)
       ..setColorBlendEnable(true)
       ..setColorBlendEquation(overBlend)
@@ -741,7 +740,7 @@ class Drape {
         gpu.IndexType.int16,
       )
       ..bindTexture(
-        _device.pipelines.groundHeights!,
+        _device.pipelines.groundHeights,
         _device.heights.flat(0, 0),
         sampler: gpu.SamplerOptions(
           minFilter: gpu.MinMagFilter.nearest,
@@ -827,7 +826,7 @@ class Drape {
         ..[27] = (asNumber(layer.opacity(context)) ?? 1).clamp(0.0, 1.0);
       pass
         ..bindTexture(
-          _device.pipelines.groundDrape!,
+          _device.pipelines.groundDrape,
           texture,
           sampler: gpu.SamplerOptions(
             minFilter: gpu.MinMagFilter.linear,
@@ -837,11 +836,11 @@ class Drape {
           ),
         )
         ..bindUniform(
-          _device.pipelines.groundFrame!,
+          _device.pipelines.groundFrame,
           _device.host.emplace(_device.blocks.frameBytes),
         )
         ..bindUniform(
-          _device.pipelines.groundDem!,
+          _device.pipelines.groundDem,
           _device.host.emplace(_device.heights.bytes),
         )
         ..drawIndexed(gridIndexCount);
@@ -875,7 +874,7 @@ class Drape {
       ..[27] = 1;
     pass
       ..bindTexture(
-        _device.pipelines.groundDrape!,
+        _device.pipelines.groundDrape,
         texture,
         sampler: gpu.SamplerOptions(
           minFilter: gpu.MinMagFilter.nearest,
@@ -883,11 +882,11 @@ class Drape {
         ),
       )
       ..bindUniform(
-        _device.pipelines.groundFrame!,
+        _device.pipelines.groundFrame,
         _device.host.emplace(_device.blocks.frameBytes),
       )
       ..bindUniform(
-        _device.pipelines.groundDem!,
+        _device.pipelines.groundDem,
         _device.host.emplace(_device.heights.bytes),
       )
       ..drawIndexed(gridIndexCount);
@@ -951,7 +950,7 @@ class Drape {
   ) {
     final pipeline = _device.pipelines.ground;
     final atlas = _atlas?.texture;
-    if (pipeline == null || atlas == null || _tiles.isEmpty) return;
+    if (atlas == null || _tiles.isEmpty) return;
     final corners = _corners ??= gridCorners();
     final indices = _indices ??= gridIndices();
     final perMetre = perMetreAt(view);
@@ -983,7 +982,7 @@ class Drape {
         gpu.IndexType.int16,
       )
       ..bindTexture(
-        _device.pipelines.groundDrape!,
+        _device.pipelines.groundDrape,
         atlas,
         sampler: gpu.SamplerOptions(
           minFilter: gpu.MinMagFilter.linear,
@@ -1016,16 +1015,16 @@ class Drape {
       );
       pass
         ..bindTexture(
-          _device.pipelines.groundHeights!,
+          _device.pipelines.groundHeights,
           heights,
           sampler: nearest,
         )
         ..bindUniform(
-          _device.pipelines.groundFrame!,
+          _device.pipelines.groundFrame,
           _device.host.emplace(_device.blocks.frameBytes),
         )
         ..bindUniform(
-          _device.pipelines.groundDem!,
+          _device.pipelines.groundDem,
           _device.host.emplace(_device.heights.bytes),
         )
         ..drawIndexed(gridIndexCount);
@@ -1052,7 +1051,7 @@ class Drape {
   ) {
     final pipeline = _device.pipelines.globe;
     final atlas = _atlas?.texture;
-    if (pipeline == null || atlas == null || _tiles.isEmpty) return;
+    if (atlas == null || _tiles.isEmpty) return;
     final corners = _globeCorners ??= globeGridCorners();
     final indices = _globeIndices ??= globeGridIndices();
     pass
@@ -1072,7 +1071,7 @@ class Drape {
         ),
       )
       ..bindTexture(
-        _device.pipelines.globeDrape!,
+        _device.pipelines.globeDrape,
         atlas,
         sampler: gpu.SamplerOptions(
           minFilter: gpu.MinMagFilter.linear,
@@ -1117,7 +1116,7 @@ class Drape {
         ..[38] = 1 / n
         ..[39] = globe.transition;
       pass.bindUniform(
-        _device.pipelines.globeFrame!,
+        _device.pipelines.globeFrame,
         _device.host.emplace(_globeBytes),
       );
       void draw(int first, int count) => pass

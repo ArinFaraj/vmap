@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart' show Icons;
+import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:flutter/widgets.dart' show IconData;
 
 /// A round pin: an icon in white on a coloured disc.
@@ -13,6 +14,13 @@ class VmapPin {
 
   /// The disc's colour.
   final ui.Color color;
+
+  @override
+  bool operator ==(Object other) =>
+      other is VmapPin && other.icon == icon && other.color == color;
+
+  @override
+  int get hashCode => Object.hash(icon, color);
 }
 
 /// Draws places of interest as round pins instead of the style's own icons.
@@ -49,6 +57,23 @@ class VmapPins {
 
   /// The diameter in logical pixels.
   final double size;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(other, this) ||
+      other is VmapPins &&
+          other.size == size &&
+          other.other == this.other &&
+          mapEquals(other.byIcon, byIcon);
+
+  @override
+  int get hashCode => Object.hash(
+    size,
+    other,
+    Object.hashAllUnordered(
+      byIcon.entries.map((e) => Object.hash(e.key, e.value)),
+    ),
+  );
 }
 
 /// How the labels find a place's pin; not part of the public API.

@@ -73,6 +73,8 @@ Future<Uint8List> readFile(String path) =>
 
 Future<void> writeFile(String path, List<int> bytes) async {}
 
+Future<void> deleteFile(String path) async {}
+
 Future<void> deleteCached(
   String directory,
   bool Function(String name) mine,

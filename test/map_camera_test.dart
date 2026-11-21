@@ -1,6 +1,9 @@
+import 'package:flutter/animation.dart';
 import 'package:flutter/painting.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/camera/map_camera.dart';
+import 'package:vmap/src/widget/vmap_controller.dart';
 import 'package:vmap/vmap.dart';
 
 const _erbil = VmapCamera(center: LatLng(36.1912, 44.0092), zoom: 15);
@@ -111,5 +114,45 @@ void main() {
     expect(controller.camera.padding, to.padding);
     expect(controller.camera.roll, closeTo(12, 1e-9));
     expect(controller.camera.fieldOfView, closeTo(50, 1e-9));
+  });
+
+  const fiji = VmapCamera(center: LatLng(-17.7, 178), zoom: 6);
+  const samoa = VmapCamera(center: LatLng(-13.8, -172), zoom: 6);
+
+  test('a flight takes the short way over the antimeridian', () {
+    for (final (from, to) in [(fiji, samoa), (samoa, fiji)]) {
+      final path = FlyPath(from, to, width: 800, height: 600);
+      for (final t in [0.25, 0.5, 0.75]) {
+        expect(path.at(t).center.longitude.abs(), greaterThan(170));
+      }
+      expect(path.at(1), to);
+    }
+  });
+
+  testWidgets('easing takes the short way over the antimeridian', (
+    tester,
+  ) async {
+    final controller = VmapController(fiji);
+    final ticker = Ticker(controller.tick);
+    addTearDown(ticker.dispose);
+    controller
+      ..attach(
+        ticker: ticker,
+        minZoom: 0,
+        maxZoom: 22,
+        maxPitch: 60,
+        engine: null,
+      )
+      ..layout(const Size(800, 600), flat: false);
+    final done = controller.easeTo(
+      samoa,
+      duration: const Duration(seconds: 1),
+      curve: Curves.linear,
+    );
+    controller.tick(const Duration(milliseconds: 500));
+    expect(controller.camera.center.longitude, closeTo(-177, 1e-6));
+    controller.tick(const Duration(seconds: 1));
+    await done;
+    expect(controller.camera.center.longitude, closeTo(-172, 1e-9));
   });
 }

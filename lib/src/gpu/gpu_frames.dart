@@ -185,9 +185,9 @@ class GpuFrames {
 
   /// Keeps [layers], drawn for [view], as the frame to show, and hands the
   /// GPU its commands after [before], each image's after those of the
-  /// images its pass reads. The pass of the opaque image laid down at
-  /// style run [textRun] is held back as [FrameShow.textPass], and goes
-  /// last, when its image is laid down. On the web with [snapshot], each
+  /// images its pass reads. The pass of the image laid down at style run
+  /// [textRun] is held back as [FrameShow.textPass], and goes last, when
+  /// its image is laid down. On the web with [snapshot], each
   /// image is copied out of its texture when it is first laid down.
   void finish(
     FrameLayers layers,
@@ -199,9 +199,7 @@ class GpuFrames {
   }) {
     final images = layers.images;
     final under = FrameShow.upTo(textRun, images.length, layers.splits) - 1;
-    final held = under >= 0 && images[under].opacity >= 1
-        ? images[under]
-        : null;
+    final held = under >= 0 ? images[under] : null;
     final last = held ?? images.last;
     for (final commands in before) {
       commands.submit();

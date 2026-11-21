@@ -13,8 +13,8 @@ class VmapNetworkOptions {
     this.spritePixelRatio,
   });
 
-  /// Downloaded tiles are kept here between runs. Null disables the disk
-  /// cache.
+  /// What the map downloads is kept here between runs: tiles, the style,
+  /// its sprites and glyph ranges. Null disables the disk cache.
   final String? cacheDirectory;
 
   /// Sent as the user agent, which tile servers such as OpenStreetMap's ask

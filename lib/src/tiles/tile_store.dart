@@ -105,19 +105,42 @@ class TileStore {
     return file != null && fileExists(file);
   }
 
+  /// Tiles on their way to disk, by file.
+  final Map<String, Future<void>> _writing = {};
+
   /// The bytes of tile [z]/[x]/[y]: empty for a tile with nothing in it,
   /// or outside the tile set's bounds, and null where the server has no
-  /// such tile.
+  /// such tile. [fresh] passes over the copy on disk and replaces it.
   /// [cancel] aborts the download.
-  Future<Uint8List?> read(int z, int x, int y, {Cancel? cancel}) async {
+  Future<Uint8List?> read(
+    int z,
+    int x,
+    int y, {
+    Cancel? cancel,
+    bool fresh = false,
+  }) async {
     if (!cover.has(z, x, y)) return Uint8List(0);
     final file = fileOf(z, x, y);
-    if (file != null && fileExists(file)) return readFile(file);
+    if (!fresh && file != null && fileExists(file)) return readFile(file);
     final bytes = await _fetch(z, x, y, cancel: cancel);
     if (file != null && bytes != null && bytes.isNotEmpty) {
-      unawaited(writeFile(file, bytes).then<void>((_) {}, onError: (_) {}));
+      late final Future<void> written;
+      written = _writing[file] = writeFile(file, bytes)
+          .then<void>((_) {}, onError: (_) {})
+          .whenComplete(() {
+            if (identical(_writing[file], written)) _writing.remove(file);
+          });
     }
     return bytes;
+  }
+
+  /// Deletes the copy of tile [z]/[x]/[y] on disk, which could not be
+  /// read as a tile, so the next [read] asks the server again.
+  Future<void> forget(int z, int x, int y) async {
+    final file = fileOf(z, x, y);
+    if (file == null) return;
+    await _writing[file];
+    await deleteFile(file);
   }
 
   /// Fetches tile [z]/[x]/[y] into the cache directory unless it is there

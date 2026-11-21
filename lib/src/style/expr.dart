@@ -139,6 +139,10 @@ Expr byGeometry(String key, Expr read) =>
 Expr constantExpr(Object? value) =>
     (_) => value;
 
+/// Whether [json] is an expression: a list that opens with an operator.
+bool isExpression(Object? json) =>
+    json is List && json.isNotEmpty && _operators.contains(json.first);
+
 /// Compiles a style property value: a constant, a legacy `stops` function or
 /// an expression.
 Expr compileExpr(Object? json) {
@@ -147,7 +151,7 @@ Expr compileExpr(Object? json) {
         ? _legacyFunction(json)
         : constantExpr(json);
   }
-  if (json is List && json.isNotEmpty && _operators.contains(json.first)) {
+  if (json is List && isExpression(json)) {
     return compileOp(json.first as String, json.sublist(1));
   }
   return constantExpr(json);

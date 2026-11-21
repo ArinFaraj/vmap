@@ -66,9 +66,10 @@ class VmapEngine extends ChangeNotifier {
     List<VmapFont> fonts = const [],
     VmapPins? pins,
     this._overlay,
-    this._edits = const [],
+    List<VmapStyleEdit> edits = const [],
     @visibleForTesting MapRenderer? debugRenderer,
-  }) : _labelOptions = labels,
+  }) : _edits = List.unmodifiable(edits),
+       _labelOptions = labels,
        _labels = LabelEngine(text)
          ..pins = pins
          ..curvedRoads = labels.curved
@@ -80,7 +81,7 @@ class VmapEngine extends ChangeNotifier {
                : null) {
     _labels.stateOf = (source, id) => _states.at(_sources[source].def.name, id);
     if (rendering.renderer == VmapRenderer.gpu && _renderer == null) {
-      scheduleMicrotask(() => _gpuFailed(_gpuOff));
+      _gpuFailed(_gpuOff);
     }
     _renderer?.onFailure = _gpuFailed;
     _fontsLoaded = _resources.loadFonts(fonts, shapeInWorkers: !_styleGlyphs);
@@ -157,7 +158,9 @@ class VmapEngine extends ChangeNotifier {
 
   static bool _gpuReported = false;
 
-  void _gpuFailed(Object error) {
+  /// A device can give out in the middle of a frame, where a listener may
+  /// neither build nor paint, so the report waits for the frame to end.
+  void _gpuFailed(Object error) => scheduleMicrotask(() {
     if (_disposed) return;
     final report = VmapError(VmapErrorKind.gpu, error);
     if (!_gpuReported) {
@@ -169,7 +172,7 @@ class VmapEngine extends ChangeNotifier {
     }
     onError?.call(report);
     notifyListeners();
-  }
+  });
 
   late final StyleResources _resources = StyleResources(
     _labels,
@@ -250,7 +253,7 @@ class VmapEngine extends ChangeNotifier {
     _loadStyle();
   }
 
-  static final _kept = RegExp('^(style|sprite|raster|source|tiles)-');
+  static final _kept = RegExp('^(style|sprite|raster|source|tiles|glyphs)-');
 
   /// Deletes what this map keeps in the cache directory, then loads it again
   /// from the network. Other files in the directory are left alone.
@@ -370,7 +373,7 @@ class VmapEngine extends ChangeNotifier {
     if (VmapStyleEdit.same(value, _edits)) return;
     final base = _base;
     if (base == null) {
-      _edits = value;
+      _edits = List.unmodifiable(value);
       return;
     }
     final document = _overlay?.applyTo(base) ?? base;
@@ -378,7 +381,7 @@ class VmapEngine extends ChangeNotifier {
       _placedSymbols(value, document),
       _placedSymbols(_edits, document),
     );
-    _edits = value;
+    _edits = List.unmodifiable(value);
     _apply(base, _style, keepLabels: sameSymbols);
   }
 
@@ -509,7 +512,7 @@ class VmapEngine extends ChangeNotifier {
   List<VmapMarker> get markers => _markers;
   List<VmapMarker> _markers = const [];
   set markers(List<VmapMarker> value) {
-    if (VmapMarker.sameRooms(value, _markers)) return;
+    if (_disposed || VmapMarker.sameRooms(value, _markers)) return;
     _markers = List.unmodifiable(value);
     final areas = <LabelObstacle>[];
     _markerLabels.clear();
@@ -545,7 +548,7 @@ class VmapEngine extends ChangeNotifier {
   List<VmapFeatureState> _featureStates = const [];
   set featureStates(List<VmapFeatureState> value) {
     if (listEquals(value, _featureStates)) return;
-    _featureStates = value;
+    _featureStates = List.unmodifiable(value);
     final changed = _states.replace(value);
     if (changed.isEmpty) return;
     for (final i in _sheet?.stateBuiltSources ?? const <int>{}) {
@@ -563,7 +566,7 @@ class VmapEngine extends ChangeNotifier {
   /// draws the style's own icons.
   VmapPins? get pins => _labels.pins;
   set pins(VmapPins? value) {
-    if (identical(value, _labels.pins)) return;
+    if (value == _labels.pins) return;
     _labels.pins = value;
     notifyListeners();
   }

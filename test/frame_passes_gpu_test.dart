@@ -94,7 +94,7 @@ void main() {
         ..size(device, _side.toInt(), _side.toInt());
       final layers = frames.begin(
         passOn: (pass) => MapPass(device, pass, frame, Float64List(16)),
-      )..composites = true;
+      );
       squareIn(layers.pass, 4);
       layers.apart(0.5, (into) => squareIn(into, 20));
       squareIn(layers.pass, 36);

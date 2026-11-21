@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import 'marker.dart';
@@ -37,9 +38,14 @@ class MarkerLayer extends StatelessWidget {
 }
 
 class _MarkerFlow extends FlowDelegate {
-  _MarkerFlow(this.controller, this.markers) : super(repaint: controller);
+  _MarkerFlow(this.controller, List<VmapMarker> markers)
+    : markers = List.of(markers),
+      super(repaint: controller);
 
   final VmapController controller;
+
+  /// A copy: a list edited in place and given again is told from the one
+  /// it was.
   final List<VmapMarker> markers;
 
   @override
@@ -78,7 +84,7 @@ class _MarkerFlow extends FlowDelegate {
 
   @override
   bool shouldRepaint(_MarkerFlow old) =>
-      old.controller != controller || !identical(old.markers, markers);
+      old.controller != controller || !listEquals(old.markers, markers);
 
   @override
   bool shouldRelayout(_MarkerFlow old) =>

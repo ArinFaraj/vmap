@@ -11,6 +11,7 @@ import 'package:vmap/src/errors.dart';
 import 'package:vmap/src/net/net.dart';
 import 'package:vmap/src/style/style.dart';
 import 'package:vmap/src/options.dart';
+import 'package:vmap/src/platform/io.dart';
 
 Future<HttpServer> serve(void Function(HttpRequest request) answer) async {
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -136,6 +137,7 @@ void main() {
 
       File('${cache.path}/mine.txt').writeAsStringSync('keep');
       Directory('${cache.path}/raster-abc/1').createSync(recursive: true);
+      Directory('${cache.path}/glyphs-abc/1').createSync(recursive: true);
       await engine.clearCache();
       final left = [
         for (final entry in cache.listSync())
@@ -144,7 +146,33 @@ void main() {
       expect(left, ['mine.txt']);
     },
   );
+
+  test('clearing the cache goes past a folder it cannot delete', () async {
+    final cache = await Directory.systemTemp.createTemp('vmap-net');
+    final locked = Directory('${cache.path}/tiles-m')..createSync();
+    File('${locked.path}/tile').writeAsStringSync('kept');
+    _mode('555', locked);
+    addTearDown(() {
+      _mode('755', locked);
+      cache.deleteSync(recursive: true);
+    });
+    final others = [
+      for (final name in ['a', 'f', 'k', 'p', 'u', 'z'])
+        Directory('${cache.path}/tiles-$name')..createSync(),
+    ];
+
+    await deleteCached(cache.path, (name) => name.startsWith('tiles-'));
+
+    expect(locked.existsSync(), isTrue);
+    expect([
+      for (final folder in others)
+        if (folder.existsSync()) folder.path,
+    ], isEmpty);
+  }, skip: Platform.isWindows ? 'no chmod' : null);
 }
+
+void _mode(String mode, Directory folder) =>
+    Process.runSync('chmod', [mode, folder.path]);
 
 Future<void> _until(bool Function() done) async {
   final watch = Stopwatch()..start();

@@ -120,7 +120,8 @@ class Vmap extends StatefulWidget {
 
   /// Draws with an engine the app made and owns, to keep loaded tiles
   /// across pages or share them. The parameters above that configure an
-  /// engine are then ignored: set them on this one.
+  /// engine are then ignored: set them on this one. It is still given
+  /// [markers], for as long as this map has any.
   final VmapEngine? engine;
 
   /// The zooms gestures and animations keep to.
@@ -256,12 +257,13 @@ class _VmapState extends State<Vmap> with SingleTickerProviderStateMixin {
   @override
   void didUpdateWidget(Vmap old) {
     super.didUpdateWidget(old);
-    final oldController = old.controller ?? _ownController;
-    if (widget.controller != null && oldController != widget.controller) {
-      oldController
+    final before = old.controller ?? _ownController;
+    final after = _c;
+    if (!identical(before, after)) {
+      before
         ?..removeListener(_cameraChanged)
         ..detach();
-      widget.controller!.addListener(_cameraChanged);
+      after.addListener(_cameraChanged);
     }
     _owner.update(
       options: _options,

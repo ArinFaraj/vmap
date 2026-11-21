@@ -6,11 +6,11 @@ import '../errors.dart';
 import 'marker.dart';
 
 /// The engine a map widget draws with: an app's own, or one it makes from
-/// [VmapEngineOptions] and keeps in step with the widget. It lets memory go
-/// when the system runs short, redraws labels when the system's fonts
-/// change, and keeps the widget's listener on whichever engine draws. Make
-/// one in `initState`, [update] it in `didUpdateWidget` and [dispose] it
-/// with the widget.
+/// [VmapEngineOptions] and keeps in step with the widget. Either is given
+/// the widget's markers. It lets memory go when the system runs short,
+/// redraws labels when the system's fonts change, and keeps the widget's
+/// listener on whichever engine draws. Make one in `initState`, [update]
+/// it in `didUpdateWidget` and [dispose] it with the widget.
 class VmapEngineOwner with WidgetsBindingObserver {
   VmapEngineOwner({
     required VmapEngineOptions options,
@@ -36,6 +36,10 @@ class VmapEngineOwner with WidgetsBindingObserver {
   /// The app's engine when it gave one, otherwise the one made here.
   VmapEngine get engine => _app ?? _made!;
 
+  /// Whether the app's engine holds markers given here, which leave it
+  /// with the widget.
+  bool _gaveMarkers = false;
+
   void _use(
     VmapEngine? app,
     VmapEngineOptions options,
@@ -43,15 +47,24 @@ class VmapEngineOwner with WidgetsBindingObserver {
   ) {
     _app = app;
     _made = app == null
-        ? (VmapEngine.withOptions(options)
-            ..onError = _onError
-            ..markers = markers)
+        ? (VmapEngine.withOptions(options)..onError = _onError)
         : null;
+    _giveMarkers(markers);
     if (_onChanged case final listener?) engine.addListener(listener);
+  }
+
+  /// An app's engine is given [markers] only once the widget has some, so
+  /// those the app set on it itself stay.
+  void _giveMarkers(List<VmapMarker> markers) {
+    final app = _app;
+    if (app != null && markers.isEmpty && !_gaveMarkers) return;
+    engine.markers = markers;
+    _gaveMarkers = app != null && markers.isNotEmpty;
   }
 
   void _letGo() {
     if (_onChanged case final listener?) engine.removeListener(listener);
+    if (_gaveMarkers) _giveMarkers(const []);
     _made?.dispose();
   }
 
@@ -67,9 +80,8 @@ class VmapEngineOwner with WidgetsBindingObserver {
       _use(engine, options, markers);
       return;
     }
-    _made
-      ?..update(options)
-      ..markers = markers;
+    _made?.update(options);
+    _giveMarkers(markers);
   }
 
   @override

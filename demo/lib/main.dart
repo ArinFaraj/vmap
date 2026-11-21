@@ -89,13 +89,10 @@ class _DemoPageState extends State<DemoPage> with TickerProviderStateMixin {
     super.initState();
     unawaited(_restyle());
     unawaited(
-      rootBundle
-          .loadString('assets/earthquakes.geojson')
-          .then(
-            (text) => setState(
-              () => _quakes = jsonDecode(text) as Map<String, Object?>,
-            ),
-          ),
+      rootBundle.loadString('assets/earthquakes.geojson').then((text) {
+        if (!mounted) return;
+        setState(() => _quakes = jsonDecode(text) as Map<String, Object?>);
+      }),
     );
   }
 

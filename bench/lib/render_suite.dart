@@ -13,6 +13,7 @@ import 'package:vmap/src/camera/view.dart';
 import 'package:vmap/vmap.dart';
 
 import 'render_suite/pixelmatch.dart';
+import 'render_suite/png.dart';
 
 /// Runs MapLibre GL JS's render tests through the engine and scores each
 /// the way MapLibre's own runner does. Driven by tool/render_suite.sh,
@@ -570,10 +571,9 @@ Future<void> _score(
   final out = Directory('$_out/${result.id}')..createSync(recursive: true);
   // From the pixels scored: the image's texture may hold a later frame
   // by now.
-  File('${out.path}/actual.png').writeAsBytesSync(await _encode(pixels, w, h));
+  File('${out.path}/actual.png').writeAsBytesSync(encodePng(pixels, w, h));
   if (bestDiff != null) {
-    File('${out.path}/diff.png')
-        .writeAsBytesSync(await _encode(bestDiff, w, h));
+    File('${out.path}/diff.png').writeAsBytesSync(encodePng(bestDiff, w, h));
   }
 }
 
@@ -703,21 +703,6 @@ Future<({Uint8List pixels, int width, int height})> _decode(
   image.dispose();
   codec.dispose();
   return out;
-}
-
-Future<Uint8List> _encode(Uint8List rgba, int width, int height) async {
-  final done = Completer<ui.Image>();
-  ui.decodeImageFromPixels(
-    rgba,
-    width,
-    height,
-    ui.PixelFormat.rgba8888,
-    done.complete,
-  );
-  final image = await done.future;
-  final png = await image.toByteData(format: ui.ImageByteFormat.png);
-  image.dispose();
-  return png!.buffer.asUint8List();
 }
 
 String _report(List<_Result> results, String testsDir) {

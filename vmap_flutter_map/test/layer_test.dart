@@ -72,6 +72,35 @@ void main() {
     expect(await engine.featuresAt(const LatLng(36.19, 44.01)), isEmpty);
   });
 
+  testWidgets('an app\'s engine is given the layer\'s markers', (tester) async {
+    final app = VmapEngine(
+      style: const VmapStyle.json({
+        'version': 8,
+        'sources': <String, Object?>{},
+        'layers': <Object?>[],
+      }),
+    );
+    addTearDown(app.dispose);
+    Widget map(List<Marker> markers) => Directionality(
+      textDirection: TextDirection.ltr,
+      child: FlutterMap(
+        options: const MapOptions(initialCenter: LatLng(36.19, 44.01)),
+        children: [VmapLayer(engine: app, markers: markers)],
+      ),
+    );
+    const marker = NamedMarker(
+      point: LatLng(36.19, 44.01),
+      name: 'Citadel',
+      child: SizedBox(),
+    );
+
+    await tester.pumpWidget(map(const [marker]));
+    expect(app.markers.single.name, 'Citadel');
+
+    await tester.pumpWidget(const SizedBox());
+    expect(app.markers, isEmpty);
+  });
+
   testWidgets('a layer swaps between its own engine and an app\'s', (
     tester,
   ) async {

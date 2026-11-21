@@ -1,5 +1,63 @@
 ## Unreleased
 
+- A map in a widget test loads vmap's own fonts. Under `flutter test` every
+  map told `onError` of a fonts error and had no Vazirmatn or Noto Sans
+  Syriac Eastern to shape with: the tester answers an asset at once, and
+  the two fonts were waited for together in a way that then comes back
+  empty.
+- A GPU that gives out in the middle of a frame is reported once the frame
+  has ended. The report reached `onError` and the engine's listeners while
+  the map was painting, where nothing may ask for a repaint or a rebuild:
+  a debug build failed an assertion there instead of handing the map to
+  the canvas quietly.
+- A `Vmap` given a controller and then none moves with one of its own. The
+  controller taken away stayed attached to the map, and the map's own
+  never told `onCameraMove` or `onCameraIdle`.
+- `styleEdits`, `featureStates` and `markers` lists edited in place and
+  given again are followed. The engine kept the app's own list of edits
+  and states, so the changed list compared equal to itself, and a marker
+  moved in such a list stayed where it was until the camera moved.
+- A `Vmap` or a `VmapLayer` drawing with an app's `engine` gives it the
+  `markers` it is built with, and takes them back when it has none left or
+  goes. They were drawn and the engine never heard of them: labels ran
+  under them, their names were missing, and on the web they trailed the
+  map by a frame. Markers the app sets on its engine itself stay, as long
+  as the widget is given none.
+- A marker's name asks the style's glyph server for nothing. Every map
+  with a named marker asked for a font with an empty name, which the
+  server answered with a 404, and over such a style a name of several
+  words was drawn a word a line.
+- A symbol layer with text and no `text-font` takes MapLibre's default,
+  `Open Sans Regular` then `Arial Unicode MS Regular`, where it asked for
+  a font with an empty name. One whose `text-font` is an expression no
+  longer asks for a font named after the expression's operator.
+- Text in a font the style's glyph server lacks, which vmap draws from its
+  own fonts, wraps at its width and is measured by those fonts. It broke
+  after every word, and a road's name was placed as if it had no length.
+- A tile in the cache directory that cannot be read is fetched again and
+  replaced, and what a server answers in a tile's place is not kept. A
+  network's sign in page, or a file cut short, stayed on disk as the tile:
+  it failed every time it was asked for, until `clearCache`.
+- The style's glyph ranges are kept in the cache directory, beside the
+  tiles, the style and its sprites. Every start fetched each range again,
+  so labels waited on the network, and without one they were written in
+  vmap's own fonts.
+- `clearCache` goes on past a folder it cannot delete. One a tile was
+  being written into stopped it, and the rest of the cache stayed.
+- Files in the cache directory are written whole or not at all, so an app
+  stopped while a tile, a style or a sprite sheet is being written leaves
+  no cut off file behind.
+- `flyTo`, `easeTo` and an eased `fitBounds` take the short way round the
+  world, as MapLibre does: from Fiji to Samoa over the antimeridian, where
+  the camera went west across Africa and the Americas.
+- `VmapPins` and `VmapPin` compare by what they hold, so pins made again
+  in every `build` as they were change nothing. They compared by
+  identity, and each rebuild drew every pin again and placed the labels
+  again.
+- vmap's `NOTICES` file carries the licenses of what it bundles (Vazirmatn,
+  Noto Sans Syriac Eastern, the WebGL2 backend from flutter_scene and the
+  Unicode tables), so Flutter adds them to the license page of every app
+  that uses vmap. `LICENSE` is the MIT license alone.
 - Android apps need no setup: vmap's own Android manifest switches Flutter
   GPU on and asks for the internet, and the build merges it into the
   app's. The lines an app added for vmap can go.

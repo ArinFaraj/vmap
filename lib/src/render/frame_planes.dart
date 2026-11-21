@@ -3,13 +3,13 @@ import 'dart:ui' as ui;
 
 import '../gpu/gpu_shim/shared/page_image.dart';
 
-/// GPU images laid over each other as one page element, each at its
-/// opacity, the whole moved by [warp] and cut to the polygon [clip], both
-/// in the map's logical pixels.
+/// GPU images laid over each other as one page element, the whole moved
+/// by [warp] and cut to the polygon [clip], both in the map's logical
+/// pixels.
 class GpuPlane {
   const GpuPlane(this.images, {this.warp, this.clip});
 
-  final List<(PageImage image, double opacity)> images;
+  final List<PageImage> images;
 
   /// A column-major 4x4 matrix, as `Canvas.transform` takes.
   final Float64List? warp;
@@ -62,10 +62,7 @@ class FramePlanes {
 
   /// Ends the picture drawn so far and lays [images] over it, moved by
   /// [warp]; what is drawn next goes over them, on the canvas returned.
-  ui.Canvas hand(
-    List<(PageImage image, double opacity)> images,
-    Float64List? warp,
-  ) {
+  ui.Canvas hand(List<PageImage> images, Float64List? warp) {
     _close();
     final plane = GpuPlane(images, warp: warp, clip: clip);
     onHand?.call(gpu.length, plane);

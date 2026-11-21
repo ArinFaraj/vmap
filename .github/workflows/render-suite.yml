@@ -2,7 +2,7 @@ name: MapLibre render tests
 
 on:
   push:
-    branches: [main, engine]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:

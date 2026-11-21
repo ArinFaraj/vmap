@@ -854,6 +854,21 @@ abstract class TileDrawing<L extends TiledRasterLayer>
     return (dx > 0.5 ? dx - 1 : dx, dy > 0.5 ? dy - 1 : dy);
   }
 
+  /// The picture [bytes] hold, or null when they hold none.
+  static Future<ui.Image?> _pictureOf(Uint8List? bytes) async {
+    if (bytes == null || bytes.isEmpty) return null;
+    try {
+      final codec = await ui.instantiateImageCodec(bytes);
+      try {
+        return (await codec.getNextFrame()).image;
+      } finally {
+        codec.dispose();
+      }
+    } on Exception {
+      return null;
+    }
+  }
+
   @protected
   Future<void> loadTile(RasterTile tile, int z, int x, int y) async {
     if (tile.loading || tile.empty || tile.missing) return;
@@ -864,21 +879,32 @@ abstract class TileDrawing<L extends TiledRasterLayer>
     _loading++;
     final cancel = tile.cancel = Cancel();
     try {
-      final bytes = await tileStore!.read(z, x, y, cancel: cancel);
+      final store = tileStore!;
+      var bytes = await store.read(z, x, y, cancel: cancel);
+      var picture = await _pictureOf(bytes);
+      if (picture == null && bytes != null && bytes.isNotEmpty) {
+        // What is no picture is not kept on disk: a file cut short, or a
+        // network's sign in page answered in a tile's place. The copy on
+        // disk may be the bad one, so the server is asked once more.
+        await store.forget(z, x, y);
+        bytes = await store.read(z, x, y, cancel: cancel, fresh: true);
+        picture = await _pictureOf(bytes);
+        if (picture == null && bytes != null && bytes.isNotEmpty) {
+          await store.forget(z, x, y);
+          throw const FormatException('The tile is not a picture');
+        }
+      }
       if (bytes == null) {
         tile.missing = true;
         if (!closed) onLoaded();
         return;
       }
-      if (bytes.isEmpty) {
+      if (picture == null) {
         tile.empty = true;
         return;
       }
-      final codec = await ui.instantiateImageCodec(bytes);
-      final frame = await codec.getNextFrame();
-      codec.dispose();
-      decodedFrom(frame.image, bytes);
-      await keepDecoded(tile, frame.image, z, x, y);
+      decodedFrom(picture, bytes);
+      await keepDecoded(tile, picture, z, x, y);
       tile.failures = 0;
     } on Cancelled {
       // Asked for again whenever it is in view again.

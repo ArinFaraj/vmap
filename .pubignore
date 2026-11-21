@@ -1,5 +1,9 @@
 # Development only: the benchmark app, tools, the flutter_map adapter
 # (published on its own), internal notes and generated files.
+#
+# pub reads this file for the adapter too, and the /vmap_flutter_map/ line
+# hides all of it: `dart pub publish` in that folder needs the line taken
+# out for that one run.
 /bench/
 /demo/
 /tool/
@@ -7,9 +11,7 @@
 /docs/
 /doc/design/
 /doc/images/
-/doc/api-review.md
-/doc/review.md
-/doc/naming.md
+/doc/benchmark.md
 /doc/platform-support.md
 /doc/performance-plan.md
 /ROADMAP.md

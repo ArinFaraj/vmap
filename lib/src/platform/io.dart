@@ -58,10 +58,27 @@ bool fileExists(String path) => File(path).existsSync();
 
 Future<Uint8List> readFile(String path) => File(path).readAsBytes();
 
+int _writes = 0;
+
+/// Writes [bytes] at [path], whole or not at all: an app stopped half way
+/// through leaves no cut off file to be read as a tile or a style later.
 Future<void> writeFile(String path, List<int> bytes) async {
-  final file = File(path);
-  await file.parent.create(recursive: true);
-  await file.writeAsBytes(bytes);
+  await File(path).parent.create(recursive: true);
+  final part = File('$path.${Isolate.current.hashCode}-${_writes++}.part');
+  try {
+    await part.writeAsBytes(bytes);
+    await part.rename(path);
+  } on FileSystemException {
+    await deleteFile(part.path);
+    rethrow;
+  }
+}
+
+/// Deletes the file at [path], if there is one.
+Future<void> deleteFile(String path) async {
+  try {
+    await File(path).delete();
+  } on FileSystemException catch (_) {}
 }
 
 /// Deletes the entries of [directory] whose name [mine] says yes to.
@@ -69,12 +86,21 @@ Future<void> deleteCached(
   String directory,
   bool Function(String name) mine,
 ) async {
+  final List<FileSystemEntity> entries;
   try {
-    await for (final entry in Directory(directory).list()) {
-      final name = entry.uri.pathSegments.lastWhere((s) => s.isNotEmpty);
-      if (mine(name)) await entry.delete(recursive: true);
-    }
-  } on FileSystemException catch (_) {}
+    entries = await Directory(directory).list().toList();
+  } on FileSystemException {
+    return;
+  }
+  for (final entry in entries) {
+    final name = entry.uri.pathSegments.lastWhere((s) => s.isNotEmpty);
+    if (!mine(name)) continue;
+    // A folder a tile is written into meanwhile is left with that tile, and
+    // the rest still go.
+    try {
+      await entry.delete(recursive: true);
+    } on FileSystemException catch (_) {}
+  }
 }
 
 /// Reads pieces of a file on this device.
