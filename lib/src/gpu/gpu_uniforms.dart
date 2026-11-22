@@ -395,20 +395,22 @@ class LayerSlots {
   final Map<TileGpu, _TileSlots> _written = Map.identity();
 
   /// The slots [write] puts in place for segment [segment] of [data] at
-  /// [scale], written once a frame.
+  /// [scale], its layers shown as at zoom [gate], written once a frame.
   gpu.BufferView written(
     TileGpu data,
     int segment,
     double scale,
+    double gate,
     gpu.BufferView Function() write,
   ) {
     final first = _written[data];
     var slots = first;
-    while (slots != null && slots.scale != scale) {
+    while (slots != null && (slots.scale != scale || slots.gate != gate)) {
       slots = slots.next;
     }
     slots ??= _written[data] = _TileSlots(
       scale,
+      gate,
       data.stream!.segments.length,
       first,
     );
@@ -427,17 +429,15 @@ class LayerSlots {
     _dashFade = dashFade;
   }
 
-  /// A layer's paint, or none at a zoom out of its range, where MapLibre
-  /// hides it at once.
+  /// A layer's paint at [styleZoom], for the feature of [props] or for
+  /// the whole layer.
   LayerPaint _paintOf(
     StyleSheet sheet,
-    int layerIndex,
+    PaintLayer layer,
     EvalContext context,
     double styleZoom,
     Map<String, Object?>? props,
   ) {
-    final layer = sheet.layers[layerIndex];
-    if (!layer.showsAt(styleZoom)) return LayerPaint.clear;
     final source = sheet.buckets[layer.bucket].source;
     context.state = props == null || source >= _states.length
         ? const {}
@@ -445,11 +445,9 @@ class LayerSlots {
     return LayerPaint.of(layer, context, styleZoom, props, _dashFade);
   }
 
-  /// Writes the slots [from] to [to] of [stream] into the slot table, in
-  /// tile units for a tile [scale] screen pixels to the unit on a map
-  /// turned [bearing] degrees.
   /// Writes slots [from] to [to] of [d]'s stream from the start of
-  /// [slots], and returns their bytes.
+  /// [slots], in tile units for a tile [scale] screen pixels to the unit
+  /// on a map turned [bearing] degrees, and returns their bytes.
   ByteData fill(
     StyleSheet sheet,
     TileDraw d,
@@ -463,21 +461,27 @@ class LayerSlots {
   ) {
     final out = slots;
     final stream = data.stream!;
+    final gate = d.gate(styleZoom);
     for (var i = from; i < to; i++) {
       final (layerIndex, props) = stream.slots[i];
-      final paint = props == null
+      final layer = sheet.layers[layerIndex];
+      // Out of its zooms MapLibre hides a layer at once; a tile standing in
+      // for others shows its layers as at the zoom it was built for.
+      final paint = !layer.showsAt(gate)
+          ? LayerPaint.clear
+          : props == null
           ? (_layerPaint[layerIndex] ??= _paintOf(
               sheet,
-              layerIndex,
+              layer,
               context,
               styleZoom,
               null,
             ))
-          : _paintOf(sheet, layerIndex, context, styleZoom, props);
+          : _paintOf(sheet, layer, context, styleZoom, props);
       paint.writeSlot(
         out,
         (i - from) * LayerPaint.slotFloats,
-        GpuStream.kindOf(sheet.layers[layerIndex]),
+        GpuStream.kindOf(layer),
         scale,
         _sprites.sheet,
         _ramps.gradientRowOf(layerIndex),
@@ -501,10 +505,10 @@ class LayerSlots {
 /// One tile's slots as written this frame at one scale, by segment, and
 /// those written at another scale after it.
 class _TileSlots {
-  _TileSlots(this.scale, int segments, this.next)
+  _TileSlots(this.scale, this.gate, int segments, this.next)
     : views = List.filled(segments, null);
 
-  final double scale;
+  final double scale, gate;
   final List<gpu.BufferView?> views;
   final _TileSlots? next;
 }

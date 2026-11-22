@@ -238,30 +238,23 @@ class _DemoPageState extends State<DemoPage> with TickerProviderStateMixin {
   }
 }
 
-/// A frosted card the controls sit on.
-class Glass extends StatelessWidget {
-  const Glass({required this.child, this.padding, super.key});
+/// A dark card the controls sit on. No backdrop blur: the map is a page
+/// element under Flutter's canvas, so a blur has nothing to blur and still
+/// costs a pass every frame.
+class Panel extends StatelessWidget {
+  const Panel({required this.child, this.padding, super.key});
 
   final Widget child;
   final EdgeInsetsGeometry? padding;
 
   @override
-  Widget build(BuildContext context) => ClipRRect(
-    borderRadius: BorderRadius.circular(18),
-    child: BackdropFilter(
-      filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: const Color(0xCC0E1626),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: const Color(0x22FFFFFF)),
-        ),
-        child: Padding(
-          padding: padding ?? const EdgeInsets.all(16),
-          child: child,
-        ),
-      ),
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: const Color(0xCC0E1626),
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: const Color(0x22FFFFFF)),
     ),
+    child: Padding(padding: padding ?? const EdgeInsets.all(16), child: child),
   );
 }
 
@@ -269,7 +262,7 @@ class _Brand extends StatelessWidget {
   const _Brand();
 
   @override
-  Widget build(BuildContext context) => Glass(
+  Widget build(BuildContext context) => Panel(
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
     child: Row(
       mainAxisSize: MainAxisSize.min,
@@ -316,7 +309,7 @@ class _TopActions extends StatelessWidget {
   final VoidCallback onTour, onPanel;
 
   @override
-  Widget build(BuildContext context) => Glass(
+  Widget build(BuildContext context) => Panel(
     padding: const EdgeInsets.all(6),
     child: Row(
       mainAxisSize: MainAxisSize.min,
@@ -352,7 +345,7 @@ class _Caption extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ConstrainedBox(
     constraints: const BoxConstraints(maxWidth: 520),
-    child: Glass(
+    child: Panel(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 500),

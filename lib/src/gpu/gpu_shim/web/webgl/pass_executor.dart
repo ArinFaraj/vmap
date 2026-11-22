@@ -211,9 +211,42 @@ final class _PassExecutor {
     _pendingVertexBindings.add(entry);
   }
 
-  /// Applies one recorded vertex-stream binding to the currently bound VAO:
-  /// binds the stream's GL buffer and points/enables its attributes.
-  void _applyVertexBinding(BufferView bufferView, int slot) {
+  static int _locationOf(
+    WebGlRenderPipeline pipeline,
+    VertexAttribute attribute,
+  ) {
+    final input = pipeline.vertexShader.vertexInputByName(attribute.name);
+    if (input == null) {
+      throw StateError('Vertex shader has no input named "${attribute.name}"');
+    }
+    return input.location;
+  }
+
+  /// Enables the attributes of stream [slot] on the bound VAO, stepping
+  /// once an instance for an instance-rate stream.
+  void _enableAttributes(int slot) {
+    final gl = _gpuContext._gl;
+    final pipeline = _boundPipeline!;
+    final layout = pipeline.vertexLayout;
+    if (layout == null) {
+      for (final input in pipeline.vertexShader.vertexInputs) {
+        gl.enableVertexAttribArray(input.location);
+      }
+      return;
+    }
+    final buffer = layout.buffers[slot];
+    final divisor = buffer.stepMode == VertexStepMode.instance ? 1 : 0;
+    for (final attribute in buffer.attributes) {
+      final location = _locationOf(pipeline, attribute);
+      gl
+        ..enableVertexAttribArray(location)
+        ..vertexAttribDivisor(location, divisor);
+    }
+  }
+
+  /// Points the attributes of stream [slot] on the bound VAO at
+  /// [bufferView].
+  void _pointAttributes(BufferView bufferView, int slot) {
     final gl = _gpuContext._gl;
     final pipeline = _boundPipeline!;
     bufferView.buffer.webGl._bindForTarget(
@@ -226,22 +259,15 @@ final class _PassExecutor {
       // and named attributes; the shader's reflection only supplies the
       // attribute locations.
       final buffer = layout.buffers[slot];
-      final divisor = buffer.stepMode == VertexStepMode.instance ? 1 : 0;
       for (final attribute in buffer.attributes) {
-        final input = pipeline.vertexShader.vertexInputByName(attribute.name);
-        if (input == null) {
-          throw StateError(
-            'Vertex shader has no input named "${attribute.name}"',
-          );
-        }
-        gl.enableVertexAttribArray(input.location);
+        final location = _locationOf(pipeline, attribute);
         final name = attribute.format.name;
         final unsigned = name.startsWith('uint');
         if (unsigned || name.startsWith('sint')) {
           // Integer inputs (`in uvec2`) need the I variant, which keeps the
           // values integral instead of converting them to float.
           gl.vertexAttribIPointer(
-            input.location,
+            location,
             attribute.format.componentCount,
             unsigned
                 ? web.WebGL2RenderingContext.UNSIGNED_INT
@@ -251,7 +277,7 @@ final class _PassExecutor {
           );
         } else {
           gl.vertexAttribPointer(
-            input.location,
+            location,
             attribute.format.componentCount,
             web.WebGL2RenderingContext.FLOAT,
             false,
@@ -259,15 +285,12 @@ final class _PassExecutor {
             bufferView.offsetInBytes + attribute.offsetInBytes,
           );
         }
-        gl.vertexAttribDivisor(input.location, divisor);
       }
       return;
     }
 
-    final inputs = pipeline.vertexShader.vertexInputs;
     final stride = pipeline.vertexShader.vertexStride;
-    for (final input in inputs) {
-      gl.enableVertexAttribArray(input.location);
+    for (final input in pipeline.vertexShader.vertexInputs) {
       gl.vertexAttribPointer(
         input.location,
         input.componentCount,
@@ -276,9 +299,6 @@ final class _PassExecutor {
         stride,
         bufferView.offsetInBytes + input.offsetInBytes,
       );
-      // Divisor state lives in the VAO and may be left over from an
-      // instanced layout; reset it for vertex-rate inputs.
-      gl.vertexAttribDivisor(input.location, 0);
     }
   }
 
@@ -292,16 +312,15 @@ final class _PassExecutor {
   /// (pipeline, buffers, offsets), so their full attribute state is captured
   /// in a VAO once and re-bound with a single call thereafter.
   ///
-  /// Instance-rate streams are excluded from the cache key and re-pointed on
-  /// the bound VAO every draw: they ride the per-frame bump allocator, so
-  /// their offset changes per draw and every instanced draw re-points them
-  /// anyway.
+  /// Instance-rate streams are excluded from the cache key: they ride the
+  /// per-frame bump allocator, so their offset changes from draw to draw.
+  /// The VAO enables them and holds their divisors once; a draw re-points
+  /// them only where the buffer or offset differs from the last it drew.
   void _applyVertexState({required bool needsIndex}) {
     if (_inlineVertexBufferView != null) {
       _ensureVao();
       return;
     }
-    final gl = _gpuContext._gl;
     final indexView = needsIndex ? _indexBufferView : null;
     final key = _gpuContext._vaoProbe..clear(_boundPipeline!);
     for (final (view, slot, instanceRate) in _pendingVertexBindings) {
@@ -312,32 +331,45 @@ final class _PassExecutor {
       key.indices(indexView.buffer.webGl._serial, indexView.offsetInBytes);
     }
     final cache = _gpuContext._vaoCache;
-    final known = cache[key];
-    if (known != null) {
-      known.used = ++_gpuContext._vaoClock;
-      _gpuContext._state.bindVertexArray(known.vao);
-    } else {
-      final vao = gl.createVertexArray();
-      if (vao == null) {
-        throw StateError('Failed to create WebGL vertex array');
-      }
-      _gpuContext._state.bindVertexArray(vao);
-      for (final (view, slot, instanceRate) in _pendingVertexBindings) {
-        if (instanceRate) continue;
-        _applyVertexBinding(view, slot);
-      }
-      // ELEMENT_ARRAY_BUFFER binding is VAO state; capture it with the rest.
-      indexView?.buffer.webGl._bindForTarget(
-        web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER,
-      );
-      cache[key.copy()] = _CachedVao(vao)..used = ++_gpuContext._vaoClock;
-      if (cache.length > WebGlContext._kMaxCachedVaos) {
-        _gpuContext._dropOldVaos();
-      }
+    var known = cache[key];
+    if (known == null) {
+      known = _newVao(indexView);
+      cache[key.copy()] = known;
     }
+    known.used = ++_gpuContext._vaoClock;
+    if (cache.length > WebGlContext._kMaxCachedVaos) {
+      _gpuContext._dropOldVaos();
+    }
+    _gpuContext._state.bindVertexArray(known.vao);
     for (final (view, slot, instanceRate) in _pendingVertexBindings) {
-      if (instanceRate) _applyVertexBinding(view, slot);
+      if (instanceRate &&
+          known.moveInstance(
+            slot,
+            view.buffer.webGl._serial,
+            view.offsetInBytes,
+          )) {
+        _pointAttributes(view, slot);
+      }
     }
+  }
+
+  /// A VAO with every pending stream enabled, the vertex-rate ones pointed,
+  /// and [indexView] bound; the instance-rate ones are pointed per draw.
+  _CachedVao _newVao(BufferView? indexView) {
+    final vao = _gpuContext._gl.createVertexArray();
+    if (vao == null) {
+      throw StateError('Failed to create WebGL vertex array');
+    }
+    _gpuContext._state.bindVertexArray(vao);
+    for (final (view, slot, instanceRate) in _pendingVertexBindings) {
+      _enableAttributes(slot);
+      if (!instanceRate) _pointAttributes(view, slot);
+    }
+    // ELEMENT_ARRAY_BUFFER binding is VAO state; capture it with the rest.
+    indexView?.buffer.webGl._bindForTarget(
+      web.WebGL2RenderingContext.ELEMENT_ARRAY_BUFFER,
+    );
+    return _CachedVao(vao);
   }
 
   // ELEMENT_ARRAY_BUFFER binding is VAO state, applied (through the VAO
@@ -595,26 +627,26 @@ final class _PassExecutor {
     // bindPipeline; the encoder skips rebinding a pipeline it already bound,
     // so nulling it here would leave later draws without one).
     //
-    // Releasing the uniform blocks and texture units matters beyond tidiness.
-    // They are GL context state rather than per-draw descriptors, so leaving
-    // them attached lets a draw that should have rebound a slot read the
-    // previous draw's resource and render correctly, which hides bind
-    // lifetime bugs here that break on the native backends.
-    if (_vao != null) {
-      _gpuContext._state.bindVertexArray(null);
-    }
-    for (final binding in _boundUniformBlocks) {
-      _gpuContext._state.bindBufferBase(
-        web.WebGL2RenderingContext.UNIFORM_BUFFER,
-        binding,
-        null,
-      );
+    // Debug builds also take the bindings off the context, so a draw that
+    // should have rebound a slot cannot read the last draw's resource and
+    // hide a bind lifetime bug; release builds skip those GL calls.
+    if (kDebugMode) {
+      if (_vao != null) {
+        _gpuContext._state.bindVertexArray(null);
+      }
+      for (final binding in _boundUniformBlocks) {
+        _gpuContext._state.bindBufferBase(
+          web.WebGL2RenderingContext.UNIFORM_BUFFER,
+          binding,
+          null,
+        );
+      }
+      for (final entry in _boundTextureUnits.entries) {
+        _gpuContext._state.bindTexture(entry.key, entry.value, null);
+      }
     }
     _boundUniformBlocks.clear();
     _boundBlockBits = 0;
-    for (final entry in _boundTextureUnits.entries) {
-      _gpuContext._state.bindTexture(entry.key, entry.value, null);
-    }
     _boundTextureUnits.clear();
     _inlineVertexBufferView = null;
     _indexBufferView = null;
@@ -682,9 +714,23 @@ final class _PassExecutor {
       return;
     }
     gl.enable(web.WebGL2RenderingContext.STENCIL_TEST);
-    _applyStencilFace(web.WebGL2RenderingContext.FRONT, _stencilFront);
-    _applyStencilFace(web.WebGL2RenderingContext.BACK, _stencilBack);
+    final front = _stencilFront, back = _stencilBack;
+    if (_sameStencil(front, back)) {
+      _applyStencilFace(web.WebGL2RenderingContext.FRONT_AND_BACK, front);
+      return;
+    }
+    _applyStencilFace(web.WebGL2RenderingContext.FRONT, front);
+    _applyStencilFace(web.WebGL2RenderingContext.BACK, back);
   }
+
+  static bool _sameStencil(StencilConfig a, StencilConfig b) =>
+      identical(a, b) ||
+      (a.compareFunction == b.compareFunction &&
+          a.stencilFailureOperation == b.stencilFailureOperation &&
+          a.depthFailureOperation == b.depthFailureOperation &&
+          a.depthStencilPassOperation == b.depthStencilPassOperation &&
+          (a.readMask & 0xFF) == (b.readMask & 0xFF) &&
+          (a.writeMask & 0xFF) == (b.writeMask & 0xFF));
 
   void _applyStencilFace(int face, StencilConfig config) {
     _gpuContext._state

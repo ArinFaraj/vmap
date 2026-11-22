@@ -175,7 +175,9 @@ final class WebGlContext extends GpuContext {
 
   /// Binds [texture] on the reserved setup unit for creation or upload work.
   void _bindTextureForSetup(int target, web.WebGLTexture? texture) {
-    _state.bindTexture(_setupTextureUnit, target, texture);
+    _state
+      ..useUnit(_setupTextureUnit)
+      ..bindTexture(_setupTextureUnit, target, texture);
   }
 
   @override
@@ -614,12 +616,31 @@ extension type _ExtClipControl._(JSObject _) implements JSObject {
   external void clipControlEXT(int origin, int depth);
 }
 
-/// A cached vertex array and when it was last used.
+/// A cached vertex array, when it was last used, and the buffer serial
+/// and offset each of its instance-rate slots points at.
 final class _CachedVao {
   _CachedVao(this.vao);
 
   final web.WebGLVertexArrayObject vao;
   int used = 0;
+  Int32List _instanceAt = Int32List(0);
+
+  /// Records that instance-rate [slot] reads buffer [serial] from
+  /// [offset]; true when that moves it.
+  bool moveInstance(int slot, int serial, int offset) {
+    final at = slot * 2;
+    if (at >= _instanceAt.length) {
+      _instanceAt = Int32List(at + 2)
+        ..fillRange(0, at + 2, -1)
+        ..setRange(0, _instanceAt.length, _instanceAt);
+    }
+    if (_instanceAt[at] == serial && _instanceAt[at + 1] == offset) {
+      return false;
+    }
+    _instanceAt[at] = serial;
+    _instanceAt[at + 1] = offset;
+    return true;
+  }
 }
 
 /// What a vertex array was built for: a pipeline, then the serial, offset

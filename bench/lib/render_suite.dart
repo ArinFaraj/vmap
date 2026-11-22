@@ -318,6 +318,9 @@ class _Session {
             antialias: _multisample,
             maxCachedTiles: 200,
             farBuildings: false,
+            // MapLibre shows a vector tile the frame it is ready, and a
+            // test's wait ends on that frame.
+            tileFade: Duration.zero,
           ),
           labels: VmapLabelOptions(
             crossSourceCollisions: crossSourceCollisions,

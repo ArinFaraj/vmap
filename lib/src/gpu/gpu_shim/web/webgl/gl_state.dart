@@ -201,17 +201,26 @@ final class _GlState {
     _gl.blendFuncSeparate(srcColor, dstColor, srcAlpha, dstAlpha);
   }
 
-  static int _face(int face) => face == web.WebGL2RenderingContext.BACK ? 1 : 0;
+  /// The first and last cached face [face] names, 0 for the front and 1
+  /// for the back.
+  static int _firstFace(int face) =>
+      face == web.WebGL2RenderingContext.BACK ? 1 : 0;
+  static int _lastFace(int face) =>
+      face == web.WebGL2RenderingContext.FRONT ? 0 : 1;
 
   /// Makes [a], [b] and [c] what [state] holds for [face]; true when it
   /// held them already.
   static bool _holdsThree(Int32List state, int face, int a, int b, int c) {
-    final at = _face(face) * 3;
-    if (state[at] == a && state[at + 1] == b && state[at + 2] == c) return true;
-    state[at] = a;
-    state[at + 1] = b;
-    state[at + 2] = c;
-    return false;
+    var held = true;
+    for (var f = _firstFace(face); f <= _lastFace(face); f++) {
+      final at = f * 3;
+      if (state[at] == a && state[at + 1] == b && state[at + 2] == c) continue;
+      held = false;
+      state[at] = a;
+      state[at + 1] = b;
+      state[at + 2] = c;
+    }
+    return held;
   }
 
   void stencilFuncSeparate(int face, int function, int reference, int mask) {
@@ -225,16 +234,14 @@ final class _GlState {
   }
 
   void stencilMaskSeparate(int face, int mask) {
-    if (_stencilMask[_face(face)] == mask) return;
-    _stencilMask[_face(face)] = mask;
+    var held = true;
+    for (var f = _firstFace(face); f <= _lastFace(face); f++) {
+      if (_stencilMask[f] == mask) continue;
+      held = false;
+      _stencilMask[f] = mask;
+    }
+    if (held) return;
     _gl.stencilMaskSeparate(face, mask);
-  }
-
-  void stencilMask(int mask) {
-    if (_stencilMask[0] == mask && _stencilMask[1] == mask) return;
-    _stencilMask[0] = mask;
-    _stencilMask[1] = mask;
-    _gl.stencilMask(mask);
   }
 
   /// The target bound on each texture unit, 0 for none yet, and what is
@@ -247,12 +254,15 @@ final class _GlState {
   );
   int _activeUnit = _unset;
 
+  /// Makes [unit] the active texture unit, the one uploads go to.
+  void useUnit(int unit) {
+    if (_activeUnit == unit) return;
+    _activeUnit = unit;
+    _gl.activeTexture(web.WebGL2RenderingContext.TEXTURE0 + unit);
+  }
+
   /// Binds [texture] to [target] on texture unit [unit].
   void bindTexture(int unit, int target, web.WebGLTexture? texture) {
-    if (_activeUnit != unit) {
-      _activeUnit = unit;
-      _gl.activeTexture(web.WebGL2RenderingContext.TEXTURE0 + unit);
-    }
     if (unit >= _unitTargets.length) {
       _unitTargets = Int32List((unit + 1) * 2)
         ..setRange(0, _unitTargets.length, _unitTargets);
@@ -260,6 +270,8 @@ final class _GlState {
         _unitTextures.add(null);
       }
     }
+    if (_unitTargets[unit] == target && _unitTextures[unit] == texture) return;
+    useUnit(unit);
     _unitTargets[unit] = target;
     _unitTextures[unit] = texture;
     _gl.bindTexture(target, texture);

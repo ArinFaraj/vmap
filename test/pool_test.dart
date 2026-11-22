@@ -109,6 +109,27 @@ void main() {
   });
 
   test(
+    'tiles wanted for later leave half the places for those needed now',
+    () async {
+      late final HttpServer server;
+      server = await _serve((request) {
+        if (request.uri.path == '/tiles.json') {
+          _answerTileJson(request, server.port);
+        }
+      });
+      final pool = _poolOf(server);
+      final later = [for (var x = 0; x < 8; x++) TileId(3, x, 0)];
+      final now = [for (var x = 0; x < 6; x++) TileId(3, x, 4)];
+      pool.want(const [], later: later);
+      await _until(() => later.where(pool.isLoading).length == 6);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      pool.want(now, later: later);
+      expect(later.where(pool.isLoading), hasLength(6));
+      await _until(() => now.every(pool.isLoading));
+    },
+  );
+
+  test(
     'a source that starts after failing no longer reports the failure',
     () async {
       var fail = true;

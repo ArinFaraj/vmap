@@ -73,6 +73,9 @@ class GpuMap extends MapRenderer {
   @override
   bool get drawsIn3d => true;
 
+  @override
+  bool get fadesTiles => true;
+
   Future<void> _load() async {
     try {
       _library = await gpu.loadShaderLibraryAsync(_bundle);
@@ -251,8 +254,12 @@ class GpuMap extends MapRenderer {
       traced('vmap.gpu.drape', () => drape.drawAtlas(buffers, f));
     }
     final heats = _heats(device, buffers, f, clip);
+    final fadesFrom = f.before;
     final layers = _frames.begin(
-      passOn: (pass) => MapPass(device, pass, f, clip),
+      mix: fadesFrom?.mix,
+      passOn: (pass, {required before}) => before
+          ? MapPass.before(device, pass, f, clip, fadesFrom!)
+          : MapPass(device, pass, f, clip),
     );
     // The raised ground holds every vector layer, laid after the
     // backgrounds and rasters under the labels.
@@ -263,12 +270,14 @@ class GpuMap extends MapRenderer {
       // in the frame with depth. With terrain MapLibre draws the map into
       // a texture laid over the ground, as the drape is; without, onto
       // the sphere.
-      final pass = layers.pass.renderPass;
-      if (globe != null) {
-        drape.drawGlobe(pass, globe, view, origin, clip);
-      } else {
-        drape.drawGround(pass, terrain!, view, origin, clip);
-      }
+      layers.each((into) {
+        final pass = into.renderPass;
+        if (globe != null) {
+          drape.drawGlobe(pass, globe, view, origin, clip);
+        } else {
+          drape.drawGround(pass, terrain!, view, origin, clip);
+        }
+      });
       if (globe != null && terrain == null) {
         layers.setUpPasses((pass) => pass.globe = globe);
         _layOut(layers, f, heats, _Layout.globe);
@@ -283,8 +292,8 @@ class GpuMap extends MapRenderer {
         _layOut(layers, f, heats, _Layout.standing);
       }
       for (final building in sheet.extrusions) {
-        if (building.showsAt(styleZoom)) {
-          layers.pass.drawBuildings(building);
+        if (layers.showsBuildings(building)) {
+          layers.each((into) => into.drawBuildings(building));
         }
       }
     });
@@ -329,13 +338,13 @@ class GpuMap extends MapRenderer {
           index >= sheet.labelsRun &&
           building == null &&
           heat == null &&
-          !layers.pass.holds(run)) {
+          !layers.holds(run)) {
         continue;
       }
       splits?.before(index, run);
       if (!vector) continue;
       if (building != null) {
-        if (!building.showsAt(context.zoom)) continue;
+        if (!layers.showsBuildings(building)) continue;
         final opacity = (asNumber(building.opacity(context)) ?? 1).clamp(
           0.0,
           1.0,

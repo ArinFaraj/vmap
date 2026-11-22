@@ -4,11 +4,15 @@ import 'dart:ui' as ui;
 import '../camera/camera.dart';
 import '../trace.dart';
 import 'extrusion.dart';
+import 'far_buildings.dart';
 import 'gpu_stream.dart';
+import 'recent_peak.dart';
 import '../labels/label_state.dart';
 import '../render/map_renderer.dart';
 import '../style/style_model.dart';
 import 'built_tile.dart';
+import 'tile_asks.dart';
+import 'tile_layout.dart';
 import 'worker.dart';
 import 'tile_id.dart';
 import '../camera/view.dart';
@@ -65,14 +69,47 @@ class LoadedTile {
 
   int usedFrame = 0;
 
+  /// The picture the tile joined as it first showed, counted as the fade
+  /// between pictures counts them: 0 for one that showed with no fade,
+  /// null until it shows.
+  int? joined;
+
+  /// Whether the tile is in a picture drawn from the tiles that joined one
+  /// up to [newest], or from every tile when that is null.
+  bool inPicture(int? newest) {
+    final joined = this.joined;
+    return newest == null || (joined != null && joined <= newest);
+  }
+
   /// Whether this is a tile of the [keptZoom] coarsest levels, at most 21
   /// of them, which no cache drops: they stand in anywhere on the world,
   /// so a flight over ground not yet loaded never shows it bare.
   bool get standsIn => id.z <= keptZoom;
 
-  /// When the tile last became ready to draw, on the clock [prepare] was
-  /// given.
-  int readySinceMs = 0;
+  /// How long the tile's buildings take to rise from the ground once they
+  /// first stand.
+  static const riseMs = 350;
+
+  /// When the tile's buildings first stood in a frame, on the frames'
+  /// clock, or null until they do. One made ready ahead of the camera has
+  /// waited since, and its buildings rise when they show, not before.
+  int? stoodSinceMs;
+
+  /// Has the tile's buildings stand whole at [nowMs], unless they already
+  /// do.
+  void standWhole(int nowMs) {
+    final stood = nowMs - riseMs, since = stoodSinceMs;
+    if (since == null || since > stood) stoodSinceMs = stood;
+  }
+
+  /// How far the tile's buildings are still sunk at [nowMs]: 1 when they
+  /// first stand, easing to 0 over [riseMs], and 0 before they first do.
+  double sunkAt(int nowMs) {
+    final since = stoodSinceMs;
+    if (since == null) return 0;
+    final left = 1 - ((nowMs - since) / riseMs).clamp(0.0, 1.0);
+    return left * left * (3 - 2 * left);
+  }
 
   /// What a renderer keeps for this tile, let go with it.
   RendererTileData? get rendererData => _rendererData;
@@ -118,7 +155,6 @@ class LoadedTile {
     if (!renderer.makeReady(this, scale, clock, deadline)) return;
     _built = null;
     _ready = true;
-    readySinceMs = clock.elapsedMilliseconds;
     traceInstant('vmap.tile.ready', () => {'id': '${id.z}/${id.x}/${id.y}'});
   }
 
@@ -152,6 +188,31 @@ class LoadedTile {
   void dispose() => releaseRenderer();
 }
 
+/// The tiles one picture of a source is drawn from.
+class TilePicture {
+  final List<TileDraw> ideal = [];
+  final List<TileDraw> fallback = [];
+
+  /// Tiles drawn for their buildings alone, where the ground under them
+  /// is drawn by coarser tiles that carry none.
+  final List<TileDraw> far = [];
+
+  /// Tiles wanted that nothing loaded could stand in for.
+  int uncovered = 0;
+
+  /// Whether a tile in view was ready but left out, as it has joined no
+  /// picture yet: it waits for the fade that runs to end.
+  bool held = false;
+
+  void clear() {
+    ideal.clear();
+    fallback.clear();
+    far.clear();
+    uncovered = 0;
+    held = false;
+  }
+}
+
 class TileDraw {
   TileDraw(this.tile, this.left, this.top, this.size);
 
@@ -164,6 +225,31 @@ class TileDraw {
   /// How far into the ground the tile's buildings are still sunk, from 1
   /// to 0 once they stand.
   double sunk = 0;
+
+  /// For a tile standing in for tiles still on their way, the style zooms
+  /// its layout was built for, from the first to before the second: its
+  /// layers show as at the nearest of them, so it keeps what it showed
+  /// until they take its place. Null for a tile drawn as the view's own,
+  /// and for one standing in for a tile that could not be had, which
+  /// show the layers of the view's zoom, as MapLibre's.
+  (double, double)? builtFor;
+
+  /// The zoom this tile's layers are shown or hidden by in a frame at
+  /// [styleZoom].
+  double gate(double styleZoom) {
+    final built = builtFor;
+    if (built == null) return styleZoom;
+    final (from, to) = built;
+    if (styleZoom < from) return from;
+    return styleZoom < to ? styleZoom : to - 1e-9;
+  }
+
+  /// Whether this and [other] cover some of the same ground.
+  bool overlaps(TileDraw other) =>
+      left < other.left + other.size - 0.5 &&
+      other.left < left + size - 0.5 &&
+      top < other.top + other.size - 0.5 &&
+      other.top < top + size - 0.5;
 }
 
 /// The sources of [defs] in order: each one of [sources] with the same
@@ -260,19 +346,27 @@ class TileSource {
   final Map<TileId, LoadedTile> previous = {};
   final TileRetries retries = TileRetries();
 
-  final List<TileDraw> ideal = [];
-  final List<TileDraw> fallback = [];
+  /// What the view shows this frame.
+  final TilePicture shown = TilePicture();
 
-  /// Tiles drawn for their buildings alone, where the ground under them
-  /// is drawn by coarser tiles that carry none.
-  final List<TileDraw> far = [];
-  final Map<int, TileDraw> fallbackByKey = {};
+  /// What the view showed before the tiles now fading in joined it, laid
+  /// out by [layBefore].
+  final TilePicture before = TilePicture();
 
-  /// Tiles this frame wanted that nothing loaded could stand in for.
-  int uncovered = 0;
-  final List<TileId> wanted = [];
+  /// The tiles the view took this frame, and the frame before.
+  List<CoverTile> picked = const [], lastPicked = const [];
+
+  /// How far the buildings past the ground tiles stand this frame, or null
+  /// where none do.
+  BuildingReach? farReach;
+
+  /// Tiles this frame wanted that are not here, the most needed first.
   final List<(TileId, double)> missing = [];
-  bool hadWanted = false;
+
+  /// The tiles asked for this frame: those the view needs now or within
+  /// the time a tile takes to come, and those for later.
+  final Set<TileId> wantedNow = {}, wantedLater = {};
+  bool _hadWanted = false;
 
   /// A tile that failed is being held back before it is asked for again.
   bool retrying = false;
@@ -294,11 +388,33 @@ class TileSource {
     previous.clear();
   }
 
+  /// Keeps [tile], just built, in place of the tile of its id. One built
+  /// again from changed data or for a changed style shows at once:
+  /// fading, it would trail behind data that changes with every frame.
+  void put(LoadedTile tile) {
+    final replaced = tiles[tile.id];
+    replaced?.dispose();
+    if (previous.containsKey(tile.id) || replaced?.joined != null) {
+      tile.joined = 0;
+    }
+    tiles[tile.id] = tile;
+  }
+
+  /// The tile [t] of a cover is, or null off the top or bottom of the
+  /// world.
+  TileId? idOf(CoverTile t) {
+    final n = 1 << t.z;
+    if (t.y < 0 || t.y >= n) return null;
+    return TileId(t.z, t.x % n, t.y, over: t.z >= maxDataZoom ? t.over : 0);
+  }
+
   /// Works out which of the source's tiles cover the view, asks for the
   /// missing ones, and returns whether a tile is still being prepared. A
   /// tilted view takes tiles nearer the camera at the view's zoom, farther
   /// ones a level or more coarser. With [farBuildings], the tiles whose
-  /// buildings stand within it over that coarser ground go in [far].
+  /// buildings stand within it over that coarser ground are drawn too.
+  /// Only tiles that joined a picture up to [newest] are drawn, or every
+  /// tile when it is null; the others wait.
   bool cover(
     MapFrame camera,
     double dataZoom, {
@@ -308,431 +424,72 @@ class TileSource {
     bool variableZoom = false,
     bool standing = false,
     BuildingReach? farBuildings,
+    int? newest,
   }) {
     retrying = false;
     maxDataZoom = pool.coverMaxZoom;
     final view = camera.view;
-    ideal.clear();
-    fallback.clear();
-    fallbackByKey.clear();
-    uncovered = 0;
-    missing.clear();
-    var waiting = false;
-    var covered = true;
-    final origin = camera.origin;
-    final picked = view.cover(
+    lastPicked = picked;
+    picked = view.cover(
       maxZoom: maxDataZoom,
       variableZoom: variableZoom,
       beyond: variableZoom ? view.height : 0,
       standing: standing ? view.standingFor() : 0,
     );
-    TileId idOf(CoverTile t) => TileId(
-      t.z,
-      t.x % (1 << t.z),
-      t.y,
-      over: t.z >= maxDataZoom ? t.over : 0,
+    farReach = farBuildings;
+    final layout = TileLayout(
+      this,
+      shown,
+      newest: newest,
+      frame: frame,
+      nowMs: nowMs,
+      prepare: prepare,
     );
-    // A ready tile whose children in view are not all ready yet stays in
-    // their place until they are, and they then take it over together:
-    // one at a time, the tile would stand in for the rest cut to their
-    // squares, and with it its buildings standing over the ready ones.
-    final holding = <(int, int, int), LoadedTile>{};
-    for (final t in picked) {
-      if (t.z == 0 || t.y < 0 || t.y >= 1 << t.z) continue;
-      final id = idOf(t);
-      if (_ready(id) != null || retries.resting(id, nowMs)) continue;
-      final parent = _readyAt(t.z - 1, (t.x >> 1) % (1 << (t.z - 1)), t.y >> 1);
-      if (parent != null) holding[(t.z - 1, t.x >> 1, t.y >> 1)] = parent;
-    }
-    final held = <(int, int, int)>{};
-    for (final (rank, t) in picked.indexed) {
-      final n = 1 << t.z;
-      if (t.y < 0 || t.y >= n) continue;
-      final id = idOf(t);
-      final span = view.worldSize / n;
-      final left = t.x * span - origin.dx;
-      final top = t.y * span - origin.dy;
-      if (holding.isNotEmpty) {
-        final up1 = (t.z - 1, t.x >> 1, t.y >> 1);
-        final up2 = (t.z - 2, t.x >> 2, t.y >> 2);
-        final key = holding.containsKey(up1)
-            ? up1
-            : holding.containsKey(up2)
-            ? up2
-            : null;
-        if (key != null) {
-          final parent = holding[key]!;
-          parent.usedFrame = frame;
-          if (held.add(key)) {
-            final big = view.worldSize / (1 << key.$1);
-            ideal.add(
-              TileDraw(
-                parent,
-                key.$2 * big - origin.dx,
-                key.$3 * big - origin.dy,
-                big,
-              ),
-            );
-          }
-          final waits = tiles[id];
-          if (waits == null) {
-            covered = false;
-            missing.add((id, rank.toDouble()));
-          } else {
-            waits.usedFrame = frame;
-            if (!waits.prepared) prepare(waits, span / tileExtent);
-            waiting = true;
-          }
-          continue;
-        }
-      }
-      final tile = tiles[id];
-      if (tile != null) {
-        tile.usedFrame = frame;
-        if (!tile.prepared) prepare(tile, span / tileExtent);
-        if (tile.prepared) {
-          ideal.add(TileDraw(tile, left, top, span));
-          continue;
-        }
-        waiting = true;
-      } else {
-        covered = false;
-        missing.add((id, rank.toDouble()));
-      }
-      final before = previous[id];
-      if (before != null && before.prepared) {
-        ideal.add(TileDraw(before, left, top, span));
-        continue;
-      }
-      // The same tile laid out for a nearby zoom has the same ground and
-      // buildings, so it is drawn as the tile itself, not as a stand-in cut
-      // to its square, which would cut its buildings off where they stand
-      // over the tiles beside it.
-      if (_otherLayout(frame, id) case final other?) {
-        ideal.add(TileDraw(other, left, top, span));
-        continue;
-      }
-      _addFallback(frame, id, t.x, t.y, left, top, span, origin, prepare);
-    }
-    if (covered && !waiting) dropPrevious();
-    wanted.clear();
-    missing.sort((a, b) => a.$2.compareTo(b.$2));
-    for (final (id, _) in missing) {
-      if (retries.resting(id, nowMs)) {
-        retrying = true;
-        continue;
-      }
-      wanted.add(id);
-    }
-    far.clear();
-    if (farBuildings != null &&
-        _coverFar(camera, farBuildings, frame, nowMs, prepare)) {
-      waiting = true;
-    }
-    _wantAhead(camera.ahead, frame, nowMs, prepare, variableZoom);
+    final ground = layout.lay(camera, picked);
+    if (ground.covered && !ground.waiting) dropPrevious();
+    final far = farBuildings == null
+        ? null
+        : layFarBuildings(layout, camera, farBuildings);
+    missing
+      ..clear()
+      ..addAll(ground.missing)
+      ..sort((a, b) => a.$2.compareTo(b.$2));
+    TileAsks(this, frame: frame, nowMs: nowMs, prepare: prepare).ask(
+      camera,
+      [for (final (id, _) in missing) id],
+      far: far?.missing ?? const [],
+      variableZoom: variableZoom,
+    );
     for (final t in picked) {
       if (t.z == 0) continue;
-      final parent = tiles[TileId(t.z - 1, (t.x % (1 << t.z)) >> 1, t.y >> 1)];
-      parent?.usedFrame = frame;
+      if (idOf(t) case final id?) tiles[id.parent]?.usedFrame = frame;
     }
-    if (wanted.isNotEmpty || hadWanted || pool.loading) {
-      pool.want(List.of(wanted));
+    final wanting = wantedNow.isNotEmpty || wantedLater.isNotEmpty;
+    if (wanting || _hadWanted || pool.loading) {
+      pool.want([...wantedNow], later: [...wantedLater]);
     }
-    hadWanted = wanted.isNotEmpty;
-    return waiting;
+    _hadWanted = wanting;
+    return ground.waiting || (far?.waiting ?? false);
   }
 
-  /// The most tiles drawn for their buildings alone.
-  static const _mostFar = 40;
-
-  /// How long a tile's buildings take to rise from the ground once the
-  /// tile is ready.
-  static const _riseMs = 350;
-
-  /// Fills [far] with the tiles of the zoom that carries buildings within
-  /// [reach] that the view's own tiles leave out, asks for the ones not
-  /// here, and returns whether one is being prepared or still rising.
-  bool _coverFar(
-    MapFrame camera,
-    BuildingReach reach,
-    int frame,
-    int nowMs,
-    void Function(LoadedTile tile, double scale) prepare,
-  ) {
-    final view = camera.view;
-    final z = math.min(view.zoom.floor(), maxDataZoom);
-    if (z < 1) return false;
-    final origin = camera.origin;
-    final drawn = {for (final d in ideal.followedBy(fallback)) d.tile};
-    final stood = _stoodAbove(z, origin);
-    var waiting = false, count = 0;
-    final n = 1 << z;
-    final span = view.worldSize / n;
-    final picked = view.coverWithin(
-      z,
-      reach.of(z),
-      standing: view.standingFor(),
-    );
-    for (final t in picked) {
-      if (t.y < 0 || t.y >= n) continue;
-      if (count >= _mostFar) break;
-      if (_under(stood, z, t.x, t.y)) continue;
-      final x = t.x % n;
-      final tile = _anyLayout(z, x, t.y);
-      if (tile == null) {
-        final id = TileId(z, x, t.y);
-        count++;
-        if (retries.resting(id, nowMs)) {
-          retrying = true;
-        } else if (!wanted.contains(id)) {
-          wanted.add(id);
-        }
-        continue;
-      }
-      if (drawn.contains(tile)) continue;
-      count++;
-      tile.usedFrame = frame;
-      if (!tile.prepared) prepare(tile, span / tileExtent);
-      if (!tile.prepared) {
-        waiting = true;
-        continue;
-      }
-      if (tile.extrusions.isEmpty) continue;
-      final sunk = _sunk(tile, nowMs);
-      if (sunk > 0) waiting = true;
-      far.add(
-        TileDraw(tile, t.x * span - origin.dx, t.y * span - origin.dy, span)
-          ..sunk = sunk,
-      );
-    }
-    return waiting;
-  }
-
-  /// The tiles drawn for the ground, coarser than zoom [z], whose own data
-  /// stands buildings, by [tileKey] of their place in the view.
-  Set<int> _stoodAbove(int z, ui.Offset origin) => {
-    for (final d in ideal.followedBy(fallback))
-      if (d.tile.id.z < z && d.tile.stands)
-        tileKey(
-          d.tile.id.z,
-          ((d.left + origin.dx) / d.size).round(),
-          d.tile.id.y,
-        ),
-  };
-
-  /// Whether one of [stood] covers the tile [z]/[x]/[y].
-  static bool _under(Set<int> stood, int z, int x, int y) {
-    if (stood.isEmpty) return false;
-    for (var up = 1; up <= z; up++) {
-      if (stood.contains(tileKey(z - up, x >> up, y >> up))) return true;
-    }
-    return false;
-  }
-
-  /// How far [tile]'s buildings are still sunk at [nowMs]: 1 when the tile
-  /// became ready, easing to 0 over [_riseMs].
-  static double _sunk(LoadedTile tile, int nowMs) {
-    final left = 1 - ((nowMs - tile.readySinceMs) / _riseMs).clamp(0.0, 1.0);
-    return left * left * (3 - 2 * left);
-  }
-
-  /// The tile [z]/[x]/[y] in whichever layout is here, a ready one first,
-  /// or null.
-  LoadedTile? _anyLayout(int z, int x, int y) {
-    if (z < maxDataZoom) return tiles[TileId(z, x, y)];
-    LoadedTile? loading;
-    for (var over = z; over <= z + 4; over++) {
-      final tile = tiles[TileId(z, x, y, over: over)];
-      if (tile == null) continue;
-      if (tile.prepared) return tile;
-      loading ??= tile;
-    }
-    return loading;
-  }
-
-  /// Asks, after what the screen needs now, for the tiles of [ahead], and
-  /// gets those already here ready to draw.
-  void _wantAhead(
-    MapView? ahead,
-    int frame,
-    int nowMs,
-    void Function(LoadedTile tile, double scale) prepare,
-    bool variableZoom,
-  ) {
-    if (ahead == null) return;
-    for (final t in ahead.cover(
-      maxZoom: maxDataZoom,
-      variableZoom: variableZoom,
-    )) {
-      final n = 1 << t.z;
-      if (t.y < 0 || t.y >= n) continue;
-      final id = TileId(
-        t.z,
-        t.x % n,
-        t.y,
-        over: t.z >= maxDataZoom ? t.over : 0,
-      );
-      final have = tiles[id];
-      if (have != null) {
-        have.usedFrame = frame;
-        if (!have.prepared) prepare(have, ahead.worldSize / n / tileExtent);
-        continue;
-      }
-      if (retries.resting(id, nowMs)) continue;
-      if (!wanted.contains(id)) wanted.add(id);
-      // Coarser tiles over the same ground too, so the way down to it has
-      // something to stand in while the tiles of each zoom arrive.
-      for (var up = 3; up <= 9 && id.z - up >= 0; up += 3) {
-        final above = TileId(id.z - up, id.x >> up, id.y >> up);
-        final kept = tiles[above];
-        if (kept != null) {
-          kept.usedFrame = frame;
-        } else if (!retries.resting(above, nowMs) && !wanted.contains(above)) {
-          wanted.add(above);
-        }
-      }
-    }
-  }
-
-  /// Covers a missing tile with its four children when all are loaded; else
-  /// with the nearest loaded ancestor, cut to its square, under whichever
-  /// of its descendants are loaded, as MapLibre retains both: the detail
-  /// that was on the screen stays where it is.
-  void _addFallback(
-    int frame,
-    TileId id,
-    int x,
-    int y,
-    double left,
-    double top,
-    double tileSize,
-    ui.Offset origin,
-    void Function(LoadedTile tile, double scale) prepare,
-  ) {
-    // As MapLibre keeps loaded children before parents: zooming out, or as
-    // a tilted map's tile zoom moves between two levels with the camera,
-    // the four tiles under this one are what the screen showed a frame ago.
-    if (_addCompleteChildren(frame, id, left, top, tileSize)) return;
-    var ancestor = id;
-    for (var dz = 1; ancestor.z > 0; dz++) {
-      ancestor = ancestor.parent;
-      final tile = tiles[ancestor];
-      if (tile == null) continue;
-      tile.usedFrame = frame;
-      final big = tileSize * (1 << dz);
-      // One whose renderer let its data go, idle for long, is sent again.
-      if (!tile.prepared) prepare(tile, big / tileExtent);
-      if (!tile.prepared) continue;
-      final ax = x >> dz;
-      final ay = y >> dz;
-      final key = tileKey(ancestor.z, ax, ay);
-      final draw = fallbackByKey[key] ??= () {
-        final d = TileDraw(
-          tile,
-          ax * big - origin.dx,
-          ay * big - origin.dy,
-          big,
-        )..clips = [];
-        fallback.add(d);
-        return d;
-      }();
-      draw.clips!.add(ui.Rect.fromLTWH(left, top, tileSize, tileSize));
-      _addChildren(frame, id, left, top, tileSize, 3);
-      return;
-    }
-    if (!_addChildren(frame, id, left, top, tileSize, 3)) uncovered++;
-  }
-
-  /// Tile [id] or another layout of it, ready to draw, or null.
-  LoadedTile? _ready(TileId id) {
-    final tile = tiles[id] ?? previous[id];
-    if (tile != null && tile.prepared) return tile;
-    return _otherLayout(-1, id);
-  }
-
-  /// The ready tile [z]/[x]/[y] in any layout, or null.
-  LoadedTile? _readyAt(int z, int x, int y) {
-    if (z < maxDataZoom) {
-      final tile = tiles[TileId(z, x, y)];
-      return tile != null && tile.prepared ? tile : null;
-    }
-    for (var over = z; over <= z + 4; over++) {
-      final tile = tiles[TileId(z, x, y, over: over)];
-      if (tile != null && tile.prepared) return tile;
-    }
-    return null;
-  }
-
-  /// Tile [id] laid out for a zoom up to four levels away, ready to draw,
-  /// kept as used in [frame] unless it is negative.
-  LoadedTile? _otherLayout(int frame, TileId id) {
-    for (var d = 1; d <= 4; d++) {
-      for (final o in [id.over - d, id.over + d]) {
-        if (o < id.z) continue;
-        final other = tiles[id.at(o)];
-        if (other == null || !other.prepared) continue;
-        if (frame >= 0) other.usedFrame = frame;
-        return other;
-      }
-    }
-    return null;
-  }
-
-  /// Covers [id] with the four tiles one level under it when all of them
-  /// are ready. Returns whether they were.
-  bool _addCompleteChildren(
-    int frame,
-    TileId id,
-    double left,
-    double top,
-    double tileSize,
-  ) {
-    if (id.z >= maxDataZoom) return false;
-    final children = [
-      for (var cy = 0; cy < 2; cy++)
-        for (var cx = 0; cx < 2; cx++)
-          tiles[TileId(id.z + 1, id.x * 2 + cx, id.y * 2 + cy)],
-    ];
-    if (children.any((c) => c == null || !c.prepared)) return false;
-    final half = tileSize / 2;
-    for (final (i, child) in children.indexed) {
-      child!.usedFrame = frame;
-      fallback.add(
-        TileDraw(child, left + (i % 2) * half, top + (i ~/ 2) * half, half),
-      );
-    }
-    return true;
-  }
-
-  /// Covers [id] with its loaded descendants down to [depth] levels, as
-  /// MapLibre does: zooming out, what was on the screen is often two or
-  /// three levels deeper than the tile now wanted. Returns whether any was.
-  bool _addChildren(
-    int frame,
-    TileId id,
-    double left,
-    double top,
-    double tileSize,
-    int depth,
-  ) {
-    if (depth == 0 || id.z >= maxDataZoom) return false;
-    final half = tileSize / 2;
-    var any = false;
-    for (var cy = 0; cy < 2; cy++) {
-      for (var cx = 0; cx < 2; cx++) {
-        final childId = TileId(id.z + 1, id.x * 2 + cx, id.y * 2 + cy);
-        final cl = left + cx * half, ct = top + cy * half;
-        final child = tiles[childId];
-        if (child != null && child.prepared) {
-          child.usedFrame = frame;
-          fallback.add(TileDraw(child, cl, ct, half));
-          any = true;
-        } else if (_addChildren(frame, childId, cl, ct, half, depth - 1)) {
-          any = true;
-        }
-      }
-    }
-    return any;
+  /// Lays [before] out from the view [cover] took this frame, with the
+  /// tiles that joined a picture up to [newest].
+  void layBefore(
+    MapFrame camera, {
+    required int newest,
+    required int frame,
+    required int nowMs,
+    required void Function(LoadedTile tile, double scale) prepare,
+  }) {
+    final layout = TileLayout(
+      this,
+      before,
+      newest: newest,
+      frame: frame,
+      nowMs: nowMs,
+      prepare: prepare,
+    )..lay(camera, picked);
+    if (farReach case final reach?) layFarBuildings(layout, camera, reach);
   }
 
   /// Drops the tiles a renderer let go of that [canBuild] says it cannot
@@ -745,6 +502,17 @@ class TileSource {
         return true;
       });
     }
+  }
+
+  final _screen = RecentPeak();
+
+  /// As MapLibre sizes its tile cache: about five screens of tiles, so
+  /// panning back or zooming out and in again finds them built. A screen is
+  /// the most tiles the view showed at once lately.
+  void evictBeyondScreens(int atLeast, int frame, int nowMs) {
+    final screen =
+        shown.ideal.length + shown.fallback.length + shown.far.length;
+    evict(math.max(atLeast, 5 * _screen.of(screen, nowMs)), frame);
   }
 
   /// Drops the tiles longest out of use until at most [keep] are held,

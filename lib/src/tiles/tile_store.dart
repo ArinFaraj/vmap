@@ -7,6 +7,24 @@ import 'pmtiles.dart';
 import '../options.dart';
 import '../style/style_model.dart' show TileCover;
 
+/// What [make] makes of the bytes [read] gives, or null for bytes it
+/// cannot read. Those are not kept: a file cut short, or a network's sign
+/// in page answered in a tile's place. The copy kept may be the bad one,
+/// so after [forget] the tile is read once more, `fresh`, past the copy,
+/// before a [FormatException] gives it up.
+Future<T> readReadable<B, T extends Object>({
+  required Future<B> Function(bool fresh) read,
+  required FutureOr<T?> Function(B bytes) make,
+  required Future<void> Function() forget,
+}) async {
+  for (final fresh in const [false, true]) {
+    final made = await make(await read(fresh));
+    if (made != null) return made;
+    await forget();
+  }
+  throw const FormatException('The tile cannot be read');
+}
+
 /// Where the tiles of one tile set come from: the cache directory first,
 /// then the archive or the server, and kept on disk once fetched.
 class TileStore {

@@ -108,7 +108,19 @@ class TilePool {
   final Map<int, int> _unwanted = {};
   static const _leftMs = 100, _overViewMs = 300;
 
+  /// How long the slower tiles have lately taken from being asked for to
+  /// being here, in milliseconds: the slowest, forgotten a tenth with each
+  /// tile after it. Pieces of a tile already downloaded come at once and
+  /// say nothing of the next download.
+  double get latencyMs => _latencyMs;
+  double _latencyMs = 300;
+  final Map<int, int> _askedAt = {};
+
   List<TileId> _wanted = const [];
+  int _urgent = 0;
+
+  /// Jobs loading a tile that was wanted for later when they began.
+  final Set<int> _later = {};
   int _nextJob = 0;
   bool _closed = false;
   Future<void>? _starting;
@@ -133,12 +145,16 @@ class TilePool {
   /// Whether any tile is being loaded.
   bool get loading => _inflight.isNotEmpty;
 
-  /// Tiles to load, most urgent first. Replaces the previous list. Tiles
-  /// being loaded that stay out of it are called off, as MapLibre aborts
+  /// Tiles to load, most urgent first: [now] are needed now, and [later]
+  /// take no more than half the places a worker has, so one needed now
+  /// never waits behind them all. Replaces the tiles wanted before. Tiles
+  /// being loaded that stay out of both are called off, as MapLibre aborts
   /// the tiles it no longer keeps, so the view's own tiles get the
   /// connection.
-  void want(List<TileId> ids) {
+  void want(List<TileId> now, {List<TileId> later = const []}) {
+    final ids = [...now, ...later];
     _wanted = ids;
+    _urgent = now.length;
     _starting ??= _start();
     if (_inflight.isNotEmpty) {
       final still = ids.toSet();
@@ -396,9 +412,12 @@ class TilePool {
       for (final MapEntry(key: job, value: id) in _inflight.entries)
         _dataKey(id): ?_jobWorker[job],
     };
-    for (final id in _wanted) {
+    final room = _workers.length * _perWorker ~/ 2;
+    for (final (rank, id) in _wanted.indexed) {
       if (_inflightIds.contains(id)) continue;
       if (!_confirmed && !_onDisk(id)) continue;
+      final later = rank >= _urgent;
+      if (later && _later.length >= room) break;
       final key = _dataKey(id);
       // A tile whose data another job is downloading goes to that job's
       // worker, which shares the download, and costs no bandwidth.
@@ -414,6 +433,8 @@ class TilePool {
       }
       final job = _nextJob++;
       _inflight[job] = id;
+      if (later) _later.add(job);
+      _askedAt[job] = _clock.elapsedMilliseconds;
       _jobWorker[job] = free;
       _inflightIds.add(id);
       loadingFrom[key] = free;
@@ -445,6 +466,8 @@ class TilePool {
     worker.busy--;
     final job = outcome.job;
     final id = _inflight.remove(job);
+    final askedAt = _askedAt.remove(job);
+    _later.remove(job);
     _jobWorker.remove(job);
     _unwanted.remove(job);
     final calledOff = _cancelling.remove(job);
@@ -454,14 +477,19 @@ class TilePool {
       _dispatch();
       return;
     }
-    _wanted = [
-      for (final w in _wanted)
-        if (w != id) w,
-    ];
+    final rank = _wanted.indexOf(id);
+    if (rank >= 0) {
+      _wanted = [..._wanted]..removeAt(rank);
+      if (rank < _urgent) _urgent--;
+    }
     switch (outcome) {
       case TileNotBuilt(:final failure):
         onFailed(id, failure);
       case TileBuilt(:final tile):
+        if (askedAt != null) {
+          final took = _clock.elapsedMilliseconds - askedAt;
+          _latencyMs = math.max(took.toDouble(), _latencyMs * 0.9);
+        }
         final started = _clock.elapsedMicroseconds;
         onLoaded(id, tile);
         final spent = _clock.elapsedMicroseconds - started;
@@ -716,22 +744,14 @@ Future<void> tileWorkerMain(
       }
     }
 
-    // What cannot be read as a tile is not kept, in memory or on disk: a
-    // file cut short, or a network's sign in page answered in a tile's
-    // place. The copy on disk may be the bad one, so the server is asked
-    // once more before the tile is given up.
-    Future<void> forget() async {
-      recent.remove(tileKey(id.z, id.x, id.y));
-      await store?.forget(id.z, id.x, id.y);
-    }
-
-    var layers = decoded(await fetch(id, job));
-    if (layers != null) return layers;
-    await forget();
-    layers = decoded(await fetch(id, job, fresh: true));
-    if (layers != null) return layers;
-    await forget();
-    throw const FormatException('The tile cannot be read');
+    return readReadable(
+      read: (fresh) => fetch(id, job, fresh: fresh),
+      make: decoded,
+      forget: () async {
+        recent.remove(tileKey(id.z, id.x, id.y));
+        await store?.forget(id.z, id.x, id.y);
+      },
+    );
   }
 
   Future<WorkerReply?> reply(WorkerRequest request) async {

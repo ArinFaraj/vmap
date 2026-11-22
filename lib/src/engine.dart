@@ -13,6 +13,7 @@ import 'frame_painter.dart';
 import 'render/frame_planes.dart';
 import 'gpu/gpu_map.dart';
 import 'camera/bounds.dart';
+import 'camera/forecast.dart';
 import 'camera/map_camera.dart';
 import 'style/expr.dart';
 import 'style/json_equals.dart';
@@ -611,8 +612,7 @@ class VmapEngine extends ChangeNotifier {
 
   void _onLoaded(TileSource from, TileId id, BuiltTile built) {
     if (_disposed || !_sources.contains(from)) return;
-    from.tiles[id]?.dispose();
-    from.tiles[id] = LoadedTile(id, built, _sheet!)..usedFrame = _painter.frame;
+    from.put(LoadedTile(id, built, _sheet!)..usedFrame = _painter.frame);
     from.retries.loaded(id);
     notifyListeners();
   }
@@ -710,6 +710,8 @@ class VmapEngine extends ChangeNotifier {
     FramePlanes? planes,
   }) {
     if (size.isEmpty) return;
+    _forecast.see(camera, _clock.elapsedMicroseconds);
+    final soon = _forecast.after(_tileLead, target: ahead);
     final view = camera.view(size.width, size.height);
     final center = view.center;
     final screen = view.screenCenter;
@@ -723,11 +725,24 @@ class VmapEngine extends ChangeNotifier {
         devicePixelRatio: devicePixelRatio,
         view: view,
         ahead: ahead?.view(size.width, size.height),
+        soon: soon?.view(size.width, size.height),
       ),
       _sheet,
       labelsVisible: _labelOptions.visible,
       planes: planes,
     );
+  }
+
+  final CameraForecast _forecast = CameraForecast();
+
+  /// Seconds from asking for a tile to having it, as the slowest source
+  /// has lately taken: how far ahead the view to load for is.
+  double get _tileLead {
+    var slowest = 0.0;
+    for (final s in _sources) {
+      slowest = math.max(slowest, s.pool.latencyMs);
+    }
+    return slowest.clamp(150.0, 700.0) / 1000;
   }
 
   bool _retryPending = false;
@@ -757,6 +772,7 @@ class VmapEngine extends ChangeNotifier {
     maxCachedTiles: rendering.maxCachedTiles,
     host: _Host(this),
     farBuildings: rendering.farBuildings,
+    tileFadeMs: rendering.tileFade.inMilliseconds,
   );
 
   /// Whether a paint transition is still running. Once all have ended the

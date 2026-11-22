@@ -855,8 +855,7 @@ abstract class TileDrawing<L extends TiledRasterLayer>
   }
 
   /// The picture [bytes] hold, or null when they hold none.
-  static Future<ui.Image?> _pictureOf(Uint8List? bytes) async {
-    if (bytes == null || bytes.isEmpty) return null;
+  static Future<ui.Image?> _pictureOf(Uint8List bytes) async {
     try {
       final codec = await ui.instantiateImageCodec(bytes);
       try {
@@ -880,20 +879,17 @@ abstract class TileDrawing<L extends TiledRasterLayer>
     final cancel = tile.cancel = Cancel();
     try {
       final store = tileStore!;
-      var bytes = await store.read(z, x, y, cancel: cancel);
-      var picture = await _pictureOf(bytes);
-      if (picture == null && bytes != null && bytes.isNotEmpty) {
-        // What is no picture is not kept on disk: a file cut short, or a
-        // network's sign in page answered in a tile's place. The copy on
-        // disk may be the bad one, so the server is asked once more.
-        await store.forget(z, x, y);
-        bytes = await store.read(z, x, y, cancel: cancel, fresh: true);
-        picture = await _pictureOf(bytes);
-        if (picture == null && bytes != null && bytes.isNotEmpty) {
-          await store.forget(z, x, y);
-          throw const FormatException('The tile is not a picture');
-        }
-      }
+      final (:bytes, :picture) = await readReadable(
+        read: (fresh) => store.read(z, x, y, cancel: cancel, fresh: fresh),
+        make: (Uint8List? bytes) async {
+          if (bytes == null || bytes.isEmpty) {
+            return (bytes: bytes, picture: null);
+          }
+          final picture = await _pictureOf(bytes);
+          return picture == null ? null : (bytes: bytes, picture: picture);
+        },
+        forget: () => store.forget(z, x, y),
+      );
       if (bytes == null) {
         tile.missing = true;
         if (!closed) onLoaded();

@@ -1,5 +1,75 @@
-## Unreleased
+## 0.31.0
 
+- The map fades from the tiles it shows to the ones that take their place.
+  A tile that became ready, or a zoom level the camera crossed, replaced
+  what was drawn in a single frame: roads, land and buildings appeared and
+  vanished at once on a flight from the globe down to a street. The GPU
+  now draws the picture before and the picture after and mixes them over
+  `VmapRenderOptions.tileFade`, 200 ms unless set, and half that while
+  more tiles wait behind a fade. A tile at a place the last frame did not
+  show, and one built again from changed data, still shows at once.
+  `Duration.zero` turns the fade off. The canvas and raised ground do not
+  fade yet.
+- A tile standing in for tiles still on their way keeps the layers it was
+  built with until they take its place. Its layers were shown and hidden
+  by the camera's zoom, so a layer that ends where the next begins, as
+  flat buildings end at the zoom where the tall ones start, went blank
+  between the two while the deeper tiles loaded. A tile standing in for
+  one that could not be had still follows the camera's zoom, as MapLibre.
+- Buildings stand up from the ground as their tile fades in, where none
+  stood before. Those were drawn at full height in one frame. Buildings
+  past the ground tiles, in a view tilted past 60 degrees, stand at full
+  height, and those rising as ground tiles stand up whole there: they
+  come in where the ground showed buildings, flat or standing, the
+  frame before.
+- In a view tilted past 60 degrees, the buildings past the ground tiles
+  stand to one distance from the camera, whatever the zoom of their
+  tiles, and all sink over the same last stretch of it. The distance
+  used to depend on the zoom, so it jumped as the view crossed a whole
+  zoom, and buildings at the back came and went as it moved or turned.
+  While a tile loads, a coarser one that holds its buildings keeps them
+  standing, and a tile standing in for others keeps the buildings it
+  carries past their squares too.
+- Tiles drawn for their buildings alone fade in with the next picture,
+  as the ground's tiles do. They showed the frame they were ready, so
+  the city's far side popped in as the camera arrived.
+- A tile in view that is not ready yet, with the four tiles under it
+  all ready, is drawn as those four. Its parent stood in instead, so
+  zooming out the buildings and detail the screen showed a frame ago
+  went blank until the tile itself came.
+- On the globe, where tiles standing in for others are drawn whole, the
+  coarsest is drawn first. A coarse one added after finer ones covered
+  their land with its own rougher water for a frame, as a dive passed
+  over a coast.
+- On the web in Chrome, a dive from the globe no longer flashes the
+  page's own colour for a frame where the globe hands over to the flat
+  map, around zoom 12. Flutter's canvas, which lays the background under
+  the flat map, can reach the page a frame or two after the map's
+  images, and on the globe it laid none. It now lays the background
+  under the globe too wherever the globe fills the view.
+- While the camera moves, the tiles it will need by the time they arrive
+  are asked for before the ones it is about to leave, and the tiles for
+  later take no more than half of the loading places.
+- Headed for a place, with `flyTo` or `headFor`, the map asks for the
+  tiles over it at every zoom on the way, the coarsest first, where it
+  asked for every third level. The way down passes a level faster than a
+  level loads, so the middle of the view now grows finer one level at a
+  time.
+- The tile cache holds about five of the largest views of the last ten
+  seconds, and so do the terrain's heights. It followed the view's tile
+  count frame by frame, which moves by a few as the camera turns, so a
+  turning camera dropped tiles and built them again over and over: over
+  Manhattan 172 builds in ten seconds, where 74 is each tile once, and
+  terrain heights loaded again 170 times in ten seconds where now none
+  are. A frame there takes about 40 percent less CPU.
+- On the web a frame makes about 40 percent fewer WebGL calls, which cuts
+  the time Chrome's GPU process spends on a frame by about a third. A
+  release build leaves textures, uniform blocks and vertex arrays bound
+  between draws where it took them off after each one, binds a texture
+  unit only when it changes, points an instanced stream again only where
+  it moved, and sets a stencil that is the same on both faces in one
+  call. A debug build still takes the bindings off, so a draw that should
+  have bound its own cannot pass by reading the last one's.
 - A map in a widget test loads vmap's own fonts. Under `flutter test` every
   map told `onError` of a fonts error and had no Vazirmatn or Noto Sans
   Syriac Eastern to shape with: the tester answers an asset at once, and

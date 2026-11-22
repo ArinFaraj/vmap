@@ -271,6 +271,7 @@ Vmap(
 | `glyphs` | `VmapGlyphs.style` | Where the letters of labels come from: the style's glyph ranges, or the app's fonts for every label with `VmapGlyphs.fonts`. |
 | `maxCachedTiles` | `56` | The fewest tiles kept in memory per source beyond those on screen. |
 | `farBuildings` | `true` | In a view tilted past 60 degrees, buildings stand farther from the camera than MapLibre draws them, and sink into the ground before they end. Off, they end at the edge of a tile, where MapLibre's do. |
+| `tileFade` | `200 ms` | How long the map takes to fade from the tiles it shows to the ones that take their place. `Duration.zero` shows each tile the moment it is ready. The canvas and raised ground do not fade. |
 
 ## Taps and features
 

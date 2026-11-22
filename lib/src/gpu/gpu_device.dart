@@ -23,6 +23,14 @@ final addBlend = gpu.ColorBlendEquation(
   destinationAlphaBlendFactor: gpu.BlendFactor.one,
 );
 
+/// Scales what is below by the source's alpha and adds nothing.
+final dimBlend = gpu.ColorBlendEquation(
+  sourceColorBlendFactor: gpu.BlendFactor.zero,
+  destinationColorBlendFactor: gpu.BlendFactor.sourceAlpha,
+  sourceAlphaBlendFactor: gpu.BlendFactor.zero,
+  destinationAlphaBlendFactor: gpu.BlendFactor.sourceAlpha,
+);
+
 /// What the GPU renderer draws with once the device has made its
 /// pipelines: everything a frame's passes share and keep between frames.
 class GpuDevice {

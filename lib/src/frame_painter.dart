@@ -24,6 +24,7 @@ import 'stats.dart';
 import 'style/transitions.dart';
 import 'style/style_model.dart';
 import 'tiles/built_tile.dart';
+import 'tiles/tile_fade.dart';
 import 'tiles/tiles.dart';
 import 'render/zoom_history.dart';
 
@@ -95,7 +96,10 @@ class FramePainter {
     required this._maxCachedTiles,
     required this._host,
     this._farBuildings = true,
-  });
+    int tileFadeMs = 0,
+  }) : _fade = TileFade(tileFadeMs);
+
+  final TileFade _fade;
 
   final bool _farBuildings;
 
@@ -226,10 +230,7 @@ class FramePainter {
     var waiting = false;
     final globeness = threeD ? sheet.projection.globeAt(styleZoom) : 0.0;
     if (globeness > 0) {
-      camera = camera.withView(
-        camera.view.withGlobe(globeness),
-        camera.ahead?.withGlobe(globeness),
-      );
+      camera = camera.mapViews((v) => v.withGlobe(globeness));
     }
     _lastZoom = camera.zoom;
     if (threeD) {
@@ -240,9 +241,8 @@ class FramePainter {
         _host.requestFrame();
       }
       if (!identical(raised, view)) {
-        camera = camera.withView(
-          raised,
-          camera.ahead?.withGround(raised.groundElevation, raised.groundLowest),
+        camera = camera.mapViews(
+          (v) => v.withGround(raised.groundElevation, raised.groundLowest),
         );
       }
     }
@@ -273,6 +273,15 @@ class FramePainter {
       now: now,
       dt: dt,
       drape: drape,
+      // Over flat ground the canvas lays the backgrounds under the GPU's
+      // images, and on the web the canvas can reach the page a frame or two
+      // after them. There, where draped ground fills the view, the canvas
+      // lays them under it too, hidden, so the first flat frame finds them.
+      backgroundsUnderDrape:
+          kIsWeb &&
+          drape &&
+          view.globeness < 1 &&
+          view.groundTopY <= view.unrolledBounds.top,
       horizon: drape || farCut ? 0.0 : view.groundTopY,
       canvasHorizon: farCut ? view.groundTopY : 0.0,
       viewMatrix: view.matrix(
@@ -283,6 +292,12 @@ class FramePainter {
   }
 
   void _coverTiles(_Frame f) {
+    final nowMs = _clock.elapsedMilliseconds;
+    _fade.advance(
+      nowMs,
+      fades: f.renderer.fadesTiles && f.terrain == null,
+      pressed: _sources.any((s) => s.shown.held),
+    );
     for (final s in _sources) {
       // Before the view asks for its tiles, so one the renderer let go of
       // is asked for again and not made ready from what it no longer has.
@@ -292,15 +307,25 @@ class FramePainter {
         f.camera,
         f.dataZoom,
         frame: frame,
-        nowMs: _clock.elapsedMilliseconds,
+        nowMs: nowMs,
         prepare: _prepare,
         variableZoom: f.variableZoom,
         standing: buildings,
         farBuildings: buildings ? f.buildingReach : null,
+        newest: _fade.newest,
       );
       if (preparing) f.waiting = true;
       if (s.retrying) _host.requestFrameLater();
     }
+    final (:before, :rising) = _fade.settle(
+      _sources,
+      f.camera,
+      frame: frame,
+      nowMs: nowMs,
+      prepare: _prepare,
+    );
+    f.before = before;
+    if (rising) f.waiting = true;
     if (!f.waiting) _prepareBackdrop(f.camera.zoom);
   }
 
@@ -366,8 +391,8 @@ class FramePainter {
         view: f.view,
         origin: f.camera.origin,
         sheet: sheet,
-        fallback: [for (final s in _sources) s.fallback],
-        ideal: [for (final s in _sources) s.ideal],
+        fallback: [for (final s in _sources) s.shown.fallback],
+        ideal: [for (final s in _sources) s.shown.ideal],
         context: _context,
         styleZoom: f.styleZoom,
         devicePixelRatio: f.camera.devicePixelRatio,
@@ -381,8 +406,11 @@ class FramePainter {
         planes: f.planes,
         farBuildings: switch (f.buildingReach) {
           null => null,
-          final reach => FarBuildings(reach, [for (final s in _sources) s.far]),
+          final reach => FarBuildings(reach, [
+            for (final s in _sources) s.shown.far,
+          ]),
         },
+        before: f.before,
       ),
     )) {
       f.waiting = true;
@@ -462,9 +490,14 @@ class FramePainter {
 
   /// What the canvas draws for style run [run], between the renderer's
   /// layers. Over draped ground the GPU lays the backgrounds and the tiled
-  /// rasters down, and only a picture source is drawn here.
+  /// rasters down, and only a picture source is drawn here, and the plain
+  /// backgrounds under ground that fills the view.
   _CanvasRun? _canvasRun(_Frame f, StyleRun run) {
-    if (run.background >= 0) return f.drape ? null : _CanvasRun.background;
+    if (run.background >= 0) {
+      if (!f.drape) return _CanvasRun.background;
+      final plain = f.sheet.backgrounds[run.background].pattern == null;
+      return plain && f.backgroundsUnderDrape ? _CanvasRun.background : null;
+    }
     if (run.raster < 0) return null;
     return !f.drape || _rasters[run.raster] is PictureDrawing
         ? _CanvasRun.raster
@@ -512,12 +545,13 @@ class FramePainter {
   void _drawLabels(_Frame f) {
     final sheet = f.sheet, camera = f.camera, view = f.view;
     f.animating =
+        f.before != null ||
         (sheet.dashed && _zoomHistory.fading) ||
         _rasters.any((r) => r is TileDrawing && r.fading);
     f.labelsStarted = _clock.elapsedMicroseconds;
     if (!f.labelsVisible) return;
     final shown = [
-      for (final s in _sources) ...[...s.ideal, ...s.fallback],
+      for (final s in _sources) ...[...s.shown.ideal, ...s.shown.fallback],
     ];
     _labels.occlusion.update(view, shown, sheet, f.styleZoom);
     if (_transitions.isNotEmpty &&
@@ -602,9 +636,9 @@ class FramePainter {
     var ideal = 0, fallback = 0, cached = 0, loading = 0, unpack = 0;
     var holes = 0;
     for (final s in _sources) {
-      holes += s.uncovered;
-      ideal += s.ideal.length;
-      fallback += s.fallback.length;
+      holes += s.shown.uncovered;
+      ideal += s.shown.ideal.length;
+      fallback += s.shown.fallback.length;
       cached += s.tiles.length;
       for (final (id, _) in s.missing) {
         if (!s.retries.resting(id, _clock.elapsedMilliseconds)) loading++;
@@ -656,11 +690,9 @@ class FramePainter {
           ) +
           (_ground.tiles?.waiting ?? 0)
       ..resourcesLoading = _resources.loading + _labels.glyphs.rangesPending;
+    final nowMs = _clock.elapsedMilliseconds;
     for (final s in _sources) {
-      // As MapLibre sizes its tile cache: about five screens of tiles, so
-      // panning back or zooming out and in again finds them built.
-      final screen = s.ideal.length + s.fallback.length + s.far.length;
-      s.evict(math.max(_maxCachedTiles, 5 * screen), frame);
+      s.evictBeyondScreens(_maxCachedTiles, frame, nowMs);
     }
   }
 
@@ -746,6 +778,7 @@ class _Frame {
     required this.now,
     required this.dt,
     required this.drape,
+    required this.backgroundsUnderDrape,
     required this.horizon,
     required this.canvasHorizon,
     required this.viewMatrix,
@@ -784,6 +817,9 @@ class _Frame {
   /// globe.
   final bool drape;
 
+  /// Whether the canvas lays the plain backgrounds under the draped ground.
+  final bool backgroundsUnderDrape;
+
   /// Where the ground stops on the screen, for what is cut at the horizon;
   /// 0 when nothing is.
   final double horizon, canvasHorizon;
@@ -791,6 +827,9 @@ class _Frame {
 
   bool waiting = false;
   bool animating = false;
+
+  /// The tiles the frame's own fade in over, or null when none do.
+  TilesBefore? before;
 
   int labelsStarted = 0;
   bool labelsVisible = true;
