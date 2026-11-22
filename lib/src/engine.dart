@@ -263,7 +263,9 @@ class VmapEngine extends ChangeNotifier {
     if (directory != null) {
       await deleteCached(directory, _kept.hasMatch);
     }
-    if (!_disposed) reload();
+    if (_disposed) return;
+    _resources.forgetFetched();
+    reload();
   }
 
   /// Fetches into the cache directory every tile the style draws inside

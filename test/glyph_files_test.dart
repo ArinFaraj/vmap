@@ -108,36 +108,36 @@ void main() {
     expect(file.readAsBytesSync(), _range);
   });
 
-  test('a map keeps the ranges its style\'s labels ask for', () async {
-    VmapEngine map() {
-      final engine = VmapEngine(
-        style: VmapStyle.json({
-          'version': 8,
-          'glyphs': template,
-          'sources': {
-            'places': {
-              'type': 'geojson',
-              'data': {'type': 'FeatureCollection', 'features': <Object?>[]},
+  VmapEngine map() {
+    final engine = VmapEngine(
+      style: VmapStyle.json({
+        'version': 8,
+        'glyphs': template,
+        'sources': {
+          'places': {
+            'type': 'geojson',
+            'data': {'type': 'FeatureCollection', 'features': <Object?>[]},
+          },
+        },
+        'layers': [
+          {
+            'id': 'names',
+            'type': 'symbol',
+            'source': 'places',
+            'layout': {
+              'text-field': ['get', 'name'],
+              'text-font': ['Test Font'],
             },
           },
-          'layers': [
-            {
-              'id': 'names',
-              'type': 'symbol',
-              'source': 'places',
-              'layout': {
-                'text-field': ['get', 'name'],
-                'text-font': ['Test Font'],
-              },
-            },
-          ],
-        }),
-        network: VmapNetworkOptions(cacheDirectory: cache.path),
-      );
-      addTearDown(engine.dispose);
-      return engine;
-    }
+        ],
+      }),
+      network: VmapNetworkOptions(cacheDirectory: cache.path),
+    );
+    addTearDown(engine.dispose);
+    return engine;
+  }
 
+  test('a map keeps the ranges its style\'s labels ask for', () async {
     final file = GlyphFiles(
       cache.path,
       template,
@@ -153,6 +153,20 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
     expect(asked, hasLength(1));
+  });
+
+  test('a map whose cache is cleared asks for its ranges again', () async {
+    final file = GlyphFiles(
+      cache.path,
+      template,
+    ).fileOf(url('Test Font', '0-255'))!;
+    final engine = map();
+    await written(file);
+    expect(asked, hasLength(1));
+
+    await engine.clearCache();
+    await written(file);
+    expect(asked, hasLength(2));
   });
 
   test('only the style\'s glyph ranges are kept', () async {

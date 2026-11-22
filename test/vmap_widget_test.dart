@@ -738,6 +738,62 @@ void main() {
     expect(app.markers, isEmpty);
   });
 
+  testWidgets('two maps on one engine hand their markers back in turn', (
+    tester,
+  ) async {
+    final app = VmapEngine(style: _empty);
+    addTearDown(app.dispose);
+    final controller = VmapController(_erbil);
+    addTearDown(controller.dispose);
+    final inset = VmapController(_erbil);
+    addTearDown(inset.dispose);
+    const main = VmapMarker(
+      point: LatLng(36.19, 44.01),
+      name: 'Citadel',
+      child: SizedBox(),
+    );
+    const other = VmapMarker(
+      point: LatLng(36.2, 44.02),
+      name: 'Park',
+      child: SizedBox(),
+    );
+    Widget maps({required bool withInset}) => Directionality(
+      textDirection: TextDirection.ltr,
+      child: Column(
+        children: [
+          Expanded(
+            child: Vmap(
+              controller: controller,
+              engine: app,
+              markers: const [main],
+              attribution: false,
+            ),
+          ),
+          if (withInset)
+            Expanded(
+              child: Vmap(
+                controller: inset,
+                engine: app,
+                markers: const [other],
+                attribution: false,
+              ),
+            ),
+        ],
+      ),
+    );
+
+    await tester.pumpWidget(maps(withInset: false));
+    expect(app.markers, [main]);
+    await tester.pumpWidget(maps(withInset: true));
+    expect(app.markers, [other]);
+    await tester.pumpWidget(maps(withInset: true));
+    expect(app.markers, [other], reason: 'a rebuild does not take them');
+    await tester.pumpWidget(maps(withInset: false));
+    expect(app.markers, [main]);
+    await tester.pumpWidget(const SizedBox());
+    expect(app.markers, isEmpty);
+  });
+
   testWidgets('a map gone after its app\'s engine leaves it alone', (
     tester,
   ) async {

@@ -105,9 +105,20 @@ class SharedFetches {
   /// Read before the network is asked, and given what it answers.
   KeptFetches? kept;
 
+  /// Counts [forget]s, so a fetch begun before one neither keeps nor
+  /// drops what is asked for after it.
+  int _round = 0;
+
   Future<Uint8List?> fetch(String url) => _fetched[url] ??= _load(url);
 
+  /// Fetches everything again when next asked.
+  void forget() {
+    _fetched.clear();
+    _round++;
+  }
+
   Future<Uint8List?> _load(String url) async {
+    final round = _round;
     try {
       final kept = this.kept;
       final had = await kept?.read(url);
@@ -116,13 +127,13 @@ class SharedFetches {
         userAgent: userAgent,
       )).get(url, headers);
       if (reply.status == 200) {
-        kept?.keep(url, reply.bytes);
+        if (round == _round) kept?.keep(url, reply.bytes);
         return reply.bytes;
       }
       if (reply.status == 404) return null;
       throw HttpFailure(reply.status, url);
     } catch (_) {
-      _fetched.remove(url);
+      if (round == _round) _fetched.remove(url);
       rethrow;
     }
   }

@@ -36,9 +36,12 @@ class VmapEngineOwner with WidgetsBindingObserver {
   /// The app's engine when it gave one, otherwise the one made here.
   VmapEngine get engine => _app ?? _made!;
 
-  /// Whether the app's engine holds markers given here, which leave it
-  /// with the widget.
-  bool _gaveMarkers = false;
+  /// The owners giving each app's engine markers, the latest last. The
+  /// engine draws the latest's, and the one before's again once it goes.
+  static final _givers = Expando<List<VmapEngineOwner>>();
+
+  /// The markers given here.
+  List<VmapMarker> _markers = const [];
 
   void _use(
     VmapEngine? app,
@@ -54,17 +57,30 @@ class VmapEngineOwner with WidgetsBindingObserver {
   }
 
   /// An app's engine is given [markers] only once the widget has some, so
-  /// those the app set on it itself stay.
+  /// those the app set on it itself stay. Of the maps drawing with one
+  /// engine, the one that gave it markers last has them drawn.
   void _giveMarkers(List<VmapMarker> markers) {
     final app = _app;
-    if (app != null && markers.isEmpty && !_gaveMarkers) return;
-    engine.markers = markers;
-    _gaveMarkers = app != null && markers.isNotEmpty;
+    if (app == null) {
+      engine.markers = markers;
+      return;
+    }
+    final givers = _givers[app] ??= [];
+    final wasLatest = identical(givers.lastOrNull, this);
+    _markers = markers;
+    if (markers.isEmpty) {
+      givers.remove(this);
+    } else if (!givers.contains(this)) {
+      givers.add(this);
+    }
+    if (wasLatest || identical(givers.lastOrNull, this)) {
+      app.markers = givers.lastOrNull?._markers ?? const [];
+    }
   }
 
   void _letGo() {
     if (_onChanged case final listener?) engine.removeListener(listener);
-    if (_gaveMarkers) _giveMarkers(const []);
+    if (_app != null) _giveMarkers(const []);
     _made?.dispose();
   }
 

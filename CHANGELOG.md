@@ -8,8 +8,8 @@
   `VmapRenderOptions.tileFade`, 200 ms unless set, and half that while
   more tiles wait behind a fade. A tile at a place the last frame did not
   show, and one built again from changed data, still shows at once.
-  `Duration.zero` turns the fade off. The canvas and raised ground do not
-  fade yet.
+  `Duration.zero` turns the fade off. The canvas, raised ground and
+  heatmaps do not fade yet.
 - A tile standing in for tiles still on their way keeps the layers it was
   built with until they take its place. Its layers were shown and hidden
   by the camera's zoom, so a layer that ends where the next begins, as
@@ -46,7 +46,8 @@
   map, around zoom 12. Flutter's canvas, which lays the background under
   the flat map, can reach the page a frame or two after the map's
   images, and on the globe it laid none. It now lays the background
-  under the globe too wherever the globe fills the view.
+  under the globe too wherever the globe fills the view, those that are
+  opaque, so one that shows through is not drawn twice.
 - While the camera moves, the tiles it will need by the time they arrive
   are asked for before the ones it is about to leave, and the tiles for
   later take no more than half of the loading places.
@@ -92,7 +93,9 @@
   goes. They were drawn and the engine never heard of them: labels ran
   under them, their names were missing, and on the web they trailed the
   map by a frame. Markers the app sets on its engine itself stay, as long
-  as the widget is given none.
+  as the widget is given none. Of two maps drawing with one engine, the
+  one given markers last has them drawn, and the other's come back when
+  it goes.
 - A marker's name asks the style's glyph server for nothing. Every map
   with a named marker asked for a font with an empty name, which the
   server answered with a 404, and over such a style a name of several
@@ -111,7 +114,7 @@
 - The style's glyph ranges are kept in the cache directory, beside the
   tiles, the style and its sprites. Every start fetched each range again,
   so labels waited on the network, and without one they were written in
-  vmap's own fonts.
+  vmap's own fonts. `clearCache` fetches them again, as it does the rest.
 - `clearCache` goes on past a folder it cannot delete. One a tile was
   being written into stopped it, and the rest of the cache stayed.
 - Files in the cache directory are written whole or not at all, so an app

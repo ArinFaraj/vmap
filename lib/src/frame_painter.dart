@@ -491,12 +491,16 @@ class FramePainter {
   /// What the canvas draws for style run [run], between the renderer's
   /// layers. Over draped ground the GPU lays the backgrounds and the tiled
   /// rasters down, and only a picture source is drawn here, and the plain
-  /// backgrounds under ground that fills the view.
+  /// opaque backgrounds under ground that fills the view: one that shows
+  /// through would be drawn twice.
   _CanvasRun? _canvasRun(_Frame f, StyleRun run) {
     if (run.background >= 0) {
       if (!f.drape) return _CanvasRun.background;
-      final plain = f.sheet.backgrounds[run.background].pattern == null;
-      return plain && f.backgroundsUnderDrape ? _CanvasRun.background : null;
+      if (!f.backgroundsUnderDrape) return null;
+      final layer = f.sheet.backgrounds[run.background];
+      final opaque =
+          layer.pattern == null && (layer.colorAt(_context)?.a ?? 0) >= 1;
+      return opaque ? _CanvasRun.background : null;
     }
     if (run.raster < 0) return null;
     return !f.drape || _rasters[run.raster] is PictureDrawing

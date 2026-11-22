@@ -106,6 +106,14 @@ class StyleResources {
     );
   }
 
+  /// Lets go of the fetched glyph ranges, sprite indexes and the glyphs
+  /// drawn from them, so the style next loaded fetches them again.
+  void forgetFetched() {
+    shared.forget();
+    _labels.useRanges(null, _config, () {});
+    if (_labels.glyphs.fonts case final fonts?) _labels.useGlyphs(fonts);
+  }
+
   /// What the page fetches once for itself and every tile worker.
   late final SharedFetches shared = SharedFetches(
     userAgent: _config.userAgent,
