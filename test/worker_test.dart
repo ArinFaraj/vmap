@@ -11,6 +11,7 @@ import 'package:vmap/src/tiles/built_tile.dart';
 import 'package:vmap/src/net/net.dart';
 import 'package:vmap/src/tiles/protocol.dart';
 import 'package:vmap/src/tiles/tile_id.dart';
+import 'package:vmap/src/tiles/tile_store.dart';
 import 'package:vmap/src/options.dart';
 import 'package:vmap/src/tiles/worker.dart';
 
@@ -37,9 +38,10 @@ TilePool _pool(
   Map<String, Object?> style, {
   TileLoaded? onLoaded,
   TileFailed? onFailed,
+  String? cacheDirectory,
 }) {
   final pool = TilePool(
-    const VmapNetworkOptions(workers: 1),
+    VmapNetworkOptions(workers: 1, cacheDirectory: cacheDirectory),
     style: style,
     nameKeys: null,
     sheet: StyleSheet.compile(style),
@@ -181,5 +183,87 @@ void main() {
     }
     expect(loaded, [const TileId(1, 0, 0)]);
     expect(failed, [const TileId(1, 1, 0)]);
+  });
+
+  group('a tile that cannot be read', () {
+    late HttpServer server;
+    late Directory cache;
+    late String template;
+    var asked = 0;
+    const page = '<!DOCTYPE html><html><body>Sign in to this network</body>';
+
+    setUp(() async {
+      asked = 0;
+      server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      cache = Directory.systemTemp.createTempSync('vmap_worker_test');
+      template = 'http://127.0.0.1:${server.port}/{z}/{x}/{y}';
+      addTearDown(() => server.close(force: true));
+      addTearDown(() => cache.deleteSync(recursive: true));
+    });
+
+    File kept(int z, int x, int y) =>
+        File('${cache.path}/${TileStore.vectorFolder(template)}/$z/$x/$y.pbf');
+
+    Future<(List<TileId>, List<TileId>)> load(TileId id) async {
+      final loaded = <TileId>[], failed = <TileId>[];
+      final pool = _pool(
+        _style({
+          'type': 'vector',
+          'tiles': [template],
+        }, 'roads'),
+        onLoaded: (id, _) => loaded.add(id),
+        onFailed: (id, _) => failed.add(id),
+        cacheDirectory: cache.path,
+      );
+      pool.want([id]);
+      final watch = Stopwatch()..start();
+      while (loaded.isEmpty && failed.isEmpty) {
+        if (watch.elapsed > const Duration(seconds: 5)) fail('timed out');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      return (loaded, failed);
+    }
+
+    test('on disk is fetched again and replaced', () async {
+      final good = tile('roads', [
+        (
+          point,
+          {'name': 'here'},
+          [
+            [100, 100],
+          ],
+        ),
+      ]);
+      server.listen((request) {
+        asked++;
+        request.response
+          ..add(good)
+          ..close();
+      });
+      kept(1, 0, 0)
+        ..createSync(recursive: true)
+        ..writeAsStringSync(page);
+
+      final (loaded, failed) = await load(const TileId(1, 0, 0));
+      expect(failed, isEmpty);
+      expect(loaded, [const TileId(1, 0, 0)]);
+      expect(asked, 1);
+      expect(kept(1, 0, 0).readAsBytesSync(), good);
+    });
+
+    test('from the server is not kept', () async {
+      server.listen((request) {
+        asked++;
+        request.response
+          ..write(page)
+          ..close();
+      });
+
+      final (loaded, failed) = await load(const TileId(1, 0, 0));
+      expect(loaded, isEmpty);
+      expect(failed, [const TileId(1, 0, 0)]);
+      expect(kept(1, 0, 0).existsSync(), isFalse);
+    });
   });
 }

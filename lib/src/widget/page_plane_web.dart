@@ -98,7 +98,7 @@ class _Plane implements PagePlane {
       final (canvas, context) = _canvases[i];
       canvas.style.display = 'none';
       if (i >= images.length) continue;
-      final (image, opacity) = images[i];
+      final image = images[i];
       final web.HTMLCanvasElement showing;
       switch (image) {
         case PageBitmap(:final source):
@@ -111,9 +111,7 @@ class _Plane implements PagePlane {
             element.append(showing);
           }
       }
-      showing.style
-        ..display = 'block'
-        ..opacity = '$opacity';
+      showing.style.display = 'block';
     }
     final own = _own;
     if (own != null && shown == null && element.isSameNode(own.parentNode)) {
@@ -138,7 +136,7 @@ class _Plane implements PagePlane {
 }
 
 void _letGo(GpuPlane plane) {
-  for (final (image, _) in plane.images) {
+  for (final image in plane.images) {
     if (image case PageBitmap(:final source)) {
       (source as web.ImageBitmap).close();
     }

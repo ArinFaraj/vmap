@@ -52,6 +52,71 @@ StyleSheet _sheet(
 });
 
 void main() {
+  test('a layer without text-font takes MapLibre\'s default fonts', () {
+    expect(_sheet({}).symbols.single.fontStack, [
+      'Open Sans Regular',
+      'Arial Unicode MS Regular',
+    ]);
+    expect(
+      _sheet({
+        'text-font': ['Noto Sans Bold'],
+      }).symbols.single.fontStack,
+      ['Noto Sans Bold'],
+    );
+    expect(
+      _sheet({
+        'text-font': [
+          'literal',
+          ['Noto Sans Italic', 'Noto Sans Regular'],
+        ],
+      }).symbols.single.fontStack,
+      ['Noto Sans Italic', 'Noto Sans Regular'],
+    );
+  });
+
+  test('a layer of icons alone has no fonts', () {
+    final icons = StyleSheet.compile({
+      'version': 8,
+      'sources': {
+        'mine': {'type': 'geojson', 'data': _shops},
+      },
+      'layers': [
+        {
+          'id': 'shops',
+          'type': 'symbol',
+          'source': 'mine',
+          'layout': {'icon-image': 'shop'},
+        },
+      ],
+    }).symbols.single;
+    expect(icons.fontStack, isEmpty);
+  });
+
+  test('fonts picked by an expression are no font stack of their own', () {
+    final symbol = _sheet({
+      'text-font': [
+        'case',
+        [
+          '>',
+          ['get', 'weight'],
+          5,
+        ],
+        [
+          'literal',
+          ['Noto Sans Bold'],
+        ],
+        [
+          'literal',
+          ['Noto Sans Regular'],
+        ],
+      ],
+    }).symbols.single;
+    expect(symbol.fontStack, isEmpty);
+    expect(symbol.fontStackAt(EvalContext()..props = {'weight': 9}), [
+      'Noto Sans Bold',
+    ]);
+  });
+
   test('a label carries what its layer\'s paint reads from the feature', () {
     final sheet = _sheet({}, {
       'text-color': [

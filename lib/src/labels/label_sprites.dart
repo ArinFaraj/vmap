@@ -333,6 +333,7 @@ class LabelSprites {
   /// in [fontStack], with [format]'s sections, so they are on their way
   /// before it is drawn, as MapLibre asks for a tile's glyphs when it
   /// lays the tile out. False when labels are not drawn from ranges yet.
+  /// Text that names no font is drawn from vmap's own and waits on none.
   bool ask(
     String text,
     List<String> fontStack, {
@@ -341,7 +342,7 @@ class LabelSprites {
   }) {
     final store = _glyphs.ranges;
     if (_glyphs.fonts == null || store == null) return false;
-    if (shaped != null) return true;
+    if (shaped != null || fontStack.isEmpty) return true;
     final plain = plainText(text);
     final face = store.face(fontStack);
     if (needsFontShaping(plain)) {
@@ -379,7 +380,9 @@ class LabelSprites {
               _,
             ])
               (
-                face: fonts is List ? store.face(fonts.cast<String>()) : face,
+                face: fonts is List && fonts.isNotEmpty
+                    ? store.face(fonts.cast<String>())
+                    : face,
                 scale: scale.toDouble(),
                 color: color as int?,
                 align: switch (align) {
@@ -417,7 +420,7 @@ class LabelSprites {
     ShapedText? shaped,
   }) {
     final fonts = _glyphs.fonts;
-    final store = _glyphs.ranges;
+    final store = look.fontStack.isEmpty ? null : _glyphs.ranges;
     final format = look.format;
     final plain = plainText(look.text);
     // Glyph ranges cannot join a letter Unicode gives no forms, such as the
@@ -463,18 +466,21 @@ class LabelSprites {
       if (laid != null) return _keep(key, _glyphSprite(laid, look, pass, true));
     }
     // A label the fonts shape for a style with glyph ranges breaks where
-    // MapLibre breaks it, as wide as the ranges' joined letters.
+    // MapLibre breaks it, as wide as the ranges' joined letters, or as
+    // wide as the fonts set it when the ranges have none of them.
     double Function(int)? breakAdvance;
     if (fonts != null && store != null && shaped == null) {
       final face = store.face(look.fontStack);
       final forms = joinedForms(plain.runes.toList());
       if (!store.ready(face, _formsText(forms))) return null;
-      breakAdvance = (i) {
-        final c = forms[i];
-        if (c < 0) return 0;
-        final g = store.glyph(face, c);
-        return (g == null ? 0 : g.advance / GlyphPbf.em) + look.letterSpacing;
-      };
+      if (forms.any((c) => c >= 0 && store.glyph(face, c) != null)) {
+        breakAdvance = (i) {
+          final c = forms[i];
+          if (c < 0) return 0;
+          final g = store.glyph(face, c);
+          return (g == null ? 0 : g.advance / GlyphPbf.em) + look.letterSpacing;
+        };
+      }
     }
     if (fonts != null) {
       final started = _clock.elapsedMicroseconds;

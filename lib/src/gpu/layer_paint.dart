@@ -97,6 +97,7 @@ class LayerPaint {
           dashBefore,
         );
 
+  /// [layer]'s paint at [styleZoom], whether or not the layer shows there.
   static LayerPaint of(
     PaintLayer layer,
     EvalContext context,
@@ -104,9 +105,6 @@ class LayerPaint {
     Map<String, Object?>? props,
     DashFade fade = ZoomHistory.settled,
   ]) {
-    if (styleZoom < layer.minZoom || styleZoom >= layer.maxZoom) {
-      return clear;
-    }
     if (props != null) context.props = props;
     try {
       final color = Rgba.of(layer.color(context));

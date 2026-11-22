@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show rootBundle;
 
+import '../text/glyphs/glyph_files.dart';
 import '../text/glyphs/glyph_layout.dart';
 import '../text/glyphs/vmap_font.dart';
 import '../errors.dart';
@@ -66,14 +67,14 @@ class StyleResources {
     required bool shapeInWorkers,
   }) async {
     try {
-      final bundled = await Future.wait([
-        rootBundle.load(defaultGlyphFont),
-        rootBundle.load(syriacGlyphFont),
-      ]);
+      // One after the other: flutter_test answers an asset with a
+      // SynchronousFuture, and Future.wait of those completes empty.
+      final vazirmatn = await rootBundle.load(defaultGlyphFont);
+      final syriac = await rootBundle.load(syriacGlyphFont);
       final all = [
         ...given,
-        VmapFont('Vazirmatn', bundled[0].buffer.asUint8List()),
-        VmapFont('Noto Sans Syriac Eastern', bundled[1].buffer.asUint8List()),
+        VmapFont('Vazirmatn', vazirmatn.buffer.asUint8List()),
+        VmapFont('Noto Sans Syriac Eastern', syriac.buffer.asUint8List()),
       ];
       if (_closed) return;
       final faces = [for (final f in all) f.bytes];
@@ -87,17 +88,31 @@ class StyleResources {
     }
   }
 
-  /// Draws labels from the glyph ranges at [url], or from font files when
-  /// it is null.
-  void useGlyphRanges(String? url) => _labels.useRanges(
-    url,
-    _config,
-    () {
-      if (!_closed) onChange();
-    },
-    onError: (e) => onError(VmapError(VmapErrorKind.fonts, e)),
-    fetch: shared.fetch,
-  );
+  /// Draws labels from the glyph ranges at [url], kept in the cache
+  /// directory when there is one, or from font files when it is null.
+  void useGlyphRanges(String? url) {
+    final directory = _config.cacheDirectory;
+    shared.kept = url == null || directory == null
+        ? null
+        : GlyphFiles(directory, url);
+    _labels.useRanges(
+      url,
+      _config,
+      () {
+        if (!_closed) onChange();
+      },
+      onError: (e) => onError(VmapError(VmapErrorKind.fonts, e)),
+      fetch: shared.fetch,
+    );
+  }
+
+  /// Lets go of the fetched glyph ranges, sprite indexes and the glyphs
+  /// drawn from them, so the style next loaded fetches them again.
+  void forgetFetched() {
+    shared.forget();
+    _labels.useRanges(null, _config, () {});
+    if (_labels.glyphs.fonts case final fonts?) _labels.useGlyphs(fonts);
+  }
 
   /// What the page fetches once for itself and every tile worker.
   late final SharedFetches shared = SharedFetches(

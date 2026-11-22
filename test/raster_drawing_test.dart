@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/camera/view.dart';
+import 'package:vmap/src/net/net.dart';
 import 'package:vmap/src/style/expr.dart';
 import 'package:vmap/src/options.dart';
 import 'package:vmap/src/raster/raster.dart';
@@ -63,10 +64,17 @@ Future<int> _paintUntilLoaded(
   return loaded.isCompleted ? 1 : 0;
 }
 
-RasterDrawing _drawing(RasterLayer layer, Completer<void> loaded) {
+RasterDrawing _drawing(
+  RasterLayer layer,
+  Completer<void> loaded, {
+  String? cacheDirectory,
+}) {
   final drawing = RasterDrawing.of(
     layer,
-    config: const VmapNetworkOptions(userAgent: 'test'),
+    config: VmapNetworkOptions(
+      userAgent: 'test',
+      cacheDirectory: cacheDirectory,
+    ),
     onLoaded: () {
       if (!loaded.isCompleted) loaded.complete();
     },
@@ -131,6 +139,34 @@ void main() {
       loaded,
     );
     expect(await _paintUntilLoaded(drawing, loaded), 1);
+  });
+
+  test('a picture tile that cannot be read on disk is fetched again', () async {
+    final png = await _png(256, const ui.Color(0xFF3366CC));
+    final server = await _serve(png);
+    final cache = Directory.systemTemp.createTempSync('vmap_raster_test');
+    addTearDown(() => cache.deleteSync(recursive: true));
+    final template = 'http://127.0.0.1:${server.port}/{z}/{x}/{y}.png';
+    final kept = File('${cache.path}/raster-${cacheKey(template)}/0/0/0')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('<!DOCTYPE html><html>Sign in to this network');
+    final loaded = Completer<void>();
+    final drawing = _drawing(
+      PictureTileLayer(
+        minZoom: 0,
+        maxZoom: 24,
+        opacity: (_) => 1,
+        tileJsonUrl: null,
+        tiles: template,
+        tileSize: 256,
+        sourceMaxZoom: 0,
+      ),
+      loaded,
+      cacheDirectory: cache.path,
+    );
+    expect(await _paintUntilLoaded(drawing, loaded), 1);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(kept.readAsBytesSync(), png);
   });
 
   test('a tile of heights is fetched and shaded', () async {

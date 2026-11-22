@@ -17,7 +17,7 @@ import 'gpu_shim/gpu.dart' as gpu;
 /// One frame's render pass: the style's runs in order, then the buildings.
 class MapPass {
   /// Draws [frame] through [clip] into [renderPass]: [frame]'s tiles, or
-  /// [fallback] and [ideal] in their place.
+  /// [fallback], [ideal] and [far] in their place.
   MapPass(
     this._device,
     this.renderPass,
@@ -25,8 +25,27 @@ class MapPass {
     this._clip, {
     List<List<TileDraw>>? fallback,
     List<List<TileDraw>>? ideal,
+    List<List<TileDraw>>? far,
   }) : _fallback = fallback ?? _frame.fallback,
-       _ideal = ideal ?? _frame.ideal;
+       _ideal = ideal ?? _frame.ideal,
+       _far = far ?? _frame.farBuildings?.tiles;
+
+  /// [frame] as it was before the tiles now fading in joined it.
+  MapPass.before(
+    GpuDevice device,
+    gpu.RenderPass renderPass,
+    RenderFrame frame,
+    Float64List clip,
+    TilesBefore before,
+  ) : this(
+        device,
+        renderPass,
+        frame,
+        clip,
+        fallback: before.fallback,
+        ideal: before.ideal,
+        far: before.far,
+      );
 
   final GpuDevice _device;
   final gpu.RenderPass renderPass;
@@ -45,6 +64,17 @@ class MapPass {
   /// Per source, the tiles standing in for missing ones and the tiles
   /// wanted, both indexed by the style's sources.
   final List<List<TileDraw>> _fallback, _ideal;
+
+  /// [_fallback] by source, the coarsest stand-in first.
+  late final List<List<TileDraw>> _coarseFirst = [
+    for (final tiles in _fallback)
+      tiles.length < 2
+          ? tiles
+          : (tiles.toList()..sort((a, b) => b.size.compareTo(a.size))),
+  ];
+
+  /// Per source, the tiles drawn for their buildings alone, or null.
+  final List<List<TileDraw>>? _far;
 
   /// The globe the tiles are laid on, or null on the flat map and in the
   /// drape's slots.
@@ -68,10 +98,7 @@ class MapPass {
   late final double _perMetre = perMetreAt(_view);
 
   bool _clips(int source) =>
-      !adding &&
-      globe == null &&
-      _device.pipelines.stencil != null &&
-      _ideal[source].length < _drawnBit - 1;
+      !adding && globe == null && _ideal[source].length < _drawnBit - 1;
 
   /// The stencil number of stand-in [index] of [source]'s, after its ideal
   /// tiles' own; 0, where no ideal tile is, when there are too many tiles
@@ -95,7 +122,7 @@ class MapPass {
     if (source == _marked) return;
     renderPass
       ..clearBindings()
-      ..bindPipeline(_device.pipelines.stencil!)
+      ..bindPipeline(_device.pipelines.stencil)
       ..setCullMode(gpu.CullMode.none)
       ..setDepthWriteEnable(false)
       ..setDepthCompareOperation(gpu.CompareFunction.always)
@@ -108,7 +135,7 @@ class MapPass {
       )
       ..bindVertexBuffer(
         gpu.BufferView(
-          _device.pipelines.quad!,
+          _device.pipelines.quad,
           offsetInBytes: 0,
           lengthInBytes: 48,
         ),
@@ -118,7 +145,7 @@ class MapPass {
       renderPass
         ..setStencilReference(reference)
         ..bindUniform(
-          _device.pipelines.stencilFrame!,
+          _device.pipelines.stencilFrame,
           _device.host.emplace(_device.blocks.frameBytes),
         )
         ..draw(6);
@@ -155,10 +182,28 @@ class MapPass {
       gpu.StencilConfig(compareFunction: gpu.CompareFunction.equal),
     );
 
+  /// Leaves [mix] of what is drawn so far and adds the rest of [before],
+  /// the same picture drawn from the tiles it fades from.
+  void crossFade(gpu.Texture before, double mix) {
+    _composite(before, 0, dimBlend, dim: mix);
+    _composite(before, 1 - mix, addBlend);
+    _marked = -1;
+  }
+
   /// Lays [image], drawn whole, over the whole screen at [opacity].
-  void composite(gpu.Texture image, double opacity) {
+  void composite(gpu.Texture image, double opacity) =>
+      _composite(image, opacity, overBlend);
+
+  void _composite(
+    gpu.Texture image,
+    double opacity,
+    gpu.ColorBlendEquation blend, {
+    double dim = 0,
+  }) {
     final p = _device.pipelines;
-    _heatValues[0] = opacity;
+    _heatValues
+      ..[0] = opacity
+      ..[1] = dim;
     final nearest = gpu.SamplerOptions(
       minFilter: gpu.MinMagFilter.nearest,
       magFilter: gpu.MinMagFilter.nearest,
@@ -167,18 +212,18 @@ class MapPass {
     );
     renderPass
       ..clearBindings()
-      ..bindPipeline(p.composite!)
+      ..bindPipeline(p.composite)
       ..setCullMode(gpu.CullMode.none)
       ..setDepthWriteEnable(false)
       ..setDepthCompareOperation(gpu.CompareFunction.always)
       ..setStencilConfig(gpu.StencilConfig())
       ..setColorBlendEnable(true)
-      ..setColorBlendEquation(overBlend)
+      ..setColorBlendEquation(blend)
       ..bindVertexBuffer(
-        gpu.BufferView(p.screen!, offsetInBytes: 0, lengthInBytes: 48),
+        gpu.BufferView(p.screen, offsetInBytes: 0, lengthInBytes: 48),
       )
-      ..bindUniform(p.compositeInfo!, _device.host.emplace(_heatBytes))
-      ..bindTexture(p.compositeLayer!, image, sampler: nearest)
+      ..bindUniform(p.compositeInfo, _device.host.emplace(_heatBytes))
+      ..bindTexture(p.compositeLayer, image, sampler: nearest)
       ..draw(6)
       ..clearBindings();
   }
@@ -199,7 +244,7 @@ class MapPass {
     );
     renderPass
       ..clearBindings()
-      ..bindPipeline(_device.pipelines.heat!)
+      ..bindPipeline(_device.pipelines.heat)
       ..setCullMode(gpu.CullMode.none)
       ..setDepthWriteEnable(false)
       ..setDepthCompareOperation(gpu.CompareFunction.always)
@@ -208,17 +253,17 @@ class MapPass {
       ..setColorBlendEquation(overBlend)
       ..bindVertexBuffer(
         gpu.BufferView(
-          _device.pipelines.screen!,
+          _device.pipelines.screen,
           offsetInBytes: 0,
           lengthInBytes: 48,
         ),
       )
       ..bindUniform(
-        _device.pipelines.heatInfo!,
+        _device.pipelines.heatInfo,
         _device.host.emplace(_heatBytes),
       )
-      ..bindTexture(_device.pipelines.heatDensity!, density, sampler: linear)
-      ..bindTexture(_device.pipelines.heatRamp!, ramp, sampler: linear)
+      ..bindTexture(_device.pipelines.heatDensity, density, sampler: linear)
+      ..bindTexture(_device.pipelines.heatRamp, ramp, sampler: linear)
       ..draw(6)
       ..clearBindings();
     _marked = -1;
@@ -271,9 +316,10 @@ class MapPass {
           layer is CircleLayer || layer is HeatmapLayer;
       final want = standing;
       // Unclipped, as on the globe, stand-ins are drawn whole under the
-      // tiles that are ready, which draw over them. Heat adds up instead,
-      // so a ready tile a stand-in already covers is left out.
-      final fallback = _fallback[source];
+      // tiles that are ready, which draw over them, and the coarsest first,
+      // so a coarse one's water does not cover a finer one's land. Heat adds
+      // up instead, so a ready tile a stand-in already covers is left out.
+      final fallback = clipped ? _fallback[source] : _coarseFirst[source];
       bool underStandIn(TileDraw d) => fallback.any(
         (f) =>
             f.left <= d.left + 0.5 &&
@@ -351,7 +397,7 @@ class MapPass {
   /// The slots of [data]'s segment [s], drawn [scale] pixels a tile unit.
   gpu.BufferView _slotsOf(TileDraw d, TileGpu data, int s, double scale) {
     final paints = _device.paints;
-    return paints.written(data, s, scale, () {
+    return paints.written(data, s, scale, d.gate(_styleZoom), () {
       final stream = data.stream!;
       final segments = stream.segments;
       final slotEnd = s + 5 < segments.length
@@ -485,11 +531,8 @@ class MapPass {
     if (to > done) drawRange(done, to);
   }
 
-  /// Buildings after the flat layers, with depth. The flat layers leave an
-  /// index buffer bound, cleared first, or these draws would read their
-  /// vertices through it.
-  /// Draws building layer [layer], standing, depth tested.
-  /// Draws [layer]'s buildings at [opacity]. Below 1 they are drawn as
+  /// Draws [layer]'s buildings at [opacity], standing and depth tested,
+  /// after the flat layers. Below 1 they are drawn as
   /// MapLibre draws them, in this pass: their depth alone first, then their
   /// colour where it is the nearest, each pixel once, so the walls behind
   /// do not show through those in front.
@@ -504,16 +547,31 @@ class MapPass {
     renderPass.setCullMode(gpu.CullMode.none);
   }
 
-  void _drawBuildings(ExtrusionLayer layer, _Walls walls, double opacity) {
-    bool built(List<TileDraw> tiles) =>
-        tiles.any((d) => d.tile.extrusions.isNotEmpty);
-    bool meet(TileDraw a, TileDraw b) =>
-        a.left < b.left + b.size - 0.5 &&
-        b.left < a.left + a.size - 0.5 &&
-        a.top < b.top + b.size - 0.5 &&
-        b.top < a.top + a.size - 0.5;
+  /// Whether a tile in view shows [layer]'s buildings.
+  bool showsBuildings(ExtrusionLayer layer) {
+    bool shows(TileDraw d) => _stands(layer, d);
     for (var source = 0; source < _ideal.length; source++) {
-      final ideal = _ideal[source], fallback = _fallback[source];
+      if (_ideal[source].any(shows) ||
+          _fallback[source].any(shows) ||
+          (_far?[source].any(shows) ?? false)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Whether [d] has buildings of [layer] to stand, at the zoom its layers
+  /// are shown by.
+  bool _stands(ExtrusionLayer layer, TileDraw d) =>
+      d.tile.extrusions.isNotEmpty && layer.showsAt(d.gate(_styleZoom));
+
+  void _drawBuildings(ExtrusionLayer layer, _Walls walls, double opacity) {
+    List<TileDraw> standing(List<TileDraw> tiles) => [
+      for (final d in tiles)
+        if (_stands(layer, d)) d,
+    ];
+    for (var source = 0; source < _ideal.length; source++) {
+      final all = _ideal[source], fallback = _fallback[source];
       // A stand-in no other tile overlaps, as the four under a missing
       // tile, has no building another tile draws too, so its buildings are
       // drawn whole: cut to its square they would lose what stands over
@@ -521,9 +579,10 @@ class MapPass {
       final alone = <TileDraw>[], shared = <TileDraw>[];
       final sharedMarks = <int>[];
       for (final (j, f) in fallback.indexed) {
+        if (!_stands(layer, f)) continue;
         final overlaps =
-            ideal.any((d) => meet(d, f)) ||
-            fallback.any((o) => !identical(o, f) && meet(o, f));
+            all.any(f.overlaps) ||
+            fallback.any((o) => !identical(o, f) && o.overlaps(f));
         if (overlaps) {
           shared.add(f);
           sharedMarks.add(_standInMark(source, j));
@@ -531,9 +590,10 @@ class MapPass {
           alone.add(f);
         }
       }
-      final standIn = built(shared) && _clips(source);
-      final far = _frame.farBuildings?.tiles[source] ?? const <TileDraw>[];
-      if (!built(ideal) && !built(alone) && !standIn && !built(far)) {
+      final ideal = standing(all);
+      final far = standing(_far?[source] ?? const []);
+      final standIn = shared.isNotEmpty && _clips(source);
+      if (ideal.isEmpty && alone.isEmpty && !standIn && far.isEmpty) {
         continue;
       }
       if (standIn) _mark(source);
@@ -628,11 +688,9 @@ class MapPass {
 
   /// Zeroes the stencil over the whole screen, so tiles mark it again.
   void _clearStencil() {
-    final stencil = _device.pipelines.stencil;
-    if (stencil == null) return;
     renderPass
       ..clearBindings()
-      ..bindPipeline(stencil)
+      ..bindPipeline(_device.pipelines.stencil)
       ..setCullMode(gpu.CullMode.none)
       ..setDepthWriteEnable(false)
       ..setDepthCompareOperation(gpu.CompareFunction.always)
@@ -646,13 +704,13 @@ class MapPass {
       )
       ..bindVertexBuffer(
         gpu.BufferView(
-          _device.pipelines.quad!,
+          _device.pipelines.quad,
           offsetInBytes: 0,
           lengthInBytes: 48,
         ),
       )
       ..bindUniform(
-        _device.pipelines.stencilFrame!,
+        _device.pipelines.stencilFrame,
         _device.host.emplace(_wholeScreen),
       )
       ..draw(6)
@@ -696,7 +754,7 @@ class MapPass {
             eyeX: (eye.x - origin.dx - d.left - mx) / unit,
             eyeY: (eye.y - origin.dy - d.top - my) / unit,
             eyeHeight: eye.height / unit,
-            reach: reach == null ? 0 : reach.of(d.tile.id.z) / unit,
+            reach: reach == null ? 0 : reach.distance / unit,
             sunk: d.sunk,
           ),
         ),

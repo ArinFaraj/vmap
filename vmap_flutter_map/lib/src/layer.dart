@@ -40,7 +40,8 @@ class VmapLayer extends StatefulWidget {
 
   /// Draws with an engine the app made and owns, to keep loaded tiles
   /// across pages or share them. [options] are then ignored: set them on
-  /// this one.
+  /// this one. It is still given [markers], for as long as the layer has
+  /// any.
   final VmapEngine? engine;
 
   /// The markers drawn above the map: pass the list given to `MarkerLayer`.

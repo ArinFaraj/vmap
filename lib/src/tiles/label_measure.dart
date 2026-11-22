@@ -32,14 +32,16 @@ class LabelMeasure {
   /// How long [text] is in ems at [symbol]'s letter spacing, as MapLibre
   /// measures a label: from the style's glyph ranges, its letters joined,
   /// when the labels are drawn from them; else as the fonts set it, or
-  /// about half an em a letter.
+  /// about half an em a letter. A name the ranges have no glyph of, in a
+  /// layer that names no font or a font the server lacks, is drawn from
+  /// vmap's own fonts and measured by them.
   double textEms(
     SymbolLayer symbol,
     String text, [
     List<Object?>? format,
     double textSize = 16,
   ]) {
-    final ranges = this.ranges;
+    final ranges = symbol.fontStack.isEmpty ? null : this.ranges;
     if (format != null && ranges != null) {
       final width = _formattedEms(symbol, text, format, ranges, textSize);
       if (width != null) return width;
@@ -53,7 +55,9 @@ class LabelMeasure {
         for (final c in joinedForms(label.runes.toList()))
           if (c >= 0) c,
       ];
-      if (ranges.ready(face, String.fromCharCodes(forms))) {
+      if (!ranges.ready(face, String.fromCharCodes(forms))) {
+        missedGlyphs = true;
+      } else {
         var width = 0.0;
         var glyphs = 0;
         for (final c in forms) {
@@ -64,9 +68,9 @@ class LabelMeasure {
           }
         }
         // As MapLibre's shaping, no spacing follows the last letter.
-        return glyphs == 0 ? 0 : width - spacing;
+        if (glyphs > 0) return width - spacing;
+        if (forms.isEmpty) return 0;
       }
-      missedGlyphs = true;
     }
     return _fontEms[text] ??= () {
       final fonts = this.fonts;

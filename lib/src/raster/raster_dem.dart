@@ -11,6 +11,7 @@ import '../platform.dart';
 import '../style/expr.dart';
 import '../style/raster_style.dart';
 import '../terrain/dem_tile.dart';
+import '../tiles/recent_peak.dart';
 import '../tiles/tile_id.dart';
 import 'raster.dart';
 
@@ -673,6 +674,8 @@ final class TerrainTiles extends TileDrawing<TerrainLayer> {
 
   final DemTiles heights = DemTiles();
 
+  final _asked = RecentPeak();
+
   /// Tiles that came back holding no heights, kept so they are not asked
   /// for again; their parents' heights stand in.
   final Set<int> _empty = {};
@@ -734,7 +737,10 @@ final class TerrainTiles extends TileDrawing<TerrainLayer> {
       }
     }
     callOffUnused();
-    trimTiles(asked.length * 5, (key) => heights.remove(tileIdOf(key)));
+    trimTiles(
+      _asked.of(asked.length, clock.elapsedMilliseconds) * 5,
+      (key) => heights.remove(tileIdOf(key)),
+    );
   }
 
   @override

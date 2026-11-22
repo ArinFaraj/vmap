@@ -49,7 +49,11 @@ class RenderFrame {
     this.dashFade = ZoomHistory.settled,
     this.transitioning = false,
     this.farBuildings,
+    this.before,
   });
+
+  /// The tiles the frame's own fade in over, or null when none do.
+  final TilesBefore? before;
 
   /// The buildings standing past the ground tiles that carry them, or null
   /// when every building is on a tile drawn for the ground.
@@ -105,6 +109,17 @@ class FarBuildings {
   final List<List<TileDraw>> tiles;
 }
 
+/// What a frame showed before the tiles now fading in joined it: each
+/// source's tiles as [RenderFrame.ideal], [RenderFrame.fallback] and
+/// [FarBuildings.tiles] hold them, and how far the frame's own tiles have
+/// taken over, from 0 to 1.
+class TilesBefore {
+  const TilesBefore(this.ideal, this.fallback, this.far, this.mix);
+
+  final List<List<TileDraw>> ideal, fallback, far;
+  final double mix;
+}
+
 /// Draws the map's fill, line and circle layers and its buildings: the GPU
 /// renderer from each tile's GPU stream, the canvas renderer from its
 /// meshes. Backgrounds, raster layers and labels are the engine's, except
@@ -122,6 +137,10 @@ abstract class MapRenderer {
   /// depth buffer. The canvas draws such a style flat, and cuts what it
   /// draws at the horizon.
   bool get drawsIn3d => false;
+
+  /// Whether it fades from [RenderFrame.before] to the frame's own tiles.
+  /// One that does not is never given a frame with tiles before.
+  bool get fadesTiles => false;
 
   /// Makes [tile] drawable, at [scale] tile units to a pixel, until
   /// [clock] passes [deadline]: at least a piece of it. Returns true once

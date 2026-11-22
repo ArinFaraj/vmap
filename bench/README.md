@@ -1,4 +1,8 @@
-# vmap example and benchmark
+# vmap bench
+
+The app vmap is measured and compared with: the benchmark tour, MapLibre's
+render tests, the side by side page and the README's pictures. The app to
+copy from is `example/`.
 
 `flutter run` shows a map of Erbil's old town. The bar along the top picks
 the style, the place icons (none, the style's own, or vmap's pins), and the
@@ -39,7 +43,6 @@ reads at start: `laps=1` sets the number of laps, `labels=off` hides the
 labels, and `style_file=<path on the device>` draws a style document from a
 file.
 
-`tool/readme_shots.sh <dir>` takes every screenshot the README needs, on
-macOS, and `tool/readme_images.py <dir>` composes the pictures from them.
+`tool/readme_shots.sh` draws the README's pictures, on macOS.
 
 In a browser: `flutter run -d chrome -t lib/main_web.dart`.

@@ -7,6 +7,24 @@ import 'pmtiles.dart';
 import '../options.dart';
 import '../style/style_model.dart' show TileCover;
 
+/// What [make] makes of the bytes [read] gives, or null for bytes it
+/// cannot read. Those are not kept: a file cut short, or a network's sign
+/// in page answered in a tile's place. The copy kept may be the bad one,
+/// so after [forget] the tile is read once more, `fresh`, past the copy,
+/// before a [FormatException] gives it up.
+Future<T> readReadable<B, T extends Object>({
+  required Future<B> Function(bool fresh) read,
+  required FutureOr<T?> Function(B bytes) make,
+  required Future<void> Function() forget,
+}) async {
+  for (final fresh in const [false, true]) {
+    final made = await make(await read(fresh));
+    if (made != null) return made;
+    await forget();
+  }
+  throw const FormatException('The tile cannot be read');
+}
+
 /// Where the tiles of one tile set come from: the cache directory first,
 /// then the archive or the server, and kept on disk once fetched.
 class TileStore {
@@ -105,19 +123,42 @@ class TileStore {
     return file != null && fileExists(file);
   }
 
+  /// Tiles on their way to disk, by file.
+  final Map<String, Future<void>> _writing = {};
+
   /// The bytes of tile [z]/[x]/[y]: empty for a tile with nothing in it,
   /// or outside the tile set's bounds, and null where the server has no
-  /// such tile.
+  /// such tile. [fresh] passes over the copy on disk and replaces it.
   /// [cancel] aborts the download.
-  Future<Uint8List?> read(int z, int x, int y, {Cancel? cancel}) async {
+  Future<Uint8List?> read(
+    int z,
+    int x,
+    int y, {
+    Cancel? cancel,
+    bool fresh = false,
+  }) async {
     if (!cover.has(z, x, y)) return Uint8List(0);
     final file = fileOf(z, x, y);
-    if (file != null && fileExists(file)) return readFile(file);
+    if (!fresh && file != null && fileExists(file)) return readFile(file);
     final bytes = await _fetch(z, x, y, cancel: cancel);
     if (file != null && bytes != null && bytes.isNotEmpty) {
-      unawaited(writeFile(file, bytes).then<void>((_) {}, onError: (_) {}));
+      late final Future<void> written;
+      written = _writing[file] = writeFile(file, bytes)
+          .then<void>((_) {}, onError: (_) {})
+          .whenComplete(() {
+            if (identical(_writing[file], written)) _writing.remove(file);
+          });
     }
     return bytes;
+  }
+
+  /// Deletes the copy of tile [z]/[x]/[y] on disk, which could not be
+  /// read as a tile, so the next [read] asks the server again.
+  Future<void> forget(int z, int x, int y) async {
+    final file = fileOf(z, x, y);
+    if (file == null) return;
+    await _writing[file];
+    await deleteFile(file);
   }
 
   /// Fetches tile [z]/[x]/[y] into the cache directory unless it is there

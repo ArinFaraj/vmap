@@ -13,8 +13,8 @@ class VmapNetworkOptions {
     this.spritePixelRatio,
   });
 
-  /// Downloaded tiles are kept here between runs. Null disables the disk
-  /// cache.
+  /// What the map downloads is kept here between runs: tiles, the style,
+  /// its sprites and glyph ranges. Null disables the disk cache.
   final String? cacheDirectory;
 
   /// Sent as the user agent, which tile servers such as OpenStreetMap's ask
@@ -86,6 +86,7 @@ class VmapRenderOptions {
     this.glyphs = VmapGlyphs.style,
     this.maxCachedTiles = 56,
     this.farBuildings = true,
+    this.tileFade = const Duration(milliseconds: 200),
   });
 
   /// What draws the map: the GPU, or Flutter's canvas.
@@ -107,6 +108,12 @@ class VmapRenderOptions {
   /// camera than MapLibre draws them, and sink into the ground before they
   /// end. Off, they end at the edge of a tile, where MapLibre's do.
   final bool farBuildings;
+
+  /// How long the map takes to fade from the tiles it shows to the ones
+  /// that take their place, as it zooms or as they load. With
+  /// [Duration.zero] each tile shows the moment it is ready. The canvas
+  /// and raised ground do not fade.
+  final Duration tileFade;
 }
 
 /// Which labels the map writes and how they are placed.

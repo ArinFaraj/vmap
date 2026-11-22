@@ -14,6 +14,3 @@ analyzer:
     # The shader bundle asset is written by hook/build.dart when an app
     # builds, so a fresh checkout does not have it.
     asset_does_not_exist: ignore
-
-# Additional information about this file can be found at
-# https://dart.dev/guides/language/analysis-options

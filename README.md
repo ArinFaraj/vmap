@@ -93,17 +93,15 @@ When it is off, debug builds say which switch is missing, `onError` hears a
 **3. Show a map.**
 
 ```dart
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:vmap/vmap.dart';
 
 class MapPage extends StatelessWidget {
   const MapPage({super.key});
 
   @override
-  Widget build(BuildContext context) => const Scaffold(
-    body: Vmap(
-      initialCamera: VmapCamera(center: LatLng(36.19, 44.01), zoom: 14),
-    ),
+  Widget build(BuildContext context) => const Vmap(
+    initialCamera: VmapCamera(center: LatLng(36.19, 44.01), zoom: 14),
   );
 }
 ```
@@ -132,6 +130,8 @@ Vmap(style: VmapStyle.json(myStyleDocument))
 
 The style decides the look and where the tiles come from. Styles are
 compared by content, so building one in `build` is fine.
+[doc/style-support.md](doc/style-support.md) lists every source, layer,
+property and expression vmap reads from a style.
 
 Change single layers without writing the style out again, by layer `id`:
 
@@ -271,6 +271,7 @@ Vmap(
 | `glyphs` | `VmapGlyphs.style` | Where the letters of labels come from: the style's glyph ranges, or the app's fonts for every label with `VmapGlyphs.fonts`. |
 | `maxCachedTiles` | `56` | The fewest tiles kept in memory per source beyond those on screen. |
 | `farBuildings` | `true` | In a view tilted past 60 degrees, buildings stand farther from the camera than MapLibre draws them, and sink into the ground before they end. Off, they end at the edge of a tile, where MapLibre's do. |
+| `tileFade` | `200 ms` | How long the map takes to fade from the tiles it shows to the ones that take their place. `Duration.zero` shows each tile the moment it is ready. The canvas and raised ground do not fade. |
 
 ## Taps and features
 
@@ -421,8 +422,9 @@ final result = await controller.downloadRegion(
 );
 ```
 
-With a cache directory, tiles, styles and sprites are kept between runs, and
-the next start draws from disk at once while it checks the server.
+With a cache directory, tiles, styles, sprites and the glyph ranges labels
+were written with are kept between runs, and the next start draws from disk
+at once while it checks the server for the style and its sprites.
 `downloadRegion` fetches every tile the style draws for an area ahead of
 time; the count grows fourfold with each zoom, so check the terms of your
 tile server first.
@@ -537,8 +539,10 @@ Bugs and questions go to the
 
 ## License
 
-MIT. vmap bundles Vazirmatn and Noto Sans Syriac Eastern under the SIL Open
-Font License, its Unicode tables come from the Unicode Character Database
-(Unicode License V3), and its WebGL2 backend comes from
-[flutter_scene](https://pub.dev/packages/flutter_scene) (MIT). Map data in
-the pictures is from OpenStreetMap, through OpenFreeMap's tiles.
+[MIT](LICENSE). vmap bundles Vazirmatn and Noto Sans Syriac Eastern under
+the SIL Open Font License, its Unicode tables come from the Unicode
+Character Database (Unicode License V3), and its WebGL2 backend comes from
+[flutter_scene](https://pub.dev/packages/flutter_scene) (MIT). Their
+notices are in [NOTICES](NOTICES), which Flutter adds to the license page
+of every app that uses vmap. Map data in the pictures is from
+OpenStreetMap, through OpenFreeMap's tiles.

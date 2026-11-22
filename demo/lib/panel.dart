@@ -39,7 +39,7 @@ class ExplorePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SizedBox(
     width: 300,
-    child: Glass(
+    child: Panel(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
       child: SingleChildScrollView(
         child: Column(

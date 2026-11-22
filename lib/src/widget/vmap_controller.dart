@@ -245,12 +245,13 @@ class VmapController extends ChangeNotifier {
   }) {
     final from = _camera;
     final turn = _turn(from.bearing, to.bearing);
+    final east = eastward(from.worldX, to.worldX);
     return _run(
       _Motion(duration, (t) {
         final k = curve.transform(t);
         double mix(double a, double b) => a + (b - a) * k;
         return cameraAt(
-          x: mix(from.worldX, to.worldX),
+          x: from.worldX + east * k,
           y: mix(from.worldY, to.worldY),
           zoom: mix(from.zoom, to.zoom),
           bearing: from.bearing + turn * k,

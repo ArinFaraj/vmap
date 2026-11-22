@@ -5,20 +5,14 @@ import '../tiles/built_tile.dart';
 import 'gpu_shim/gpu.dart' as gpu;
 
 /// The render pipelines vmap's shader bundle makes, with the uniform slots
-/// each draws with. The raised ground, globe, stencil and heatmap pipelines
-/// are null where the bundle lacks their shaders.
+/// each draws with.
 class GpuPipelines {
   GpuPipelines(gpu.ShaderLibrary library) {
-    final mapVertex = library['MapVertex'],
-        mapFragment = library['MapFragment'];
-    final buildingVertex = library['BuildingVertex'];
-    final buildingFragment = library['BuildingFragment'];
-    if (mapVertex == null ||
-        mapFragment == null ||
-        buildingVertex == null ||
-        buildingFragment == null) {
-      throw StateError('the shader bundle lacks the map shaders');
-    }
+    gpu.Shader shader(String name) =>
+        library[name] ?? (throw StateError('the shader bundle lacks $name'));
+
+    final mapVertex = shader('MapVertex');
+    final mapFragment = shader('MapFragment');
     flat = gpu.gpuContext.createRenderPipeline(
       mapVertex,
       mapFragment,
@@ -48,6 +42,9 @@ class GpuPipelines {
     flatFrag = mapFragment.getUniformSlot('FragInfo');
     flatSprites = mapFragment.getUniformSlot('sprite_sheet');
     flatRamp = mapFragment.getUniformSlot('gradient_ramp');
+
+    final buildingVertex = shader('BuildingVertex');
+    final buildingFragment = shader('BuildingFragment');
     buildings = gpu.gpuContext.createRenderPipeline(
       buildingVertex,
       buildingFragment,
@@ -92,136 +89,65 @@ class GpuPipelines {
     buildingPatterns = buildingVertex.getUniformSlot('PatternInfo');
     buildingSheet = buildingFragment.getUniformSlot('SheetInfo');
     buildingSprites = buildingFragment.getUniformSlot('sprite_sheet');
-    final groundVertex = library['TerrainVertex'];
-    final groundFragment = library['TerrainFragment'];
-    if (groundVertex != null && groundFragment != null) {
-      ground = gpu.gpuContext.createRenderPipeline(
-        groundVertex,
-        groundFragment,
-        vertexLayout: const gpu.VertexLayout(
-          buffers: [
-            gpu.VertexBuffer(
-              strideInBytes: 8,
-              attributes: [
-                gpu.VertexAttribute(
-                  name: 'position',
-                  format: gpu.VertexFormat.float32x2,
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
-      groundFrame = groundVertex.getUniformSlot('FrameInfo');
-      groundDem = groundVertex.getUniformSlot('DemInfo');
-      groundHeights = groundVertex.getUniformSlot('heights');
-      groundDrape = groundFragment.getUniformSlot('drape');
-      final globeVertex = library['GlobeVertex'];
-      final globeFragment = library['GlobeFragment'];
-      if (globeVertex != null && globeFragment != null) {
-        globe = gpu.gpuContext.createRenderPipeline(
-          globeVertex,
-          globeFragment,
-          vertexLayout: const gpu.VertexLayout(
-            buffers: [
-              gpu.VertexBuffer(
-                strideInBytes: 8,
-                attributes: [
-                  gpu.VertexAttribute(
-                    name: 'position',
-                    format: gpu.VertexFormat.float32x2,
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-        globeFrame = globeVertex.getUniformSlot('FrameInfo');
-        globeDrape = globeFragment.getUniformSlot('drape');
-      }
-    }
-    final stencilVertex = library['StencilVertex'];
-    final stencilFragment = library['StencilFragment'];
-    if (stencilVertex != null && stencilFragment != null) {
-      stencil = gpu.gpuContext.createRenderPipeline(
-        stencilVertex,
-        stencilFragment,
-        vertexLayout: const gpu.VertexLayout(
-          buffers: [
-            gpu.VertexBuffer(
-              strideInBytes: 8,
-              attributes: [
-                gpu.VertexAttribute(
-                  name: 'position',
-                  format: gpu.VertexFormat.float32x2,
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
-      stencilFrame = stencilVertex.getUniformSlot('FrameInfo');
-      const e = tileExtent;
-      quad = gpu.gpuContext.createDeviceBufferWithCopy(
-        ByteData.sublistView(
-          Float32List.fromList([0, 0, e, 0, e, e, 0, 0, e, e, 0, e]),
-        ),
-      );
-    }
-    final heatVertex = library['HeatVertex'];
-    final heatFragment = library['HeatFragment'];
-    if (heatVertex != null && heatFragment != null) {
-      heat = gpu.gpuContext.createRenderPipeline(
-        heatVertex,
-        heatFragment,
-        vertexLayout: const gpu.VertexLayout(
-          buffers: [
-            gpu.VertexBuffer(
-              strideInBytes: 8,
-              attributes: [
-                gpu.VertexAttribute(
-                  name: 'position',
-                  format: gpu.VertexFormat.float32x2,
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
-      heatInfo = heatFragment.getUniformSlot('HeatInfo');
-      heatDensity = heatFragment.getUniformSlot('density');
-      heatRamp = heatFragment.getUniformSlot('ramp');
-      screen = gpu.gpuContext.createDeviceBufferWithCopy(
-        ByteData.sublistView(
-          Float32List.fromList([-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1]),
-        ),
-      );
-      final compositeFragment = library['CompositeFragment'];
-      if (compositeFragment != null) {
-        composite = gpu.gpuContext.createRenderPipeline(
-          heatVertex,
-          compositeFragment,
-          vertexLayout: const gpu.VertexLayout(
-            buffers: [
-              gpu.VertexBuffer(
-                strideInBytes: 8,
-                attributes: [
-                  gpu.VertexAttribute(
-                    name: 'position',
-                    format: gpu.VertexFormat.float32x2,
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-        compositeInfo = compositeFragment.getUniformSlot('CompositeInfo');
-        compositeLayer = compositeFragment.getUniformSlot('layer');
-      }
-    }
+
+    final groundVertex = shader('TerrainVertex');
+    final groundFragment = shader('TerrainFragment');
+    ground = _onPositions(groundVertex, groundFragment);
+    groundFrame = groundVertex.getUniformSlot('FrameInfo');
+    groundDem = groundVertex.getUniformSlot('DemInfo');
+    groundHeights = groundVertex.getUniformSlot('heights');
+    groundDrape = groundFragment.getUniformSlot('drape');
+
+    final globeVertex = shader('GlobeVertex');
+    final globeFragment = shader('GlobeFragment');
+    globe = _onPositions(globeVertex, globeFragment);
+    globeFrame = globeVertex.getUniformSlot('FrameInfo');
+    globeDrape = globeFragment.getUniformSlot('drape');
+
+    final stencilVertex = shader('StencilVertex');
+    stencil = _onPositions(stencilVertex, shader('StencilFragment'));
+    stencilFrame = stencilVertex.getUniformSlot('FrameInfo');
+
+    final heatVertex = shader('HeatVertex');
+    final heatFragment = shader('HeatFragment');
+    heat = _onPositions(heatVertex, heatFragment);
+    heatInfo = heatFragment.getUniformSlot('HeatInfo');
+    heatDensity = heatFragment.getUniformSlot('density');
+    heatRamp = heatFragment.getUniformSlot('ramp');
+
+    final compositeFragment = shader('CompositeFragment');
+    composite = _onPositions(heatVertex, compositeFragment);
+    compositeInfo = compositeFragment.getUniformSlot('CompositeInfo');
+    compositeLayer = compositeFragment.getUniformSlot('layer');
   }
 
-  late final gpu.RenderPipeline flat, buildings;
+  /// A pipeline whose vertices are positions alone, two floats each.
+  static gpu.RenderPipeline _onPositions(
+    gpu.Shader vertex,
+    gpu.Shader fragment,
+  ) => gpu.gpuContext.createRenderPipeline(
+    vertex,
+    fragment,
+    vertexLayout: const gpu.VertexLayout(
+      buffers: [
+        gpu.VertexBuffer(
+          strideInBytes: 8,
+          attributes: [
+            gpu.VertexAttribute(
+              name: 'position',
+              format: gpu.VertexFormat.float32x2,
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+
+  late final gpu.RenderPipeline flat, buildings, ground, globe, stencil, heat;
+
+  /// Lays an image drawn whole over the map at an opacity.
+  late final gpu.RenderPipeline composite;
+
   late final gpu.UniformSlot flatFrame,
       flatSlots,
       flatDem,
@@ -235,12 +161,8 @@ class GpuPipelines {
       buildingTile,
       buildingPatterns,
       buildingSheet,
-      buildingSprites;
-  gpu.RenderPipeline? ground, globe, stencil, heat;
-
-  /// Lays an image drawn whole over the map at an opacity.
-  gpu.RenderPipeline? composite;
-  gpu.UniformSlot? groundFrame,
+      buildingSprites,
+      groundFrame,
       groundDem,
       groundHeights,
       groundDrape,
@@ -254,9 +176,20 @@ class GpuPipelines {
       compositeLayer;
 
   /// A tile's square in tile units, two triangles.
-  gpu.DeviceBuffer? quad;
+  final gpu.DeviceBuffer quad = _triangles(const [
+    0, 0, tileExtent, 0, tileExtent, tileExtent, //
+    0, 0, tileExtent, tileExtent, 0, tileExtent,
+  ]);
 
   /// The screen in clip space, two triangles, which a heatmap's density is
   /// coloured over.
-  gpu.DeviceBuffer? screen;
+  final gpu.DeviceBuffer screen = _triangles(const [
+    -1, -1, 1, -1, 1, 1, //
+    -1, -1, 1, 1, -1, 1,
+  ]);
+
+  static gpu.DeviceBuffer _triangles(List<double> corners) =>
+      gpu.gpuContext.createDeviceBufferWithCopy(
+        ByteData.sublistView(Float32List.fromList(corners)),
+      );
 }

@@ -854,6 +854,20 @@ abstract class TileDrawing<L extends TiledRasterLayer>
     return (dx > 0.5 ? dx - 1 : dx, dy > 0.5 ? dy - 1 : dy);
   }
 
+  /// The picture [bytes] hold, or null when they hold none.
+  static Future<ui.Image?> _pictureOf(Uint8List bytes) async {
+    try {
+      final codec = await ui.instantiateImageCodec(bytes);
+      try {
+        return (await codec.getNextFrame()).image;
+      } finally {
+        codec.dispose();
+      }
+    } on Exception {
+      return null;
+    }
+  }
+
   @protected
   Future<void> loadTile(RasterTile tile, int z, int x, int y) async {
     if (tile.loading || tile.empty || tile.missing) return;
@@ -864,21 +878,29 @@ abstract class TileDrawing<L extends TiledRasterLayer>
     _loading++;
     final cancel = tile.cancel = Cancel();
     try {
-      final bytes = await tileStore!.read(z, x, y, cancel: cancel);
+      final store = tileStore!;
+      final (:bytes, :picture) = await readReadable(
+        read: (fresh) => store.read(z, x, y, cancel: cancel, fresh: fresh),
+        make: (Uint8List? bytes) async {
+          if (bytes == null || bytes.isEmpty) {
+            return (bytes: bytes, picture: null);
+          }
+          final picture = await _pictureOf(bytes);
+          return picture == null ? null : (bytes: bytes, picture: picture);
+        },
+        forget: () => store.forget(z, x, y),
+      );
       if (bytes == null) {
         tile.missing = true;
         if (!closed) onLoaded();
         return;
       }
-      if (bytes.isEmpty) {
+      if (picture == null) {
         tile.empty = true;
         return;
       }
-      final codec = await ui.instantiateImageCodec(bytes);
-      final frame = await codec.getNextFrame();
-      codec.dispose();
-      decodedFrom(frame.image, bytes);
-      await keepDecoded(tile, frame.image, z, x, y);
+      decodedFrom(picture, bytes);
+      await keepDecoded(tile, picture, z, x, y);
       tile.failures = 0;
     } on Cancelled {
       // Asked for again whenever it is in view again.

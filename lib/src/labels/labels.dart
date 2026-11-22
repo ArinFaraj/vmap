@@ -66,7 +66,7 @@ class LabelEngine {
   /// Pins drawn in place of the style's icons. Null draws the style's own.
   VmapPins? get pins => _points.pins;
   set pins(VmapPins? value) {
-    if (identical(value, _points.pins)) return;
+    if (value == _points.pins) return;
     _points.pins = value;
     _painter.dropPins();
     _placeAgain = true;
@@ -230,8 +230,6 @@ class LabelEngine {
 
   int get shown => _allStates.where((s) => s.opacity > 0).length;
 
-  /// The keys of the labels showing.
-  @visibleForTesting
   /// The keys of the labels the last placement placed.
   @visibleForTesting
   Set<String> get placedKeys => {
@@ -239,6 +237,8 @@ class LabelEngine {
       if (st.placed) st.candidate.key,
   };
 
+  /// The keys of the labels showing.
+  @visibleForTesting
   Set<String> get shownKeys => {
     for (final st in _live)
       if (st.opacity > 0) st.candidate.key,

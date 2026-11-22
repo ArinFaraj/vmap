@@ -1,5 +1,136 @@
-## Unreleased
+## 0.31.0
 
+- The map fades from the tiles it shows to the ones that take their place.
+  A tile that became ready, or a zoom level the camera crossed, replaced
+  what was drawn in a single frame: roads, land and buildings appeared and
+  vanished at once on a flight from the globe down to a street. The GPU
+  now draws the picture before and the picture after and mixes them over
+  `VmapRenderOptions.tileFade`, 200 ms unless set, and half that while
+  more tiles wait behind a fade. A tile at a place the last frame did not
+  show, and one built again from changed data, still shows at once.
+  `Duration.zero` turns the fade off. The canvas, raised ground and
+  heatmaps do not fade yet.
+- A tile standing in for tiles still on their way keeps the layers it was
+  built with until they take its place. Its layers were shown and hidden
+  by the camera's zoom, so a layer that ends where the next begins, as
+  flat buildings end at the zoom where the tall ones start, went blank
+  between the two while the deeper tiles loaded. A tile standing in for
+  one that could not be had still follows the camera's zoom, as MapLibre.
+- Buildings stand up from the ground as their tile fades in, where none
+  stood before. Those were drawn at full height in one frame. Buildings
+  past the ground tiles, in a view tilted past 60 degrees, stand at full
+  height, and those rising as ground tiles stand up whole there: they
+  come in where the ground showed buildings, flat or standing, the
+  frame before.
+- In a view tilted past 60 degrees, the buildings past the ground tiles
+  stand to one distance from the camera, whatever the zoom of their
+  tiles, and all sink over the same last stretch of it. The distance
+  used to depend on the zoom, so it jumped as the view crossed a whole
+  zoom, and buildings at the back came and went as it moved or turned.
+  While a tile loads, a coarser one that holds its buildings keeps them
+  standing, and a tile standing in for others keeps the buildings it
+  carries past their squares too.
+- Tiles drawn for their buildings alone fade in with the next picture,
+  as the ground's tiles do. They showed the frame they were ready, so
+  the city's far side popped in as the camera arrived.
+- A tile in view that is not ready yet, with the four tiles under it
+  all ready, is drawn as those four. Its parent stood in instead, so
+  zooming out the buildings and detail the screen showed a frame ago
+  went blank until the tile itself came.
+- On the globe, where tiles standing in for others are drawn whole, the
+  coarsest is drawn first. A coarse one added after finer ones covered
+  their land with its own rougher water for a frame, as a dive passed
+  over a coast.
+- On the web in Chrome, a dive from the globe no longer flashes the
+  page's own colour for a frame where the globe hands over to the flat
+  map, around zoom 12. Flutter's canvas, which lays the background under
+  the flat map, can reach the page a frame or two after the map's
+  images, and on the globe it laid none. It now lays the background
+  under the globe too wherever the globe fills the view, those that are
+  opaque, so one that shows through is not drawn twice.
+- While the camera moves, the tiles it will need by the time they arrive
+  are asked for before the ones it is about to leave, and the tiles for
+  later take no more than half of the loading places.
+- Headed for a place, with `flyTo` or `headFor`, the map asks for the
+  tiles over it at every zoom on the way, the coarsest first, where it
+  asked for every third level. The way down passes a level faster than a
+  level loads, so the middle of the view now grows finer one level at a
+  time.
+- The tile cache holds about five of the largest views of the last ten
+  seconds, and so do the terrain's heights. It followed the view's tile
+  count frame by frame, which moves by a few as the camera turns, so a
+  turning camera dropped tiles and built them again over and over: over
+  Manhattan 172 builds in ten seconds, where 74 is each tile once, and
+  terrain heights loaded again 170 times in ten seconds where now none
+  are. A frame there takes about 40 percent less CPU.
+- On the web a frame makes about 40 percent fewer WebGL calls, which cuts
+  the time Chrome's GPU process spends on a frame by about a third. A
+  release build leaves textures, uniform blocks and vertex arrays bound
+  between draws where it took them off after each one, binds a texture
+  unit only when it changes, points an instanced stream again only where
+  it moved, and sets a stencil that is the same on both faces in one
+  call. A debug build still takes the bindings off, so a draw that should
+  have bound its own cannot pass by reading the last one's.
+- A map in a widget test loads vmap's own fonts. Under `flutter test` every
+  map told `onError` of a fonts error and had no Vazirmatn or Noto Sans
+  Syriac Eastern to shape with: the tester answers an asset at once, and
+  the two fonts were waited for together in a way that then comes back
+  empty.
+- A GPU that gives out in the middle of a frame is reported once the frame
+  has ended. The report reached `onError` and the engine's listeners while
+  the map was painting, where nothing may ask for a repaint or a rebuild:
+  a debug build failed an assertion there instead of handing the map to
+  the canvas quietly.
+- A `Vmap` given a controller and then none moves with one of its own. The
+  controller taken away stayed attached to the map, and the map's own
+  never told `onCameraMove` or `onCameraIdle`.
+- `styleEdits`, `featureStates` and `markers` lists edited in place and
+  given again are followed. The engine kept the app's own list of edits
+  and states, so the changed list compared equal to itself, and a marker
+  moved in such a list stayed where it was until the camera moved.
+- A `Vmap` or a `VmapLayer` drawing with an app's `engine` gives it the
+  `markers` it is built with, and takes them back when it has none left or
+  goes. They were drawn and the engine never heard of them: labels ran
+  under them, their names were missing, and on the web they trailed the
+  map by a frame. Markers the app sets on its engine itself stay, as long
+  as the widget is given none. Of two maps drawing with one engine, the
+  one given markers last has them drawn, and the other's come back when
+  it goes.
+- A marker's name asks the style's glyph server for nothing. Every map
+  with a named marker asked for a font with an empty name, which the
+  server answered with a 404, and over such a style a name of several
+  words was drawn a word a line.
+- A symbol layer with text and no `text-font` takes MapLibre's default,
+  `Open Sans Regular` then `Arial Unicode MS Regular`, where it asked for
+  a font with an empty name. One whose `text-font` is an expression no
+  longer asks for a font named after the expression's operator.
+- Text in a font the style's glyph server lacks, which vmap draws from its
+  own fonts, wraps at its width and is measured by those fonts. It broke
+  after every word, and a road's name was placed as if it had no length.
+- A tile in the cache directory that cannot be read is fetched again and
+  replaced, and what a server answers in a tile's place is not kept. A
+  network's sign in page, or a file cut short, stayed on disk as the tile:
+  it failed every time it was asked for, until `clearCache`.
+- The style's glyph ranges are kept in the cache directory, beside the
+  tiles, the style and its sprites. Every start fetched each range again,
+  so labels waited on the network, and without one they were written in
+  vmap's own fonts. `clearCache` fetches them again, as it does the rest.
+- `clearCache` goes on past a folder it cannot delete. One a tile was
+  being written into stopped it, and the rest of the cache stayed.
+- Files in the cache directory are written whole or not at all, so an app
+  stopped while a tile, a style or a sprite sheet is being written leaves
+  no cut off file behind.
+- `flyTo`, `easeTo` and an eased `fitBounds` take the short way round the
+  world, as MapLibre does: from Fiji to Samoa over the antimeridian, where
+  the camera went west across Africa and the Americas.
+- `VmapPins` and `VmapPin` compare by what they hold, so pins made again
+  in every `build` as they were change nothing. They compared by
+  identity, and each rebuild drew every pin again and placed the labels
+  again.
+- vmap's `NOTICES` file carries the licenses of what it bundles (Vazirmatn,
+  Noto Sans Syriac Eastern, the WebGL2 backend from flutter_scene and the
+  Unicode tables), so Flutter adds them to the license page of every app
+  that uses vmap. `LICENSE` is the MIT license alone.
 - Android apps need no setup: vmap's own Android manifest switches Flutter
   GPU on and asks for the internet, and the build merges it into the
   app's. The lines an app added for vmap can go.

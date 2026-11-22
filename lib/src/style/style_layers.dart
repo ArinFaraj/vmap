@@ -140,7 +140,7 @@ class VectorLayers {
         haloWidth: exprOr(paint['text-halo-width'], 0),
         weight: fontWeightOf(font),
         italic: font.contains('italic') || font.contains('oblique'),
-        fontStack: fontStackOf(layout['text-font']),
+        fontStack: hasText ? fontStackOf(layout['text-font']) : const [],
         uppercase: layout['text-transform'] == 'uppercase',
         layoutAt: SymbolLayout(
           transform:

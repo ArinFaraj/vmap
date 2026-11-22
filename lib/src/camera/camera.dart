@@ -13,6 +13,7 @@ class MapFrame {
     required this.devicePixelRatio,
     required this.view,
     this.ahead,
+    this.soon,
   });
 
   /// Slippy-map zoom: the world is `256 * 2^zoom` logical pixels wide.
@@ -32,14 +33,25 @@ class MapFrame {
   /// to a known place, so its tiles load on the way.
   final MapView? ahead;
 
-  /// This frame seeing [view], headed for [ahead].
-  MapFrame withView(MapView view, MapView? ahead) => MapFrame(
+  /// What the screen will show by the time a tile asked for now is here,
+  /// while the camera moves: the view whose tiles are worth asking for.
+  final MapView? soon;
+
+  /// This frame with [view], [ahead] and [soon] each made anew by [remake].
+  MapFrame mapViews(MapView Function(MapView view) remake) => MapFrame(
     zoom: zoom,
     origin: origin,
     size: size,
     rotation: rotation,
     devicePixelRatio: devicePixelRatio,
-    view: view,
-    ahead: ahead,
+    view: remake(view),
+    ahead: switch (ahead) {
+      final ahead? => remake(ahead),
+      null => null,
+    },
+    soon: switch (soon) {
+      final soon? => remake(soon),
+      null => null,
+    },
   );
 }

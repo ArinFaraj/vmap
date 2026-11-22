@@ -810,7 +810,7 @@ class MapView {
   /// than the ground's.
   BuildingReach? buildingReach({bool variableZoom = false}) {
     if (globe != null || !(variableZoom || pitch > 60)) return null;
-    return BuildingReach._(cameraToCenterDistance, zoom);
+    return BuildingReach._(cameraToCenterDistance * 3.4);
   }
 
   /// The tiles of zoom [z] in view with ground within [reach] world pixels
@@ -829,18 +829,16 @@ class MapView {
   }
 }
 
-/// How far from the camera a view's buildings stand: for tiles of zoom z,
-/// as far as a building is drawn at the size it has in the middle of a
-/// flat map one and a quarter zoom levels short of z, and never nearer
-/// than the far edge of a view tilted to 60 degrees, which stands whole.
+/// How far from the camera a view's buildings stand, whatever the zoom of
+/// the tiles that carry them: past the far edge of a view tilted to 60
+/// degrees, which stands whole. Every building sinks over the same last
+/// stretch of it, so none stands past where the others have gone, and the
+/// edge holds still as the view crosses a whole zoom.
 final class BuildingReach {
-  const BuildingReach._(this._toCentre, this._zoom);
+  const BuildingReach._(this.distance);
 
-  final double _toCentre, _zoom;
-
-  /// The reach of tiles of zoom [z], in world pixels.
-  double of(int z) =>
-      _toCentre * math.max(2.6, math.pow(2, _zoom - z + 1.25).toDouble());
+  /// The distance, in world pixels.
+  final double distance;
 }
 
 /// MapLibre's `createCalculateTileZoomFunction` with its defaults, 9.314

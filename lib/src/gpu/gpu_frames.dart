@@ -25,10 +25,12 @@ class GpuFrames {
   List<_FrameTarget> _ring = const [];
   int _next = 0;
 
-  /// The depth and stencil of the images the canvas shows, and of the
-  /// images a pass reads: on the web a pass read by another is drawn
-  /// while that other is still drawing, so the two cannot share them.
-  gpu.Texture? _depth, _fedDepth;
+  /// The depth and stencil of the images the canvas shows, of the images
+  /// a pass reads, and of the pictures an image fades from: on the web a
+  /// pass read by another is drawn while that other is still drawing, so
+  /// the two cannot share them, and the picture an image fades from is
+  /// drawn beside both.
+  gpu.Texture? _depth, _fedDepth, _beforeDepth;
 
   /// The samples and their depth, when the device multisamples. Every
   /// image shares them: only the native backends multisample, and they run
@@ -73,6 +75,7 @@ class GpuFrames {
     _densities.clear();
     _densityDepth = null;
     _fedDepth = null;
+    _beforeDepth = null;
     gpu.Texture depth(int samples) => device.scratch(
       width,
       height,
@@ -88,7 +91,12 @@ class GpuFrames {
         : null;
     _ring = [
       for (var i = 0; i < 3; i++)
-        _FrameTarget(_shown(device), () => _shown(device), () => _fed(device)),
+        _FrameTarget(
+          _shown(device),
+          () => _shown(device),
+          () => _fed(device),
+          () => _before(device),
+        ),
     ];
     for (final frame in _ring) {
       gpu.gpuHost.page?.showsOnce(frame.map.target.texture);
@@ -115,6 +123,19 @@ class GpuFrames {
   PassTarget _fed(GpuDevice device) => PassTarget(
     _texture(device),
     depth: _fedDepth ??= device.scratch(
+      width,
+      height,
+      gpu.gpuContext.defaultDepthStencilFormat,
+      1,
+    ),
+    multisampled: _multisampled,
+  );
+
+  /// A texture for the picture an image fades from, the size of the
+  /// screen.
+  PassTarget _before(GpuDevice device) => PassTarget(
+    _texture(device),
+    depth: _beforeDepth ??= device.scratch(
       width,
       height,
       gpu.gpuContext.defaultDepthStencilFormat,
@@ -164,8 +185,13 @@ class GpuFrames {
   }
 
   /// The next frame of the ring to draw into, each of its passes made a
-  /// [MapPass] by [passOn].
-  FrameLayers begin({required MapPass Function(gpu.RenderPass pass) passOn}) {
+  /// [MapPass] by [passOn]: of the frame's tiles, or with `before` of the
+  /// tiles it fades from, of which [mix] is how far it has.
+  FrameLayers begin({
+    required MapPass Function(gpu.RenderPass pass, {required bool before})
+    passOn,
+    double? mix,
+  }) {
     // A frame never laid down, as when painting it threw, still sends the
     // pass it began.
     shown.sendText();
@@ -173,21 +199,25 @@ class GpuFrames {
     _next = (_next + 1) % _ring.length;
     return FrameLayers(
       frame,
-      passOn: (target) {
+      mix: mix,
+      passOn: (target, {required before}) {
         final commands = gpu.gpuContext.createCommandBuffer();
         return (
-          pass: passOn(target.begin(commands, multisample: sampled)),
+          pass: passOn(
+            target.begin(commands, multisample: sampled),
+            before: before,
+          ),
           commands: commands,
         );
       },
     );
   }
 
-  /// Keeps [layers], drawn for [view], as the frame to show, and hands the
-  /// GPU its commands after [before], each image's after those of the
-  /// images its pass reads. The pass of the opaque image laid down at
-  /// style run [textRun] is held back as [FrameShow.textPass], and goes
-  /// last, when its image is laid down. On the web with [snapshot], each
+  /// Ends [layers]' last image and keeps them, drawn for [view], as the
+  /// frame to show, and hands the GPU its commands after [before], each
+  /// image's after those of the images its pass reads. The pass of the image laid down at style run
+  /// [textRun] is held back as [FrameShow.textPass], and goes last, when
+  /// its image is laid down. On the web with [snapshot], each
   /// image is copied out of its texture when it is first laid down.
   void finish(
     FrameLayers layers,
@@ -197,11 +227,10 @@ class GpuFrames {
     required int textRun,
     bool snapshot = true,
   }) {
+    layers.close();
     final images = layers.images;
     final under = FrameShow.upTo(textRun, images.length, layers.splits) - 1;
-    final held = under >= 0 && images[under].opacity >= 1
-        ? images[under]
-        : null;
+    final held = under >= 0 ? images[under] : null;
     final last = held ?? images.last;
     for (final commands in before) {
       commands.submit();
@@ -244,6 +273,7 @@ class GpuFrames {
     _ring = const [];
     _depth = null;
     _fedDepth = null;
+    _beforeDepth = null;
     _multisampled = null;
   }
 }
@@ -252,18 +282,24 @@ class GpuFrames {
 /// each image laid over it, and one for each image a pass reads, each made
 /// the first time a frame asks for it.
 class _FrameTarget implements FrameTextures {
-  _FrameTarget(this.map, this._makeShown, this._makeFed);
+  _FrameTarget(this.map, this._makeShown, this._makeFed, this._makeBefore);
 
   @override
   final FrameTexture map;
   final FrameTexture Function() _makeShown;
-  final PassTarget Function() _makeFed;
+  final PassTarget Function() _makeFed, _makeBefore;
   final List<FrameTexture> _overlays = [];
-  final List<PassTarget> _fed = [];
-  int _nextOverlay = 0, _nextFed = 0;
+  final List<PassTarget> _fed = [], _before = [];
+  int _nextOverlay = 0, _nextFed = 0, _nextBefore = 0;
 
   /// Starts a frame, which takes the textures from the first again.
-  void rewind() => _nextOverlay = _nextFed = 0;
+  void rewind() => _nextOverlay = _nextFed = _nextBefore = 0;
+
+  @override
+  PassTarget nextBefore() {
+    if (_nextBefore == _before.length) _before.add(_makeBefore());
+    return _before[_nextBefore++];
+  }
 
   @override
   FrameTexture nextShown() {

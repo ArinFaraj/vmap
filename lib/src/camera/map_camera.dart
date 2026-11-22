@@ -91,6 +91,17 @@ class VmapCamera {
       'bearing ${bearing.toStringAsFixed(1)}, pitch ${pitch.toStringAsFixed(1)})';
 }
 
+/// How far east [to] is of [from], both fractions of the world, going
+/// whichever way round is shorter, as MapLibre's `normalizeCenter` picks it.
+double eastward(double from, double to) {
+  final d = to - from;
+  return d > 0.5
+      ? d - 1
+      : d < -0.5
+      ? d + 1
+      : d;
+}
+
 /// The camera at fractions [x], [y] of the world.
 VmapCamera cameraAt({
   required double x,
@@ -242,7 +253,7 @@ class FlyPath {
     _rho = curve;
     final scale = math.pow(2, to.zoom - from.zoom).toDouble();
     final world = 512 * math.pow(2, from.zoom).toDouble();
-    _dx = (to.worldX - from.worldX) * world;
+    _dx = eastward(from.worldX, to.worldX) * world;
     _dy = (to.worldY - from.worldY) * world;
     _w1 = _w0 / scale;
     _u1 = math.sqrt(_dx * _dx + _dy * _dy);

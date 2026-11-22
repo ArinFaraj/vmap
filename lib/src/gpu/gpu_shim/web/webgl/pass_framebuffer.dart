@@ -104,7 +104,10 @@ final class _PassFramebuffer {
       }
       if (depth.stencilLoadAction == LoadAction.clear) {
         // Like depthMask, glClear(STENCIL) respects the stencil write mask.
-        _gpuContext._state.stencilMask(0xFF);
+        _gpuContext._state.stencilMaskSeparate(
+          web.WebGL2RenderingContext.FRONT_AND_BACK,
+          0xFF,
+        );
         gl.clearStencil(depth.stencilClearValue);
         clearMask |= web.WebGL2RenderingContext.STENCIL_BUFFER_BIT;
       }

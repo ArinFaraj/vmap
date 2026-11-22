@@ -1,44 +1,47 @@
 # Roadmap
 
-vmap started as a flutter_map layer drawn with the canvas, because Flutter GPU
-did not run on the web. The WebGL2 shim taken from flutter_scene runs it
-there, Impeller is the default on every native platform as of Flutter 3.47,
-and the GPU renderer now passes 1,394 of the 1,519 MapLibre render tests in
-scope (92%; 1,401 of all 1,730, including ones out of scope). So the
-project becomes its own map engine for Flutter: GPU first, 3D, its own widget
-and camera, and a small adapter for apps that use flutter_map.
-
-Where each platform stands, with sources: [doc/platform-support.md](doc/platform-support.md).
-What the API looks like and what should change before release:
-[doc/api-review.md](doc/api-review.md).
+vmap is a map engine for Flutter: its own widget and camera, MapLibre
+styles, and a renderer on Flutter GPU, with a small adapter for apps that
+use flutter_map. It began as a flutter_map layer drawn with the canvas; the
+[changelog](CHANGELOG.md) has that history, and
+[doc/design/history](doc/design/history) the reviews and the naming that
+shaped the engine.
 
 ## Status
 
-- **0.30.0 is on pub.dev** (2026-11-16). It runs on Android phones on
-  Vulkan and on OpenGL ES, an iPhone, a Mac, and in Chrome, Safari and
-  Firefox. Windows and Linux are built by CI but not run yet.
+- **On pub.dev since 0.27.0.** It runs on Android phones on Vulkan and on
+  OpenGL ES, an iPhone, a Mac, and in Chrome, Safari and Firefox. Windows
+  and Linux are built by CI but not run yet. Where each platform stands,
+  with sources: [doc/platform-support.md](doc/platform-support.md).
+- **Correctness.** The GPU renderer passes 1,394 of the 1,519 MapLibre
+  render tests in scope (92%; 1,401 of all 1,730, including ones out of
+  scope). On 2026-11-10, over the 21 views of the OpenFreeMap liberty,
+  bright and positron styles, 19 differed from MapLibre GL JS by 4.1% of
+  pixels or less and two of those not at all. The two Tokyo views differed
+  by 6.4% and 8.8% because the harness took their pictures before any label
+  was drawn (see "Labels arrive late over Tokyo" in
+  [doc/performance-plan.md](doc/performance-plan.md)).
 - **Speed.** At the screen's rate it holds 60 frames a second in Chrome and
   about 120 on the phones and the iPhone tried. With the frame rate uncapped,
   MapLibre GL JS is still ahead in Chrome; the numbers are in the
   [changelog](CHANGELOG.md) and [doc/performance-plan.md](doc/performance-plan.md).
-- **Next:** Windows and Linux on real machines, then 0.2 below.
-- Work happens on the `main` branch of `ArinFaraj/vmap`. The history of
-  each step is in the [changelog](CHANGELOG.md), and the first review of
-  the package, with what came of each finding, in
-  [doc/review.md](doc/review.md).
+- Work happens on the `main` branch of `ArinFaraj/vmap`.
 
 ## Decided
 
-- **vmap becomes the engine**, under its existing name (decided 2026-10-21,
-  [doc/naming.md](doc/naming.md)): the map widget, the camera, styles, tiles,
-  labels and the GPU renderer, built in rather than in a second package.
+- **vmap is the engine**, under the name it had as a flutter_map layer
+  (decided 2026-10-21,
+  [doc/design/history/naming.md](doc/design/history/naming.md)): the map
+  widget, the camera, styles, tiles, labels and the GPU renderer, built in
+  rather than in a second package.
 - **GPU first.** All new work is on the GPU renderer. The canvas renderer is
   frozen: kept so a map still draws on Android 9 and older, Vivante devices,
   browsers without WebGL2 and in `flutter test`, but given no new features.
   Standing 3D buildings, globe and terrain are GPU only; the canvas draws a
   tilted map with its buildings flat.
-- **flutter_map is optional.** Its layers move to a separate adapter package
-  built on the engine, so apps that do not use flutter_map do not pull it in.
+- **flutter_map is optional.** Its layer is the `vmap_flutter_map` adapter
+  package beside the engine, so apps that do not use flutter_map do not
+  pull it in.
 - **Flutter 3.47.1 or newer**, the first release where Windows and Linux can
   switch Flutter GPU on.
 - **MapLibre is the reference.** Its render tests and the real-style
@@ -56,57 +59,9 @@ What the API looks like and what should change before release:
   `flutter test` can run Flutter GPU and how Impeller's OpenGL ES backend
   copes on old phones.
 
-## 0.1: the first release
+## Next: steady on real devices
 
-The engine as it stands, packaged and run on every platform.
-
-Already in, from the work so far:
-
-- Any MapLibre style: 1,394 of the 1,519 render tests that must pass, and
-  real styles close to MapLibre's own picture. On 2026-11-10, over the 21
-  views of the OpenFreeMap liberty, bright and positron styles, 19 differed
-  from MapLibre GL JS by 4.1% of pixels or less and two of those not at
-  all. The two Tokyo views differed by 6.4% and 8.8% because the harness
-  took their pictures before any label was drawn (see "Labels arrive late
-  over Tokyo" in [doc/performance-plan.md](doc/performance-plan.md)).
-- GPU drawing: fills, lines, gradients, dashes and patterns in one draw per
-  tile; 3D buildings with a depth buffer; globe, terrain, sky and fog;
-  heatmaps; raster and hillshade layers.
-- Labels in every script, Arabic and Kurdish shaped correctly (MapLibre, with
-  its right-to-left plugin and OpenFreeMap's fonts, leaves some of their
-  letters unjoined), with MapLibre's placement and collision circles,
-  smooth motion while panning, zooming and tilting, and an old frame warped to
-  the new camera when the GPU falls behind.
-- Vector tiles in MVT and MLT, PMTiles archives, GeoJSON with clustering, a
-  disk cache and regions downloaded for offline use.
-- The `Vmap` widget with gestures for touch, mouse, trackpad and keyboard,
-  `flyTo`, `easeTo` and `fitBounds`, markers that are widgets, feature
-  lookup under a tap, and feature state for highlighting.
-
-To do before publishing:
-
-1. Done: the GPU renderer is part of `vmap`, the flutter_map layers are the
-   `vmap_flutter_map` adapter beside it, and the canvas is a renderer of
-   the same shape, kept as the fallback.
-2. Done: the API and first impression, per
-   [doc/api-review.md](doc/api-review.md) and [doc/review.md](doc/review.md).
-3. Done: `example/` targets every platform with Flutter GPU switched on;
-   the benchmark app is `bench/`.
-4. Done: a `.pubignore`, version 0.27.0 and its changelog,
-   and the shader bundle shown to land when vmap comes as published files.
-   `vmap_flutter_map` depends on vmap by path and has `publish_to: none`
-   until it is published after vmap.
-5. Done: CI checks every push, builds the example for the web, Android,
-   iOS, Linux and Windows, and runs MapLibre's render tests on the GPU.
-6. Partly done: an iPhone, Safari and Firefox run it. Windows and Linux are
-   left.
-7. Done: the README is written around the engine, with the platform table
-   and a guide for moving from 0.26.
-8. Done for vmap: the engine is on pub.dev since 0.27.0. vmap_flutter_map is
-   next.
-
-## 0.2: steady on real devices
-
+- **Windows and Linux** run on real machines.
 - **Impeller's OpenGL ES backend.** Force it on an Android phone with
   `io.flutter.embedding.android.ImpellerBackend=opengles` and run everything:
   32 bit indices, depth and stencil, multisampling, buildings, terrain, globe.
@@ -120,9 +75,9 @@ To do before publishing:
   dense tile still holds about 9 MB of building vertices.
 - **`flutter test`.** Find out whether the tester can run Flutter GPU. If it
   can, golden tests draw the real renderer; if not, the canvas stays for tests.
-- **The flutter_map adapter**, brought up to date with the engine.
+- **The flutter_map adapter** published on pub.dev, after vmap.
 
-## 0.3: your own 3D
+## Then: your own 3D
 
 What makes the engine more than a MapLibre port: apps adding their own 3D
 content to the map.
@@ -137,7 +92,7 @@ content to the map.
 - **Custom shaders** for a style layer or a whole tile, and styling hooks the
   MapLibre spec does not have.
 
-## 0.4: the rest of MapLibre
+## After that: the rest of MapLibre
 
 Render tests that still fail and could matter to some styles:
 
@@ -170,7 +125,7 @@ Render tests that still fail and could matter to some styles:
   adapter. Before release, the API and first impression get a polish pass.
 - 2026-10-21: the engine keeps the name vmap.
 - 2026-10-21: test Impeller's OpenGL ES backend by forcing it on an Android
-  phone (0.2).
+  phone.
 - 2026-10-21: after a critical review, one camera and one zoom scale
   (MapLibre's) in the public API, the GPU by default, one glyph setting,
   and the canvas as a renderer behind the same interface as the GPU.
@@ -185,8 +140,9 @@ Render tests that still fail and could matter to some styles:
   CI runs it on the GPU on macOS against a pinned MapLibre commit and fails
   below `tool/render_suite_floor.txt`, three under its 1,394: on the
   runner `regressions/mapbox-gl-js#2762` and
-  `icon-size/property-function-plain` pass or fail with timing. A local checkout with probe tests of our own in it
-  counts a few more; the canvas renderer passes 1,074 in such a checkout.
+  `icon-size/property-function-plain` pass or fail with timing. A local
+  checkout with probe tests of our own in it counts a few more; the canvas
+  renderer passes 1,074 in such a checkout.
 - `tool/compare_style.sh`: real OpenFreeMap styles over real places against
   MapLibre GL JS with its right-to-left plugin.
 - The bench app's tour on a phone for frame times and memory

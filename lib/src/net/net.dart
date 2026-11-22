@@ -82,6 +82,15 @@ String cacheKey(String text) {
 /// The bytes at [url], or null when the server has none (404).
 typedef FetchBytes = Future<Uint8List?> Function(String url);
 
+/// What [SharedFetches] keeps between runs.
+abstract interface class KeptFetches {
+  /// The bytes kept for [url], or null.
+  Future<Uint8List?> read(String url);
+
+  /// Keeps [bytes], which [url] answered with, when they are its to keep.
+  void keep(String url, Uint8List bytes);
+}
+
 /// The small things the page fetches once for itself and every tile
 /// worker, glyph ranges and sprite indexes, so each crosses the network
 /// once however many ask for it.
@@ -93,18 +102,38 @@ class SharedFetches {
   final Map<String, Future<Uint8List?>> _fetched = {};
   Net? _net;
 
+  /// Read before the network is asked, and given what it answers.
+  KeptFetches? kept;
+
+  /// Counts [forget]s, so a fetch begun before one neither keeps nor
+  /// drops what is asked for after it.
+  int _round = 0;
+
   Future<Uint8List?> fetch(String url) => _fetched[url] ??= _load(url);
 
+  /// Fetches everything again when next asked.
+  void forget() {
+    _fetched.clear();
+    _round++;
+  }
+
   Future<Uint8List?> _load(String url) async {
+    final round = _round;
     try {
+      final kept = this.kept;
+      final had = await kept?.read(url);
+      if (had != null) return had;
       final reply = await (_net ??= Net(
         userAgent: userAgent,
       )).get(url, headers);
-      if (reply.status == 200) return reply.bytes;
+      if (reply.status == 200) {
+        if (round == _round) kept?.keep(url, reply.bytes);
+        return reply.bytes;
+      }
       if (reply.status == 404) return null;
       throw HttpFailure(reply.status, url);
     } catch (_) {
-      _fetched.remove(url);
+      if (round == _round) _fetched.remove(url);
       rethrow;
     }
   }

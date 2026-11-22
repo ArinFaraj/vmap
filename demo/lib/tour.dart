@@ -200,7 +200,9 @@ class Tour {
       controller.camera = flight.at(t);
       if (t >= 1) {
         _flight = null;
-        controller.headFor(null);
+        // The next stop is known already, so its tiles load while this one
+        // holds.
+        controller.headFor(stops[(index + 1) % stops.length].camera);
         _holdFrom = controller.camera;
         _turned = _drifted = 0;
         _phaseStart = elapsed;
