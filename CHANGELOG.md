@@ -1,875 +1,104 @@
 ## 0.31.0
 
-- The map fades from the tiles it shows to the ones that take their place.
-  A tile that became ready, or a zoom level the camera crossed, replaced
-  what was drawn in a single frame: roads, land and buildings appeared and
-  vanished at once on a flight from the globe down to a street. The GPU
-  now draws the picture before and the picture after and mixes them over
-  `VmapRenderOptions.tileFade`, 200 ms unless set, and half that while
-  more tiles wait behind a fade. A tile at a place the last frame did not
-  show, and one built again from changed data, still shows at once.
-  `Duration.zero` turns the fade off. The canvas, raised ground and
-  heatmaps do not fade yet.
-- A tile standing in for tiles still on their way keeps the layers it was
-  built with until they take its place. Its layers were shown and hidden
-  by the camera's zoom, so a layer that ends where the next begins, as
-  flat buildings end at the zoom where the tall ones start, went blank
-  between the two while the deeper tiles loaded. A tile standing in for
-  one that could not be had still follows the camera's zoom, as MapLibre.
-- Buildings stand up from the ground as their tile fades in, where none
-  stood before. Those were drawn at full height in one frame. Buildings
-  past the ground tiles, in a view tilted past 60 degrees, stand at full
-  height, and those rising as ground tiles stand up whole there: they
-  come in where the ground showed buildings, flat or standing, the
-  frame before.
-- In a view tilted past 60 degrees, the buildings past the ground tiles
-  stand to one distance from the camera, whatever the zoom of their
-  tiles, and all sink over the same last stretch of it. The distance
-  used to depend on the zoom, so it jumped as the view crossed a whole
-  zoom, and buildings at the back came and went as it moved or turned.
-  While a tile loads, a coarser one that holds its buildings keeps them
-  standing, and a tile standing in for others keeps the buildings it
-  carries past their squares too.
-- Tiles drawn for their buildings alone fade in with the next picture,
-  as the ground's tiles do. They showed the frame they were ready, so
-  the city's far side popped in as the camera arrived.
-- A tile in view that is not ready yet, with the four tiles under it
-  all ready, is drawn as those four. Its parent stood in instead, so
-  zooming out the buildings and detail the screen showed a frame ago
-  went blank until the tile itself came.
-- On the globe, where tiles standing in for others are drawn whole, the
-  coarsest is drawn first. A coarse one added after finer ones covered
-  their land with its own rougher water for a frame, as a dive passed
-  over a coast.
-- On the web in Chrome, a dive from the globe no longer flashes the
-  page's own colour for a frame where the globe hands over to the flat
-  map, around zoom 12. Flutter's canvas, which lays the background under
-  the flat map, can reach the page a frame or two after the map's
-  images, and on the globe it laid none. It now lays the background
-  under the globe too wherever the globe fills the view, those that are
-  opaque, so one that shows through is not drawn twice.
-- While the camera moves, the tiles it will need by the time they arrive
-  are asked for before the ones it is about to leave, and the tiles for
-  later take no more than half of the loading places.
-- Headed for a place, with `flyTo` or `headFor`, the map asks for the
-  tiles over it at every zoom on the way, the coarsest first, where it
-  asked for every third level. The way down passes a level faster than a
-  level loads, so the middle of the view now grows finer one level at a
-  time.
-- The tile cache holds about five of the largest views of the last ten
-  seconds, and so do the terrain's heights. It followed the view's tile
-  count frame by frame, which moves by a few as the camera turns, so a
-  turning camera dropped tiles and built them again over and over: over
-  Manhattan 172 builds in ten seconds, where 74 is each tile once, and
-  terrain heights loaded again 170 times in ten seconds where now none
-  are. A frame there takes about 40 percent less CPU.
-- On the web a frame makes about 40 percent fewer WebGL calls, which cuts
-  the time Chrome's GPU process spends on a frame by about a third. A
-  release build leaves textures, uniform blocks and vertex arrays bound
-  between draws where it took them off after each one, binds a texture
-  unit only when it changes, points an instanced stream again only where
-  it moved, and sets a stencil that is the same on both faces in one
-  call. A debug build still takes the bindings off, so a draw that should
-  have bound its own cannot pass by reading the last one's.
-- A map in a widget test loads vmap's own fonts. Under `flutter test` every
-  map told `onError` of a fonts error and had no Vazirmatn or Noto Sans
-  Syriac Eastern to shape with: the tester answers an asset at once, and
-  the two fonts were waited for together in a way that then comes back
-  empty.
-- A GPU that gives out in the middle of a frame is reported once the frame
-  has ended. The report reached `onError` and the engine's listeners while
-  the map was painting, where nothing may ask for a repaint or a rebuild:
-  a debug build failed an assertion there instead of handing the map to
-  the canvas quietly.
-- A `Vmap` given a controller and then none moves with one of its own. The
-  controller taken away stayed attached to the map, and the map's own
-  never told `onCameraMove` or `onCameraIdle`.
-- `styleEdits`, `featureStates` and `markers` lists edited in place and
-  given again are followed. The engine kept the app's own list of edits
-  and states, so the changed list compared equal to itself, and a marker
-  moved in such a list stayed where it was until the camera moved.
-- A `Vmap` or a `VmapLayer` drawing with an app's `engine` gives it the
-  `markers` it is built with, and takes them back when it has none left or
-  goes. They were drawn and the engine never heard of them: labels ran
-  under them, their names were missing, and on the web they trailed the
-  map by a frame. Markers the app sets on its engine itself stay, as long
-  as the widget is given none. Of two maps drawing with one engine, the
-  one given markers last has them drawn, and the other's come back when
-  it goes.
-- A marker's name asks the style's glyph server for nothing. Every map
-  with a named marker asked for a font with an empty name, which the
-  server answered with a 404, and over such a style a name of several
-  words was drawn a word a line.
-- A symbol layer with text and no `text-font` takes MapLibre's default,
-  `Open Sans Regular` then `Arial Unicode MS Regular`, where it asked for
-  a font with an empty name. One whose `text-font` is an expression no
-  longer asks for a font named after the expression's operator.
-- Text in a font the style's glyph server lacks, which vmap draws from its
-  own fonts, wraps at its width and is measured by those fonts. It broke
-  after every word, and a road's name was placed as if it had no length.
-- A tile in the cache directory that cannot be read is fetched again and
-  replaced, and what a server answers in a tile's place is not kept. A
-  network's sign in page, or a file cut short, stayed on disk as the tile:
-  it failed every time it was asked for, until `clearCache`.
-- The style's glyph ranges are kept in the cache directory, beside the
-  tiles, the style and its sprites. Every start fetched each range again,
-  so labels waited on the network, and without one they were written in
-  vmap's own fonts. `clearCache` fetches them again, as it does the rest.
-- `clearCache` goes on past a folder it cannot delete. One a tile was
-  being written into stopped it, and the rest of the cache stayed.
-- Files in the cache directory are written whole or not at all, so an app
-  stopped while a tile, a style or a sprite sheet is being written leaves
-  no cut off file behind.
-- `flyTo`, `easeTo` and an eased `fitBounds` take the short way round the
-  world, as MapLibre does: from Fiji to Samoa over the antimeridian, where
-  the camera went west across Africa and the Americas.
-- `VmapPins` and `VmapPin` compare by what they hold, so pins made again
-  in every `build` as they were change nothing. They compared by
-  identity, and each rebuild drew every pin again and placed the labels
+- Tiles fade in instead of popping in, over `VmapRenderOptions.tileFade` (200 ms
+  by default).
+- Fewer blank layers and missing buildings while tiles load.
+- Tiles along a `flyTo` or `headFor` load sooner, and a turning camera stops
+  rebuilding tiles.
+- Web: about 40% fewer WebGL calls a frame, and no flash where the globe meets
+  the flat map.
+- The cache keeps glyph ranges, writes files whole, and fetches broken files
   again.
-- vmap's `NOTICES` file carries the licenses of what it bundles (Vazirmatn,
-  Noto Sans Syriac Eastern, the WebGL2 backend from flutter_scene and the
-  Unicode tables), so Flutter adds them to the license page of every app
-  that uses vmap. `LICENSE` is the MIT license alone.
-- Android apps need no setup: vmap's own Android manifest switches Flutter
-  GPU on and asks for the internet, and the build merges it into the
-  app's. The lines an app added for vmap can go.
-- `dart run vmap:setup` is removed. iOS, macOS, Windows and Linux take a
-  line or two each, which the README lists.
-- `featuresAt` takes `layers`, as MapLibre's `queryRenderedFeatures`
-  does: only the features those style layers draw.
-- Setting an engine's `markers` to markers that take the same room as
-  before does nothing, as setting its other options to the same value
-  already did, so an app that sets them on every build does not lay out
-  the labels again.
-- `VmapEngineOptions` holds what an engine is made with:
-  `VmapEngine.withOptions` makes one from them and `VmapEngine.update`
-  follows new ones. `VmapEngineOwner` (`package:vmap/engine_owner.dart`)
-  owns that engine for a map widget other than `Vmap`, as `Vmap` does: the
-  flutter_map layer draws through it.
+- `flyTo`, `easeTo` and `fitBounds` take the short way across the antimeridian.
+- `markers`, `styleEdits` and `featureStates` edited in place are picked up.
+- A map drawing with an app's `engine` hands it its `markers`.
+- New: `featuresAt(layers:)`, `VmapEngineOptions` and `VmapEngineOwner`.
+- Android needs no setup.
+- **Breaking:** `dart run vmap:setup` is removed. The README lists the steps for
+  other platforms.
+
+## 0.30.2
+
+- Fixed: a GPU that refused the label text's texture or command buffer made
+  every frame throw. The map now falls back to the canvas and frees its GPU
+  memory.
 
 ## 0.30.1
 
-- A right to left name that wraps keeps its direction on every line. Each
-  line was ordered by its own first letter, so a Kurdish or Arabic name
-  with an English part in brackets could end on a line read left to right:
-  "گەراج (Khoshnaw Parking)" broke into a line that read "Parking)" where
-  it reads "(Parking". Every line of a paragraph is now ordered at the
-  paragraph's level, as ICU's line ordering does in MapLibre's right to
-  left plugin. Seen on an iPhone 13 Pro, the first real iPhone vmap has
-  run on.
+- Fixed: right-to-left names that wrap lost their direction on later lines.
 
 ## 0.30.0
 
-- The map draws again on Android phones that use Vulkan. On Flutter 3.50
-  such a phone showed labels and icons over an empty map, with no land,
-  roads or buildings, in 0.27.0 through 0.29.3: seen on a vivo V2514, the
-  one Vulkan phone tried. Flutter's Vulkan backend there begins every pass
-  on a texture as the first pass made for it, so the second pass vmap
-  opened on a frame for its text cleared the map under it. Text and
-  see-through layers are now drawn inside the map's own pass, which is one
-  pass fewer a frame on every platform, and each texture is drawn in one
-  pass a frame, always of the same shape.
-- The numbers in road shields show on Android phones that draw with
-  OpenGL ES. The glyph atlas was a one-channel red texture, which draws
-  nothing there (seen on a OnePlus 8 Pro, Adreno 650). Off the web it is
-  an alpha texture now.
-- A tile's geometry is kept once, on the GPU, where a second copy stayed
-  in Dart memory. Over the bench's tour, peak memory went from 646 to 658
-  MB down to 475 to 486 MB on the vivo, and from 673 to 725 MB down to 518
-  to 523 MB on the OnePlus, with frame times and dropped frames unchanged.
-  The example app at rest on a Mac went from 411 MB to 304 MB. The GPU
-  heap holds up to 256 MB where it held 96, so `maxCachedTiles` is what
-  decides which tiles stay. A tile trimmed from the heap, or dropped when
-  the system asks for memory, is fetched again when it comes back into
-  view.
-- In Chrome the map's frames go straight to the page. A frame is drawn in
-  the WebGL canvas itself and handed over with no copy, where each one
-  crossed Flutter's renderer as a full-screen image that piled up until
-  the garbage collector ran. A pass's calls are recorded and sent when it
-  ends, so its uniforms go up in one upload: 11 a frame in a tilted Erbil
-  where there were 150. Measured in headless Chrome on an M4 Pro Mac with
-  the Liberty style: page memory at 60 frames a second went from 1,030 to
-  1,186 MB down to 249 MB, where MapLibre GL JS takes 179 MB. With the
-  frame rate uncapped, a tilted Erbil went from 74 to 89 frames a second
-  up to 149 to 172, a flight from 75 to 86 up to 199 to 203, Manhattan
-  from 82 to 87 up to 112 to 135, and the globe from 151 to 163 up to 173
-  to 192. MapLibre GL JS reaches 228 to 295, 359 to 367, 165 to 169 and
-  497 to 499 there, so it is still ahead with the cap off.
-- A map that draws something of its own on Flutter's canvas (a raster
-  layer that shows, a patterned background, pins) is still shown through
-  the canvas in Chrome, whole, so nothing on it trails the rest. A map
-  under widget markers holds each frame until the canvas drawn with it
-  lands, so the markers stay on the map: within 0.4 pixels while it moves,
-  measured in Chrome, Firefox and WebKit.
-- Firefox runs the map at close to the screen's rate. Taking each frame
-  out of the canvas as a bitmap cost Firefox 6 to 26 ms a frame, so in
-  Firefox and Safari the canvas is now an element of the page and a
-  finished frame is left in it. On a 120 Hz screen Firefox drew 22 to 52
-  frames a second with 0.29.3 and draws 81 to 120 now, on a busy machine,
-  where MapLibre GL JS draws 117 to 120. A page with more than one map
-  there shows them as bitmaps, as before.
-- In Firefox and Safari a place's biggest label could be missing, with
-  smaller names in its spot: the name over Erbil's citadel was. They run
-  Flutter's JavaScript build, where the bit shift that read a label's
-  rank kept 32 bits and high ranks wrapped around. The rank is a field of
-  its own now.
-- Text shaped from a font, as Kurdish and Arabic names are, is drawn on
-  the GPU from distance fields like the text from a style's glyph ranges,
-  the fields made in the worker. No label text goes through Flutter's
-  canvas on the GPU renderer.
-- An unscaled upright icon is sampled texel for pixel, its corner on the
-  device pixel at or below the half, as MapLibre samples it nearest. Seven
-  of MapLibre's icon render tests that failed pass.
-- vmap depends on the `material_ui` package, for the icons of its pins,
-  where it imported them from `package:flutter/material.dart`, which
-  Flutter 3.50 deprecates. It needs Flutter 3.47 or newer, as vmap does.
-- On the web, where Flutter draws on a thread of its own, the sky and
-  atmosphere shaders are compiled 400 ms in and tried again when a compile
-  fails: Flutter's renderer can trap when a shader is compiled while it
-  compiles its own.
+- Fixed: a blank map on Android phones using Vulkan (since 0.27.0).
+- Fixed: missing road shield numbers on Android phones using OpenGL ES.
+- Fixed: a place's main label could be missing in Firefox and Safari.
+- About a quarter less memory.
+- Much faster in Chrome and Firefox.
+- Pin icons come from `material_ui`.
 
 ## 0.29.3
 
-- On the GPU renderer, joined letters of Arabic, Kurdish and other
-  cursive scripts read as one stroke again. A label with a halo 1 pixel
-  wide or less drew each glyph's halo and ink in one pass, so the halo of
-  each letter was painted over the ink of the letter before it, a thin
-  light line at every join. Every halo of a symbol layer is now drawn
-  before any of its ink, as MapLibre draws it, at any halo width. Latin
-  letters that sit close together lose the same faint nick at their
-  edges. Quads with no halo cover no pixels in the halo pass.
-- A map that has just loaded draws its last label much sooner. Measured
-  in Chrome on a Windows PC, from a cold start to the map saying it is
-  idle: a tilted Erbil with buildings in 3.0 s where it took 8.7 s, a
-  tilted Manhattan in 3.5 s where it took 4.5 s, and the globe in 2.7 s
-  where it took 3.6 s. MapLibre GL JS takes 1.4 s, 1.8 s and 2.0 s there.
-  Labels were drawn a few a frame, none in a frame that also placed
-  labels, and each label drawn started another placement, so they came in
-  over hundreds of frames. While the camera is still, labels are now drawn
-  through a placement, with four times as long to draw them and to work
-  out which markers buildings hide. A moving map keeps the budgets it had,
-  and the labels that end up shown are the same.
-- A label asks for the glyph ranges it is drawn from when it is first
-  placed, as MapLibre asks for a tile's glyphs when it lays the tile out,
-  where it asked when it was first drawn: the ranges came in over several
-  seconds.
-- Sixteen raster tiles load at once, as many as MapLibre fetches, where
-  four did. A freed slot was taken only in the next frame, so a globe's
-  few dozen shaded relief tiles came in a few at a time.
+- Fixed: thin lines at the joins of Arabic and Kurdish letters.
+- Labels finish drawing much sooner after the map loads.
 
 ## 0.29.2
 
-- A heatmap is coloured into the image of the layers below it, where it
-  took a full-screen image of its own that label text could not be drawn
-  into. A frame with a heatmap under the labels is one image again, where
-  it was three: the map, the heat and the text. On the web each of those
-  is copied out of its texture, so a globe with a heatmap took about 10 ms
-  to paint a frame and takes 2 to 3 ms.
-- A heatmap at opacity 0 placed after the style's last symbol layer takes
-  no image over the labels.
-
-## 0.29.1
-
-- On the web, a frame allocates about a third less memory, and the
-  browser collects garbage a little over half as often while a tilted
-  city view turns. Numbers a tile's worker sends that the page reads one
-  at a time (the walls labels are hidden behind, a tile's layer offsets,
-  its text layouts) are copied into Dart's memory when the tile arrives,
-  where each read was a call into the browser. Glyphs are looked up in a
-  table instead of maps keyed by a number, and the WebGL layer compares
-  the state it last set without building a record for each call.
-- On the web, a layer placed after the style's last symbol layer no
-  longer takes a full-screen image of its own in frames where it has
-  nothing in view. A map with such a layer handed two images to the page
-  for every frame.
-- Less work in every frame on all platforms: a label's sprite key is
-  built once instead of in each frame, labels are sorted for drawing on
-  values worked out once a frame, the tiles in view are found against a
-  view outline prepared once, and a tile's paint slots are found without
-  hashing.
+- Heatmaps and layers above the labels cost less to draw, and the web allocates
+  less each frame.
 
 ## 0.29.0
 
-- In a view tilted past 60 degrees, buildings stand to the far edge of the
-  view. MapLibre picks coarser tiles for far ground, which carry no
-  buildings, so the skyline ended at a tile's edge and moved as the camera
-  turned. Buildings now keep their own tiles to a distance set by how tall
-  they still look, sink into the ground over the last part of it, and rise
-  when their tile arrives. `VmapRenderOptions(farBuildings: false)` ends
-  them where MapLibre does.
-- Road names laid on a tilted map are laid out once and kept on the GPU,
-  which projects and sizes them each frame, instead of every glyph being
-  placed again on the CPU for every frame.
-- On the web, the tile uniforms of layers drawn together are written
-  before the first of them is drawn and sent together, a tile's frame
-  block is written once a pass instead of once for each run of layers,
-  and the WebGL layer finds a draw's vertex array and uniform blocks
-  without building or hashing a string.
-- `dart:developer` timeline marks are off unless the app is built with
-  `--dart-define=VMAP_TIMELINE=true`; they cost time in release builds.
-- The README has new pictures drawn by the engine, a table of the rendering
-  options, what each platform has been seen running on, and how vmap is
-  tested. `doc/style-support.md` describes the GPU engine.
+- Buildings reach the horizon in views tilted past 60 degrees.
+  `farBuildings: false` turns it off.
+- Timeline marks are off unless built with `--dart-define=VMAP_TIMELINE=true`.
 
 ## 0.28.0
 
-- `VmapController.headFor` tells the map where code that moves the camera
-  itself is taking it, so the tiles there load on the way, as they do for
-  `flyTo`.
-- On the web, raster tiles laid on the globe or terrain no longer flash
-  the page white for a frame.
-- Something stays drawn while tiles load: on the globe the tiles above or
-  below stand in, as on the flat map; a stand-in is looked for at every
-  zoom above; the four tiles under a missing one are used first, as
-  MapLibre does; the tiles of zoom 0 to 2 are kept, so a flight over
-  ground not loaded never shows it bare; and a raster tile shaded again or
-  replaced keeps its last picture until the new one is on the GPU.
-- Tiles load as MapLibre loads them: the pieces cut from one deepest tile
-  share one download; a tile the camera has left is called off, and a
-  request that times out is aborted, so the view's own tiles get the
-  connection; and raster and terrain tiles are kept up to five zooms of
-  the screen's tiles, longest unused first, instead of all dropped at once.
-- A missing tile is drawn from its nearest loaded ancestor, cut to its
-  square, under whichever of its finer tiles are loaded, as MapLibre
-  retains both; a coarse stand-in no longer shows its water through the
-  finer tiles beside it, nor its buildings inside theirs.
-- Layers and buildings show and hide at their zoom range at once, as
-  MapLibre's do, instead of fading; a style's flat building layer ends at
-  its own maxzoom.
-- Raised ground keeps showing a tile's last picture until the new one is
-  on the GPU, and a tile new to the view shows its ancestor's part until
-  then, instead of a frame without its hillshade.
-- Heatmaps stay drawn while their tiles load, without counting heat twice.
-- Changing the overlay's paint keeps the map's labels.
-- The globe and raised ground cost less to draw each frame.
+- `VmapController.headFor` loads tiles ahead of your own camera code.
+- Something always stays drawn while tiles load.
+- Tiles load and cache the way MapLibre does.
+- Layers show and hide at their zoom range at once instead of fading.
 
 ## 0.27.2
 
-- A pixel image the GPU refuses to decode fails its load instead of
-  raising an error no one can catch and leaving the load waiting forever,
-  which also left a label page stuck.
-- A device that refuses a texture or command buffer while the GPU draws
-  hands the map to the canvas from the next frame, instead of throwing
-  out of paint.
+- Fixed: a GPU that refused a texture or command buffer made paint throw. The
+  map now falls back to the canvas.
+- Fixed: an image the GPU could not decode left its load waiting forever.
 
 ## 0.27.1
 
-- `VmapController.toLatLng` and `toScreen` answer null until a map has laid
-  the controller out, instead of throwing `Infinity or NaN toInt`.
+- Fixed: `toLatLng` and `toScreen` threw before the map was laid out.
 
 ## 0.27.0
 
-vmap is now a map engine of its own, drawn on the GPU, with flutter_map
-moved to an adapter package. This release changes most of the public API:
+vmap is now its own map engine, drawn on the GPU. flutter_map support moved to
+`vmap_flutter_map`.
 
-- `VmapLayer`, `VmapMap` (now `VmapFlutterMap`), `VmapGestures` and
-  `NamedMarker` moved to `vmap_flutter_map`.
-- `VMap` and `VMapController` are `Vmap` and `VmapController`, and
-  `MapCameraPosition` is `VmapCamera`, with a `LatLng` center.
-- Engine settings are grouped in `VmapNetworkOptions` (was
-  `TileSourceConfig`), `VmapRenderOptions` and `VmapLabelOptions`.
-- Every zoom is MapLibre's, one below flutter_map's.
-- `onError` receives a `VmapError`, and statistics are in
-  `package:vmap/debug.dart`.
-- `interactive`, `rotate`, `tilt` and `keyboard` are one `gestures:
-  VmapGestureOptions(...)`.
-
-### The engine
-
-- `Vmap`, a map widget of vmap's own, takes every setting as a parameter:
-  style, overlay, style edits, feature state, markers that are widgets,
-  pins, text, labels, network and rendering. It tilts, stands
-  `fill-extrusion` buildings up, and has gestures for touch, mouse wheel,
-  right drag, trackpad and keyboard, long press, a loading builder, the
-  style's attribution in a corner, and callbacks for camera moves, the
-  camera coming to rest, the style loaded, the map idle and errors.
-- `VmapGestureOptions` switches each gesture off by MapLibre GL JS's
-  handler names (`dragPan`, `scrollZoom`, `boxZoom`, `dragRotate`,
-  `keyboard`, `doubleClickZoom`, `touchZoomRotate`, `touchPitch`), with
-  `rotate`, `pitch`, `inertia`, `zoomRate`, `wheelZoomRate` and
-  `rotateThreshold`. It
-  takes the place of `interactive`, `rotate`, `tilt` and `keyboard`.
-- The mouse wheel and a trackpad zoom as MapLibre GL JS's scroll zoom
-  does: a wheel and a trackpad told apart by their deltas and timing, a
-  wheel's steps eased, a trackpad followed frame by frame. In a browser
-  two fingers on a trackpad zoom, as does a pinch, which vmap reads from
-  the page's own events, Safari's pinch included.
-- `package:vmap/gestures.dart` exports the gesture recognizer behind `Vmap`,
-  so another host can drive its own camera with the same gestures.
-- Gestures follow MapLibre GL JS: a shift double click zooms out, a shift
-  drag zooms to the box it draws, a control drag turns and tilts as a right
-  drag does, `+` and `-` go to the next whole zoom and two with shift, and
-  a right drag in a browser keeps the page's menu away.
-  The pointer is a hand over the map.
-- `dart run vmap:setup` switches Flutter GPU on in an app's Android,
-  iOS, macOS, Windows and Linux folders and lets the app load tiles;
-  `--check` only reports, for CI.
-- `Vmap.onFeatureTap` hands over the topmost feature under a tap, and
-  `tappableLayers` limits it to some style layers, so finding what was
-  tapped needs no controller.
-- `VmapController` asks about clusters (`clusterExpansionZoom`,
-  `clusterChildren`, `clusterLeaves`) and downloads regions
-  (`downloadRegion`) itself, and every method that takes an area takes a
-  `VmapBounds`.
-- Styles, overlays and feature states are compared by content, so ones
-  built afresh in `build` cost nothing while they say the same.
-- `VmapController` moves it: `flyTo`, `easeTo` and `fitBounds` as
-  MapLibre's do, `featuresAt` and `featuresIn`, and `toScreen` and
-  `toLatLng`. A moving camera carries its speed into the next animation.
-- `VmapCamera` says where the map looks: a `LatLng` center, a zoom in
-  MapLibre's convention, bearing, pitch, roll, `EdgeInsets` padding and a
-  field of view in degrees. Every zoom the engine takes or gives is
-  MapLibre's.
-- The GPU renderer is built in and used by default, the canvas where
-  Flutter GPU does not run. `VmapEngine.drawingWith` says which draws, and
-  a debug build says which switch is missing. vmap needs Flutter 3.47.1 or
-  newer. It draws buildings with a depth buffer, the style's `terrain`
-  with the map draped over it, the globe, sky and fog.
-- Engine settings are grouped in `VmapNetworkOptions`,
-  `VmapRenderOptions` and `VmapLabelOptions`. Labels take letters from the
-  style's glyph ranges by default, as MapLibre does, with the app's fonts
-  for what ranges cannot shape; `VmapGlyphs.fonts` uses fonts for all.
-- Labels drawn from fonts are shaped by vmap's own OpenType shaper,
-  checked glyph for glyph against HarfBuzz, and right-to-left text is
-  ordered by the Unicode bidirectional algorithm, which passes all of
-  Unicode's conformance cases.
-- Errors arrive as `VmapError`, saying what failed (style, tiles, sprite,
-  fonts, GPU) and its address.
-- A feature found under a tap carries its geometry; cluster members a
-  `LatLng`.
-- The credit a source's TileJSON asks for is part of
-  `VmapEngine.attributions`.
-- `VmapLayer`, `VmapFlutterMap` (was `VmapMap`), `VmapGestures` and
-  `NamedMarker` are in the `vmap_flutter_map` package, so vmap no longer
-  depends on flutter_map.
-- Statistics are in `package:vmap/debug.dart`. `VmapPalette` names its
-  colours. `VmapEngine.useWebWorker` sets the web worker, which draws
-  label glyphs as well as building tiles.
-
-### The web
-
-- The map draws about six times faster in Safari: its GPU images are
-  shown in page elements of their own, which the browser lays under
-  Flutter's content, instead of being copied into Flutter's renderer,
-  which Safari does on the CPU. Label glyphs are images Flutter's
-  JavaScript renderer uploads once rather than at every draw.
-- The WebAssembly build (`--wasm`) draws as the JavaScript one does; it
-  froze its tab before.
-- Labels are drawn from glyphs in the browser too, as on other platforms,
-  with Kurdish shaped and the style's glyph ranges placed right; road shield
-  numbers and names in Latin script showed blank, and halos came out grey.
-- Tiles reach WebGL as the lists they are built in.
-- A draw's uniforms reach WebGL as one uniform block bound to a buffer
-  range, not one `uniform*` call per member, which took half the page's
-  time while panning; uniform data is written straight from the lists it
-  is built in.
-- Text from the style's glyph ranges is drawn on the GPU in the browser
-  too, as on other platforms.
-- A frame costs Chrome's GPU process about a fifth of what it did: uniform
-  blocks are small, so WebGL no longer copies a whole block each time a
-  draw writes to it; WebGL state already set is not set again; a draw's
-  uniforms go over in one upload; attachments a pass discards are not
-  stored; and handing a frame to the page swaps buffers rather than
-  copying one. Safari's wait for each frame's image is about a third
-  shorter.
-- Label text is drawn into the map's own image when no horizon shows, so a
-  frame hands the page one full-screen image instead of two.
-- Zooming fast no longer freezes the page: each tile has buffers of its
-  own on the web, which WebGL writes without waiting for the GPU to finish
-  drawing from them; label glyphs are drawn and made into images in the
-  web worker; and a glyph added to the text atlas sends only the rows it
-  changed.
-- The map loads sooner: the style is fetched while vmap's fonts load, tile
-  workers start while the source's TileJSON is asked for, every glyph
-  range and sprite index is fetched once for the page and all workers
-  instead of once by each, the Latin glyph range of each font in the style
-  is asked for before the first tile, and a tile shows while the glyph
-  ranges its names need are still coming. Layers no longer fade in when
-  they first load, only when the zoom crosses into their range.
-- The README says how to build and serve for the web: `--wasm`,
-  cross-origin isolated, with `--no-web-resources-cdn`.
-
-### Drawing
-
-- On a flat map the camera keeps to the world, as MapLibre's does: it does
-  not zoom out past a world as tall as the map, nor show past the poles.
-- A vector source that names no `maxzoom`, in the style or its TileJSON,
-  has tiles down to zoom 22, as the style spec and MapLibre say, not 14.
-  Give the source its `maxzoom` when its server stops sooner.
-- Vector tiles in the MapLibre Tile format (MLT): a `vector` source with
-  `"encoding": "mlt"` is read as MapLibre reads it.
-- `VmapOverlay.images`: pictures of the app's own that the style draws by
-  name, as MapLibre's `addImage`.
-- Every `background` layer is drawn, in the style's order.
-- Labels are placed at MapLibre's anchors, with its collision circles for
-  road names, and road names lie on the ground of a tilted map.
-- A map turning or tilting keeps the labels it shows instead of swapping
-  them for others of the same rank, so labels no longer blink while the
-  map rotates.
-- A map laid out with no room yet, as on Android's first frame, draws
-  nothing instead of failing on its markers.
-- The map lets go of tiles, label images and GPU memory out of view when
-  the system is short of memory.
-- `VmapLabelOptions.crossSourceCollisions: false` lets each source's labels
-  keep clear of their own only, as MapLibre's map option.
-- Raster tiles fade in over `raster-fade-duration`, over the tiles they
-  replace, instead of appearing at once.
-- A building whose height, base or colour reads `feature-state` changes
-  when the app sets that state, so a tapped building can be highlighted.
-- See-through buildings are drawn as MapLibre draws them, in the map's own
-  pass: their depth first, then their colour where it is nearest, each
-  pixel once.
-- A wheel or trackpad zoom while a fling still glides adds to the glide
-  rather than the two taking turns.
-- On the globe: `background-pattern` is drawn, and the map can be centred
-  on a pole while the polar cap fits on the screen.
+- New `Vmap` widget with 3D buildings, terrain, the globe and MapLibre's
+  gestures.
+- New `VmapController`: `flyTo`, `fitBounds`, `featuresAt`, `downloadRegion` and
+  more.
+- Labels use the style's glyph ranges, with vmap's own shaper for the rest.
+- Much faster on the web, and `--wasm` works.
+- **Breaking:** most of the API changed:
+  - `VMap` and `VMapController` are `Vmap` and `VmapController`, and
+    `MapCameraPosition` is `VmapCamera`.
+  - `VmapLayer`, `VmapMap` (now `VmapFlutterMap`), `VmapGestures` and
+    `NamedMarker` moved to `vmap_flutter_map`.
+  - Settings are in `VmapNetworkOptions`, `VmapRenderOptions`,
+    `VmapLabelOptions` and `VmapGestureOptions`.
+  - Zoom levels follow MapLibre, one below flutter_map.
+  - `onError` receives a `VmapError`, and stats moved to
+    `package:vmap/debug.dart`.
+  - Needs Flutter 3.47.1 or newer.
 
 ## 0.26.0
 
-- On pub.dev: `flutter pub add vmap`.
-- In a browser, tiles are built in a web worker that ships with vmap. There
-  is nothing to compile or set up; `VmapEngine.webWorker = null` builds them
-  on the page instead. The worker is only bundled into web builds.
+- First release on pub.dev.
+- On the web, tiles are built in a web worker that ships with vmap.
 
-Breaking:
+## Before 0.26.0
 
-- `dart run vmap:build_web_worker` is gone. A `vmap_worker.js` an app
-  compiled into its own `web` folder can be deleted.
-- Needs Flutter 3.41 or newer, for web only assets.
-
-## 0.25.0
-
-Breaking:
-
-- `VmapLayerState` hands out its `engine` and no longer repeats nine of its
-  methods. `featuresAt`, `featuresIn`, the cluster lookups,
-  `downloadRegion`, `reload`, `clearCache` and `attributions` are called on
-  `key.currentState!.engine`.
-- `VmapMapState` is public, so a `GlobalKey<VmapMapState>` on a `VmapMap`
-  reaches its engine too.
-- `VmapStats` keeps what the last frame drew. Running totals and longest
-  costs moved to `stats.timings` (a `VmapTimings`), and label text costs to
-  `stats.timings.labels` (a `VmapLabelWork`). `resetTimers` replaces the
-  timings. `labelsShown`, which was never set, is gone.
-- An app that builds tiles in a web worker compiles `vmap_worker.js` again
-  with `dart run vmap:build_web_worker`: the messages the worker reads have
-  changed.
-- Tiles are kept in the cache directory under new folder names, so tiles
-  kept by an earlier version are fetched again once. Delete the old
-  folders, or the whole directory, to get the space back.
-
-Fixed:
-
-- Changing `icon-rotate` builds the tiles again.
-- A marker at a pole lands on the edge of the world instead of off it.
-- A source that starts after failing stops reporting the failure in
-  `error`.
-- A cluster lookup that throws answers empty at once instead of after ten
-  seconds.
-- A PMTiles archive on a server is asked for with the app's user agent.
-- When a server replaces a tile set, the old tiles are deleted from the
-  cache directory, and `clearCache` finds every tile folder.
-- `VmapStats.resetTimers` restarts every running count, including the label
-  totals, the longest unpack and the list of slow paints.
-- A raster layer that turns from picture tiles into a hillshade over the
-  same source gets fresh tiles.
-
-## 0.24.0
-
-- `featuresIn(southWest, northEast)` on the layer's state and the engine:
-  the features the style draws that touch a box, topmost first. A box that
-  covers more than 16 tiles is read from shallower tiles.
-- Making every label an image in a browser was measured and not adopted;
-  the numbers are in doc/benchmark.md.
-
-## 0.23.0
-
-- `text-translate` moves names along a line too, straight and bent.
-- `text-translate` and `icon-translate` may change with the zoom.
-- `icon-halo-blur` softens the rim of an SDF icon. Covered by a test of the
-  style reader only; it has not been seen drawn.
-
-## 0.22.0
-
-- `styleEdits` on `VmapMap` and `VmapLayer`, and `edits` on the engine: a
-  list of `VmapStyleEdit` that sets a paint or layout property, the filter,
-  the zoom range or the visibility of one style layer by its `id`. It works
-  on a style loaded by address. A change of paint keeps the tiles loaded,
-  and labels stay as they are unless a symbol layer was changed.
-
-## 0.21.1
-
-- In a browser's JavaScript build the names along roads are images again
-  and every other label stays text. Turned text was costing about half of
-  the frames a lap skipped: one lap went from 104 frames a second with
-  about 350 skipped to 112 and 114 with 225 and 168.
-
-## 0.21.0
-
-- `VmapEngine.webWorker` and `dart run vmap:build_web_worker`: in a browser
-  tiles can be built in a web worker instead of on the page's thread. It is
-  off unless the app sets it, and a script that does not load falls back to
-  the page. Measured on a fast computer it changes nothing; it is meant for
-  slow devices and has not been measured on one.
-- The frames a browser still skips come from drawing label text, not from
-  building tiles as the notes for 0.17.2 guessed.
-
-## 0.20.0
-
-- `line-gradient`: a line of a GeoJSON source coloured by how far along it
-  each point is, for a route that changes colour on the way. The colours
-  carry on across tile edges.
-
-## 0.19.0
-
-- `downloadRegion` on the layer's state and on the engine fetches the tiles
-  of an area into the cache directory for use offline, vector and raster,
-  skipping what is already there. It reports progress and how many tiles
-  were fetched and failed, and can be stopped.
-
-## 0.18.0
-
-More of the style is read:
-
-- `image` sources: one picture stretched between its four corners.
-- `fill-translate-anchor`, `line-translate-anchor` and
-  `circle-translate-anchor`: a move along the screen's sides stays that way
-  when the map is turned.
-- `text-translate` and `icon-translate` with their anchors, for labels at a
-  point.
-- `text-max-angle` sets how sharp a turn a name along a line may take. A
-  style that does not set it keeps the limit of about 24 degrees.
-- `line-blur` on a dashed line.
-- `icon-halo-color` and `icon-halo-width` for SDF icons.
-- `hillshade-accent-color`, when the style names one.
-- `raster-resampling`.
-
-## 0.17.2
-
-- Labels in the default JavaScript build no longer wait on images: each is
-  drawn as text every frame, with the halo as the text's stroked outline.
-  It flew the benchmark tour in Chrome at about 104 frames a second, where
-  0.17.0 managed 25 to 32. The `--wasm` build and every other platform draw
-  as they did in 0.17.0.
-- The 119 frames a second claimed for 0.17.1 did not hold up: later runs of
-  the same build gave 23 to 58, because making an image in a browser takes
-  longer the busier the machine is. Shared label pages are gone.
-- Text in a script whose font the browser fetches late is drawn once the
-  font arrives, where it used to stay as empty boxes.
-
-## 0.17.1
-
-- Much faster in a browser. Making an image there costs milliseconds, and a
-  label used to get one of its own; labels now share pages of a fixed size
-  that fill over a few frames. In Chrome the benchmark tour went from 25
-  frames a second to 119 on a 120 Hz screen. Other platforms draw as before.
-- The benchmark tour runs in a browser: `--dart-define=TOUR=true` with
-  `lib/main_web.dart` prints its result to the console.
-
-## 0.17.0
-
-- Runs on the web. Files, requests and workers sit behind one platform
-  layer, and the numbers that needed 64 bits no longer do. In a browser
-  there is no disk cache (the browser keeps its own), tiles are built on the
-  page's thread, and a PMTiles archive has to be at an `https://` address.
-- `clusterExpansionZoom`, `clusterChildren` and `clusterLeaves` on the
-  layer's state and on the engine, for zooming in on a tapped cluster or
-  listing what is in it.
-- `VmapLayer.engine` takes `minZoom` and `maxZoom`.
-- A failed load reports an `HttpFailure` with the status and the address.
-
-## 0.16.0
-
-- Dashed lines are drawn in their own colour. They came out white on some
-  renderers, which is what made the dark styles look full of dotted lines.
-- `line-cap` round and square shape the dashes too, as in MapLibre.
-- `line-blur`: a line with a soft edge.
-- A label halo wider than a pixel is filled in, with no gaps around thin
-  letters.
-- `headers` on the map, the layer and `TileSourceConfig`: sent with every
-  request for a style, its tiles, sprites and archives.
-- `onError` on the map, the layer and the engine tells the app of a style,
-  tile or sprite that could not be loaded.
-- `reload()` and `clearCache()` on the layer's state and on the engine.
-  `clearCache` deletes only what the map itself keeps in the directory.
-- A source that lists several `tiles` addresses spreads its tiles over them
-  and asks the next when one fails. `{s}` in an address stands for the
-  hosts a, b and c.
-- `minZoom` and `maxZoom` on `VmapLayer`.
-
-## 0.15.0
-
-- A tile source's `bounds` and `minzoom`: tiles the source does not have
-  are not asked for. That matters for a tile set of one region.
-- `scheme: tms` for servers that number their rows from the south.
-- `attributions` on the layer's state and on the engine lists the credit the style's sources ask for.
-
-## 0.14.0
-
-- `within` and `distance`: a layer can keep the features inside a polygon,
-  or within so many metres of a place. `within` used to hide everything.
-- `hsl` and `hsla`, `split` and `join`, `number-format` with its fraction
-  digits, comparisons with a `collator`, and `get` and `has` on an object.
-
-## 0.13.0
-
-- `text-padding` and `icon-padding`: how much room a label keeps clear of
-  the others.
-- `text-line-height` and `text-justify` for names of several lines.
-- `text-halo-blur`: a halo with a soft edge.
-- `text-ignore-placement`. `icon-ignore-placement` now means what the
-  specification says: the icon takes no room from other labels. It used to
-  be read as `icon-allow-overlap`.
-
-## 0.12.0
-
-- `text-size` and `icon-size` may read the feature's properties, so a city
-  can have a larger name than a village from one layer.
-
-## 0.11.0
-
-- A label's colour, opacity and halo, and an icon's opacity and SDF colour, may read
-  the feature's properties and `feature-state`, so a picked place can have
-  its name in another colour.
-
-## 0.10.0
-
-- `line-join`: bevel and miter corners beside the round ones. A line with no
-  `line-join` now has miter corners, which is the default of the style
-  specification. Until now every corner was round.
-- `line-offset`: a line drawn to one side of where it runs.
-- `text-rotate` for the text of a point.
-- `background-pattern`.
-- The benchmark app reads `style_file=<path on the device>` from
-  `flags.txt`, so a lap can run with any style without a rebuild.
-
-## 0.9.0
-
-- Heatmaps follow their whole colour ramp. Points add up to a density the
-  way MapLibre's do, across tile edges, and the density is coloured stop by
-  stop.
-- `clusterProperties`: a cluster adds up, or takes the largest of, a
-  property of its points, for the style to read.
-
-## 0.8.0
-
-- `text-variable-anchor` and `text-radial-offset`: a name that does not fit
-  on one side of its point is tried on the others, and stays on the side it
-  found while it still fits.
-- `icon-anchor` and `icon-offset`.
-- `symbol-sort-key`: of two labels in a layer wanting the same room, the one
-  with the lower number gets it.
-
-## 0.7.0
-
-- PMTiles: a source whose address starts with `pmtiles://` is read from one
-  archive file, over HTTP range requests or from the device, for vector,
-  raster and hillshade sources. A file on the device makes an offline map.
-- Raster layers read `raster-hue-rotate`, `raster-saturation`,
-  `raster-contrast` and `raster-brightness-min` and `-max`.
-- `fill-translate`, `line-translate` and `circle-translate`.
-- `promoteId` on a source and `generateId` on a GeoJSON source, so features
-  without an id of their own can be given state.
-
-## 0.6.1
-
-- Hillshade tiles meet without a line: each is shaded with the heights of
-  the tiles around it and blends into them, and the shading is no longer
-  doubled where two tiles touch.
-
-## 0.6.0
-
-- GeoJSON sources cluster their points: `cluster`, `clusterRadius`,
-  `clusterMaxZoom` and `clusterMinPoints`, with `point_count` and the other
-  cluster properties for the style to read.
-- `featureStates` and the `feature-state` expression: paint a feature by
-  state the app gives it, such as the one that was tapped, without
-  rebuilding tiles. `VmapFeature` carries the feature's `id`.
-- Circles are no longer cut where two tiles meet.
-- Two points of an app's own data a few pixels apart can carry the same
-  text. Only one of them was labelled.
-
-## 0.5.1
-
-- A road name on a bend is laid along the road every frame, so its letters
-  keep their spacing while the map zooms. They used to drift apart until
-  the labels were next placed.
-- Changing the data of an overlay source keeps what was drawn until the new
-  data is ready, and leaves the map's labels alone when the overlay's layers
-  are the same. A moving dot no longer blinks.
-
-## 0.5.0
-
-- Rotation: two fingers turn the map in `VmapGestures` and `VmapMap`, and
-  labels are laid out upright on a turned map.
-- Every vector source of a style is drawn, not only the busiest one, and
-  layers keep the style's order across sources and raster layers.
-- GeoJSON sources, inline or by address.
-- `VmapOverlay`: sources and layers of your own on top of any style.
-- `onFeatureTap` and `featuresAt`: what the style draws at a point.
-- Road names bend along curves. `curvedLabels: false` turns it off.
-- Polygons are labelled.
-- `hillshade` and `heatmap` layers, `line-pattern`, and `icon-color` for SDF
-  icons.
-- More expressions: `let`, `var`, `slice`, `index-of`, `typeof`, `id`,
-  trigonometry and cubic-bezier interpolation.
-- `VmapLayer`'s state class is public as `VmapLayerState`.
-
-## 0.4.0
-
-- `VmapMap`: a whole map in one widget, with `VmapGestures` in place of
-  flutter_map's gestures.
-- `pins`: places of interest drawn as round pins instead of the style's
-  icons. `VmapPins.standard` covers the place classes of OpenMapTiles styles.
-- The built in style names places of interest from zoom 15.5.
-- vmap now depends on latlong2 directly.
-
-## 0.3.2
-
-- A frame that places labels draws no new text images, and a frame draws
-  about a millisecond of them at most, so the two costs never land together.
-  On the test phone the slowest 1 percent of UI frames went from about 8.5 ms
-  to about 7 ms.
-- Labels are named on the worker isolates and handed to the placer in steps.
-- Meshes are cut at 16000 vertices, so no single upload or re-widening is
-  long.
-- `tool/quick_bench.sh` reruns the tour on a device in half a minute without
-  a rebuild.
-
-## 0.3.1
-
-- Label images are kept for 1400 labels instead of 500, so coming back to a
-  place does not draw its names again.
-- A frame walks only the labels that are showing or fading.
-
-## 0.3.0
-
-- Icons: `icon-image` from the style's sprite sheet, with text placed by
-  `text-anchor` and `text-offset`, road shields, and arrows repeated along a
-  line.
-- Real dashes for `line-dasharray`.
-- `fill-outline-color`, `fill-pattern`, `circle` layers and `raster` layers.
-- Fill, line and circle paint may read a feature's properties.
-- `text-anchor` and `text-offset` now move every point label, so a town's
-  name sits above its point as the style asks.
-
-## 0.2.0
-
-- Draws any MapLibre style: `VmapStyle.url`, `VmapStyle.json`, or the built in
-  `VmapStyle.light` and `VmapStyle.dark`. The style names the tile source.
-- `VmapLayer` goes where a `TileLayer` goes and owns its engine. Use
-  `VmapLayer.engine` to share one.
-- Markers are flutter_map `Marker`s. `NamedMarker` adds a name the map writes
-  beside it. `VmapMarker` is gone.
-- Fonts are given as a `TextStyle`. `VmapLabelFont`, `TileSourceConfig.nameKeys`
-  and `TileSourceConfig.tileJsonUrl` are gone: name keys and the tile source
-  belong to the style.
-- The example is a small showcase, and the benchmark runs both renderers on
-  the same style.
-
-## 0.1.0
-
-- First release: a vector tile layer for flutter_map drawn with the Flutter
-  canvas, with label placement, marker names, a light and a dark palette, a
-  disk cache and its own gesture handling.
+Not published. vmap grew from a flutter_map vector tile layer into a MapLibre
+style renderer with icons, clustering, PMTiles, heatmaps, hillshade, data-driven
+styling, offline downloads and web support.

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -30,9 +31,13 @@ const _bundle = 'packages/vmap/build/shaderbundles/vmap_gpu.shaderbundle';
 /// shader, buildings with a depth buffer. Set it as the engine's renderer;
 /// where Flutter GPU is missing, [create] gives null and the canvas draws.
 class GpuMap extends MapRenderer {
-  GpuMap._(bool multisample) : _frames = GpuFrames(multisample: multisample) {
-    _load();
-  }
+  GpuMap._(bool multisample, this._heap)
+    : _frames = GpuFrames(multisample: multisample);
+
+  /// A renderer drawing with [library], its frames counted in [heap].
+  @visibleForTesting
+  factory GpuMap.withShaders(gpu.ShaderLibrary library, GpuHeap heap) =>
+      GpuMap._(false, heap).._library = library;
 
   /// A renderer when this device runs Flutter GPU, otherwise null. With
   /// [multisample] false edges are cut at pixel centres, as MapLibre draws
@@ -40,7 +45,7 @@ class GpuMap extends MapRenderer {
   static GpuMap? create({bool multisample = true}) {
     try {
       gpu.gpuContext;
-      return GpuMap._(multisample);
+      return GpuMap._(multisample, GpuHeap()).._load();
     } catch (_) {
       return null;
     }
@@ -57,7 +62,7 @@ class GpuMap extends MapRenderer {
     return sdf != null && sdf.ready ? sdf : null;
   }
 
-  final _heap = GpuHeap();
+  final GpuHeap _heap;
   final GpuFrames _frames;
   int _frame = 0;
 
@@ -81,8 +86,7 @@ class GpuMap extends MapRenderer {
       _library = await gpu.loadShaderLibraryAsync(_bundle);
       if (_library == null) throw StateError('no shader bundle at $_bundle');
     } catch (e) {
-      _failed = true;
-      onFailure?.call(e);
+      _lose(e);
     }
   }
 
@@ -112,11 +116,10 @@ class GpuMap extends MapRenderer {
       return _made = (
         device: device,
         drape: Drape(device),
-        sdf: SdfTextGpu(device, library),
+        sdf: SdfTextGpu(device, library, guard: _guard),
       );
     } catch (e) {
-      onFailure?.call(e);
-      _failed = true;
+      _lose(e);
       return null;
     }
   }
@@ -166,19 +169,35 @@ class GpuMap extends MapRenderer {
   /// GPU finishes the frames that may read them.
   bool _shrinking = false;
 
-  /// A device that refuses a texture or a command buffer mid-frame hands
-  /// the map to the canvas from the next frame on, as a shader library
-  /// that would not load does. Nothing is drawn on [canvas] here, so the
-  /// frame needs no unwinding.
   @override
-  bool paint(ui.Canvas canvas, RenderFrame f) {
+  bool paint(ui.Canvas canvas, RenderFrame f) =>
+      _guard(true, () => _paint(canvas, f));
+
+  /// Runs [draw], the frame's work on the GPU. A device that refuses a
+  /// texture or a command buffer in it hands the map to the canvas from
+  /// the next frame on, and [lost] is answered. Nothing reaches the
+  /// canvas before such a refusal, so the frame needs no unwinding.
+  T _guard<T>(T lost, T Function() draw) {
     try {
-      return _paint(canvas, f);
+      return draw();
     } catch (e) {
-      _failed = true;
-      onFailure?.call(e);
-      return true;
+      _lose(e);
+      return lost;
     }
+  }
+
+  /// Gives the map to the canvas. A pass held for the frame's text is sent,
+  /// as no later GPU frame will send it, and what the GPU held is let go
+  /// once the frame, which may still lay its images, ends.
+  void _lose(Object error) {
+    _failed = true;
+    try {
+      _frames.shown.sendText();
+    } catch (_) {
+      // The same device refusing again; its first refusal is reported.
+    }
+    scheduleMicrotask(dispose);
+    onFailure?.call(error);
   }
 
   bool _paint(ui.Canvas canvas, RenderFrame f) {
@@ -506,21 +525,28 @@ class GpuMap extends MapRenderer {
   @override
   bool presentUntil(ui.Canvas canvas, int run) {
     if (_failed) return false;
-    _frames.shown.presentUntil(
-      canvas,
-      run,
-      warps: _in?.terrain == null,
-      planes: _in?.planes,
-    );
-    return false;
+    return _guard(true, () {
+      _frames.shown.presentUntil(
+        canvas,
+        run,
+        warps: _in?.terrain == null,
+        planes: _in?.planes,
+      );
+      return false;
+    });
   }
 
+  /// Lets go of everything it holds on the GPU; called again, it does
+  /// nothing more.
   @override
   void dispose() {
     for (final data in [..._heap.tiles]) {
       data.tile.releaseRenderer();
     }
     _heap.clear();
+    _made?.sdf.dispose();
+    _made = null;
+    _in = null;
     _frames.dispose();
   }
 }

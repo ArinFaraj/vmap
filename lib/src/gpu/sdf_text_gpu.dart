@@ -20,9 +20,13 @@ import 'sdf_quad.dart';
 /// edge and halo cut by MapLibre's `symbol_sdf` shader, into an image the
 /// canvas lays where the labels go.
 class SdfTextGpu implements SdfText {
-  SdfTextGpu(this._device, this._library);
+  SdfTextGpu(this._device, this._library, {required this._guard});
 
   final GpuDevice _device;
+
+  /// Runs the text's work on the GPU, answering the canvas given when the
+  /// device refuses it.
+  final ui.Canvas Function(ui.Canvas lost, ui.Canvas Function() draw) _guard;
   final gpu.ShaderLibrary _library;
   gpu.RenderPipeline? _pipeline;
   gpu.UniformSlot? _frameSlot, _fragmentFrameSlot, _glyphSlot, _spriteSlot;
@@ -364,7 +368,9 @@ class SdfTextGpu implements SdfText {
   void drawInto(TextPass pass) => _into = pass;
 
   @override
-  ui.Canvas layKept(ui.Canvas canvas) {
+  ui.Canvas layKept(ui.Canvas canvas) => _guard(canvas, () => _layKept(canvas));
+
+  ui.Canvas _layKept(ui.Canvas canvas) {
     final kept = _kept, planes = _planes;
     _kept = null;
     if (kept == null || planes == null) return canvas;
@@ -384,7 +390,10 @@ class SdfTextGpu implements SdfText {
   }
 
   @override
-  ui.Canvas end(ui.Canvas canvas, {bool drawnBelow = false}) {
+  ui.Canvas end(ui.Canvas canvas, {bool drawnBelow = false}) =>
+      _guard(canvas, () => _end(canvas, drawnBelow));
+
+  ui.Canvas _end(ui.Canvas canvas, bool drawnBelow) {
     switch (_goes(drawnBelow)) {
       case _TextGoes.nowhere:
         break;
@@ -467,6 +476,16 @@ class SdfTextGpu implements SdfText {
     final target = _targets[_next];
     _next = (_next + 1) % _targets.length;
     return target;
+  }
+
+  /// Lets go of the images the text was drawn into.
+  void dispose() {
+    for (final (_, image) in _targets) {
+      image.dispose();
+    }
+    _targets.clear();
+    _webCopy?.dispose();
+    _webCopy = null;
   }
 
   /// The quads in the order they are drawn, and each run of one layer's
