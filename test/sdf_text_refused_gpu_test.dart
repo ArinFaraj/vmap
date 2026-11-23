@@ -17,8 +17,8 @@ const _past = 1 << 17;
 
 void main() {
   test(
-    'a device that refuses the text hands the map to the canvas, and the '
-    'pass held for the text is sent',
+    'a device that refuses the text hands the map to the canvas, sends the '
+    'pass held for the text, and lets go of its GPU memory after the frame',
     skip: gpuSkip,
     () async {
       final (library, _) = await gpuDevice();
@@ -50,6 +50,10 @@ void main() {
       expect(map.supports(frame.sheet), isFalse);
       expect(map.textIntoMap(), isFalse);
       expect(map.presentUntil(canvas, frame.sheet.runs.length), isFalse);
+
+      expect(heap.bytes, greaterThan(0), reason: 'kept until the frame ends');
+      await Future<void>.delayed(Duration.zero);
+      expect(heap.bytes, 0);
       map.dispose();
     },
   );

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -183,7 +184,8 @@ class GpuMap extends MapRenderer {
   }
 
   /// Gives the map to the canvas. A pass held for the frame's text is sent,
-  /// as no later GPU frame will send it.
+  /// as no later GPU frame will send it, and what the GPU held is let go
+  /// once the frame, which may still lay its images, ends.
   void _lose(Object error) {
     _failed = true;
     try {
@@ -191,6 +193,7 @@ class GpuMap extends MapRenderer {
     } catch (_) {
       // The same device refusing again; its first refusal is reported.
     }
+    scheduleMicrotask(dispose);
     onFailure?.call(error);
   }
 
@@ -529,12 +532,17 @@ class GpuMap extends MapRenderer {
     });
   }
 
+  /// Lets go of everything it holds on the GPU; called again, it does
+  /// nothing more.
   @override
   void dispose() {
     for (final data in [..._heap.tiles]) {
       data.tile.releaseRenderer();
     }
     _heap.clear();
+    _made?.sdf.dispose();
+    _made = null;
+    _in = null;
     _frames.dispose();
   }
 }

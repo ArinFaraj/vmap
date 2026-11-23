@@ -480,6 +480,16 @@ class SdfTextGpu implements SdfText {
     return target;
   }
 
+  /// Lets go of the images the text was drawn into.
+  void dispose() {
+    for (final (_, image) in _targets) {
+      image.dispose();
+    }
+    _targets.clear();
+    _webCopy?.dispose();
+    _webCopy = null;
+  }
+
   /// The quads in the order they are drawn, and each run of one layer's
   /// quads in them: its icons, then its text, as MapLibre draws a symbol
   /// layer. Quads are moved only when a layer queued an icon after its

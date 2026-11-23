@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 
 import 'gpu_shim/gpu.dart' as gpu;
 
@@ -183,7 +183,17 @@ class GpuHeap {
     return _given.isEmpty;
   }
 
+  /// The bytes of its slabs and of the ranges too big for one.
+  @visibleForTesting
+  int get bytes => _total;
+
+  /// Lets go of every slab and range at once. Frames still in flight keep
+  /// what they draw from: Impeller's command buffers hold their buffers,
+  /// and WebGL keeps a deleted buffer until the draws sent from it finish.
   void clear() {
+    for (final (range, _) in _given) {
+      if (range._slab == null) gpu.releaseGeometryBuffer(range.buffer);
+    }
     _slabs.clear();
     _indexSlabs.clear();
     _given.clear();
