@@ -242,10 +242,10 @@ class GpuMap extends MapRenderer {
     // Making a pipeline compiles its shaders on this thread, which on iOS
     // is the app's main thread. The first frame makes only the pipelines it
     // draws with, the second warms up the rest into the spare frame, which
-    // no frame has drawn into yet, and the third makes the text's, its
-    // labels on the canvas until then.
+    // no frame has drawn into yet, and the third makes the text's where
+    // labels are shown, its labels on the canvas until then.
     if (_frame >= 2 && !_warm) _warmUp(device);
-    if (_frame >= 3) sdf.build();
+    if (_frame >= 3 && f.labelsVisible) sdf.build();
     if (_frames.showAgain(view, _frame)) {
       f.stats.gpuFramesReused++;
       return true;
@@ -333,7 +333,10 @@ class GpuMap extends MapRenderer {
         snapshot: f.planes == null,
       ),
     );
-    return sprites.loading || drape.sending || sdf.unbuilt || !_warm;
+    return sprites.loading ||
+        drape.sending ||
+        (f.labelsVisible && sdf.unbuilt) ||
+        !_warm;
   }
 
   /// Draws the style's runs into [layers] in order, as [layout] lays them,
