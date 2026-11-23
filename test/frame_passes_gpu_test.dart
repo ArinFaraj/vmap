@@ -50,7 +50,7 @@ void main() {
     () async {
       final heap = GpuHeap();
       final (library, device) = await gpuDevice(heap);
-      final text = SdfTextGpu(device, library);
+      final text = SdfTextGpu(device, library, lost: device.fail);
       final glyphs = _Square();
       final view = MapView(
         centerX: 0.5,
