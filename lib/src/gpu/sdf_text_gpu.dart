@@ -20,9 +20,13 @@ import 'sdf_quad.dart';
 /// edge and halo cut by MapLibre's `symbol_sdf` shader, into an image the
 /// canvas lays where the labels go.
 class SdfTextGpu implements SdfText {
-  SdfTextGpu(this._device, this._library);
+  SdfTextGpu(this._device, this._library, {this._lost});
 
   final GpuDevice _device;
+
+  /// Told when the device refuses the text's texture or command buffer
+  /// mid-frame; without it the device's failure report is.
+  final void Function(Object error)? _lost;
   final gpu.ShaderLibrary _library;
   gpu.RenderPipeline? _pipeline;
   gpu.UniformSlot? _frameSlot, _fragmentFrameSlot, _glyphSlot, _spriteSlot;
@@ -364,7 +368,10 @@ class SdfTextGpu implements SdfText {
   void drawInto(TextPass pass) => _into = pass;
 
   @override
-  ui.Canvas layKept(ui.Canvas canvas) {
+  ui.Canvas layKept(ui.Canvas canvas) =>
+      _guarded(canvas, () => _layKept(canvas));
+
+  ui.Canvas _layKept(ui.Canvas canvas) {
     final kept = _kept, planes = _planes;
     _kept = null;
     if (kept == null || planes == null) return canvas;
@@ -384,7 +391,35 @@ class SdfTextGpu implements SdfText {
   }
 
   @override
-  ui.Canvas end(ui.Canvas canvas, {bool drawnBelow = false}) {
+  ui.Canvas end(ui.Canvas canvas, {bool drawnBelow = false}) =>
+      _guarded(canvas, () => _end(canvas, drawnBelow));
+
+  /// A device that refuses the text's texture or command buffer loses the
+  /// frame's text and gives the text up from the next frame on, as a
+  /// pipeline that would not build does. The map's pass the text was
+  /// given goes to the GPU now: with the map handed to the canvas, no
+  /// later GPU frame sends it.
+  ui.Canvas _guarded(ui.Canvas canvas, ui.Canvas Function() draw) {
+    if (_failed) return canvas;
+    try {
+      return draw();
+    } catch (e) {
+      _failed = true;
+      _pipeline = null;
+      _kept = null;
+      final into = _into;
+      _into = null;
+      try {
+        into?.send();
+      } catch (_) {
+        // The same device refusing again; its first refusal is reported.
+      }
+      (_lost ?? _device.fail)(e);
+      return canvas;
+    }
+  }
+
+  ui.Canvas _end(ui.Canvas canvas, bool drawnBelow) {
     switch (_goes(drawnBelow)) {
       case _TextGoes.nowhere:
         break;

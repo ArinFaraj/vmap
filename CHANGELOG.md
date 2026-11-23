@@ -1,3 +1,14 @@
+## 0.30.2
+
+- A device that refuses the texture or command buffer the labels' text is
+  drawn with hands the map to the canvas from the next frame, as 0.27.2
+  made a refused map frame do. The text is drawn after the map, outside
+  that guard, so the refusal was thrown out of paint on every frame,
+  seen as "Texture overwrite failed" and "Failed to submit CommandBuffer".
+  Laying the map's images down, which sends the pass held for the text,
+  is guarded the same way, and a pass the text was given is sent when the
+  text is refused, never left open.
+
 ## 0.30.1
 
 - A right to left name that wraps keeps its direction on every line. Each
