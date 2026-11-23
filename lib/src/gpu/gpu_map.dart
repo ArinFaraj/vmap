@@ -112,7 +112,7 @@ class GpuMap extends MapRenderer {
       return _made = (
         device: device,
         drape: Drape(device),
-        sdf: SdfTextGpu(device, library),
+        sdf: SdfTextGpu(device, library, lost: _lose),
       );
     } catch (e) {
       onFailure?.call(e);
@@ -175,10 +175,14 @@ class GpuMap extends MapRenderer {
     try {
       return _paint(canvas, f);
     } catch (e) {
-      _failed = true;
-      onFailure?.call(e);
+      _lose(e);
       return true;
     }
+  }
+
+  void _lose(Object error) {
+    _failed = true;
+    onFailure?.call(error);
   }
 
   bool _paint(ui.Canvas canvas, RenderFrame f) {
@@ -503,15 +507,22 @@ class GpuMap extends MapRenderer {
     return true;
   }
 
+  /// The held text pass goes to the GPU here, and a device that refuses it
+  /// hands the map to the canvas as one refusing [paint] does.
   @override
   bool presentUntil(ui.Canvas canvas, int run) {
     if (_failed) return false;
-    _frames.shown.presentUntil(
-      canvas,
-      run,
-      warps: _in?.terrain == null,
-      planes: _in?.planes,
-    );
+    try {
+      _frames.shown.presentUntil(
+        canvas,
+        run,
+        warps: _in?.terrain == null,
+        planes: _in?.planes,
+      );
+    } catch (e) {
+      _lose(e);
+      return true;
+    }
     return false;
   }
 
