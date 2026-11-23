@@ -20,13 +20,13 @@ import 'sdf_quad.dart';
 /// edge and halo cut by MapLibre's `symbol_sdf` shader, into an image the
 /// canvas lays where the labels go.
 class SdfTextGpu implements SdfText {
-  SdfTextGpu(this._device, this._library, {this._lost});
+  SdfTextGpu(this._device, this._library, {required this._lost});
 
   final GpuDevice _device;
 
   /// Told when the device refuses the text's texture or command buffer
-  /// mid-frame; without it the device's failure report is.
-  final void Function(Object error)? _lost;
+  /// mid-frame.
+  final void Function(Object error) _lost;
   final gpu.ShaderLibrary _library;
   gpu.RenderPipeline? _pipeline;
   gpu.UniformSlot? _frameSlot, _fragmentFrameSlot, _glyphSlot, _spriteSlot;
@@ -414,7 +414,7 @@ class SdfTextGpu implements SdfText {
       } catch (_) {
         // The same device refusing again; its first refusal is reported.
       }
-      (_lost ?? _device.fail)(e);
+      _lost(e);
       return canvas;
     }
   }
