@@ -77,7 +77,7 @@ void main() {
   setUpAll(() async {
     if (!hasGpu) return;
     final (library, device) = await gpuDevice();
-    text = SdfTextGpu(device, library, guard: unguarded);
+    text = SdfTextGpu(device, library, guard: unguarded)..build();
     worker = GlyphRasterWorker(fonts);
     fields = FieldGlyphs(worker, () {
       landed.complete();

@@ -67,14 +67,23 @@ class SdfTextGpu implements SdfText {
   final Float32List _groundInfo = Float32List(12);
   late final ByteData _groundBytes = ByteData.sublistView(_groundInfo);
 
-  bool get ready {
-    if (_pipeline != null) return true;
-    if (_failed) return false;
+  /// Whether [build] made its pipeline.
+  bool get ready => _pipeline != null;
+
+  /// Whether [build] is still to be called: false once it has made the
+  /// pipeline or found the device cannot.
+  bool get unbuilt => _pipeline == null && !_failed;
+
+  /// Makes the pipeline, which compiles the text's shaders on this thread:
+  /// Flutter GPU waits for the driver, and on Metal that compiles them from
+  /// source. Nothing else should be compiled in the same frame.
+  void build() {
+    if (!unbuilt) return;
     final library = _library;
     final vertex = library['SdfVertex'], fragment = library['SdfFragment'];
     if (vertex == null || fragment == null) {
       _failed = true;
-      return false;
+      return;
     }
     try {
       _pipeline = gpu.gpuContext.createRenderPipeline(
@@ -150,12 +159,10 @@ class SdfTextGpu implements SdfText {
       _fragmentFrameSlot = fragment.getUniformSlot('SdfFrame');
       _glyphSlot = fragment.getUniformSlot('glyphs');
       _atlasTexture = _atlas.createTexture();
-      return true;
     } catch (e) {
       _device.fail(e);
       _pipeline = null;
       _failed = true;
-      return false;
     }
   }
 

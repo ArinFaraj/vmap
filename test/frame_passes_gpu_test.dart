@@ -27,7 +27,7 @@ void main() {
     () async {
       final heap = GpuHeap();
       final (library, device) = await gpuDevice(heap);
-      final text = SdfTextGpu(device, library, guard: unguarded);
+      final text = SdfTextGpu(device, library, guard: unguarded)..build();
       final glyphs = SquareGlyphs(_ink);
       final view = squareView(_side);
       final frame = blankFrame(view);

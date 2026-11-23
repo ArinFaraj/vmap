@@ -236,7 +236,12 @@ class GpuMap extends MapRenderer {
                   sheet.extrusions.any(
                     (e) => styleZoom >= e.minZoom && styleZoom < e.maxZoom,
                   )));
-    if (!_warm) _warmUp(device);
+    // Making a pipeline compiles its shaders on this thread, which on iOS
+    // is the app's main thread. The first frame makes only the pipelines it
+    // draws with, the second the text's, its labels on the canvas until
+    // then, and the third warms up the rest.
+    if (_frame >= 2) sdf.build();
+    if (_frame >= 3 && !_warm) _warmUp(device);
     if (_frames.showAgain(view, _frame)) {
       f.stats.gpuFramesReused++;
       return true;
@@ -263,8 +268,8 @@ class GpuMap extends MapRenderer {
           ? view.farDistance / view.cameraToCenterDistance
           : 20,
     );
-    final globe = p.globe == null ? null : view.globe;
-    final raised = (terrain != null || globe != null) && p.ground != null;
+    final globe = !p.hasGlobe ? null : view.globe;
+    final raised = (terrain != null || globe != null) && p.hasGround;
     // The drape is drawn before the frame's own pass, which samples it.
     if (raised) {
       traced('vmap.gpu.drape', () => drape.drawAtlas(buffers, f));
@@ -272,7 +277,7 @@ class GpuMap extends MapRenderer {
     final heats = _heats(device, buffers, f, clip);
     final layers = _frames.begin(
       passOn: (pass) => MapPass(device, pass, f, clip),
-    )..composites = p.composite != null;
+    )..composites = p.hasComposite;
     // The raised ground holds every vector layer, laid after the
     // backgrounds and rasters under the labels.
     if (raised) layers.splits.add((sheet.labelsRun - 1, 0));
@@ -318,7 +323,7 @@ class GpuMap extends MapRenderer {
         snapshot: f.planes == null,
       ),
     );
-    return sprites.loading || drape.sending;
+    return sprites.loading || drape.sending || sdf.unbuilt || !_warm;
   }
 
   /// Draws the style's runs into [layers] in order, as [layout] lays them,
@@ -386,7 +391,7 @@ class GpuMap extends MapRenderer {
     RenderFrame f,
     Float64List clip,
   ) {
-    if (device.pipelines.heat == null) return _noHeats;
+    if (!device.pipelines.hasHeat) return _noHeats;
     var heats = _noHeats;
     for (final run in f.sheet.runs) {
       if (run.source < 0) continue;

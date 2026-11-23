@@ -29,7 +29,9 @@ void main() {
       final frame = blankFrame(squareView(64));
       final canvas = ui.Canvas(ui.PictureRecorder());
 
-      map.paint(canvas, frame);
+      map
+        ..paint(canvas, frame)
+        ..paint(canvas, frame);
       expect(map.textIntoMap(), isTrue);
       final text = map.sdfText!;
       final submitted = heap.submitted;

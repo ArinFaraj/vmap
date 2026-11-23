@@ -70,7 +70,7 @@ class MapPass {
   bool _clips(int source) =>
       !adding &&
       globe == null &&
-      _device.pipelines.stencil != null &&
+      _device.pipelines.hasStencil &&
       _ideal[source].length < _drawnBit - 1;
 
   /// The stencil number of stand-in [index] of [source]'s, after its ideal
