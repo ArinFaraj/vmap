@@ -180,6 +180,9 @@ class FrameBlocks {
   final Float32List _buildingTile = Float32List(36);
   late final ByteData _buildingTileBytes = ByteData.sublistView(_buildingTile);
 
+  /// The bytes of a tile's building block.
+  int get buildingTileLength => _buildingTileBytes.lengthInBytes;
+
   /// How far one screen pixel reaches across clip space, each way.
   (double, double) clipPerPixel = (0, 0);
 
