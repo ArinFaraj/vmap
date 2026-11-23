@@ -69,7 +69,9 @@ class GpuFrames {
     this.width = width;
     this.height = height;
     shown.drop();
-    for (final frame in _ring) {
+    final old = _ring;
+    _ring = const [];
+    for (final frame in old) {
       frame.dispose();
     }
     _densities.clear();

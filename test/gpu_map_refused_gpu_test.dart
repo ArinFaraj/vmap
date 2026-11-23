@@ -57,4 +57,29 @@ void main() {
       map.dispose();
     },
   );
+
+  test(
+    'a device that refuses the textures for a new screen size hands the map '
+    'to the canvas, and its last frame is let go once',
+    skip: gpuSkip,
+    () async {
+      final (library, _) = await gpuDevice();
+      final heap = GpuHeap();
+      final map = GpuMap.withShaders(library, heap);
+      final failures = <Object>[];
+      map.onFailure = failures.add;
+      final canvas = ui.Canvas(ui.PictureRecorder());
+      map.paint(canvas, blankFrame(squareView(64)));
+      expect(failures, isEmpty);
+
+      final huge = blankFrame(squareView(_past.toDouble()));
+      expect(map.paint(canvas, huge), isTrue);
+      expect(failures, hasLength(1));
+      expect(map.supports(huge.sheet), isFalse);
+
+      await Future<void>.delayed(Duration.zero);
+      expect(heap.bytes, 0);
+      map.dispose();
+    },
+  );
 }
