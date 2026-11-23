@@ -99,7 +99,7 @@ void main() {
   setUpAll(() async {
     if (!hasGpu) return;
     final (library, device) = await gpuDevice();
-    text = SdfTextGpu(device, library, guard: unguarded);
+    text = SdfTextGpu(device, library, guard: unguarded)..build();
   });
 
   /// [count] glyphs [codePoint] in a row, black with a white halo

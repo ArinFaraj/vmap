@@ -50,6 +50,7 @@ class RenderFrame {
     this.transitioning = false,
     this.farBuildings,
     this.before,
+    this.labelsVisible = true,
   });
 
   /// The tiles the frame's own fade in over, or null when none do.
@@ -58,6 +59,9 @@ class RenderFrame {
   /// The buildings standing past the ground tiles that carry them, or null
   /// when every building is on a tile drawn for the ground.
   final FarBuildings? farBuildings;
+
+  /// Whether the frame's labels are drawn.
+  final bool labelsVisible;
 
   final MapView view;
   final ui.Offset origin;

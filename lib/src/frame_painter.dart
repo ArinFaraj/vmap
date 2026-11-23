@@ -404,6 +404,7 @@ class FramePainter {
         transitioning: _host.transitionsRunning,
         stats: _stats,
         planes: f.planes,
+        labelsVisible: f.labelsVisible,
         farBuildings: switch (f.buildingReach) {
           null => null,
           final reach => FarBuildings(reach, [

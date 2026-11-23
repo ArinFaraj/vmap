@@ -22,6 +22,9 @@
 - Fixed: a GPU that refused the label text's texture or command buffer made
   every frame throw. The map now falls back to the canvas and frees its GPU
   memory.
+- Fixed: the first launch after an install could freeze an iPhone for over a
+  second while the GPU compiled every shader at once. Shaders are now
+  compiled over the first frames, as they are needed.
 
 ## 0.30.1
 
