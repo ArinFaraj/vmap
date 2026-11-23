@@ -238,10 +238,11 @@ class GpuMap extends MapRenderer {
                   )));
     // Making a pipeline compiles its shaders on this thread, which on iOS
     // is the app's main thread. The first frame makes only the pipelines it
-    // draws with, the second the text's, its labels on the canvas until
-    // then, and the third warms up the rest.
-    if (_frame >= 2) sdf.build();
-    if (_frame >= 3 && !_warm) _warmUp(device);
+    // draws with, the second warms up the rest into the spare frame, which
+    // no frame has drawn into yet, and the third makes the text's, its
+    // labels on the canvas until then.
+    if (_frame >= 2 && !_warm) _warmUp(device);
+    if (_frame >= 3) sdf.build();
     if (_frames.showAgain(view, _frame)) {
       f.stats.gpuFramesReused++;
       return true;
