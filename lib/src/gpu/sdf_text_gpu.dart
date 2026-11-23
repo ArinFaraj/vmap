@@ -20,13 +20,13 @@ import 'sdf_quad.dart';
 /// edge and halo cut by MapLibre's `symbol_sdf` shader, into an image the
 /// canvas lays where the labels go.
 class SdfTextGpu implements SdfText {
-  SdfTextGpu(this._device, this._library, {required this._lost});
+  SdfTextGpu(this._device, this._library, {required this._guard});
 
   final GpuDevice _device;
 
-  /// Told when the device refuses the text's texture or command buffer
-  /// mid-frame.
-  final void Function(Object error) _lost;
+  /// Runs the text's work on the GPU, answering the canvas given when the
+  /// device refuses it.
+  final ui.Canvas Function(ui.Canvas lost, ui.Canvas Function() draw) _guard;
   final gpu.ShaderLibrary _library;
   gpu.RenderPipeline? _pipeline;
   gpu.UniformSlot? _frameSlot, _fragmentFrameSlot, _glyphSlot, _spriteSlot;
@@ -368,8 +368,7 @@ class SdfTextGpu implements SdfText {
   void drawInto(TextPass pass) => _into = pass;
 
   @override
-  ui.Canvas layKept(ui.Canvas canvas) =>
-      _guarded(canvas, () => _layKept(canvas));
+  ui.Canvas layKept(ui.Canvas canvas) => _guard(canvas, () => _layKept(canvas));
 
   ui.Canvas _layKept(ui.Canvas canvas) {
     final kept = _kept, planes = _planes;
@@ -392,32 +391,7 @@ class SdfTextGpu implements SdfText {
 
   @override
   ui.Canvas end(ui.Canvas canvas, {bool drawnBelow = false}) =>
-      _guarded(canvas, () => _end(canvas, drawnBelow));
-
-  /// A device that refuses the text's texture or command buffer loses the
-  /// frame's text and gives the text up from the next frame on, as a
-  /// pipeline that would not build does. The map's pass the text was
-  /// given goes to the GPU now: with the map handed to the canvas, no
-  /// later GPU frame sends it.
-  ui.Canvas _guarded(ui.Canvas canvas, ui.Canvas Function() draw) {
-    if (_failed) return canvas;
-    try {
-      return draw();
-    } catch (e) {
-      _failed = true;
-      _pipeline = null;
-      _kept = null;
-      final into = _into;
-      _into = null;
-      try {
-        into?.send();
-      } catch (_) {
-        // The same device refusing again; its first refusal is reported.
-      }
-      _lost(e);
-      return canvas;
-    }
-  }
+      _guard(canvas, () => _end(canvas, drawnBelow));
 
   ui.Canvas _end(ui.Canvas canvas, bool drawnBelow) {
     switch (_goes(drawnBelow)) {

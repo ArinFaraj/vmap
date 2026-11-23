@@ -5,40 +5,17 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vmap/src/camera/view.dart';
 import 'package:vmap/src/gpu/gpu_buffers.dart';
 import 'package:vmap/src/gpu/frame_show.dart';
 import 'package:vmap/src/gpu/gpu_frames.dart';
 import 'package:vmap/src/gpu/gpu_map_pass.dart';
 import 'package:vmap/src/gpu/sdf_text_gpu.dart';
 import 'package:vmap/src/labels/sdf_text.dart';
-import 'package:vmap/src/render/map_renderer.dart';
-import 'package:vmap/src/stats.dart';
-import 'package:vmap/src/style/expr.dart';
-import 'package:vmap/src/style/style_model.dart';
 import 'package:vmap/src/text/glyphs/glyph_pbf.dart';
 
 import 'support/gpu.dart';
 
 const _side = 64.0, _ink = 10, _baseline = 32.0;
-
-/// One glyph, a square of ink [_ink] pixels a side standing on the
-/// baseline, its left edge at the pen.
-class _Square implements PbfGlyphs {
-  _Square() {
-    const b = GlyphPbf.border, w = _ink + 2 * b;
-    final field = Uint8List(w * w);
-    for (var y = b; y < b + _ink; y++) {
-      field.fillRange(y * w + b, y * w + b + _ink, 255);
-    }
-    _glyph = PbfGlyph(0x6C, field, _ink, _ink, 0, _ink, _ink);
-  }
-
-  late final PbfGlyph _glyph;
-
-  @override
-  PbfGlyph? glyph(int face, int codePoint) => _glyph;
-}
 
 void main() {
   // Impeller on Vulkan begins every pass on a texture as the first one made
@@ -50,31 +27,11 @@ void main() {
     () async {
       final heap = GpuHeap();
       final (library, device) = await gpuDevice(heap);
-      final text = SdfTextGpu(device, library, lost: device.fail);
-      final glyphs = _Square();
-      final view = MapView(
-        centerX: 0.5,
-        centerY: 0.5,
-        zoom: 3,
-        width: _side,
-        height: _side,
-      );
-      final sheet = StyleSheet.compile({
-        'version': 8,
-        'sources': <String, Object?>{},
-        'layers': <Object?>[],
-      });
-      final frame = RenderFrame(
-        view: view,
-        origin: ui.Offset.zero,
-        sheet: sheet,
-        fallback: const [],
-        ideal: const [],
-        context: EvalContext(),
-        styleZoom: 3,
-        devicePixelRatio: 1,
-        stats: VmapStats(),
-      );
+      final text = SdfTextGpu(device, library, guard: unguarded);
+      final glyphs = SquareGlyphs(_ink);
+      final view = squareView(_side);
+      final frame = blankFrame(view);
+      final sheet = frame.sheet;
       final canvas = ui.Canvas(ui.PictureRecorder());
 
       /// A black square drawn in [pass] with its left edge at [x].
@@ -136,31 +93,11 @@ void main() {
       () async {
         final heap = GpuHeap();
         final (library, device) = await gpuDevice(heap);
-        final text = SdfTextGpu(device, library, lost: device.fail);
-        final glyphs = _Square();
-        final view = MapView(
-          centerX: 0.5,
-          centerY: 0.5,
-          zoom: 3,
-          width: _side,
-          height: _side,
-        );
-        final sheet = StyleSheet.compile({
-          'version': 8,
-          'sources': <String, Object?>{},
-          'layers': <Object?>[],
-        });
-        final frame = RenderFrame(
-          view: view,
-          origin: ui.Offset.zero,
-          sheet: sheet,
-          fallback: const [],
-          ideal: const [],
-          context: EvalContext(),
-          styleZoom: 3,
-          devicePixelRatio: 1,
-          stats: VmapStats(),
-        );
+        final text = SdfTextGpu(device, library, guard: unguarded);
+        final glyphs = SquareGlyphs(_ink);
+        final view = squareView(_side);
+        final frame = blankFrame(view);
+        final sheet = frame.sheet;
         final canvas = ui.Canvas(ui.PictureRecorder());
         void squareIn(MapPass pass, double x) {
           text.begin(const ui.Size(_side, _side), 1, glyphs, view);

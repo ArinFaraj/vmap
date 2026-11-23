@@ -52,7 +52,7 @@ class FrameShow {
 
   /// Sends a text pass still held: a pass left open is never let go
   /// unsent.
-  void sendText() => _frame?.text?.send();
+  void sendText() => _frame?.text?._send();
 
   /// Forgets the frame, whose textures are about to go.
   void drop() {
@@ -90,7 +90,7 @@ class FrameShow {
     final all = frame.images;
     final until = upTo(run, all.length, frame.splits);
     if (until <= frame.presented) return;
-    if (frame.text case final text? when text._image < until) text.send();
+    if (frame.text case final text? when text._image < until) text._send();
     final images = all.getRange(frame.presented, until);
     final warp = warps ? frame.warp : null;
     if (planes != null) {
@@ -250,8 +250,7 @@ class TextPass {
   bool get sent => _sent;
   bool _sent = false;
 
-  /// Hands [pass] to the GPU, once.
-  void send() {
+  void _send() {
     if (_sent) return;
     _sent = true;
     _submit();
