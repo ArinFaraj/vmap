@@ -20,7 +20,8 @@
 ## 0.30.2
 
 - Fixed: a GPU that refused the label text's texture or command buffer made
-  every frame throw. The map now falls back to the canvas.
+  every frame throw. The map now falls back to the canvas and frees its GPU
+  memory.
 
 ## 0.30.1
 
