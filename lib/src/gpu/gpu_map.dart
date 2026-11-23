@@ -239,7 +239,13 @@ class GpuMap extends MapRenderer {
                   sheet.extrusions.any(
                     (e) => styleZoom >= e.minZoom && styleZoom < e.maxZoom,
                   )));
-    if (!_warm) _warmUp(device);
+    // Making a pipeline compiles its shaders on this thread, which on iOS
+    // is the app's main thread. The first frame makes only the pipelines it
+    // draws with, the second warms up the rest into the spare frame, which
+    // no frame has drawn into yet, and the third makes the text's, its
+    // labels on the canvas until then.
+    if (_frame >= 2 && !_warm) _warmUp(device);
+    if (_frame >= 3) sdf.build();
     if (_frames.showAgain(view, _frame)) {
       f.stats.gpuFramesReused++;
       return true;
@@ -327,7 +333,7 @@ class GpuMap extends MapRenderer {
         snapshot: f.planes == null,
       ),
     );
-    return sprites.loading || drape.sending;
+    return sprites.loading || drape.sending || sdf.unbuilt || !_warm;
   }
 
   /// Draws the style's runs into [layers] in order, as [layout] lays them,
@@ -417,7 +423,8 @@ class GpuMap extends MapRenderer {
 
   /// Draws nothing in every state a frame uses, once: a GPU makes a
   /// pipeline variant the first time a state is drawn in, which stalls that
-  /// frame for several milliseconds. Tile memory is set aside here too.
+  /// frame for several milliseconds. Every slot a pipeline reads is bound,
+  /// as Vulkan leaves a draw that reads an unbound one undefined.
   void _warmUp(GpuDevice device) {
     _warm = true;
     final GpuDevice(pipelines: p, :host, :blocks, :sprites, :paints) = device;
@@ -455,6 +462,7 @@ class GpuMap extends MapRenderer {
       ..setColorBlendEnable(true)
       ..setColorBlendEquation(overBlend);
     sprites.bind(pass, p, host);
+    device.heights.bind(pass, p, host, null, null, flat: true);
     pass
       ..bindVertexBuffer(vertices)
       ..bindUniform(p.flatFrame, frame)
@@ -476,6 +484,10 @@ class GpuMap extends MapRenderer {
       ..setDepthCompareOperation(gpu.CompareFunction.lessEqual)
       ..bindVertexBuffer(vertices)
       ..bindUniform(p.buildingFrame, frame)
+      ..bindUniform(
+        p.buildingTile,
+        host.emplace(ByteData(blocks.buildingTileLength)),
+      )
       ..bindUniform(
         p.buildingPatterns,
         host.emplace(ByteData(sprites.patternBytes.lengthInBytes)),

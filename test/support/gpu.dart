@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:vmap/src/camera/view.dart';
 import 'package:vmap/src/gpu/gpu_buffers.dart';
 import 'package:vmap/src/gpu/gpu_device.dart';
+import 'package:vmap/src/gpu/gpu_map.dart';
 import 'package:vmap/src/gpu/gpu_pipelines.dart';
 import 'package:vmap/src/gpu/gpu_shim/gpu.dart' as gpu;
 import 'package:vmap/src/render/map_renderer.dart';
@@ -82,4 +83,19 @@ class SquareGlyphs implements PbfGlyphs {
 
   @override
   PbfGlyph? glyph(int face, int codePoint) => _glyph;
+}
+
+/// Paints [frame] with [map] once the GPU has finished the frames counted
+/// in [heap], as a device that keeps up does: painted back to back, frames
+/// still in flight are shown again instead of drawn.
+Future<bool> paintAfterGpu(
+  GpuMap map,
+  GpuHeap heap,
+  ui.Canvas canvas,
+  RenderFrame frame,
+) async {
+  while (heap.completed < heap.submitted) {
+    await Future<void>.delayed(const Duration(milliseconds: 1));
+  }
+  return map.paint(canvas, frame);
 }
