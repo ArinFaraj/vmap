@@ -48,21 +48,23 @@ MapView squareView(double side) =>
     MapView(centerX: 0.5, centerY: 0.5, zoom: 3, width: side, height: side);
 
 /// A frame of a style with no sources or layers, seen through [view].
-RenderFrame blankFrame(MapView view) => RenderFrame(
-  view: view,
-  origin: ui.Offset.zero,
-  sheet: StyleSheet.compile({
-    'version': 8,
-    'sources': <String, Object?>{},
-    'layers': <Object?>[],
-  }),
-  fallback: const [],
-  ideal: const [],
-  context: EvalContext(),
-  styleZoom: 3,
-  devicePixelRatio: 1,
-  stats: VmapStats(),
-);
+RenderFrame blankFrame(MapView view, {bool labelsVisible = true}) =>
+    RenderFrame(
+      view: view,
+      origin: ui.Offset.zero,
+      sheet: StyleSheet.compile({
+        'version': 8,
+        'sources': <String, Object?>{},
+        'layers': <Object?>[],
+      }),
+      fallback: const [],
+      ideal: const [],
+      context: EvalContext(),
+      styleZoom: 3,
+      devicePixelRatio: 1,
+      stats: VmapStats(),
+      labelsVisible: labelsVisible,
+    );
 
 /// One glyph, a square of ink [ink] pixels a side standing on the
 /// baseline, its left edge at the pen.

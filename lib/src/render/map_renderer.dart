@@ -49,11 +49,15 @@ class RenderFrame {
     this.dashFade = ZoomHistory.settled,
     this.transitioning = false,
     this.farBuildings,
+    this.labelsVisible = true,
   });
 
   /// The buildings standing past the ground tiles that carry them, or null
   /// when every building is on a tile drawn for the ground.
   final FarBuildings? farBuildings;
+
+  /// Whether the frame's labels are drawn.
+  final bool labelsVisible;
 
   final MapView view;
   final ui.Offset origin;
