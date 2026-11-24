@@ -145,7 +145,13 @@ class SdfTextGpu implements SdfText {
   /// Starts making the pipeline, so the browser compiles the text's shaders
   /// beside the frames drawn meanwhile and [build] takes the result.
   void start() {
-    if (unbuilt && _vertex != null && _fragment != null) _made;
+    if (!unbuilt || _vertex == null || _fragment == null) return;
+    try {
+      _made;
+    } catch (_) {
+      // A throwing late initializer runs again, so build() retries and
+      // hands only the labels to the canvas if it fails too.
+    }
   }
 
   /// Makes the pipeline, which compiles the text's shaders on this thread:
