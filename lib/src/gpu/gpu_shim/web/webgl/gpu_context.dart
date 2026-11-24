@@ -441,12 +441,19 @@ final class WebGlContext extends GpuContext {
 
   // Framebuffer cache, keyed by the attachment textures, so the synchronous
   // checkFramebufferStatus round trip runs once per attachment combination
-  // and not once a pass. Releasing a texture drops its entries; the capacity
-  // only bounds targets dropped without a release, and evicts the least
-  // recently used, so a frame's working set stays.
+  // and not once a pass. The keys hold their textures, so targets that go
+  // all at once are forgotten with them (_forgetFramebuffers); the capacity
+  // bounds the rest, evicting the least recently used.
   static const _framebufferCacheCapacity = 256;
   final Map<(Texture, int, int, Texture?), web.WebGLFramebuffer>
   _framebufferCache = {};
+
+  void _forgetFramebuffers() {
+    for (final framebuffer in _framebufferCache.values) {
+      _gl.deleteFramebuffer(framebuffer);
+    }
+    _framebufferCache.clear();
+  }
 
   web.WebGLFramebuffer _framebufferFor(
     Texture color,

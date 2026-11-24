@@ -57,6 +57,8 @@ abstract base class WebBackend {
   Surface createSurface({required int width, required int height});
 
   void checkPipeline(RenderPipeline pipeline);
+
+  void forgetFramebuffers();
 }
 
 final WebBackend _backend = createWebGlBackend();
@@ -350,3 +352,8 @@ bool writeGeometryData(
 /// only starts that work, so pipelines made together build in parallel; a
 /// pipeline's first bind checks it too.
 void checkPipeline(RenderPipeline pipeline) => _backend.checkPipeline(pipeline);
+
+/// Lets go of the framebuffers kept for render targets, which hold their
+/// textures, when those textures are about to go. The ones still drawn
+/// into are made again as they are next used.
+void forgetFramebuffers() => _backend.forgetFramebuffers();

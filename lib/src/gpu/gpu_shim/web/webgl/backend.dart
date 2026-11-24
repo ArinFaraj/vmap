@@ -101,6 +101,9 @@ final class _WebGlBackend extends WebBackend {
 
   @override
   void checkPipeline(RenderPipeline pipeline) => pipeline.webGl._ensureLinked();
+
+  @override
+  void forgetFramebuffers() => webGlContext._forgetFramebuffers();
 }
 
 // Downcasts for values that cross the facade typed as the neutral interfaces.

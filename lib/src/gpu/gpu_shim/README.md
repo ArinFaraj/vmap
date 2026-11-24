@@ -49,3 +49,6 @@ Changed from flutter_scene:
 - `checkPipeline`: reads a pipeline's link result, so a renderer that
   starts every pipeline at once can take each one's result where it
   handles a failure.
+- `forgetFramebuffers`: lets go of the framebuffers cached for render
+  targets, whose keys hold their textures, when a renderer drops its
+  targets, as vmap does on a resize.
