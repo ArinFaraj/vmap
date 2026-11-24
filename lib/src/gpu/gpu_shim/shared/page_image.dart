@@ -1,27 +1,30 @@
-/// What a page shows a GPU texture from: the browser's object, [source],
-/// under a type that says which it is.
+/// What a page shows a GPU texture from.
 sealed class PageImage {
-  const PageImage(this.source);
+  const PageImage();
+}
+
+/// An `ImageBitmap` taken from the texture, [source], the page's to show
+/// and close.
+final class PageBitmap extends PageImage {
+  const PageBitmap(this.source);
 
   final Object source;
 }
 
-/// An `ImageBitmap` taken from the texture, the page's to show and close.
-final class PageBitmap extends PageImage {
-  const PageBitmap(super.source);
+/// The `HTMLCanvasElement` the backend draws in, [source], with the
+/// texture's frame left in it. There is one, so one place in the page
+/// shows it.
+final class PageCanvas extends PageImage {
+  const PageCanvas(this.source);
+
+  final Object source;
 }
 
 /// The image the place it is handed to showed last, shown again: the
 /// frame it stands for may have gone straight from the canvas to the page,
 /// leaving nothing in its texture to take it from again.
 final class PageKept extends PageImage {
-  const PageKept() : super(const Object());
-}
-
-/// The `HTMLCanvasElement` the backend draws in, with the texture's frame
-/// left in it. There is one, so one place in the page shows it.
-final class PageCanvas extends PageImage {
-  const PageCanvas(super.source);
+  const PageKept();
 }
 
 /// How a GPU host puts its textures, of type [T], in the page it runs in.

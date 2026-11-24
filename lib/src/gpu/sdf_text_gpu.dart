@@ -74,29 +74,14 @@ class SdfTextGpu implements SdfText {
   /// pipeline or found the device cannot.
   bool get unbuilt => _pipeline == null && !_failed;
 
-  /// The pipeline [start] made, its shaders still compiling.
-  gpu.RenderPipeline? _started;
+  gpu.Shader? get _vertex => _library['SdfVertex'];
+  gpu.Shader? get _fragment => _library['SdfFragment'];
 
-  /// Starts making the pipeline, on the web only, where that leaves the
-  /// browser to compile the text's shaders beside the frames drawn
-  /// meanwhile, and [build] then takes the result.
-  void start() {
-    if (!kIsWeb || !unbuilt || _started != null) return;
-    final vertex = _library['SdfVertex'], fragment = _library['SdfFragment'];
-    if (vertex == null || fragment == null) return;
-    try {
-      _started = _makePipeline(vertex, fragment);
-    } catch (_) {
-      // build() makes it again and reports why it cannot.
-    }
-  }
-
-  static gpu.RenderPipeline _makePipeline(
-    gpu.Shader vertex,
-    gpu.Shader fragment,
-  ) => gpu.gpuContext.createRenderPipeline(
-    vertex,
-    fragment,
+  /// The pipeline, made as it is first read: by [start] where making one
+  /// only starts its shaders compiling, else by [build].
+  late final gpu.RenderPipeline _made = gpu.gpuContext.createRenderPipeline(
+    _vertex!,
+    _fragment!,
     vertexLayout: const gpu.VertexLayout(
       buffers: [
         gpu.VertexBuffer(
@@ -157,21 +142,25 @@ class SdfTextGpu implements SdfText {
     ),
   );
 
+  /// Starts making the pipeline, so the browser compiles the text's shaders
+  /// beside the frames drawn meanwhile and [build] takes the result.
+  void start() {
+    if (unbuilt && _vertex != null && _fragment != null) _made;
+  }
+
   /// Makes the pipeline, which compiles the text's shaders on this thread:
   /// Flutter GPU waits for the driver, and on Metal that compiles them from
   /// source. Nothing else should be compiled in the same frame.
   void build() {
     if (!unbuilt) return;
-    final library = _library;
-    final vertex = library['SdfVertex'], fragment = library['SdfFragment'];
+    final vertex = _vertex, fragment = _fragment;
     if (vertex == null || fragment == null) {
       _failed = true;
       return;
     }
     try {
-      final pipeline = _started ??= _makePipeline(vertex, fragment);
-      gpu.checkPipeline(pipeline);
-      _pipeline = pipeline;
+      gpu.checkPipeline(_made);
+      _pipeline = _made;
       _corners = gpu.gpuContext.createDeviceBufferWithCopy(
         ByteData.sublistView(
           Float32List.fromList([0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1]),

@@ -1,8 +1,5 @@
 part of '_webgl.dart';
 
-/// `COMPLETION_STATUS_KHR` from `KHR_parallel_shader_compile`.
-const int _completionStatusKhr = 0x91B1;
-
 /// A linked WebGL program built from a vertex + fragment shader pair, plus
 /// cached reflection state used by RenderPass when binding resources.
 ///
@@ -99,17 +96,8 @@ final class WebGlRenderPipeline extends RenderPipeline {
 
   bool _linkChecked = false;
 
-  /// Whether the link has finished, so the first bind will not wait on it.
-  /// Always true without `KHR_parallel_shader_compile`, where it cannot be
-  /// asked.
-  bool get isLinkComplete {
-    if (_linkChecked || !_gpuContext._parallelShaderCompile) return true;
-    return (_gpuContext._gl.getProgramParameter(
-          _program,
-          _completionStatusKhr,
-        ) as JSBoolean?)?.toDart ??
-        true;
-  }
+  /// Why the program did not link, once that is known.
+  String? _linkError;
 
   /// Reads the link result, waiting for it if it is still running, and
   /// builds the uniform caches. Throws an [Exception], as native Flutter GPU
@@ -117,6 +105,7 @@ final class WebGlRenderPipeline extends RenderPipeline {
   /// the program to link.
   void _ensureLinked() {
     if (_linkChecked) return;
+    if (_linkError case final error?) throw Exception(error);
     final gl = _gpuContext._gl;
     final ok =
         (gl.getProgramParameter(
@@ -125,12 +114,13 @@ final class WebGlRenderPipeline extends RenderPipeline {
         ) as JSBoolean?)?.toDart ??
         false;
     if (!ok) {
-      final message =
+      final error = _linkError =
           _compileErrorOf(gl, vertexShader) ??
           _compileErrorOf(gl, fragmentShader) ??
           'Failed to link program: '
               '${gl.getProgramInfoLog(_program) ?? '<no info log>'}';
-      throw Exception(message);
+      _gpuContext._state.deleteProgram(_program);
+      throw Exception(error);
     }
     _linkChecked = true;
     _buildUniformCaches();
