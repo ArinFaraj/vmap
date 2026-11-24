@@ -98,6 +98,12 @@ final class _WebGlBackend extends WebBackend {
   @override
   Surface createSurface({required int width, required int height}) =>
       WebGlSurface(width: width, height: height);
+
+  @override
+  void checkPipeline(RenderPipeline pipeline) => pipeline.webGl._ensureLinked();
+
+  @override
+  void forgetFramebuffers() => webGlContext._forgetFramebuffers();
 }
 
 // Downcasts for values that cross the facade typed as the neutral interfaces.

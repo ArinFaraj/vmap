@@ -74,6 +74,89 @@ class SdfTextGpu implements SdfText {
   /// pipeline or found the device cannot.
   bool get unbuilt => _pipeline == null && !_failed;
 
+  /// The pipeline [start] made, its shaders still compiling.
+  gpu.RenderPipeline? _started;
+
+  /// Starts making the pipeline, on the web only, where that leaves the
+  /// browser to compile the text's shaders beside the frames drawn
+  /// meanwhile, and [build] then takes the result.
+  void start() {
+    if (!kIsWeb || !unbuilt || _started != null) return;
+    final vertex = _library['SdfVertex'], fragment = _library['SdfFragment'];
+    if (vertex == null || fragment == null) return;
+    try {
+      _started = _makePipeline(vertex, fragment);
+    } catch (_) {
+      // build() makes it again and reports why it cannot.
+    }
+  }
+
+  static gpu.RenderPipeline _makePipeline(
+    gpu.Shader vertex,
+    gpu.Shader fragment,
+  ) => gpu.gpuContext.createRenderPipeline(
+    vertex,
+    fragment,
+    vertexLayout: const gpu.VertexLayout(
+      buffers: [
+        gpu.VertexBuffer(
+          strideInBytes: 8,
+          attributes: [
+            gpu.VertexAttribute(
+              name: 'corner',
+              format: gpu.VertexFormat.float32x2,
+            ),
+          ],
+        ),
+        gpu.VertexBuffer(
+          strideInBytes: SdfQuad.bytes,
+          stepMode: gpu.VertexStepMode.instance,
+          attributes: [
+            gpu.VertexAttribute(
+              name: 'placement',
+              format: gpu.VertexFormat.float32x4,
+            ),
+            gpu.VertexAttribute(
+              name: 'axes',
+              format: gpu.VertexFormat.float32x4,
+              offsetInBytes: SdfQuad.axes * 4,
+            ),
+            gpu.VertexAttribute(
+              name: 'extent',
+              format: gpu.VertexFormat.float32x4,
+              offsetInBytes: SdfQuad.extent * 4,
+            ),
+            gpu.VertexAttribute(
+              name: 'ink',
+              format: gpu.VertexFormat.float32x4,
+              offsetInBytes: SdfQuad.ink * 4,
+            ),
+            gpu.VertexAttribute(
+              name: 'halo',
+              format: gpu.VertexFormat.float32x4,
+              offsetInBytes: SdfQuad.halo * 4,
+            ),
+            gpu.VertexAttribute(
+              name: 'params',
+              format: gpu.VertexFormat.float32x4,
+              offsetInBytes: SdfQuad.params * 4,
+            ),
+            gpu.VertexAttribute(
+              name: 'clip',
+              format: gpu.VertexFormat.float32x4,
+              offsetInBytes: SdfQuad.clip * 4,
+            ),
+            gpu.VertexAttribute(
+              name: 'anchor',
+              format: gpu.VertexFormat.float32x4,
+              offsetInBytes: SdfQuad.anchor * 4,
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+
   /// Makes the pipeline, which compiles the text's shaders on this thread:
   /// Flutter GPU waits for the driver, and on Metal that compiles them from
   /// source. Nothing else should be compiled in the same frame.
@@ -86,68 +169,9 @@ class SdfTextGpu implements SdfText {
       return;
     }
     try {
-      _pipeline = gpu.gpuContext.createRenderPipeline(
-        vertex,
-        fragment,
-        vertexLayout: const gpu.VertexLayout(
-          buffers: [
-            gpu.VertexBuffer(
-              strideInBytes: 8,
-              attributes: [
-                gpu.VertexAttribute(
-                  name: 'corner',
-                  format: gpu.VertexFormat.float32x2,
-                ),
-              ],
-            ),
-            gpu.VertexBuffer(
-              strideInBytes: SdfQuad.bytes,
-              stepMode: gpu.VertexStepMode.instance,
-              attributes: [
-                gpu.VertexAttribute(
-                  name: 'placement',
-                  format: gpu.VertexFormat.float32x4,
-                ),
-                gpu.VertexAttribute(
-                  name: 'axes',
-                  format: gpu.VertexFormat.float32x4,
-                  offsetInBytes: SdfQuad.axes * 4,
-                ),
-                gpu.VertexAttribute(
-                  name: 'extent',
-                  format: gpu.VertexFormat.float32x4,
-                  offsetInBytes: SdfQuad.extent * 4,
-                ),
-                gpu.VertexAttribute(
-                  name: 'ink',
-                  format: gpu.VertexFormat.float32x4,
-                  offsetInBytes: SdfQuad.ink * 4,
-                ),
-                gpu.VertexAttribute(
-                  name: 'halo',
-                  format: gpu.VertexFormat.float32x4,
-                  offsetInBytes: SdfQuad.halo * 4,
-                ),
-                gpu.VertexAttribute(
-                  name: 'params',
-                  format: gpu.VertexFormat.float32x4,
-                  offsetInBytes: SdfQuad.params * 4,
-                ),
-                gpu.VertexAttribute(
-                  name: 'clip',
-                  format: gpu.VertexFormat.float32x4,
-                  offsetInBytes: SdfQuad.clip * 4,
-                ),
-                gpu.VertexAttribute(
-                  name: 'anchor',
-                  format: gpu.VertexFormat.float32x4,
-                  offsetInBytes: SdfQuad.anchor * 4,
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
+      final pipeline = _started ??= _makePipeline(vertex, fragment);
+      gpu.checkPipeline(pipeline);
+      _pipeline = pipeline;
       _corners = gpu.gpuContext.createDeviceBufferWithCopy(
         ByteData.sublistView(
           Float32List.fromList([0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1]),

@@ -51,3 +51,11 @@ void overwriteTextureRows(
   required int top,
   required int rows,
 }) => texture.overwrite(texels);
+
+/// Makes sure [pipeline] was built, throwing an [Exception] when it could
+/// not be: here [GpuContext.createRenderPipeline] already did.
+void checkPipeline(RenderPipeline pipeline) {}
+
+/// Lets go of the framebuffers kept for textures that are about to go.
+/// Native keeps none.
+void forgetFramebuffers() {}

@@ -1,4 +1,5 @@
 import 'dart:js_interop';
+import 'dart:typed_data';
 import 'dart:ui_web' as ui_web;
 
 import 'package:flutter/widgets.dart';
@@ -51,6 +52,9 @@ class _Plane implements PagePlane {
   /// The backend's own canvas, while this plane shows a frame left in it.
   web.HTMLCanvasElement? _own;
 
+  /// What each place showed last, for an image kept there.
+  final List<web.HTMLCanvasElement?> _last = [];
+
   /// Shows [plane] in the browser's next frame, when Flutter's own frame
   /// drawn with it has reached the page too, so widgets laid over the map
   /// stay on it.
@@ -75,8 +79,8 @@ class _Plane implements PagePlane {
   void _showDue(double time) {
     GpuPlane? due;
     while (_held.isNotEmpty && _held.first.$2 < time) {
-      if (due != null) _letGo(due);
-      due = _held.removeAt(0).$1;
+      final next = _held.removeAt(0).$1;
+      due = due == null ? next : _skip(due, next);
     }
     if (due != null) show(due);
     if (_held.isNotEmpty) _ask();
@@ -110,7 +114,16 @@ class _Plane implements PagePlane {
             _fill(showing);
             element.append(showing);
           }
+        case PageKept():
+          final last = i < _last.length ? _last[i] : null;
+          if (last == null) continue;
+          showing = last;
+          if (!identical(last, canvas)) shown = last;
       }
+      while (_last.length <= i) {
+        _last.add(null);
+      }
+      _last[i] = showing;
       showing.style.display = 'block';
     }
     final own = _own;
@@ -119,12 +132,20 @@ class _Plane implements PagePlane {
     }
     _own = shown;
     final warp = plane.warp;
-    element.style.transform = warp == null ? '' : 'matrix3d(${warp.join(',')})';
+    element.style.transform = warp == null ? '' : _css(warp);
     final clip = plane.clip;
     element.style.clipPath = clip == null
         ? ''
         : 'polygon(${[for (final p in clip) '${p.dx}px ${p.dy}px'].join(',')})';
   }
+
+  /// [warp] as a CSS transform. Firefox drops a WebGL canvas from the
+  /// frame in which a transform is set on it, so there a frame shown again
+  /// stays where it was drawn.
+  static String _css(Float64List warp) =>
+      ui_web.browser.browserEngine == ui_web.BrowserEngine.firefox
+      ? ''
+      : 'matrix3d(${warp.join(',')})';
 
   static void _fill(web.HTMLCanvasElement canvas) => canvas.style
     ..position = 'absolute'
@@ -133,6 +154,22 @@ class _Plane implements PagePlane {
     ..width = '100%'
     ..height = '100%'
     ..pointerEvents = 'none';
+}
+
+/// [newer], shown in place of [older], which is not shown: an image
+/// [newer] keeps from the place's last is [older]'s, and every other image
+/// of [older] is let go.
+GpuPlane _skip(GpuPlane older, GpuPlane newer) {
+  final images = [
+    for (final (i, image) in newer.images.indexed)
+      image is PageKept && i < older.images.length ? older.images[i] : image,
+  ];
+  for (final (i, image) in older.images.indexed) {
+    if (!identical(image, images.elementAtOrNull(i))) {
+      _letGo(GpuPlane([image]));
+    }
+  }
+  return GpuPlane(images, warp: newer.warp, clip: newer.clip);
 }
 
 void _letGo(GpuPlane plane) {

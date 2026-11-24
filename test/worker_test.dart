@@ -15,6 +15,7 @@ import 'package:vmap/src/tiles/tile_store.dart';
 import 'package:vmap/src/options.dart';
 import 'package:vmap/src/tiles/worker.dart';
 
+import 'support/files.dart';
 import 'support/mvt_fixture.dart';
 
 Map<String, Object?> _place(double lon, double lat, String name) => {
@@ -249,7 +250,7 @@ void main() {
       expect(failed, isEmpty);
       expect(loaded, [const TileId(1, 0, 0)]);
       expect(asked, 1);
-      expect(kept(1, 0, 0).readAsBytesSync(), good);
+      await holds(kept(1, 0, 0), good);
     });
 
     test('from the server is not kept', () async {

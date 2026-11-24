@@ -12,6 +12,8 @@ import 'package:vmap/src/style/style.dart';
 import 'package:vmap/src/text/glyphs/glyph_files.dart';
 import 'package:vmap/src/text/glyphs/glyph_pbf.dart';
 
+import 'support/files.dart';
+
 /// One font stack holding the glyph of `A`, ten wide.
 final _range = Uint8List.fromList([
   0x0A, 0x06, 0x1A, 0x04, 0x08, 0x41, 0x38, 0x0A, //
@@ -104,8 +106,7 @@ void main() {
 
     expect(await fetches().fetch(range), _range);
     expect(asked, hasLength(1));
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-    expect(file.readAsBytesSync(), _range);
+    await holds(file, _range);
   });
 
   VmapEngine map() {

@@ -7,6 +7,7 @@ import '../camera/view.dart';
 import '../render/frame_planes.dart';
 import 'frame_layers.dart';
 import 'gpu_shim/gpu.dart' as gpu;
+import 'gpu_shim/shared/page_image.dart';
 
 /// The frame the canvas shows: the last one drawn, laid down image by
 /// image between what the canvas draws itself, and shown again, moved to
@@ -105,7 +106,8 @@ class FrameShow {
   /// Hands [planes] each of [images] as the backend takes it out of its
   /// texture now, each shown before the next is taken: Safari blanks a
   /// bitmap whose canvas is drawn into again before it is shown. With
-  /// [whole] they are all of the frame.
+  /// [whole] they are all of the frame. An image shown again stays as the
+  /// page has it.
   void _hand(
     FramePlanes planes,
     Iterable<FrameImage> images,
@@ -113,11 +115,10 @@ class FrameShow {
     required bool whole,
   }) {
     for (final image in images) {
-      final page = gpu.gpuHost.page!.frame(
-        image.texture,
-        shower: this,
-        whole: whole,
-      );
+      final page = image.handed
+          ? const PageKept()
+          : gpu.gpuHost.page!.frame(image.texture, shower: this, whole: whole);
+      image.handed = true;
       planes.hand([page], warp);
     }
   }

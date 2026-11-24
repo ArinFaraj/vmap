@@ -1,7 +1,15 @@
 part of '_webgl.dart';
 
+/// `COMPLETION_STATUS_KHR` from `KHR_parallel_shader_compile`.
+const int _completionStatusKhr = 0x91B1;
+
 /// A linked WebGL program built from a vertex + fragment shader pair, plus
 /// cached reflection state used by RenderPass when binding resources.
+///
+/// Construction only starts the link. Its result and the uniform caches are
+/// read at the first bind ([_ensureLinked]), so pipelines made together
+/// compile and link in parallel where the context has
+/// `KHR_parallel_shader_compile`.
 final class WebGlRenderPipeline extends RenderPipeline {
   WebGlRenderPipeline._(
     this._gpuContext,
@@ -36,19 +44,6 @@ final class WebGlRenderPipeline extends RenderPipeline {
     }
 
     gl.linkProgram(program);
-    final ok =
-        (gl.getProgramParameter(
-          program,
-          web.WebGL2RenderingContext.LINK_STATUS,
-        ) as JSBoolean?)?.toDart ??
-        false;
-    if (!ok) {
-      final log = gl.getProgramInfoLog(program) ?? '<no info log>';
-      gl.deleteProgram(program);
-      throw Exception('Failed to link program: $log');
-    }
-
-    _buildUniformCaches();
   }
 
   final WebGlContext _gpuContext;
@@ -101,6 +96,45 @@ final class WebGlRenderPipeline extends RenderPipeline {
   final Map<String, int> _samplerUnits = {};
 
   web.WebGLProgram get glProgram => _program;
+
+  bool _linkChecked = false;
+
+  /// Whether the link has finished, so the first bind will not wait on it.
+  /// Always true without `KHR_parallel_shader_compile`, where it cannot be
+  /// asked.
+  bool get isLinkComplete {
+    if (_linkChecked || !_gpuContext._parallelShaderCompile) return true;
+    return (_gpuContext._gl.getProgramParameter(
+          _program,
+          _completionStatusKhr,
+        ) as JSBoolean?)?.toDart ??
+        true;
+  }
+
+  /// Reads the link result, waiting for it if it is still running, and
+  /// builds the uniform caches. Throws an [Exception], as native Flutter GPU
+  /// does for a pipeline it cannot build, when a shader failed to compile or
+  /// the program to link.
+  void _ensureLinked() {
+    if (_linkChecked) return;
+    final gl = _gpuContext._gl;
+    final ok =
+        (gl.getProgramParameter(
+          _program,
+          web.WebGL2RenderingContext.LINK_STATUS,
+        ) as JSBoolean?)?.toDart ??
+        false;
+    if (!ok) {
+      final message =
+          _compileErrorOf(gl, vertexShader) ??
+          _compileErrorOf(gl, fragmentShader) ??
+          'Failed to link program: '
+              '${gl.getProgramInfoLog(_program) ?? '<no info log>'}';
+      throw Exception(message);
+    }
+    _linkChecked = true;
+    _buildUniformCaches();
+  }
 
   web.WebGLUniformLocation? _yFlip, _fragY;
   bool? _upright;

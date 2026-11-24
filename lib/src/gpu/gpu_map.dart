@@ -113,11 +113,12 @@ class GpuMap extends MapRenderer {
         _heap,
         fail: (e) => onFailure?.call(e),
       );
-      return _made = (
-        device: device,
-        drape: Drape(device),
-        sdf: SdfTextGpu(device, library, guard: _guard),
-      );
+      final sdf = SdfTextGpu(device, library, guard: _guard);
+      if (kIsWeb) {
+        device.pipelines.start();
+        if (_in?.labelsVisible ?? false) sdf.start();
+      }
+      return _made = (device: device, drape: Drape(device), sdf: sdf);
     } catch (e) {
       _lose(e);
       return null;

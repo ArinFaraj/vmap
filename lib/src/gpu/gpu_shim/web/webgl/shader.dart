@@ -136,10 +136,15 @@ final class WebGlShader extends Shader {
   UniformSlot getUniformSlot(String uniformName) =>
       WebGlUniformSlot._(this, uniformName);
 
-  /// Compile [source] (already in the target GLSL ES dialect) into this
+  /// Compiles [source] (already in the target GLSL ES dialect) into this
   /// shader's `_glShader`. Internal use; callers (ShaderLibrary loader,
   /// inline factories) provide source that has been preprocessed if
   /// necessary.
+  ///
+  /// A first compile does not wait for its result, so the browser can
+  /// compile it beside others; a failure is reported when a program linking
+  /// it is first bound. A recompile (hot reload) checks at once and throws,
+  /// keeping the shader that works.
   void _compile(String source) {
     final gl = _gpuContext._gl;
     final type = stage == ShaderStage.vertex
@@ -151,25 +156,40 @@ final class WebGlShader extends Shader {
     }
     gl.shaderSource(s, source);
     gl.compileShader(s);
-    final ok =
-        (gl.getShaderParameter(
-          s,
-          web.WebGL2RenderingContext.COMPILE_STATUS,
-        ) as JSBoolean?)?.toDart ??
-        false;
-    if (!ok) {
-      final log = gl.getShaderInfoLog(s) ?? '<no info log>';
-      gl.deleteShader(s);
-      throw Exception(
-        'Failed to compile ${stage.name} shader:\n$log\n--- source ---\n$source',
-      );
-    }
-    // On a hot-reload recompile, release the replaced shader object (linked
-    // programs keep their own copy of the code, so this only frees the
-    // standalone object).
     final previous = _glShader;
-    if (previous != null) gl.deleteShader(previous);
+    if (previous != null) {
+      final error = _compileError(gl, s, stage);
+      if (error != null) {
+        gl.deleteShader(s);
+        throw Exception(error);
+      }
+      // Linked programs keep their own copy of the code, so this only frees
+      // the standalone object.
+      gl.deleteShader(previous);
+    }
     _glShader = s;
     _generation++;
   }
+}
+
+/// Why [shader] failed to compile, or null when it compiled. Waits for the
+/// compile to finish.
+String? _compileErrorOf(web.WebGL2RenderingContext gl, WebGlShader shader) {
+  final glShader = shader._glShader;
+  return glShader == null ? null : _compileError(gl, glShader, shader.stage);
+}
+
+String? _compileError(
+  web.WebGL2RenderingContext gl,
+  web.WebGLShader shader,
+  ShaderStage stage,
+) {
+  final status = gl.getShaderParameter(
+    shader,
+    web.WebGL2RenderingContext.COMPILE_STATUS,
+  ) as JSBoolean?;
+  if (status == null || status.toDart) return null;
+  final log = gl.getShaderInfoLog(shader) ?? '<no info log>';
+  final source = gl.getShaderSource(shader) ?? '<no source>';
+  return 'Failed to compile ${stage.name} shader:\n$log\n--- source ---\n$source';
 }

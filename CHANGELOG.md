@@ -1,3 +1,12 @@
+## Unreleased
+
+- Web: shaders compile in parallel, and the page no longer waits on them
+  while the map loads.
+- Web: the map asks for the faster GPU on machines with two, as MapLibre
+  does.
+- Web: a GPU that falls two frames behind now shows the last frame again
+  instead of stalling the page, as native platforms already did.
+
 ## 0.31.0
 
 - Tiles fade in instead of popping in, over `VmapRenderOptions.tileFade` (200 ms

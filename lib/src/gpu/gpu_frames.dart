@@ -74,6 +74,7 @@ class GpuFrames {
     for (final frame in old) {
       frame.dispose();
     }
+    gpu.forgetFramebuffers();
     _densities.clear();
     _densityDepth = null;
     _fedDepth = null;
@@ -273,6 +274,7 @@ class GpuFrames {
       frame.dispose();
     }
     _ring = const [];
+    gpu.forgetFramebuffers();
     _depth = null;
     _fedDepth = null;
     _beforeDepth = null;

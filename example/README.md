@@ -8,6 +8,6 @@ that frames the old town, and one that flies to a view of 3D buildings.
 flutter run
 ```
 
-Flutter GPU is switched on for every platform here: in the Android
-manifest, the iOS and macOS `Info.plist`, and the Windows and Linux
-runners.
+Flutter GPU is switched on in the iOS and macOS `Info.plist` and the
+Windows and Linux runners. Android needs nothing: vmap's own manifest
+switches it on.
