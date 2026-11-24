@@ -10,18 +10,6 @@ import 'road_labels.dart';
 import '../style/sprites.dart';
 import '../style/style_model.dart';
 
-/// An area labels keep clear of, as a marker: its anchor [x], [y] as
-/// fractions of the world, its size in screen pixels, and how far its
-/// centre sits from the anchor.
-typedef LabelObstacle = ({
-  double x,
-  double y,
-  double width,
-  double height,
-  double shiftX,
-  double shiftY,
-});
-
 /// Places the labels of points: an icon or a pin, and text beside it on a
 /// side that is free, keeping clear of the app's markers.
 class PointLabels {
@@ -50,8 +38,8 @@ class PointLabels {
   List<LabelObstacle> _obstacles = const [];
   double _obstacleReach = 0;
 
-  /// The collision box each obstacle took this pass, in order.
-  List<int> _markerBoxes = const [];
+  /// The collision box each obstacle took this pass.
+  Map<LabelObstacle, int> _markerBoxes = const {};
 
   List<LabelObstacle> get obstacles => _obstacles;
   set obstacles(List<LabelObstacle> value) {
@@ -67,16 +55,16 @@ class PointLabels {
 
   /// Takes the room the markers fill, before any label is placed.
   void startPass() {
-    _markerBoxes = [
+    _markerBoxes = {
       for (final o in _obstacles)
-        () {
+        o: () {
           _view.project(o.x, o.y);
           final ox = _view.x + o.shiftX;
           final oy = _view.y + o.shiftY;
           final w = o.width / 2, h = o.height / 2;
           return _boxes.add(ox - w, oy - h, ox + w, oy + h);
         }(),
-    ];
+    };
   }
 
   /// Places a point's text and icon, the text trying each side the layer
@@ -705,11 +693,10 @@ class PointLabels {
     var across = spot.textW / 2 + _obstacleReach;
     var (shiftX, shiftY) = text;
     int? ownBox;
-    if (c case MarkerName(index: final own)) {
-      final o = _obstacles[own];
+    if (c case MarkerName(area: final o)) {
       down = spot.textH / 2 + o.height / 2 + 2;
       across = spot.textW / 2 + o.width / 2 + 4;
-      ownBox = _markerBoxes[own];
+      ownBox = _markerBoxes[o];
       (shiftX, shiftY) = (o.shiftX, o.shiftY);
     }
     final first = beside && c.startsRight ? -across : across;

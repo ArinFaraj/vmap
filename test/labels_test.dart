@@ -6,7 +6,6 @@ import 'dart:ui' as ui;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/labels/label_state.dart';
 import 'package:vmap/src/labels/labels.dart';
-import 'package:vmap/src/labels/point_labels.dart';
 import 'package:vmap/src/labels/text_style.dart';
 import 'package:vmap/src/options.dart';
 import 'package:vmap/src/style/style_model.dart';
@@ -23,6 +22,16 @@ const _size = ui.Size(400, 400);
 /// on the screen with the origin at the top left of the world.
 const _zoom = 2.0;
 const _world = 1024.0;
+
+/// A marker 40 pixels square at screen pixel 200, 200.
+const LabelObstacle _homeArea = (
+  x: 200 / _world,
+  y: 200 / _world,
+  width: 40,
+  height: 40,
+  shiftX: 0,
+  shiftY: 0,
+);
 
 final _sheet = StyleSheet.compile({
   'version': 8,
@@ -131,22 +140,13 @@ void main() {
   test(
     "a marker's name shows, and a map label under the marker steps aside",
     () async {
-      final labels = _engine()
-        ..obstacles = [
-          (
-            x: 200 / _world,
-            y: 200 / _world,
-            width: 40,
-            height: 40,
-            shiftX: 0,
-            shiftY: 0,
-          ),
-        ];
+      final home = MarkerName(0, 'Home', _homeArea);
+      final labels = _engine()..obstacles = [_homeArea];
       final shown = await _settle(labels, [
-        [MarkerName(0, 'Home', 200 / _world, 200 / _world)],
+        [home],
         [_place('under', 'Covered', 200, 200, 1)],
       ]);
-      expect(shown, {MarkerName(0, 'Home', 0, 0).key, 'under'});
+      expect(shown, {home.key, 'under'});
     },
   );
 
@@ -161,8 +161,7 @@ void main() {
       shiftY: 0,
     );
     List<LabelCandidate> names(int count) => [
-      for (var i = 0; i < count; i++)
-        MarkerName(i, 'Station $i', at(i).x, at(i).y),
+      for (var i = 0; i < count; i++) MarkerName(i, 'Station $i', at(i)),
     ];
     final labels = _engine()
       ..obstacles = [for (var i = 0; i < 3000; i++) at(i)];
@@ -206,10 +205,11 @@ void main() {
           return null;
         },
       );
+    final home = MarkerName(0, 'Home', _homeArea);
     final shown = await _settle(labels, [
-      [MarkerName(0, 'Home', 200 / _world, 200 / _world)],
+      [home],
     ]);
-    expect(shown, {MarkerName(0, 'Home', 0, 0).key});
+    expect(shown, {home.key});
     expect(asked, isEmpty);
   });
 

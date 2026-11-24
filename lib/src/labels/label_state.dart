@@ -130,14 +130,25 @@ final class TileLabel extends LabelCandidate {
   }
 }
 
-/// The name of marker number [index], written beside it ahead of every map
-/// label.
-final class MarkerName extends LabelCandidate {
-  MarkerName(this.index, String name, double worldX, double worldY)
-    : super('m|$index|$name', name, _first + index, worldX, worldY);
+/// An area labels keep clear of, as a marker: its anchor [x], [y] as
+/// fractions of the world, its size in screen pixels, and how far its
+/// centre sits from the anchor.
+typedef LabelObstacle = ({
+  double x,
+  double y,
+  double width,
+  double height,
+  double shiftX,
+  double shiftY,
+});
 
-  /// The marker's place in the order the markers were given.
-  final int index;
+/// The name of marker number [index], written beside it ahead of every map
+/// label and stepping aside from [area], the room the marker fills.
+final class MarkerName extends LabelCandidate {
+  MarkerName(int index, String name, this.area)
+    : super('m|$index|$name', name, _first + index, area.x, area.y);
+
+  final LabelObstacle area;
 
   static const int _first = -(1 << 30);
 

@@ -59,3 +59,13 @@ void checkPipeline(RenderPipeline pipeline) {}
 /// Lets go of the framebuffers kept for textures that are about to go.
 /// Native keeps none.
 void forgetFramebuffers() {}
+
+/// Submits [commands], a frame's last, and calls [done] once the GPU has
+/// finished them. The count rides on an empty command buffer sent after
+/// them, which the queue finishes only after them: Flutter calls a refused
+/// submit's completion callback twice and crashes on the second call, so
+/// [commands] go without one and a refusal throws instead.
+void submitCounted(CommandBuffer commands, void Function() done) {
+  commands.submit();
+  gpuContext.createCommandBuffer().submit(completionCallback: (_) => done());
+}

@@ -23,7 +23,6 @@ import 'render/map_renderer.dart';
 import 'text/glyphs/vmap_font.dart';
 import 'labels/label_state.dart';
 import 'labels/labels.dart';
-import 'labels/point_labels.dart' show LabelObstacle;
 import 'labels/text_style.dart';
 import 'style/pins.dart';
 import 'tiles/query.dart';
@@ -521,19 +520,18 @@ class VmapEngine extends ChangeNotifier {
     _markerLabels.clear();
     for (var i = 0; i < value.length; i++) {
       final m = value[i];
-      final wx = worldX(m.point.longitude);
-      final wy = worldY(m.point.latitude);
-      areas.add((
-        x: wx,
-        y: wy,
+      final LabelObstacle area = (
+        x: worldX(m.point.longitude),
+        y: worldY(m.point.latitude),
         width: m.width,
         height: m.height,
         shiftX: (m.alignment?.x ?? 0) * m.width / 2,
         shiftY: (m.alignment?.y ?? 0) * m.height / 2,
-      ));
+      );
+      areas.add(area);
       final name = m.name;
       if (name == null || name.isEmpty) continue;
-      _markerLabels.add(MarkerName(i, name, wx, wy));
+      _markerLabels.add(MarkerName(i, name, area));
     }
     _labels.obstacles = areas;
     notifyListeners();

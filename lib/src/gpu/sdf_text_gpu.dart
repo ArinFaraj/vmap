@@ -24,9 +24,9 @@ class SdfTextGpu implements SdfText {
 
   final GpuDevice _device;
 
-  /// Runs the text's work on the GPU, answering the canvas given when the
-  /// device refuses it.
-  final ui.Canvas Function(ui.Canvas lost, ui.Canvas Function() draw) _guard;
+  /// Runs the text's work on the GPU, answering [lost] when the device
+  /// refuses it.
+  final T Function<T>(T lost, T Function() draw) _guard;
   final gpu.ShaderLibrary _library;
   gpu.RenderPipeline? _pipeline;
   gpu.UniformSlot? _frameSlot, _fragmentFrameSlot, _glyphSlot, _spriteSlot;
