@@ -152,6 +152,9 @@ class LabelEngine {
   List<LabelObstacle> get obstacles => _points.obstacles;
   set obstacles(List<LabelObstacle> value) {
     _points.obstacles = value;
+    // The pass under way holds marker names that index the old markers; it
+    // ends with the labels it has placed, and the next places the new ones.
+    _queue.clear();
     _placeAgain = true;
   }
 
