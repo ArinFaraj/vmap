@@ -30,11 +30,3 @@ final class WebGlCommandBuffer extends CommandBuffer {
     }
   }
 }
-
-/// A fence after the commands of one turn, and what waits on it.
-final class _WebGlCompletion {
-  _WebGlCompletion(this.sync, this.callbacks);
-
-  final web.WebGLSync sync;
-  final List<CompletionCallback> callbacks;
-}

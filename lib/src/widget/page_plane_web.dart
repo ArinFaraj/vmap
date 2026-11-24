@@ -74,15 +74,14 @@ class _Plane implements PagePlane {
     );
   }
 
-  /// Shows the newest plane handed before the frame that began at [time];
-  /// one handed in this frame, by a callback that ran first, waits.
+  /// Shows the planes handed before the frame that began at [time], in
+  /// order, so each one's images are where the next keeps them from; the
+  /// browser paints only the last. One handed in this frame, by a callback
+  /// that ran first, waits.
   void _showDue(double time) {
-    GpuPlane? due;
     while (_held.isNotEmpty && _held.first.$2 < time) {
-      final next = _held.removeAt(0).$1;
-      due = due == null ? next : _skip(due, next);
+      show(_held.removeAt(0).$1);
     }
-    if (due != null) show(due);
     if (_held.isNotEmpty) _ask();
   }
 
@@ -154,22 +153,6 @@ class _Plane implements PagePlane {
     ..width = '100%'
     ..height = '100%'
     ..pointerEvents = 'none';
-}
-
-/// [newer], shown in place of [older], which is not shown: an image
-/// [newer] keeps from the place's last is [older]'s, and every other image
-/// of [older] is let go.
-GpuPlane _skip(GpuPlane older, GpuPlane newer) {
-  final images = [
-    for (final (i, image) in newer.images.indexed)
-      image is PageKept && i < older.images.length ? older.images[i] : image,
-  ];
-  for (final (i, image) in older.images.indexed) {
-    if (!identical(image, images.elementAtOrNull(i))) {
-      _letGo(GpuPlane([image]));
-    }
-  }
-  return GpuPlane(images, warp: newer.warp, clip: newer.clip);
 }
 
 void _letGo(GpuPlane plane) {
