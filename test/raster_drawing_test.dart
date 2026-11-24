@@ -14,6 +14,8 @@ import 'package:vmap/src/raster/raster.dart';
 import 'package:vmap/src/raster/raster_dem.dart';
 import 'package:vmap/src/style/raster_style.dart';
 
+import 'support/files.dart';
+
 /// A PNG of [size] pixels filled with [color].
 Future<List<int>> _png(int size, ui.Color color) async {
   final recorder = ui.PictureRecorder();
@@ -165,8 +167,7 @@ void main() {
       cacheDirectory: cache.path,
     );
     expect(await _paintUntilLoaded(drawing, loaded), 1);
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-    expect(kept.readAsBytesSync(), png);
+    await holds(kept, png);
   });
 
   test('a tile of heights is fetched and shaded', () async {
