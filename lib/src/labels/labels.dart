@@ -152,11 +152,14 @@ class LabelEngine {
   List<LabelObstacle> get obstacles => _points.obstacles;
   set obstacles(List<LabelObstacle> value) {
     _points.obstacles = value;
-    // The pass under way places the old markers' names. It ends with what
-    // it has placed, so the next pass places the new ones from the next frame.
-    _queue.clear();
+    _endPass();
     _placeAgain = true;
   }
+
+  /// Ends the pass under way with what it has placed: the next frame's
+  /// [_placeSome] finds nothing queued and finishes it, so the next pass
+  /// starts from what changed.
+  void _endPass() => _queue.clear();
 
   double _lastZoom = 0;
 
