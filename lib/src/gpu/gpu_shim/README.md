@@ -4,25 +4,48 @@
 re-exports Flutter GPU, and on the web it is a WebGL2 implementation of the
 same API, reading the same `.shaderbundle`.
 
-Copied from flutter_scene 0.24.3 (`lib/src/gpu/`, and
+It is flutter_scene 0.24.4's `lib/src/gpu/` by Brandon DeRosier, MIT
+licensed (see `LICENSE`), with
 `lib/src/generated_assets/generated_asset_fetch_web.dart` as
-`web/asset_fetch_web.dart`) by Brandon DeRosier, MIT licensed (see
-`LICENSE`). flutter_scene keeps it internal, so it is copied rather than
-imported.
+`web/asset_fetch_web.dart`. flutter_scene keeps it internal, so it is
+copied rather than imported. When flutter_scene moves on, diff its
+`lib/src/gpu/` against this folder and take what helps.
 
-Changed here:
+Left out:
 
-- `web/webgl/buffer.dart`: an upload into a buffer already used for indices
-  drops to the default vertex array first. Bound as it was, it re-pointed
-  the index buffer of whichever cached vertex array the last draw left bound.
-- `web/webgl/render_pass.dart`: a uniform member crosses to WebGL as just
-  its floats. Under dart2wasm `toJS` copied the whole uniform block for each
-  member of each draw.
+- `webgpu/`, the WebGPU backend. It needs WGSL sidecars built with
+  `flutter_scene_tint`, has no handling for a lost device, and presents
+  through a blit and `transferToImageBitmap`, the copy `presenter.dart`
+  avoids.
+- `render_pass_compat.dart`, `raster_sync.dart`, `external_targets.dart`,
+  `texture_arrays.dart` and the helpers only they use: they reach into
+  flutter_scene's renderer.
+- `web/host_buffer.dart` and `web/surface_frame.dart`: vmap writes its
+  uniforms into buffers of its own and presents through `presenter.dart`.
+
+vmap's own files, all on the web:
+
+- `webgl/pass_record.dart`, `pass_executor.dart`, `pass_framebuffer.dart`:
+  a render pass records its calls and makes them when it ends, so every
+  uniform block written while it was recorded goes up in one upload
+  before its first draw. ANGLE on Metal stalls on an upload into a buffer
+  an earlier draw reads.
+- `webgl/gl_state.dart`, `gl_enums.dart`: the GL state as last set, so a
+  call that sets what is set already is not made.
+- `webgl/presenter.dart`: how a frame reaches the page. Chromium draws in
+  an `OffscreenCanvas` and hands the frame over with
+  `transferToImageBitmap`; Firefox and Safari draw in a page canvas.
+- `shared/page_image.dart`: what the page shows a texture from.
+
+Changed from flutter_scene:
+
 - `shared/glsl_transpile.dart`: a GLSL ES 1.00 uniform struct becomes a
-  std140 uniform block, so `render_pass.dart` binds a draw's uniforms with
-  one `bindBufferRange` instead of a `uniform*` call per member.
-- `createUniformBuffer`: a host-visible buffer for uniform data written every
-  frame, on the web typed and hinted `DYNAMIC_DRAW`; `_initializeTyped`
-  takes the usage hint.
-- `render_pass_compat.dart` and `raster_sync.dart` are left out; they reach
-  into flutter_scene's renderer.
+  std140 uniform block, so a draw binds its uniforms with one
+  `bindBufferRange` instead of a `uniform*` call per member.
+- `webgl/pass_executor.dart`: a uniform member crosses to WebGL as just its
+  floats. Under dart2wasm `toJS` copies the whole list it is given.
+- `createUniformBuffer`: a host-visible buffer for uniform data written
+  every frame, on the web typed and hinted `DYNAMIC_DRAW`.
+- `checkPipeline`: reads a pipeline's link result, so a renderer that
+  starts every pipeline at once can take each one's result where it
+  handles a failure.

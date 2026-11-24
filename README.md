@@ -525,6 +525,7 @@ The [roadmap](ROADMAP.md) has each step and the decisions behind them.
 
 | To | Run |
 | --- | --- |
+| run what CI checks: formatting, the analyzer and every package's tests | `tool/check.sh`, with `--gpu` on a Mac for the Flutter GPU tests too |
 | run the unit and golden tests | `flutter test` |
 | run the tests that draw with Flutter GPU, on a Mac | `flutter test --enable-impeller --enable-flutter-gpu --tags gpu` |
 | rebuild the web worker, when `test/web_worker_test.dart` fails | `dart run tool/build_web_worker.dart` |
