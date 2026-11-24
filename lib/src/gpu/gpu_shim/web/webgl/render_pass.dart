@@ -35,7 +35,7 @@ final class WebGlRenderPass extends RenderPass {
 
   @override
   void bindPipeline(RenderPipeline pipeline) =>
-      _open().pipeline(pipeline.webGl);
+      _open().pipeline(pipeline.webGl.._ensureLinked());
 
   @override
   void bindVertexBuffer(BufferView bufferView, {int slot = 0}) =>

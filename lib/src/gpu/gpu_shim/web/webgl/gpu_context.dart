@@ -19,6 +19,7 @@ final class WebGlContext extends GpuContext {
       alpha: true,
       depth: _presenter.framesInCanvas,
       stencil: _presenter.framesInCanvas,
+      powerPreference: 'high-performance',
       preserveDrawingBuffer: false,
     );
     final gl =
@@ -29,6 +30,15 @@ final class WebGlContext extends GpuContext {
       );
     }
     _gl = gl;
+    // Enabled before any compile: the browser then compiles and links on
+    // threads of its own, and a program's status can be polled instead of
+    // waited on (WebGlRenderPipeline.isLinkComplete).
+    _parallelShaderCompile =
+        _gl.getExtension('KHR_parallel_shader_compile') != null;
+    // Uploads are tightly packed, as Flutter GPU takes them. GL's default
+    // row alignment of 4 skews a one or two byte texel texture whose rows
+    // are not a multiple of four bytes.
+    _gl.pixelStorei(web.WebGL2RenderingContext.UNPACK_ALIGNMENT, 1);
     // Cache extensions we rely on for later phases.
     _gl.getExtension('EXT_color_buffer_float');
     _gl.getExtension('OES_texture_float_linear');
@@ -56,12 +66,86 @@ final class WebGlContext extends GpuContext {
 
   bool _clipDepthZeroToOne = false;
 
+  bool _parallelShaderCompile = false;
+
   /// Whether clip-space depth spans `[0, 1]` (EXT_clip_control), so GLES
   /// shaders run without their `[-1, 1]` depth remap.
   bool get clipDepthZeroToOne => _clipDepthZeroToOne;
 
   late final web.WebGL2RenderingContext _gl;
   late final _GlState _state = _GlState(_gl);
+
+  final List<_WebGlCompletion> _completions = [];
+  List<CompletionCallback> _unfenced = [];
+  Timer? _completionPoll;
+
+  /// Calls [callback] once the GPU has finished what was submitted so far.
+  /// Submissions of one turn share a fence, set after the turn's last
+  /// command.
+  void _enqueueCompletion(CompletionCallback callback) {
+    // The root zone keeps a test's fake clock from owning the shared poll.
+    if (_unfenced.isEmpty) Zone.root.scheduleMicrotask(_fence);
+    final zone = Zone.current;
+    _unfenced.add(
+      identical(zone, Zone.root)
+          ? callback
+          : zone.bindUnaryCallbackGuarded(callback),
+    );
+  }
+
+  void _fence() {
+    final callbacks = _unfenced;
+    _unfenced = [];
+    final sync = _gl.fenceSync(
+      web.WebGL2RenderingContext.SYNC_GPU_COMMANDS_COMPLETE,
+      0,
+    );
+    if (sync == null) {
+      Zone.root.createTimer(Duration.zero, () {
+        for (final callback in callbacks) {
+          callback(CompletionStatus.error);
+        }
+      });
+      return;
+    }
+    _completions.add(_WebGlCompletion(sync, callbacks));
+    _gl.flush();
+    _completionPoll ??= Zone.root.createTimer(Duration.zero, _poll);
+  }
+
+  void _poll() {
+    _completionPoll = null;
+    var done = 0;
+    List<(List<CompletionCallback>, CompletionStatus)>? ready;
+    for (final pending in _completions) {
+      // A WebGL 2 fence signals only after a return to the event loop, and
+      // a wait of 0 never blocks.
+      final result = _gl.clientWaitSync(pending.sync, 0, 0);
+      if (result == web.WebGL2RenderingContext.TIMEOUT_EXPIRED) break;
+      _gl.deleteSync(pending.sync);
+      (ready ??= []).add((
+        pending.callbacks,
+        result == web.WebGL2RenderingContext.WAIT_FAILED
+            ? CompletionStatus.error
+            : CompletionStatus.successful,
+      ));
+      done++;
+    }
+    _completions.removeRange(0, done);
+    if (ready != null) {
+      for (final (callbacks, status) in ready) {
+        for (final callback in callbacks) {
+          callback(status);
+        }
+      }
+    }
+    if (_completions.isNotEmpty) {
+      _completionPoll ??= Zone.root.createTimer(
+        const Duration(milliseconds: 1),
+        _poll,
+      );
+    }
+  }
 
   /// Cached vertex-array objects keyed by (pipeline, vertex streams, index
   /// buffer), in least-recently-used order; see _PassExecutor._applyVertexState.
@@ -355,10 +439,12 @@ final class WebGlContext extends GpuContext {
     return _pipelineCache[key] = WebGlRenderPipeline._(this, vertex, fragment);
   }
 
-  // Framebuffer cache, keyed by the attachment textures. A pass previously
-  // created (and leaked) a framebuffer and ran the synchronous
-  // checkFramebufferStatus round trip every time; render targets recur every
-  // frame, so both now happen once per attachment combination.
+  // Framebuffer cache, keyed by the attachment textures, so the synchronous
+  // checkFramebufferStatus round trip runs once per attachment combination
+  // and not once a pass. Releasing a texture drops its entries; the capacity
+  // only bounds targets dropped without a release, and evicts the least
+  // recently used, so a frame's working set stays.
+  static const _framebufferCacheCapacity = 256;
   final Map<(Texture, int, int, Texture?), web.WebGLFramebuffer>
   _framebufferCache = {};
 
@@ -369,13 +455,13 @@ final class WebGlContext extends GpuContext {
     Texture? depth,
   ) {
     final key = (color, mipLevel, slice, depth);
-    final cached = _framebufferCache[key];
-    if (cached != null) return cached;
-    if (_framebufferCache.length >= 64) {
-      for (final fbo in _framebufferCache.values) {
-        _gl.deleteFramebuffer(fbo);
-      }
-      _framebufferCache.clear();
+    // Inserting again moves the entry last, so the first is the one used
+    // longest ago.
+    final cached = _framebufferCache.remove(key);
+    if (cached != null) return _framebufferCache[key] = cached;
+    if (_framebufferCache.length >= _framebufferCacheCapacity) {
+      final oldest = _framebufferCache.keys.first;
+      _gl.deleteFramebuffer(_framebufferCache.remove(oldest));
     }
     return _framebufferCache[key] = _createFramebuffer(
       color,
@@ -494,6 +580,8 @@ final class WebGlContext extends GpuContext {
       0,
     );
     _gl.bindFramebuffer(web.WebGL2RenderingContext.DRAW_FRAMEBUFFER, null);
+    // A blit is clipped by the scissor, which the last pass may have left on.
+    _state.disable(web.WebGL2RenderingContext.SCISSOR_TEST);
     // Flip vertically during the blit (dst Y runs height -> 0). WebGL2
     // rasterizes into FBO textures bottom-up, so the swapchain texture is
     // stored bottom-up; this flip presents it upright on the canvas. (The

@@ -158,6 +158,12 @@ class GpuPipelines {
     _compositeFragment,
   );
 
+  /// Makes every pipeline now. On the web making one only starts its
+  /// shaders compiling and linking, in parallel with the others, and its
+  /// first bind takes the result; on native it compiles on this thread, so
+  /// there pipelines are made as frames first draw with them.
+  void start() => [flat, buildings, ground, globe, stencil, heat, composite];
+
   /// A pipeline whose vertices are positions alone, two floats each.
   static gpu.RenderPipeline _onPositions(
     gpu.Shader vertex,

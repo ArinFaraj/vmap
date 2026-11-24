@@ -51,6 +51,10 @@ class FrameImage {
   ui.Image image;
   bool copied = false;
 
+  /// Whether the page was handed this image: shown again, it keeps what it
+  /// was handed.
+  bool handed = false;
+
   final MapPass pass;
   final gpu.CommandBuffer commands;
 

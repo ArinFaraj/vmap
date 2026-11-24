@@ -55,6 +55,8 @@ abstract base class WebBackend {
   });
 
   Surface createSurface({required int width, required int height});
+
+  void checkPipeline(RenderPipeline pipeline);
 }
 
 final WebBackend _backend = createWebGlBackend();
@@ -342,3 +344,9 @@ bool writeGeometryData(
   source,
   destinationOffsetInBytes: destinationOffsetInBytes,
 );
+
+/// Makes sure [pipeline] was built, throwing an [Exception] when a shader
+/// failed to compile or the program to link. Making a pipeline on the web
+/// only starts that work, so pipelines made together build in parallel; a
+/// pipeline's first bind checks it too.
+void checkPipeline(RenderPipeline pipeline) => _backend.checkPipeline(pipeline);

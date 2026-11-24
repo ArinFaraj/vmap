@@ -11,6 +11,13 @@ final class PageBitmap extends PageImage {
   const PageBitmap(super.source);
 }
 
+/// The image the place it is handed to showed last, shown again: the
+/// frame it stands for may have gone straight from the canvas to the page,
+/// leaving nothing in its texture to take it from again.
+final class PageKept extends PageImage {
+  const PageKept() : super(const Object());
+}
+
 /// The `HTMLCanvasElement` the backend draws in, with the texture's frame
 /// left in it. There is one, so one place in the page shows it.
 final class PageCanvas extends PageImage {
