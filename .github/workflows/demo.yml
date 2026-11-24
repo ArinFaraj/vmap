@@ -18,7 +18,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -28,9 +28,9 @@ jobs:
           flutter build web --wasm --release --no-tree-shake-icons
           --no-web-resources-cdn --pwa-strategy=none --base-href /vmap/
         working-directory: demo
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
       - run: npm install --no-audit --no-fund
         working-directory: tool/style_compare
       - run: flutter pub get
@@ -47,7 +47,7 @@ jobs:
              tool/style_compare/node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs \
              tool/style_compare/node_modules/maplibre-gl/dist/maplibre-gl.css "$out/dist/"
           cp tool/style_compare/node_modules/@mapbox/mapbox-gl-rtl-text/dist/mapbox-gl-rtl-text.js "$out/rtl.js"
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: demo/build/web
 
@@ -59,4 +59,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

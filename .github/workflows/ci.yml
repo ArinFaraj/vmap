@@ -14,28 +14,16 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-      - run: flutter pub get
-      - run: flutter pub get --directory vmap_flutter_map
-      - run: flutter pub get --directory example
-      - run: flutter pub get --directory bench
-      - run: flutter pub get --directory demo
-      - run: dart format --output=none --set-exit-if-changed lib test tool bench/lib example/lib example/test demo/lib vmap_flutter_map
-      - run: flutter analyze
-      - run: flutter test
-      - run: flutter test
-        working-directory: vmap_flutter_map
-      - run: flutter test
-        working-directory: example
-      - run: dart pub publish --dry-run
+      - run: tool/check.sh
 
   minimum:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.47.1
@@ -46,7 +34,7 @@ jobs:
   gpu:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -56,7 +44,7 @@ jobs:
   example-web:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -66,8 +54,8 @@ jobs:
   example-android:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
@@ -80,7 +68,7 @@ jobs:
   example-linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
@@ -93,7 +81,7 @@ jobs:
   example-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -103,7 +91,7 @@ jobs:
   example-ios:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           channel: stable

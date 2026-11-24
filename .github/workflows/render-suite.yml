@@ -14,8 +14,8 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: maplibre/maplibre-gl-js
           ref: a49fea4eb8987c4ef4eb735730645913f2ed2400
@@ -36,7 +36,7 @@ jobs:
           floor=$(cat tool/render_suite_floor.txt)
           echo "must pass: $passed, floor: $floor"
           test -n "$passed" && test "$passed" -ge "$floor"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: render-suite-report
