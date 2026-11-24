@@ -158,16 +158,10 @@ class GpuPipelines {
     _compositeFragment,
   );
 
-  /// Every pipeline: reading it makes those not made yet.
-  List<gpu.RenderPipeline> get all => [
-    flat,
-    buildings,
-    ground,
-    globe,
-    stencil,
-    heat,
-    composite,
-  ];
+  /// Makes every pipeline not made yet, as reading one makes it.
+  void makeAll() {
+    [flat, buildings, ground, globe, stencil, heat, composite];
+  }
 
   /// A pipeline whose vertices are positions alone, two floats each.
   static gpu.RenderPipeline _onPositions(

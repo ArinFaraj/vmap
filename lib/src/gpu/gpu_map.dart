@@ -422,18 +422,18 @@ class GpuMap extends MapRenderer {
 
   bool _warm = false;
 
-  /// Draws nothing in every state a frame uses, once: a GPU makes a
-  /// pipeline variant the first time a state is drawn in, which stalls that
-  /// frame for several milliseconds. Every slot a pipeline reads is bound,
-  /// as Vulkan leaves a draw that reads an unbound one undefined.
   /// Makes every pipeline at once. On the web that only starts their
   /// shaders compiling, all in parallel, and the first bind of each takes
   /// its result, so the frames' schedule in [_paint] finds them made.
   void _startPipelines(GpuDevice device, SdfTextGpu sdf) {
-    device.pipelines.all;
+    device.pipelines.makeAll();
     if (_in?.labelsVisible ?? false) sdf.start();
   }
 
+  /// Draws nothing in every state a frame uses, once: a GPU makes a
+  /// pipeline variant the first time a state is drawn in, which stalls that
+  /// frame for several milliseconds. Every slot a pipeline reads is bound,
+  /// as Vulkan leaves a draw that reads an unbound one undefined.
   void _warmUp(GpuDevice device) {
     _warm = true;
     final GpuDevice(pipelines: p, :host, :blocks, :sprites, :paints) = device;

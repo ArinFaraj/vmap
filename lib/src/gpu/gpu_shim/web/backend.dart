@@ -357,3 +357,8 @@ void checkPipeline(RenderPipeline pipeline) => _backend.checkPipeline(pipeline);
 /// textures, when those textures are about to go. The ones still drawn
 /// into are made again as they are next used.
 void forgetFramebuffers() => _backend.forgetFramebuffers();
+
+/// Submits [commands], a frame's last, and calls [done] once the GPU has
+/// finished them.
+void submitCounted(CommandBuffer commands, void Function() done) =>
+    commands.submit(completionCallback: (_) => done());

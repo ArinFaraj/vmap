@@ -257,22 +257,13 @@ class GpuFrames {
 
   /// Hands the GPU [commands], a frame's last, counting the frame in
   /// [heap] until the GPU has finished it.
-  ///
-  /// Natively an empty command buffer sent after the frame carries the
-  /// count, as the queue finishes it only after the frame. Flutter calls a
-  /// refused submit's completion callback twice and crashes on the second
-  /// call, so the frame's own commands go without one, and a refusal
-  /// throws for [GpuMap] to hand the map to the canvas.
   void submit(gpu.CommandBuffer commands, GpuHeap heap) {
-    if (!kIsWeb) commands.submit();
     _inFlight++;
     heap.submitted++;
-    (kIsWeb ? commands : gpu.gpuContext.createCommandBuffer()).submit(
-      completionCallback: (_) {
-        _inFlight--;
-        heap.completed++;
-      },
-    );
+    gpu.submitCounted(commands, () {
+      _inFlight--;
+      heap.completed++;
+    });
   }
 
   void dispose() {
