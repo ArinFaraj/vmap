@@ -31,10 +31,8 @@ final class WebGlContext extends GpuContext {
     }
     _gl = gl;
     // Enabled before any compile: the browser then compiles and links on
-    // threads of its own, and a program's status can be polled instead of
-    // waited on (WebGlRenderPipeline.isLinkComplete).
-    _parallelShaderCompile =
-        _gl.getExtension('KHR_parallel_shader_compile') != null;
+    // threads of its own, and a program's status is read at its first bind.
+    _gl.getExtension('KHR_parallel_shader_compile');
     // Uploads are tightly packed, as Flutter GPU takes them. GL's default
     // row alignment of 4 skews a one or two byte texel texture whose rows
     // are not a multiple of four bytes.
@@ -65,8 +63,6 @@ final class WebGlContext extends GpuContext {
   _Canvas get _canvas => _presenter.canvas;
 
   bool _clipDepthZeroToOne = false;
-
-  bool _parallelShaderCompile = false;
 
   /// Whether clip-space depth spans `[0, 1]` (EXT_clip_control), so GLES
   /// shaders run without their `[-1, 1]` depth remap.
@@ -796,4 +792,12 @@ final class _VaoKey {
     }
     return true;
   }
+}
+
+/// A fence after the commands of one turn, and what waits on it.
+final class _WebGlCompletion {
+  _WebGlCompletion(this.sync, this.callbacks);
+
+  final web.WebGLSync sync;
+  final List<CompletionCallback> callbacks;
 }

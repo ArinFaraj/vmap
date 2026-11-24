@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vmap/src/labels/label_state.dart';
 import 'package:vmap/src/labels/labels.dart';
+import 'package:vmap/src/labels/point_labels.dart';
 import 'package:vmap/src/labels/text_style.dart';
 import 'package:vmap/src/options.dart';
 import 'package:vmap/src/style/style_model.dart';
@@ -148,6 +149,45 @@ void main() {
       expect(shown, {MarkerName(0, 'Home', 0, 0).key, 'under'});
     },
   );
+
+  test('markers cut down while their names are being placed leave no name '
+      'reading past them', () async {
+    LabelObstacle at(int i) => (
+      x: (20 + i % 60 * 6) / _world,
+      y: (20 + i ~/ 60 * 6) / _world,
+      width: 4,
+      height: 4,
+      shiftX: 0,
+      shiftY: 0,
+    );
+    List<LabelCandidate> names(int count) => [
+      for (var i = 0; i < count; i++)
+        MarkerName(i, 'Station $i', at(i).x, at(i).y),
+    ];
+    final labels = _engine()
+      ..obstacles = [for (var i = 0; i < 3000; i++) at(i)];
+    void paint(List<List<LabelCandidate>> sources) {
+      final recorder = ui.PictureRecorder();
+      labels.paint(
+        ui.Canvas(recorder),
+        _camera(_zoom, _flat()),
+        sources: sources,
+        sourcesKey: 1,
+        background: 0xFFFFFFFF,
+        dt: 1,
+        rasterBudgetMicros: 1000000,
+        zooming: false,
+      );
+      recorder.endRecording().dispose();
+    }
+
+    paint([names(3000)]);
+    labels.obstacles = [for (var i = 0; i < 6; i++) at(i)];
+    paint([names(6)]);
+    final shown = await _settle(labels, [names(6)]);
+    expect(shown, isNotEmpty);
+    expect(shown.difference({for (final c in names(6)) c.key}), isEmpty);
+  });
 
   test("a marker's name asks the style's glyph server for nothing", () async {
     final asked = <String>[];

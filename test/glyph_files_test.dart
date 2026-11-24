@@ -55,14 +55,6 @@ void main() {
     return shared;
   }
 
-  Future<void> written(String path) async {
-    final watch = Stopwatch()..start();
-    while (!File(path).existsSync()) {
-      if (watch.elapsed > const Duration(seconds: 5)) fail('not written');
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-    }
-  }
-
   test('the fixture is a glyph range', () {
     final glyph = GlyphPbf.parse(_range).single;
     expect((glyph.id, glyph.advance), (0x41, 10));
@@ -81,7 +73,7 @@ void main() {
     );
 
     expect(await fetches().fetch(range), _range);
-    await written(file);
+    await holds(File(file), _range);
     expect(asked, hasLength(1));
 
     await server.close(force: true);
@@ -144,7 +136,7 @@ void main() {
       template,
     ).fileOf(url('Test Font', '0-255'))!;
     map();
-    await written(file);
+    await holds(File(file), _range);
     expect(asked, ['/fonts/Test%20Font/0-255.pbf']);
 
     final again = map();
@@ -162,11 +154,11 @@ void main() {
       template,
     ).fileOf(url('Test Font', '0-255'))!;
     final engine = map();
-    await written(file);
+    await holds(File(file), _range);
     expect(asked, hasLength(1));
 
     await engine.clearCache();
-    await written(file);
+    await holds(File(file), _range);
     expect(asked, hasLength(2));
   });
 

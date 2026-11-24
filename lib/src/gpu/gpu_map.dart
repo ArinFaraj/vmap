@@ -114,10 +114,7 @@ class GpuMap extends MapRenderer {
         fail: (e) => onFailure?.call(e),
       );
       final sdf = SdfTextGpu(device, library, guard: _guard);
-      if (kIsWeb) {
-        device.pipelines.start();
-        if (_in?.labelsVisible ?? false) sdf.start();
-      }
+      if (kIsWeb) _startPipelines(device, sdf);
       return _made = (device: device, drape: Drape(device), sdf: sdf);
     } catch (e) {
       _lose(e);
@@ -429,6 +426,14 @@ class GpuMap extends MapRenderer {
   /// pipeline variant the first time a state is drawn in, which stalls that
   /// frame for several milliseconds. Every slot a pipeline reads is bound,
   /// as Vulkan leaves a draw that reads an unbound one undefined.
+  /// Makes every pipeline at once. On the web that only starts their
+  /// shaders compiling, all in parallel, and the first bind of each takes
+  /// its result, so the frames' schedule in [_paint] finds them made.
+  void _startPipelines(GpuDevice device, SdfTextGpu sdf) {
+    device.pipelines.all;
+    if (_in?.labelsVisible ?? false) sdf.start();
+  }
+
   void _warmUp(GpuDevice device) {
     _warm = true;
     final GpuDevice(pipelines: p, :host, :blocks, :sprites, :paints) = device;
