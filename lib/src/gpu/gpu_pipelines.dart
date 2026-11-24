@@ -158,7 +158,8 @@ class GpuPipelines {
     _compositeFragment,
   );
 
-  /// Makes every pipeline not made yet, as reading one makes it.
+  /// Makes every pipeline not made yet: each is a late final field, made
+  /// the first time it is read.
   void makeAll() {
     [flat, buildings, ground, globe, stencil, heat, composite];
   }

@@ -100,24 +100,33 @@ MapFrame _camera(double zoom, MapView view) => MapFrame(
   view: view,
 );
 
+/// Paints one frame of [sources].
+void _paintOnce(
+  LabelEngine labels,
+  List<List<LabelCandidate>> sources, {
+  MapView? view,
+}) {
+  final recorder = ui.PictureRecorder();
+  labels.paint(
+    ui.Canvas(recorder),
+    _camera(_zoom, view ?? _flat()),
+    sources: sources,
+    sourcesKey: 1,
+    background: 0xFFFFFFFF,
+    dt: 1,
+    rasterBudgetMicros: 1000000,
+    zooming: false,
+  );
+  recorder.endRecording().dispose();
+}
+
 Future<Set<String>> _settle(
   LabelEngine labels,
   List<List<LabelCandidate>> sources, {
   MapView? view,
 }) async {
   for (var frame = 0; frame < 8; frame++) {
-    final recorder = ui.PictureRecorder();
-    labels.paint(
-      ui.Canvas(recorder),
-      _camera(_zoom, view ?? _flat()),
-      sources: sources,
-      sourcesKey: 1,
-      background: 0xFFFFFFFF,
-      dt: 1,
-      rasterBudgetMicros: 1000000,
-      zooming: false,
-    );
-    recorder.endRecording().dispose();
+    _paintOnce(labels, sources, view: view);
     await Future<void>.delayed(const Duration(milliseconds: 100));
   }
   return labels.shownKeys;
@@ -165,24 +174,9 @@ void main() {
     ];
     final labels = _engine()
       ..obstacles = [for (var i = 0; i < 3000; i++) at(i)];
-    void paint(List<List<LabelCandidate>> sources) {
-      final recorder = ui.PictureRecorder();
-      labels.paint(
-        ui.Canvas(recorder),
-        _camera(_zoom, _flat()),
-        sources: sources,
-        sourcesKey: 1,
-        background: 0xFFFFFFFF,
-        dt: 1,
-        rasterBudgetMicros: 1000000,
-        zooming: false,
-      );
-      recorder.endRecording().dispose();
-    }
-
-    paint([names(3000)]);
+    _paintOnce(labels, [names(3000)]);
     labels.obstacles = [for (var i = 0; i < 6; i++) at(i)];
-    paint([names(6)]);
+    _paintOnce(labels, [names(6)]);
     final shown = await _settle(labels, [names(6)]);
     expect(shown, isNotEmpty);
     expect(shown.difference({for (final c in names(6)) c.key}), isEmpty);
