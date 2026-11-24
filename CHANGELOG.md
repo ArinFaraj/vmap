@@ -1,5 +1,16 @@
-## Unreleased
+## 0.31.1
 
+- Fixed: a GPU that refused the label text's texture or command buffer made
+  every frame throw. The map now falls back to the canvas and frees its GPU
+  memory. (From 0.30.2, which 0.31.0 did not include.)
+- Fixed: the first launch after an install could freeze an iPhone while the
+  GPU compiled every shader at once. Shaders are now compiled over the first
+  frames. (From 0.30.2, which 0.31.0 did not include.)
+- Fixed: a GPU that refused a frame could crash the app natively, as Flutter
+  calls a refused frame's completion twice. The map now falls back to the
+  canvas.
+- Fixed: changing `markers` while labels were being placed could throw a
+  `RangeError` in `PointLabels`.
 - Web: shaders compile in parallel, and the page no longer waits on them
   while the map loads.
 - Web: the map asks for the faster GPU on machines with two, as MapLibre
