@@ -111,9 +111,11 @@ class FileSlices {
   RandomAccessFile? _file;
 
   Future<Uint8List> read(int offset, int length) async {
-    final file = _file ??= await File(path).open();
-    await file.setPosition(offset);
-    return file.read(length);
+    // Tile workers overlap requests. Keep the seek and read together so
+    // another request cannot move this handle's cursor between them.
+    final file = _file ??= File(path).openSync();
+    file.setPositionSync(offset);
+    return file.readSync(length);
   }
 
   void close() {
