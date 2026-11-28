@@ -254,6 +254,11 @@ class TilePool {
       // the address once it is known.
       final spawned = _spawnWorkers(remembered ?? '');
       final fetched = _fetchTemplate(tileJsonUrl);
+      // The TileJSON response can fail before the workers are ready. Observe
+      // that failure now so the await below can handle it after startup.
+      unawaited(
+        fetched.then<void>((_) {}, onError: (Object _, StackTrace _) {}),
+      );
       await spawned;
       if (_closed) return;
       if (remembered != null) {
@@ -366,6 +371,7 @@ class TilePool {
         config.headers,
         timeout: const Duration(seconds: 10),
       );
+      if (reply.status != 200) throw HttpFailure(reply.status, tileJsonUrl);
       final json = jsonDecode(utf8.decode(reply.bytes)) as Map<String, dynamic>;
       final template = tileTemplate(json['tiles'])!;
       final deepest = json['maxzoom'];
