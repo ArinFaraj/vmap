@@ -65,6 +65,26 @@ void _answerTileJson(HttpRequest request, int port) => request.response
 void main() {
   setUp(() => HttpOverrides.global = null);
 
+  test('a non-success TileJSON response cannot initialize a source', () async {
+    late final HttpServer server;
+    server = await _serve((request) {
+      request.response.statusCode = HttpStatus.serviceUnavailable;
+      _answerTileJson(request, server.port);
+    });
+    final pool = _poolOf(server);
+
+    await expectLater(
+      pool.keep(const TileId(0, 0, 0)),
+      throwsA(
+        isA<HttpFailure>().having(
+          (error) => error.status,
+          'status',
+          HttpStatus.serviceUnavailable,
+        ),
+      ),
+    );
+  });
+
   test('the pieces cut from one deepest tile share its download', () async {
     final asked = <String>[];
     late final HttpServer server;
